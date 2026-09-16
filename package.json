@@ -8,9 +8,9 @@
     ],
     "catalog": {
       "dotenv": "^17.4.2",
-      "zod": "^4.4.3",
-      "@types/bun": "^1.4.0",
-      "hono": "^4.12.27",
+      "zod": "^4.6.5",
+      "@types/bun": "^1.4.2",
+      "hono": "^4.13.8",
       "better-auth": "1.6.22",
       "vitest": "4.1.8",
       "@vitest/ui": "4.1.8",
@@ -41,11 +41,11 @@
   },
   "devDependencies": {
     "@ayni/config": "workspace:*",
-    "@biomejs/biome": "^2.5.10",
+    "@biomejs/biome": "^2.5.14",
     "@types/bun": "catalog:",
     "turbo": "2.10.11",
     "typescript": "^6.0.3",
-    "vercel": "^54.18.2"
+    "vercel": "^54.21.1"
   },
   "overrides": {
     "kysely": "0.28.17"

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-16T00:00:00-05:00",
+  "title": "Design System: Ayni",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "neutral", "displayName": "Tinta profunda", "canonical": "#07141A", "tonalRamp": ["#07141A", "#10262E", "#1A3942", "#254C55", "#3D6670", "#618991", "#91B6BC", "#D3F0F2"] },
+      "surface": { "role": "neutral", "displayName": "Superficie de consola", "canonical": "#0E2028", "tonalRamp": ["#0E2028", "#18323B", "#25434C", "#33565E", "#4A6C73", "#6A8C92", "#9AB9BD", "#DAF4F5"] },
+      "cyan": { "role": "primary", "displayName": "Cian de señal", "canonical": "#16B8B4", "tonalRamp": ["#063C3C", "#075B58", "#0B7976", "#109692", "#16B8B4", "#46E6E1", "#8CF4EF", "#D5FFFB"] },
+      "destructive": { "role": "tertiary", "displayName": "Rojo de alerta", "canonical": "#E75C62", "tonalRamp": ["#4A1118", "#711923", "#962735", "#BA3D49", "#E75C62", "#F58B8E", "#FFC4C5", "#FFE9E9"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Títulos de página y decisiones de alto nivel." },
+      "headline": { "displayName": "Headline", "purpose": "Títulos de paneles, workflows y secciones." },
+      "body": { "displayName": "Body", "purpose": "Contenido de trabajo, tablas y explicaciones." },
+      "label": { "displayName": "Label", "purpose": "Metadatos, controles y estados." }
+    },
+    "shadows": [
+      { "name": "elevacion-contextual", "value": "0 8px 24px rgba(0, 0, 0, 0.18)", "purpose": "Menús, diálogos e inspectores abiertos." }
+    ],
+    "motion": [
+      { "name": "estado-estandar", "value": "160ms ease-out", "purpose": "Cambios de hover, foco y selección." }
+    ],
+    "breakpoints": [
+      { "name": "compacto", "value": "768px" },
+      { "name": "amplio", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal de una vista o confirmación de publicación.",
+      "html": "<button class=\"ds-btn-primary\">Publicar workflow</button>",
+      "css": ".ds-btn-primary { background: #16B8B4; color: #07141A; padding: 8px 12px; height: 32px; border: 1px solid transparent; border-radius: 6px; font: 600 12px/1.25 Geist, sans-serif; letter-spacing: .02em; cursor: pointer; transition: background 160ms ease-out, box-shadow 160ms ease-out; } .ds-btn-primary:hover { background: #46E6E1; } .ds-btn-primary:focus-visible { outline: 2px solid #46E6E1; outline-offset: 2px; } .ds-btn-primary:active { background: #109692; }"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Acción secundaria que no compite con la principal.",
+      "html": "<button class=\"ds-btn-secondary\">Guardar borrador</button>",
+      "css": ".ds-btn-secondary { background: #142B35; color: #E8F4F6; padding: 8px 12px; height: 32px; border: 1px solid #25404B; border-radius: 6px; font: 600 12px/1.25 Geist, sans-serif; letter-spacing: .02em; cursor: pointer; transition: background 160ms ease-out, border-color 160ms ease-out; } .ds-btn-secondary:hover { background: #1D3B47; border-color: #46E6E1; } .ds-btn-secondary:focus-visible { outline: 2px solid #46E6E1; outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo de texto",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Entrada compacta para configuración y búsqueda.",
+      "html": "<label class=\"ds-input-label\">Nombre del workflow<input class=\"ds-input\" value=\"Diagnóstico de hoja\" /></label>",
+      "css": ".ds-input-label { display: grid; gap: 6px; color: #91A7AE; font: 600 12px/1.25 Geist, sans-serif; } .ds-input { height: 32px; padding: 8px 10px; border: 1px solid #25404B; border-radius: 6px; background: #0E2028; color: #E8F4F6; font: 400 14px/1.5 Geist, sans-serif; } .ds-input:focus { outline: 2px solid #46E6E1; outline-offset: 1px; border-color: #16B8B4; }"
+    },
+    {
+      "name": "Panel de workflow",
+      "kind": "card",
+      "refersTo": "card-default",
+      "description": "Contenedor para una región de trabajo o resumen operativo.",
+      "html": "<section class=\"ds-card\"><span class=\"ds-card-eyebrow\">VERSIÓN ACTIVA</span><strong>Diagnóstico de hoja</strong><p>2 modelos · sincronizado hace 4 min</p></section>",
+      "css": ".ds-card { display: grid; gap: 8px; padding: 16px; border: 1px solid #25404B; border-radius: 10px; background: #0E2028; color: #E8F4F6; font: 400 14px/1.5 Geist, sans-serif; } .ds-card:hover { background: #142B35; } .ds-card-eyebrow { color: #46E6E1; font: 600 12px/1.25 Geist, sans-serif; letter-spacing: .02em; } .ds-card p { margin: 0; color: #91A7AE; }"
+    },
+    {
+      "name": "Navegación lateral",
+      "kind": "nav",
+      "refersTo": "navigation-default",
+      "description": "Navegación persistente del área de trabajo.",
+      "html": "<nav class=\"ds-nav\"><span class=\"ds-nav-brand\">AYNI</span><a class=\"ds-nav-item ds-nav-item-active\" href=\"#\">Workflows</a><a class=\"ds-nav-item\" href=\"#\">Modelos</a><a class=\"ds-nav-item\" href=\"#\">Telemetría</a></nav>",
+      "css": ".ds-nav { display: grid; gap: 4px; width: 180px; padding: 12px; background: #07141A; color: #91A7AE; font: 600 12px/1.25 Geist, sans-serif; } .ds-nav-brand { margin: 4px 8px 14px; color: #E8F4F6; letter-spacing: .08em; } .ds-nav-item { padding: 8px; border-radius: 6px; color: inherit; text-decoration: none; } .ds-nav-item:hover { background: #142B35; color: #E8F4F6; } .ds-nav-item:focus-visible { outline: 2px solid #46E6E1; outline-offset: 2px; } .ds-nav-item-active { background: #142B35; color: #E8F4F6; box-shadow: inset 2px 0 #16B8B4; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La malla de señales",
+    "overview": "Ayni se siente como un centro de control moderno para flujos de inteligencia on-device: oscuro, silencioso y competente. El azul petróleo sostiene largas sesiones de trabajo; el cian eléctrico marca decisiones, conexiones y progreso, nunca decoración indiscriminada. La interfaz equilibra precisión técnica con orientación puntual.",
+    "keyCharacteristics": ["Oscuro por defecto; claro como alternativa equivalente.", "Cian reservado para acción, foco y estado activo.", "Paneles sobrios con una elevación discreta.", "Información técnica legible, con guía contextual cuando aporta valor."],
+    "rules": [
+      { "name": "The Signal Reserve Rule", "body": "El cian se usa para acciones, foco, selección y estados positivos; la estructura visual la sostienen las superficies petróleo y los neutrales.", "section": "colors" },
+      { "name": "The Traceability Rule", "body": "Versiones, hashes, identificadores y logs usan Geist Mono; el resto conserva la lectura humana de Geist.", "section": "typography" },
+      { "name": "The Working Surface Rule", "body": "Una superficie elevada debe comunicar un cambio de contexto, no ser el envoltorio automático de cada dato.", "section": "elevation" }
+    ],
+    "dos": ["Do reservar el cian para acción, foco, selección y progreso.", "Do mostrar ayuda contextual junto a decisiones complejas, errores y primeras configuraciones.", "Do acompañar cada estado de color con texto, icono o dirección comprensible."],
+    "donts": ["Don't reutilizar la paleta verde ni la estética de plantilla de shadcn como identidad de Ayni.", "Don't usar violeta/índigo genérico, gradientes decorativos o neón como sustituto de jerarquía.", "Don't envolver cada dato en una tarjeta elevada."]
+  }
+}

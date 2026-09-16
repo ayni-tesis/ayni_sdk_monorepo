@@ -1,5 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
 import z from "zod";
 
@@ -7,12 +8,15 @@ import { authClient } from "@/lib/auth-client";
 
 import Loader from "./loader";
 import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { ShineBorder } from "./ui/shine-border";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
 export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
   const router = useRouter();
   const { isPending } = authClient.useSession();
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const form = useForm({
     defaultValues: {
@@ -21,6 +25,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
       name: "",
     },
     onSubmit: async ({ value }) => {
+      setSubmitError(null);
       await authClient.signUp.email(
         {
           email: value.email,
@@ -30,19 +35,21 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
         {
           onSuccess: () => {
             router.push("/dashboard");
-            toast.success("Sign up successful");
+            toast.success("Cuenta creada correctamente");
           },
-          onError: (error) => {
-            toast.error(error.error.message || error.error.statusText);
+          onError: () => {
+            const message = "No pudimos crear la cuenta. Revisa los datos e inténtalo de nuevo.";
+            setSubmitError(message);
+            toast.error(message);
           },
         },
       );
     },
     validators: {
       onSubmit: z.object({
-        name: z.string().min(2, "Name must be at least 2 characters"),
-        email: z.email("Invalid email address"),
-        password: z.string().min(8, "Password must be at least 8 characters"),
+        name: z.string().min(2, "El nombre debe tener al menos 2 caracteres."),
+        email: z.email("Ingresa un correo electrónico válido."),
+        password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
       }),
     },
   });
@@ -52,10 +59,14 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
   }
 
   return (
-    <div className="mx-auto w-full mt-10 max-w-md p-6">
-      <h1 className="mb-6 text-center text-3xl font-bold">Create Account</h1>
-
-      <form
+    <Card className="relative mx-auto w-full max-w-md overflow-hidden"><ShineBorder duration={18} shineColor={["rgb(54 182 201)", "rgb(80 126 175)"]} />
+      <CardHeader className="text-center">
+        <p className="text-sm text-primary">AYNI</p>
+        <CardTitle className="text-2xl">Crea tu cuenta</CardTitle>
+        <CardDescription>Crea tu cuenta para empezar a configurar aplicaciones.</CardDescription>
+      </CardHeader>
+      <CardContent><form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -67,16 +78,20 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           <form.Field name="name">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Name</Label>
+                <Label htmlFor={field.name}>Nombre</Label>
                 <Input
                   id={field.name}
                   name={field.name}
+                  autoComplete="name"
+                  minLength={2}
+                  required
+                  className="h-11 text-base"
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-destructive" role="alert">
                     {error?.message}
                   </p>
                 ))}
@@ -89,17 +104,21 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           <form.Field name="email">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Email</Label>
+                <Label htmlFor={field.name}>Correo electrónico</Label>
                 <Input
                   id={field.name}
                   name={field.name}
                   type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  required
+                  className="h-11 text-base"
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-destructive" role="alert">
                     {error?.message}
                   </p>
                 ))}
@@ -112,17 +131,21 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           <form.Field name="password">
             {(field) => (
               <div className="space-y-2">
-                <Label htmlFor={field.name}>Password</Label>
+                <Label htmlFor={field.name}>Contraseña</Label>
                 <Input
                   id={field.name}
                   name={field.name}
                   type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  className="h-11 text-base"
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
                 />
                 {field.state.meta.errors.map((error) => (
-                  <p key={error?.message} className="text-red-500">
+                  <p key={error?.message} className="text-destructive" role="alert">
                     {error?.message}
                   </p>
                 ))}
@@ -135,24 +158,30 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           {(state) => (
             <Button
               type="submit"
-              className="w-full"
-              disabled={!state.canSubmit || state.isSubmitting}
+              className="h-11 w-full text-base"
+              disabled={state.isSubmitting}
             >
-              {state.isSubmitting ? "Submitting..." : "Sign Up"}
+              {state.isSubmitting ? "Creando..." : "Crear cuenta"}
             </Button>
           )}
         </form.Subscribe>
       </form>
 
+      {submitError && (
+        <p className="mt-4 text-sm text-destructive" role="alert">
+          {submitError}
+        </p>
+      )}
+
       <div className="mt-4 text-center">
         <Button
           variant="link"
           onClick={onSwitchToSignIn}
-          className="text-indigo-600 hover:text-indigo-800"
+          className="min-h-11 text-primary hover:text-primary/80"
         >
-          Already have an account? Sign In
+          ¿Ya tienes una cuenta? Iniciar sesión
         </Button>
-      </div>
-    </div>
+      </div></CardContent>
+    </Card>
   );
 }

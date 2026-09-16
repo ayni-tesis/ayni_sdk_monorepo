@@ -1,0 +1,43 @@
+{
+  "title": "Elige la estructura inicial del dashboard",
+  "question": "Las tres opciones mantienen La malla de señales; cambia la forma de operar Ayni.",
+  "options": [
+    {
+      "id": "signal-grid",
+      "label": "Malla de señales",
+      "kicker": "THE ROLL",
+      "lineage": "Centro de control de una aplicación activa",
+      "thesis": "Una pizarra DAG convierte el workflow activo en decisiones inmediatas.",
+      "palette": ["#07141A", "#0E2028", "#16B8B4", "#E8F4F6"],
+      "materials": ["pizarra DAG", "conexiones cian", "metadatos monoespaciados"],
+      "viewport": "Selector de workspace y aplicación arriba; una pizarra central para arrastrar, conectar y validar nodos; inspector operativo a la derecha.",
+      "risk": "Necesita una jerarquía estricta para que el canvas siga siendo el protagonista.",
+      "comp": ".impeccable/mocks/decision/signal-grid.png"
+    },
+    {
+      "id": "release-lane",
+      "label": "Carril de publicación",
+      "lineage": "Línea de producción versionada",
+      "thesis": "La pizarra DAG se organiza alrededor del camino que lleva un workflow al teléfono.",
+      "palette": ["#07141A", "#142B35", "#46E6E1", "#91A7AE"],
+      "materials": ["pizarra DAG", "carriles de versiones", "estados de validación"],
+      "viewport": "Selector de workspace y aplicación arriba; el canvas muestra nodos conectables y un carril inferior conecta borrador, validación, publicación y sincronización.",
+      "risk": "Da menos protagonismo a la telemetría cotidiana cuando no hay una publicación en curso.",
+      "comp": ".impeccable/mocks/decision/release-lane.png"
+    },
+    {
+      "id": "fleet-first",
+      "label": "Pulso de dispositivos",
+      "lineage": "Flota on-device",
+      "thesis": "La pizarra DAG se explica por la realidad del SDK que se ejecuta en los teléfonos.",
+      "palette": ["#07141A", "#0E2028", "#16B8B4", "#E75C62"],
+      "materials": ["pizarra DAG", "estado de flota", "eventos de ejecución"],
+      "viewport": "Selector de workspace y aplicación arriba; el canvas domina y el inspector relaciona nodos, versiones y estados de dispositivos.",
+      "risk": "Puede cargar el inspector para un workspace nuevo.",
+      "comp": ".impeccable/mocks/decision/fleet-first.png"
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": { "value": "comp", "toggle": true }
+}
