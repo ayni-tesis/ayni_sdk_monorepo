@@ -4,7 +4,7 @@ This file provides context about the project for AI assistants.
 
 ## Project Overview
 
-- **Ecosystem**: Typescript
+- **Ecosystem**: Typescript and Dart
 
 ## Tech Stack
 
@@ -60,6 +60,29 @@ ayni/
 - `bun test` - Run tests
 - `bun db:push` - Push database schema
 - `bun db:studio` - Open database UI
+
+## Thesis SDK direction
+
+The thesis product is an offline-first Flutter SDK for integrating on-device
+models into mobile apps through a versioned workflow DAG managed from the web
+dashboard.
+
+- The dashboard publishes versioned workflow JSON and model manifests; it does
+  not send executable code to the device.
+- The Flutter app synchronizes workflows and models when online, verifies model
+  integrity, stores the last valid version locally, and executes it without a
+  network connection.
+- The SDK executes a directed acyclic graph (DAG), allowing workflows to branch,
+  share intermediate results, and combine model outputs.
+- Initial supported node types are image input, image transform, TensorFlow Lite
+  classification, TensorFlow Lite detection, condition, and output. New node
+  types or runtimes are added only for a demonstrated use case.
+- TensorFlow Lite is the first on-device runtime. The coffee-leaf flow
+  (validate leaf, then diagnose disease or pest) is an example workflow, not a
+  product limitation.
+- The SDK must validate graph structure, node inputs and outputs, and model
+  versions before execution. It must not evaluate arbitrary expressions or code
+  received from a workflow.
 
 ## Better Fullstack project context
 
