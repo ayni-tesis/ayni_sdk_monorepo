@@ -1,0 +1,9 @@
+# ayni Flutter app
+
+The Dart application is ready. Materialize or refresh native host projects with Flutter, then run it:
+
+```bash
+flutter create --platforms=android,ios .
+flutter pub get
+flutter run
+```

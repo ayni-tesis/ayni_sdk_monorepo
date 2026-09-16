@@ -1,0 +1,8 @@
+{
+  "extends": "@ayni/config/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*"]
+}

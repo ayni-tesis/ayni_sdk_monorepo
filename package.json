@@ -1,0 +1,54 @@
+{
+  "name": "ayni",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "dotenv": "^17.4.2",
+      "zod": "^4.4.3",
+      "@types/bun": "^1.4.0",
+      "hono": "^4.12.27",
+      "better-auth": "1.6.22",
+      "vitest": "4.1.8",
+      "@vitest/ui": "4.1.8",
+      "@vitest/coverage-v8": "4.1.8",
+      "jsdom": "^29.1.1"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:web": "turbo -F web dev",
+    "dev:server": "turbo -F server dev",
+    "setup:part:mobile:dart:flutter": "bash scripts/native/task-1.sh",
+    "dev:part:mobile:dart:flutter": "bash scripts/native/task-2.sh",
+    "db:push": "turbo -F @ayni/db db:push",
+    "db:studio": "turbo -F @ayni/db db:studio",
+    "db:generate": "turbo -F @ayni/db db:generate",
+    "db:migrate": "turbo -F @ayni/db db:migrate",
+    "test": "bun run --filter web test && bun run --filter server test && bun run --filter @ayni/api test",
+    "check": "biome check --write ."
+  },
+  "dependencies": {
+    "@ayni/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ayni/config": "workspace:*",
+    "@biomejs/biome": "^2.5.10",
+    "@types/bun": "catalog:",
+    "turbo": "2.10.11",
+    "typescript": "^6.0.3",
+    "vercel": "^54.18.2"
+  },
+  "overrides": {
+    "kysely": "0.28.17"
+  },
+  "packageManager": "bun@1.4.0"
+}

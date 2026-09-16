@@ -1,0 +1,3 @@
+{
+  "extends": "@ayni/config/tsconfig.base.json"
+}

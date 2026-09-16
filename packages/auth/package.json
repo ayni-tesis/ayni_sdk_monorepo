@@ -1,0 +1,29 @@
+{
+  "name": "@ayni/auth",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ayni/db": "workspace:*",
+    "@ayni/env": "workspace:*",
+    "@better-auth/drizzle-adapter": "1.6.22",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@ayni/config": "workspace:*",
+    "typescript": "^6.0.3"
+  }
+}
