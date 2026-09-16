@@ -69,6 +69,9 @@ dashboard.
 
 - An existing Better Auth organization is the workspace. A workspace owns many
   applications; it is not necessary to create a duplicate workspace entity.
+- The dashboard currently distinguishes administrators (resource management)
+  from members (resource consultation and dataset review); there is no separate
+  reviewer role.
 - Each application owns its SDK credentials, workflows, workflow versions,
   models, and model versions. SDK credentials are scoped to one application so
   it cannot synchronize another application's resources.
@@ -80,8 +83,15 @@ dashboard.
 - The SDK executes a directed acyclic graph (DAG), allowing workflows to branch,
   share intermediate results, and combine model outputs.
 - Initial supported node types are image input, image transform, TensorFlow Lite
-  classification, TensorFlow Lite detection, condition, and output. New node
-  types or runtimes are added only for a demonstrated use case.
+  classification, TensorFlow Lite detection, condition, `dataset.capture`, and
+  output. New node types or runtimes are added only for a demonstrated use case.
+- `dataset.capture` is optional: it queues an image and inference result for
+  upload only with explicit consent and a configured collection policy. Without
+  this node, telemetry contains only permitted execution metadata, never images.
+- Telemetry uses a locally generated, per-installation UUID rather than hardware
+  identifiers. It may include only permitted technical metadata (device model,
+  platform, OS/app/SDK versions, RAM range, execution timings, and sanitized
+  errors) and must be governed by an application-level policy and retention.
 - TensorFlow Lite is the first on-device runtime. The coffee-leaf flow
   (validate leaf, then diagnose disease or pest) is an example workflow, not a
   product limitation.
