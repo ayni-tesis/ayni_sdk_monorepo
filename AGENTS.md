@@ -67,6 +67,11 @@ The thesis product is an offline-first Flutter SDK for integrating on-device
 models into mobile apps through a versioned workflow DAG managed from the web
 dashboard.
 
+- An existing Better Auth organization is the workspace. A workspace owns many
+  applications; it is not necessary to create a duplicate workspace entity.
+- Each application owns its SDK credentials, workflows, workflow versions,
+  models, and model versions. SDK credentials are scoped to one application so
+  it cannot synchronize another application's resources.
 - The dashboard publishes versioned workflow JSON and model manifests; it does
   not send executable code to the device.
 - The Flutter app synchronizes workflows and models when online, verifies model
