@@ -243,6 +243,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   activeWorkspaceIdRef.current = activeWorkspaceId;
   const abortControllerRef = useRef<AbortController | null>(null);
   const workspacesAbortRef = useRef<AbortController | null>(null);
+  const workspaceSwitchGenerationRef = useRef(0);
 
   const loadWorkspaces = useCallback(async () => {
     workspacesAbortRef.current?.abort();
@@ -278,6 +279,7 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   async function switchWorkspace(organizationId: string) {
     if (organizationId === workspace?.id || switchingWorkspace) return;
+    workspaceSwitchGenerationRef.current += 1;
     setSwitchingWorkspace(true);
     setSelected(null);
     setApplications([]);
@@ -331,6 +333,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   }, []);
 
   useEffect(() => {
+    workspaceSwitchGenerationRef.current += 1;
     setSelected(null);
     setApplications([]);
     void loadApplications(workspace?.id);
@@ -415,27 +418,36 @@ export default function Dashboard({ userName }: { userName: string }) {
     event.preventDefault();
     if (!workspace) return;
     const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
     setSaving(true);
     try {
       const { data } = await httpClient.post<Application>(
         `/organizations/${workspace.id}/applications`,
         { name },
       );
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       setApplications((items) => [...items, data]);
       setSelected(data);
       setName("");
       dialog.current?.close();
       toast.success("Aplicación creada.");
     } catch (createError) {
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       toast.error(
         errorMessage(createError, "No pudimos crear la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      if (activeWorkspaceIdRef.current === orgId) {
-        setSaving(false);
-      }
+      setSaving(false);
     }
   }
 
@@ -443,26 +455,35 @@ export default function Dashboard({ userName }: { userName: string }) {
     event.preventDefault();
     if (!selected) return;
     const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
     setSaving(true);
     try {
       const { data } = await httpClient.patch<Application>(`/applications/${selected.id}`, {
         name,
       });
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       setApplications((items) => items.map((item) => (item.id === data.id ? data : item)));
       setSelected(data);
       setName("");
       dialog.current?.close();
       toast.success("Nombre actualizado.");
     } catch (renameError) {
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       toast.error(
         errorMessage(renameError, "No pudimos actualizar la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      if (activeWorkspaceIdRef.current === orgId) {
-        setSaving(false);
-      }
+      setSaving(false);
     }
   }
 
@@ -479,39 +500,55 @@ export default function Dashboard({ userName }: { userName: string }) {
     event.preventDefault();
     if (!selected) return;
     const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
     setArchiving(true);
     try {
       const { data } = await httpClient.post<Application>(`/applications/${selected.id}/archive`);
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       setApplications((items) => items.filter((item) => item.id !== data.id));
       setSelected(data);
       archiveDialog.current?.close();
       toast.success("Aplicación archivada.");
     } catch (archiveError) {
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       toast.error(
         errorMessage(archiveError, "No pudimos archivar la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      if (activeWorkspaceIdRef.current === orgId) {
-        setArchiving(false);
-      }
+      setArchiving(false);
     }
   }
 
   async function openApplication(id: string) {
     const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
     try {
       const { data } = await httpClient.get<Application>(`/applications/${id}`);
       if (
         activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen ||
         data.organizationId !== activeWorkspaceIdRef.current
       ) {
         return;
       }
       setSelected(data);
     } catch (detailError) {
-      if (activeWorkspaceIdRef.current !== orgId) return;
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
       toast.error(
         errorMessage(detailError, "No pudimos cargar la aplicación. Inténtalo nuevamente."),
       );

@@ -714,6 +714,71 @@ describe("Dashboard", () => {
 
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText("app-new")).toBeNull();
+    expect(screen.queryByText("Creando aplicación…")).toBeNull();
+  });
+
+  it("ignores in-flight mutation responses if a workspace switch is initiated before setActive resolves", async () => {
+    let resolvePost: (value: { data: unknown }) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePost = resolve;
+      }),
+    );
+
+    let resolveSetActive: (value: unknown) => void = () => {};
+    authOrgMock.setActive.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSetActive = resolve;
+      }),
+    );
+
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+            { id: "org-2", name: "BioTec", slug: "biotec", role: "admin" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    const newAppBtn = await screen.findByRole("button", { name: /nueva aplicación/i });
+    fireEvent.click(newAppBtn);
+
+    const input = screen.getByLabelText("Nombre de la aplicación");
+    fireEvent.change(input, { target: { value: "Sensor" } });
+    const form = input.closest("form");
+    expect(form).toBeTruthy();
+    if (form) {
+      fireEvent.submit(form);
+    }
+    expect(client.post).toHaveBeenCalledWith("/organizations/org-1/applications", {
+      name: "Sensor",
+    });
+
+    const selectorTrigger = await screen.findByTestId("workspace-selector-trigger");
+    fireEvent.click(selectorTrigger);
+    const biotecOption = await screen.findByText("BioTec");
+    fireEvent.click(biotecOption);
+    expect(authOrgMock.setActive).toHaveBeenCalledWith({ organizationId: "org-2" });
+
+    resolvePost({
+      data: { id: "app-new", organizationId: "org-1", name: "Sensor", status: "active" },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("Sensor")).toBeNull();
+    expect(screen.queryByText("app-new")).toBeNull();
+
+    resolveSetActive({});
   });
 
   it("ignores older concurrent loadWorkspaces responses when a newer request is in-flight", async () => {
