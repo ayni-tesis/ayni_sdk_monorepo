@@ -39,15 +39,41 @@ function errorMessage(error: unknown, fallback: string) {
     : fallback;
 }
 
+export type WorkspaceItem = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+};
+
+export function formatWorkspaceRole(role: string): string {
+  switch (role) {
+    case "owner":
+      return "Propietario";
+    case "admin":
+      return "Administrador";
+    case "member":
+      return "Miembro";
+    default:
+      return role;
+  }
+}
+
 function DashboardShell({
   children,
   userName,
   workspaceName,
+  workspaces = [],
+  switchingWorkspace = false,
+  onSelectWorkspace,
   onCreateWorkspace,
 }: {
   children: React.ReactNode;
   userName: string;
   workspaceName?: string;
+  workspaces?: WorkspaceItem[];
+  switchingWorkspace?: boolean;
+  onSelectWorkspace?: (id: string) => void;
   onCreateWorkspace?: () => void;
 }) {
   return (
@@ -57,23 +83,43 @@ function DashboardShell({
         <header className="flex min-h-15 items-center justify-between border-b px-4">
           <div className="flex min-w-0 items-center gap-3">
             <SidebarTrigger />
-            <span className="text-muted-foreground text-sm">Workspace</span>
+            <span className="text-muted-foreground text-sm">Workspace actual</span>
             {onCreateWorkspace ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   data-testid="workspace-selector-trigger"
+                  disabled={switchingWorkspace}
                   render={
                     <Button
                       variant="ghost"
                       data-testid="workspace-selector-trigger"
+                      disabled={switchingWorkspace}
                       className="flex items-center gap-1 px-2 font-semibold"
                     />
                   }
                 >
-                  <span className="truncate">{workspaceName ?? "Cargando workspace…"}</span>
+                  <span className="truncate">
+                    {switchingWorkspace
+                      ? "Cambiando workspace…"
+                      : workspaces.length === 0
+                        ? "Aún no perteneces a ningún workspace."
+                        : (workspaceName ?? "Cargando workspace…")}
+                  </span>
                   <IconChevronDown className="size-4 opacity-50" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
+                  {workspaces.map((ws) => (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={() => onSelectWorkspace?.(ws.id)}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="font-medium">{ws.name}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {formatWorkspaceRole(ws.role)}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
                   <DropdownMenuItem onClick={onCreateWorkspace}>
                     <IconCirclePlus className="mr-2 size-4" />
                     <span>Crear workspace</span>
@@ -160,6 +206,8 @@ export default function Dashboard({ userName }: { userName: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const archiveDialog = useRef<HTMLDialogElement>(null);
   const workspaceDialog = useRef<HTMLDialogElement>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
@@ -176,6 +224,36 @@ export default function Dashboard({ userName }: { userName: string }) {
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const { data } = await httpClient.get<WorkspaceItem[]>("/workspaces");
+      setWorkspaces(data);
+    } catch {
+      // Keep current state
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWorkspaces();
+  }, [loadWorkspaces]);
+
+  async function switchWorkspace(organizationId: string) {
+    if (organizationId === workspace?.id || switchingWorkspace) return;
+    setSwitchingWorkspace(true);
+    setSelected(null);
+    setApplications([]);
+    try {
+      const res = await authClient.organization.setActive({ organizationId });
+      if (res?.error) {
+        toast.error("No pudimos cambiar el workspace. Inténtalo de nuevo.");
+      }
+    } catch {
+      toast.error("No pudimos cambiar el workspace. Inténtalo de nuevo.");
+    } finally {
+      setSwitchingWorkspace(false);
+    }
+  }
 
   const loadApplications = useCallback(async (organizationId?: string) => {
     if (!organizationId) return;
@@ -281,6 +359,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       }
 
       toast.success("Workspace creado.");
+      void loadWorkspaces();
       setNewWorkspaceName("");
       workspaceDialog.current?.close();
     } catch (createError) {
@@ -378,11 +457,17 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   if (!workspace && !organization.isPending)
     return (
-      <DashboardShell userName={userName} onCreateWorkspace={openCreateWorkspace}>
+      <DashboardShell
+        userName={userName}
+        workspaces={workspaces}
+        switchingWorkspace={switchingWorkspace}
+        onSelectWorkspace={switchWorkspace}
+        onCreateWorkspace={openCreateWorkspace}
+      >
         <main className="applications-page">
           <div className="applications-empty">
             <h1>Aplicaciones</h1>
-            <p>No tienes un workspace activo.</p>
+            <p>Aún no perteneces a ningún workspace.</p>
             <Button data-testid="create-workspace-trigger" onClick={openCreateWorkspace}>
               <IconCirclePlus />
               Crear workspace
@@ -405,6 +490,9 @@ export default function Dashboard({ userName }: { userName: string }) {
     <DashboardShell
       userName={userName}
       workspaceName={workspace?.name}
+      workspaces={workspaces}
+      switchingWorkspace={switchingWorkspace}
+      onSelectWorkspace={switchWorkspace}
       onCreateWorkspace={openCreateWorkspace}
     >
       <main className="applications-page">

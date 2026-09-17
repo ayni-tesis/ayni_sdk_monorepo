@@ -6,7 +6,7 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, member } from "@ayni/db/schema/index";
+import { application, member, organization } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp } from "./applications";
+import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export function toApplication(row: typeof application.$inferSelect): Application {
   if (row.status !== "active" && row.status !== "archived") {
@@ -76,6 +77,24 @@ const applications = {
   },
 };
 
+const workspaces = {
+  async listByUser(userId: string): Promise<WorkspaceItem[]> {
+    const rows = await db
+      .select({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        role: member.role,
+      })
+      .from(member)
+      .innerJoin(organization, eq(member.organizationId, organization.id))
+      .where(eq(member.userId, userId))
+      .orderBy(asc(organization.name));
+
+    return rows;
+  },
+};
+
 const app = new Hono();
 
 app.use(logger());
@@ -95,6 +114,13 @@ app.route(
   createApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
+  }),
+);
+app.route(
+  "/",
+  createWorkspacesApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    workspaces,
   }),
 );
 
