@@ -241,6 +241,11 @@ export default function Dashboard({ userName }: { userName: string }) {
   const activeWorkspaceId = workspace?.id;
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
+  const workspaceMissing =
+    !!workspace &&
+    !loadingWorkspaces &&
+    !workspacesError &&
+    !workspaces.some((ws) => ws.id === workspace.id);
   const abortControllerRef = useRef<AbortController | null>(null);
   const workspacesAbortRef = useRef<AbortController | null>(null);
   const workspaceSwitchGenerationRef = useRef(0);
@@ -278,7 +283,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   }, [loadWorkspaces]);
 
   async function switchWorkspace(organizationId: string) {
-    if (organizationId === workspace?.id || switchingWorkspace) return;
+    if (organizationId === workspace?.id || switchingWorkspace || saving || archiving) return;
     workspaceSwitchGenerationRef.current += 1;
     setSwitchingWorkspace(true);
     setSelected(null);
@@ -336,11 +341,14 @@ export default function Dashboard({ userName }: { userName: string }) {
     workspaceSwitchGenerationRef.current += 1;
     setSelected(null);
     setApplications([]);
+    if (workspaceMissing) {
+      return;
+    }
     void loadApplications(workspace?.id);
     return () => {
       abortControllerRef.current?.abort();
     };
-  }, [workspace?.id, loadApplications]);
+  }, [workspace?.id, workspaceMissing, loadApplications]);
 
   function openCreateWorkspace() {
     setNewWorkspaceName("");
@@ -398,6 +406,9 @@ export default function Dashboard({ userName }: { userName: string }) {
         toast.error(
           activeRes.error.message || "No pudimos activar el workspace. Inténtalo nuevamente.",
         );
+        void loadWorkspaces();
+        setNewWorkspaceName("");
+        workspaceDialog.current?.close();
         return;
       }
 
@@ -555,7 +566,7 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
   }
 
-  if (!workspace && !organization.isPending) {
+  if ((!workspace && !organization.isPending) || workspaceMissing) {
     if (loadingWorkspaces) {
       return (
         <DashboardShell

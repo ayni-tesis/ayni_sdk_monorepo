@@ -219,6 +219,35 @@ describe("Dashboard", () => {
     });
     authOrgMock.setActive.mockResolvedValueOnce({});
 
+    let workspacesFetch = 0;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        workspacesFetch++;
+        return {
+          data:
+            workspacesFetch === 1
+              ? [
+                  {
+                    id: "org-1",
+                    name: "Laboratorio Andino",
+                    slug: "laboratorio-andino",
+                    role: "admin",
+                  },
+                ]
+              : [
+                  {
+                    id: "org-1",
+                    name: "Laboratorio Andino",
+                    slug: "laboratorio-andino",
+                    role: "admin",
+                  },
+                  { id: "org-new", name: "BioTec", slug: "biotec-12345", role: "owner" },
+                ],
+        };
+      }
+      return { data: [] };
+    });
+
     const { rerender } = render(
       <TooltipProvider>
         <Dashboard userName="Diego" />
@@ -252,7 +281,6 @@ describe("Dashboard", () => {
     expect(toastMock.success).toHaveBeenCalledWith("Workspace creado.");
 
     activeOrgRef.current = { id: "org-new", name: "BioTec" };
-    client.get.mockResolvedValueOnce({ data: [] });
 
     rerender(
       <TooltipProvider>
@@ -281,7 +309,7 @@ describe("Dashboard", () => {
     expect(screen.getByRole("heading", { name: "Crear workspace" })).toBeTruthy();
   });
 
-  it("keeps the dialog open and displays an error if workspace activation fails", async () => {
+  it("refreshes memberships and closes the dialog when workspace activation fails", async () => {
     activeOrgRef.current = null;
     authOrgMock.create.mockResolvedValueOnce({
       data: { id: "org-new", name: "BioTec", slug: "biotec-12345" },
@@ -306,9 +334,13 @@ describe("Dashboard", () => {
       expect(toastMock.error).toHaveBeenCalledWith("Error al activar el workspace");
     });
     expect(toastMock.success).not.toHaveBeenCalled();
-    expect((screen.getByLabelText("Nombre del workspace") as HTMLInputElement).value).toBe(
-      "BioTec",
-    );
+
+    await waitFor(() => {
+      expect(client.get.mock.calls.filter(([url]) => url === "/workspaces").length).toBe(2);
+    });
+
+    expect(screen.queryByRole("dialog", { name: "Crear workspace" })).toBeNull();
+    expect((screen.getByLabelText("Nombre del workspace") as HTMLInputElement).value).toBe("");
   });
 
   it("retries creation with a new slug when Better Auth returns ORGANIZATION_SLUG_ALREADY_TAKEN", async () => {
@@ -717,18 +749,11 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Creando aplicación…")).toBeNull();
   });
 
-  it("ignores in-flight mutation responses if a workspace switch is initiated before setActive resolves", async () => {
+  it("blocks workspace switching while an application creation is in flight", async () => {
     let resolvePost: (value: { data: unknown }) => void = () => {};
     client.post.mockReturnValueOnce(
       new Promise((resolve) => {
         resolvePost = resolve;
-      }),
-    );
-
-    let resolveSetActive: (value: unknown) => void = () => {};
-    authOrgMock.setActive.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveSetActive = resolve;
       }),
     );
 
@@ -768,17 +793,20 @@ describe("Dashboard", () => {
     fireEvent.click(selectorTrigger);
     const biotecOption = await screen.findByText("BioTec");
     fireEvent.click(biotecOption);
-    expect(authOrgMock.setActive).toHaveBeenCalledWith({ organizationId: "org-2" });
+    expect(authOrgMock.setActive).not.toHaveBeenCalled();
 
     resolvePost({
       data: { id: "app-new", organizationId: "org-1", name: "Sensor", status: "active" },
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByText("Sensor")).toBeNull();
-    expect(screen.queryByText("app-new")).toBeNull();
+    expect(await screen.findByText("Sensor")).toBeTruthy();
 
-    resolveSetActive({});
+    fireEvent.click(selectorTrigger);
+    const retryOption = await screen.findByText("BioTec");
+    fireEvent.click(retryOption);
+    await waitFor(() => {
+      expect(authOrgMock.setActive).toHaveBeenCalledWith({ organizationId: "org-2" });
+    });
   });
 
   it("ignores older concurrent loadWorkspaces responses when a newer request is in-flight", async () => {
