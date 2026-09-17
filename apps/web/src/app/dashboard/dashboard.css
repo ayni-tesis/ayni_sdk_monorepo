@@ -1,0 +1,171 @@
+.applications-page {
+  width: min(100% - 2rem, 60rem);
+  margin: 0 auto;
+  padding: 3rem 0;
+}
+.applications-header,
+.detail-heading,
+.applications-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.applications-header {
+  margin-bottom: 2.5rem;
+}
+.applications-header p,
+.application-sections p,
+.application-dialog p {
+  margin: 0 0 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.applications-header h1,
+.application-dialog h2,
+.applications-empty h2,
+.application-sections h2 {
+  margin: 0;
+}
+.applications-header h1 {
+  font-size: var(--text-display);
+  letter-spacing: -0.04em;
+}
+.applications-list {
+  border-top: 1px solid var(--border);
+}
+.applications-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.applications-list li {
+  min-height: 5.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.applications-list li button {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.5rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.applications-list li button:hover strong {
+  color: var(--primary);
+}
+.applications-list code,
+.detail-heading code {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.application-status {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.applications-empty,
+.applications-error {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+  padding: 3rem 0;
+}
+.applications-error p {
+  color: var(--destructive);
+}
+.application-detail > .button {
+  margin-bottom: 2rem;
+}
+.detail-heading {
+  align-items: end;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.detail-heading div {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.detail-heading span:first-child {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.application-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.application-sections section {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.application-sections h2 {
+  font-size: var(--text-lg);
+}
+.application-sections p {
+  margin-top: 0.5rem;
+}
+.application-detail > .button + .application-sections {
+  margin-top: 2.5rem;
+}
+.application-detail > .detail-heading + .button {
+  margin-top: 1.25rem;
+}
+.application-dialog {
+  width: min(calc(100% - 2rem), 28rem);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+.application-dialog::backdrop {
+  background: color-mix(in srgb, var(--background) 45%, transparent);
+}
+.application-dialog form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+.application-dialog label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.application-dialog form > div {
+  display: flex;
+  justify-content: end;
+  gap: 0.75rem;
+}
+@media (max-width: 40rem) {
+  .applications-page {
+    width: min(100% - 1.5rem, 60rem);
+    padding: 1.5rem 0;
+  }
+  .applications-header {
+    align-items: start;
+    flex-direction: column;
+    margin-bottom: 1.5rem;
+  }
+  .applications-header > .button {
+    width: 100%;
+  }
+  .application-sections {
+    grid-template-columns: 1fr;
+  }
+  .detail-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .applications-list li {
+    align-items: start;
+    padding: 1rem 0;
+  }
+}

@@ -27,6 +27,12 @@ bun install
 
 Copy each application's `.env.example` to `.env` when present and configure database credentials before starting database-backed services.
 
+For local PostgreSQL, run the included container and set `DATABASE_URL` in `apps/server/.env` to `postgres://ayni:ayni@localhost:5432/ayni`:
+
+```sh
+docker compose up -d postgres
+```
+
 ## Local development
 
 Start the selected web applications and backend services together:

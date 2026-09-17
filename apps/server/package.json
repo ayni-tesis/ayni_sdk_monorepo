@@ -23,6 +23,7 @@
     "@upstash/redis": "^1.38.2",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
+    "drizzle-orm": "^0.45.2",
     "hono": "catalog:",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
