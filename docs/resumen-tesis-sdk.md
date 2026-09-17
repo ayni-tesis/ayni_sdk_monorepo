@@ -102,6 +102,7 @@ plataformas iniciales soportadas.
 | Épica | Historias | Ubicación |
 | --- | ---: | --- |
 | Gestión de workspaces y aplicaciones | US-001–US-006 | `epicas/gestion-workspaces-aplicaciones` |
+| Gestión de workspaces | US-114–US-119 | `epicas/gestion-workspaces` |
 | Credenciales SDK | US-007–US-011 | `epicas/credenciales-sdk` |
 | Modelos | US-012–US-023 | `epicas/modelos` |
 | Workflows DAG | US-024–US-037 | `epicas/workflows-dag` |
@@ -112,7 +113,7 @@ plataformas iniciales soportadas.
 | Empaquetado y distribución del SDK | US-089–US-099 | `epicas/empaquetado-distribucion-sdk` |
 | Observabilidad, telemetría y diagnóstico | US-100–US-113 | `epicas/observabilidad-telemetria-diagnostico` |
 
-Total: **113 historias de usuario**.
+Total: **119 historias de usuario**.
 
 ## Límites actuales
 
