@@ -8,6 +8,24 @@ export type Application = {
   status: "active" | "archived";
 };
 
+export function toApplication(row: {
+  id: string;
+  organizationId: string;
+  name: string;
+  status: unknown;
+  [key: string]: unknown;
+}): Application {
+  if (row.status !== "active" && row.status !== "archived") {
+    throw new Error(`Unsupported application status: ${String(row.status)}`);
+  }
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    name: row.name,
+    status: row.status,
+  };
+}
+
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   applications: {

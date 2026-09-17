@@ -1,5 +1,3 @@
-import type { ToasterProps } from "sonner";
-
 import {
   IconCircleCheck as CircleCheckIcon,
   IconInfoCircle as InfoIcon,
@@ -8,6 +6,7 @@ import {
   IconAlertTriangle as TriangleAlertIcon,
 } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
+import type { ToasterProps } from "sonner";
 import { Toaster as Sonner } from "sonner";
 
 const Toaster = ({ ...props }: ToasterProps) => {

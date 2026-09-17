@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createApp } from "./applications";
-import { toApplication } from "./index";
+import { createApp, toApplication } from "./applications";
 
 describe("POST /organizations/:organizationId/applications", () => {
   it("allows an administrator to create an application in their workspace", async () => {
