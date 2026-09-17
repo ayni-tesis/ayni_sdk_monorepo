@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { generateWorkspaceSlug } from "./slug";
 
 describe("generateWorkspaceSlug", () => {
-  it("converts name with spaces and special characters to kebab-case with suffix", () => {
+  it("converts name with spaces and special characters to kebab-case with a collision-resistant suffix", () => {
     const slug = generateWorkspaceSlug("Laboratorio Central");
-    expect(slug).toMatch(/^laboratorio-central-[a-z0-9]+$/);
+    expect(slug).toMatch(/^laboratorio-central-[a-z0-9]{10,}$/);
   });
 
   it("removes accents and diacritics", () => {

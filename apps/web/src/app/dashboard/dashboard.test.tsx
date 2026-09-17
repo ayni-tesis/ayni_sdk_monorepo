@@ -58,6 +58,10 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     activeOrgRef.current = { id: "org-1", name: "Laboratorio Andino" };
+    authOrgMock.create.mockResolvedValue({
+      data: { id: "org-new", name: "BioTec", slug: "biotec-12345" },
+    });
+    authOrgMock.setActive.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -130,6 +134,7 @@ describe("Dashboard", () => {
     const openCreateBtn = screen.getByTestId("create-workspace-trigger");
     fireEvent.click(openCreateBtn);
 
+    expect(screen.getByRole("dialog", { name: "Crear workspace" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Crear workspace" })).toBeTruthy();
     expect(screen.getByLabelText("Nombre del workspace")).toBeTruthy();
 
@@ -138,6 +143,38 @@ describe("Dashboard", () => {
 
     expect(await screen.findByText("Ingresa un nombre para el workspace.")).toBeTruthy();
     expect(authOrgMock.create).not.toHaveBeenCalled();
+  });
+
+  it("disables the Cancel button while workspace creation is in flight", async () => {
+    activeOrgRef.current = null;
+    let resolveCreate: (value: unknown) => void = () => {};
+    authOrgMock.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("create-workspace-trigger"));
+
+    const cancelBtn = screen.getByRole("button", { name: "Cancelar" });
+    expect((cancelBtn as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("Nombre del workspace"), {
+      target: { value: "Mi Equipo" },
+    });
+
+    fireEvent.click(screen.getByTestId("create-workspace-submit"));
+
+    expect((cancelBtn as HTMLButtonElement).disabled).toBe(true);
+
+    resolveCreate({ data: { id: "org-xyz" } });
+    await waitFor(() => expect((cancelBtn as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("creates a new workspace, calls Better Auth, sets it as active, and confirms success", async () => {
@@ -207,5 +244,92 @@ describe("Dashboard", () => {
     fireEvent.click(createMenuItem);
 
     expect(screen.getByRole("heading", { name: "Crear workspace" })).toBeTruthy();
+  });
+
+  it("keeps the dialog open and displays an error if workspace activation fails", async () => {
+    activeOrgRef.current = null;
+    authOrgMock.create.mockResolvedValueOnce({
+      data: { id: "org-new", name: "BioTec", slug: "biotec-12345" },
+    });
+    authOrgMock.setActive.mockResolvedValueOnce({
+      error: { message: "Error al activar el workspace" },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("create-workspace-trigger"));
+    fireEvent.change(screen.getByLabelText("Nombre del workspace"), {
+      target: { value: "BioTec" },
+    });
+    fireEvent.click(screen.getByTestId("create-workspace-submit"));
+
+    await waitFor(() => {
+      expect(toastMock.error).toHaveBeenCalledWith("Error al activar el workspace");
+    });
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Nombre del workspace") as HTMLInputElement).value).toBe(
+      "BioTec",
+    );
+  });
+
+  it("retries creation with a new slug when Better Auth returns ORGANIZATION_SLUG_ALREADY_TAKEN", async () => {
+    activeOrgRef.current = null;
+    authOrgMock.create
+      .mockResolvedValueOnce({
+        error: { code: "ORGANIZATION_SLUG_ALREADY_TAKEN", message: "Slug taken" },
+      })
+      .mockResolvedValueOnce({
+        data: { id: "org-retry", name: "RetryCorp", slug: "retrycorp-new" },
+      });
+    authOrgMock.setActive.mockResolvedValueOnce({});
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("create-workspace-trigger"));
+    fireEvent.change(screen.getByLabelText("Nombre del workspace"), {
+      target: { value: "RetryCorp" },
+    });
+    fireEvent.click(screen.getByTestId("create-workspace-submit"));
+
+    await waitFor(() => {
+      expect(authOrgMock.create).toHaveBeenCalledTimes(2);
+    });
+    expect(authOrgMock.setActive).toHaveBeenCalledWith({
+      organizationId: "org-retry",
+    });
+    expect(toastMock.success).toHaveBeenCalledWith("Workspace creado.");
+  });
+
+  it("does not retry creation when Better Auth returns an error other than slug taken", async () => {
+    activeOrgRef.current = null;
+    authOrgMock.create.mockResolvedValueOnce({
+      error: { code: "FORBIDDEN", message: "No tienes permiso" },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("create-workspace-trigger"));
+    fireEvent.change(screen.getByLabelText("Nombre del workspace"), {
+      target: { value: "FailCorp" },
+    });
+    fireEvent.click(screen.getByTestId("create-workspace-submit"));
+
+    await waitFor(() => {
+      expect(authOrgMock.create).toHaveBeenCalledTimes(1);
+    });
+    expect(toastMock.error).toHaveBeenCalledWith("No tienes permiso");
+    expect(authOrgMock.setActive).not.toHaveBeenCalled();
   });
 });

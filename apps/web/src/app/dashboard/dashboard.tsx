@@ -113,13 +113,14 @@ function CreateWorkspaceDialog({
     <dialog
       ref={dialogRef}
       className="application-dialog"
+      aria-labelledby="workspace-dialog-title"
       onClose={() => {
         setWorkspaceName("");
         setWorkspaceError("");
       }}
     >
       <form onSubmit={onSubmit}>
-        <h2>Crear workspace</h2>
+        <h2 id="workspace-dialog-title">Crear workspace</h2>
         <label htmlFor="workspace-name">Nombre del workspace</label>
         <Input
           id="workspace-name"
@@ -136,7 +137,12 @@ function CreateWorkspaceDialog({
           </p>
         )}
         <div>
-          <Button type="button" variant="ghost" onClick={() => dialogRef.current?.close()}>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={creatingWorkspace}
+            onClick={() => dialogRef.current?.close()}
+          >
             Cancelar
           </Button>
           <Button type="submit" data-testid="create-workspace-submit" disabled={creatingWorkspace}>
@@ -231,19 +237,49 @@ export default function Dashboard({ userName }: { userName: string }) {
     setWorkspaceError("");
     setCreatingWorkspace(true);
     try {
-      const slug = generateWorkspaceSlug(trimmedName);
-      const res = await authClient.organization.create({
-        name: trimmedName,
-        slug,
-      });
-      if (res?.error) {
-        toast.error(res.error.message || "No pudimos crear el workspace. Inténtalo nuevamente.");
+      let createdOrg: { id: string } | null = null;
+      const maxRetries = 3;
+
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const slug = generateWorkspaceSlug(trimmedName);
+        const res = await authClient.organization.create({
+          name: trimmedName,
+          slug,
+        });
+
+        if (res?.error) {
+          const isSlugTaken =
+            res.error.code === "ORGANIZATION_SLUG_ALREADY_TAKEN" ||
+            res.error.message === "Organization slug already taken";
+
+          if (isSlugTaken && attempt < maxRetries - 1) {
+            continue;
+          }
+
+          toast.error(res.error.message || "No pudimos crear el workspace. Inténtalo nuevamente.");
+          return;
+        }
+
+        createdOrg = res?.data ?? null;
+        break;
+      }
+
+      if (!createdOrg?.id) {
+        toast.error("No pudimos crear el workspace. Inténtalo nuevamente.");
         return;
       }
-      const newOrgId = res?.data?.id;
-      if (newOrgId) {
-        await authClient.organization.setActive({ organizationId: newOrgId });
+
+      const activeRes = await authClient.organization.setActive({
+        organizationId: createdOrg.id,
+      });
+
+      if (activeRes?.error) {
+        toast.error(
+          activeRes.error.message || "No pudimos activar el workspace. Inténtalo nuevamente.",
+        );
+        return;
       }
+
       toast.success("Workspace creado.");
       setNewWorkspaceName("");
       workspaceDialog.current?.close();
