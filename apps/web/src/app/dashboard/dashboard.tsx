@@ -3,6 +3,7 @@
 import {
   IconArchive,
   IconArrowLeft,
+  IconChevronDown,
   IconCirclePlus,
   IconPencil,
   IconRefresh,
@@ -12,10 +13,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { httpClient } from "@/lib/http-client";
+import { generateWorkspaceSlug } from "@/lib/slug";
 import "./dashboard.css";
 
 type Application = {
@@ -35,10 +43,12 @@ function DashboardShell({
   children,
   userName,
   workspaceName,
+  onCreateWorkspace,
 }: {
   children: React.ReactNode;
   userName: string;
   workspaceName?: string;
+  onCreateWorkspace?: () => void;
 }) {
   return (
     <SidebarProvider>
@@ -48,7 +58,31 @@ function DashboardShell({
           <div className="flex min-w-0 items-center gap-3">
             <SidebarTrigger />
             <span className="text-muted-foreground text-sm">Workspace</span>
-            <strong className="truncate">{workspaceName ?? "Cargando workspace…"}</strong>
+            {onCreateWorkspace ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  data-testid="workspace-selector-trigger"
+                  render={
+                    <Button
+                      variant="ghost"
+                      data-testid="workspace-selector-trigger"
+                      className="flex items-center gap-1 px-2 font-semibold"
+                    />
+                  }
+                >
+                  <span className="truncate">{workspaceName ?? "Cargando workspace…"}</span>
+                  <IconChevronDown className="size-4 opacity-50" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={onCreateWorkspace}>
+                    <IconCirclePlus className="mr-2 size-4" />
+                    <span>Crear workspace</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <strong className="truncate">{workspaceName ?? "Cargando workspace…"}</strong>
+            )}
           </div>
           <span className="truncate text-muted-foreground text-sm">{userName}</span>
         </header>
@@ -58,11 +92,71 @@ function DashboardShell({
   );
 }
 
+function CreateWorkspaceDialog({
+  dialogRef,
+  workspaceName,
+  setWorkspaceName,
+  workspaceError,
+  setWorkspaceError,
+  creatingWorkspace,
+  onSubmit,
+}: {
+  dialogRef: React.RefObject<HTMLDialogElement | null>;
+  workspaceName: string;
+  setWorkspaceName: (value: string) => void;
+  workspaceError: string;
+  setWorkspaceError: (value: string) => void;
+  creatingWorkspace: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <dialog
+      ref={dialogRef}
+      className="application-dialog"
+      onClose={() => {
+        setWorkspaceName("");
+        setWorkspaceError("");
+      }}
+    >
+      <form onSubmit={onSubmit}>
+        <h2>Crear workspace</h2>
+        <label htmlFor="workspace-name">Nombre del workspace</label>
+        <Input
+          id="workspace-name"
+          autoFocus
+          value={workspaceName}
+          onChange={(event) => {
+            setWorkspaceName(event.target.value);
+            if (workspaceError) setWorkspaceError("");
+          }}
+        />
+        {workspaceError && (
+          <p className="text-destructive text-sm" role="alert">
+            {workspaceError}
+          </p>
+        )}
+        <div>
+          <Button type="button" variant="ghost" onClick={() => dialogRef.current?.close()}>
+            Cancelar
+          </Button>
+          <Button type="submit" data-testid="create-workspace-submit" disabled={creatingWorkspace}>
+            {creatingWorkspace ? "Creando workspace…" : "Crear workspace"}
+          </Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
   const dialog = useRef<HTMLDialogElement>(null);
   const archiveDialog = useRef<HTMLDialogElement>(null);
+  const workspaceDialog = useRef<HTMLDialogElement>(null);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [applications, setApplications] = useState<Application[]>([]);
   const [selected, setSelected] = useState<Application | null>(null);
   const [name, setName] = useState("");
@@ -120,6 +214,47 @@ export default function Dashboard({ userName }: { userName: string }) {
       abortControllerRef.current?.abort();
     };
   }, [workspace?.id, loadApplications]);
+
+  function openCreateWorkspace() {
+    setNewWorkspaceName("");
+    setWorkspaceError("");
+    workspaceDialog.current?.showModal();
+  }
+
+  async function createWorkspace(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = newWorkspaceName.trim();
+    if (!trimmedName) {
+      setWorkspaceError("Ingresa un nombre para el workspace.");
+      return;
+    }
+    setWorkspaceError("");
+    setCreatingWorkspace(true);
+    try {
+      const slug = generateWorkspaceSlug(trimmedName);
+      const res = await authClient.organization.create({
+        name: trimmedName,
+        slug,
+      });
+      if (res?.error) {
+        toast.error(res.error.message || "No pudimos crear el workspace. Inténtalo nuevamente.");
+        return;
+      }
+      const newOrgId = res?.data?.id;
+      if (newOrgId) {
+        await authClient.organization.setActive({ organizationId: newOrgId });
+      }
+      toast.success("Workspace creado.");
+      setNewWorkspaceName("");
+      workspaceDialog.current?.close();
+    } catch (createError) {
+      toast.error(
+        errorMessage(createError, "No pudimos crear el workspace. Inténtalo nuevamente."),
+      );
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  }
 
   async function createApplication(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -207,16 +342,35 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   if (!workspace && !organization.isPending)
     return (
-      <DashboardShell userName={userName}>
+      <DashboardShell userName={userName} onCreateWorkspace={openCreateWorkspace}>
         <main className="applications-page">
-          <h1>Aplicaciones</h1>
-          <p>No tienes un workspace activo.</p>
+          <div className="applications-empty">
+            <h1>Aplicaciones</h1>
+            <p>No tienes un workspace activo.</p>
+            <Button data-testid="create-workspace-trigger" onClick={openCreateWorkspace}>
+              <IconCirclePlus />
+              Crear workspace
+            </Button>
+          </div>
         </main>
+        <CreateWorkspaceDialog
+          dialogRef={workspaceDialog}
+          workspaceName={newWorkspaceName}
+          setWorkspaceName={setNewWorkspaceName}
+          workspaceError={workspaceError}
+          setWorkspaceError={setWorkspaceError}
+          creatingWorkspace={creatingWorkspace}
+          onSubmit={createWorkspace}
+        />
       </DashboardShell>
     );
 
   return (
-    <DashboardShell userName={userName} workspaceName={workspace?.name}>
+    <DashboardShell
+      userName={userName}
+      workspaceName={workspace?.name}
+      onCreateWorkspace={openCreateWorkspace}
+    >
       <main className="applications-page">
         <header className="applications-header">
           <div>
@@ -359,6 +513,15 @@ export default function Dashboard({ userName }: { userName: string }) {
             </div>
           </form>
         </dialog>
+        <CreateWorkspaceDialog
+          dialogRef={workspaceDialog}
+          workspaceName={newWorkspaceName}
+          setWorkspaceName={setNewWorkspaceName}
+          workspaceError={workspaceError}
+          setWorkspaceError={setWorkspaceError}
+          creatingWorkspace={creatingWorkspace}
+          onSubmit={createWorkspace}
+        />
       </main>
     </DashboardShell>
   );
