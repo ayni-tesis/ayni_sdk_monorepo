@@ -16,12 +16,15 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp } from "./applications";
 
-function toApplication(row: typeof application.$inferSelect): Application {
+export function toApplication(row: typeof application.$inferSelect): Application {
+  if (row.status !== "active" && row.status !== "archived") {
+    throw new Error(`Unsupported application status: ${String(row.status)}`);
+  }
   return {
     id: row.id,
     organizationId: row.organizationId,
     name: row.name,
-    status: row.status === "archived" ? "archived" : "active",
+    status: row.status,
   };
 }
 

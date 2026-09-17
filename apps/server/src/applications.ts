@@ -38,7 +38,14 @@ export function createApp({ getSession, applications }: Dependencies) {
       );
     }
 
-    const body = nameSchema.safeParse(await c.req.json());
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ message: "Ingresa un nombre para la aplicación." }, 400);
+    }
+
+    const body = nameSchema.safeParse(rawBody);
     if (!body.success) return c.json({ message: "Ingresa un nombre para la aplicación." }, 400);
 
     return c.json(await applications.create({ organizationId, name: body.data.name }), 201);
@@ -87,7 +94,14 @@ export function createApp({ getSession, applications }: Dependencies) {
       return c.json({ message: "No tienes permiso para editar esta aplicación." }, 403);
     }
 
-    const body = nameSchema.safeParse(await c.req.json());
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ message: "Ingresa un nombre para la aplicación." }, 400);
+    }
+
+    const body = nameSchema.safeParse(rawBody);
     if (!body.success) return c.json({ message: "Ingresa un nombre para la aplicación." }, 400);
 
     return c.json(await applications.rename(application.id, body.data.name));

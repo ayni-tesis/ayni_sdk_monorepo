@@ -72,22 +72,43 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [error, setError] = useState("");
   const workspace = organization.data;
   const canManage = memberRole.data?.role === "admin" || memberRole.data?.role === "owner";
+  const activeWorkspaceId = workspace?.id;
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  activeWorkspaceIdRef.current = activeWorkspaceId;
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadApplications = useCallback(async (organizationId?: string) => {
     if (!organizationId) return;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError("");
     try {
       const { data } = await httpClient.get<Application[]>(
         `/organizations/${organizationId}/applications`,
+        { signal: controller.signal },
       );
+      if (
+        controller.signal.aborted ||
+        activeWorkspaceIdRef.current !== organizationId ||
+        data.some((app) => app.organizationId !== activeWorkspaceIdRef.current)
+      ) {
+        return;
+      }
       setApplications(data);
     } catch (loadError) {
+      if (controller.signal.aborted || activeWorkspaceIdRef.current !== organizationId) {
+        return;
+      }
       setError(
         errorMessage(loadError, "No pudimos cargar las aplicaciones. Inténtalo nuevamente."),
       );
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && activeWorkspaceIdRef.current === organizationId) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -95,6 +116,9 @@ export default function Dashboard({ userName }: { userName: string }) {
     setSelected(null);
     setApplications([]);
     void loadApplications(workspace?.id);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [workspace?.id, loadApplications]);
 
   async function createApplication(event: React.FormEvent<HTMLFormElement>) {

@@ -38,7 +38,7 @@ This file provides context about the project for AI assistants.
 - Testing: vitest
 - Caching: upstash-redis
 - Logging: pino
-- Application management: workspace-scoped applications with administrator-only create, rename, and archive actions
+- Application management: workspace-scoped applications with administrator- and owner-only create, rename, and archive actions
 
 ## Project Structure
 

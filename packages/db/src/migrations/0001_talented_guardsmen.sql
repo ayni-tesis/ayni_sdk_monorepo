@@ -8,4 +8,5 @@ CREATE TABLE "application" (
 );
 --> statement-breakpoint
 ALTER TABLE "application" ADD CONSTRAINT "application_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "application_organization_id_idx" ON "application" USING btree ("organization_id");
+CREATE INDEX "application_organization_id_idx" ON "application" USING btree ("organization_id");--> statement-breakpoint
+ALTER TABLE "application" ADD CONSTRAINT "application_status_check" CHECK ("application"."status" in ('active', 'archived'));

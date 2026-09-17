@@ -3,11 +3,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const client = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
+const { client, activeOrgRef } = vi.hoisted(() => ({
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  activeOrgRef: { current: { id: "org-1", name: "Laboratorio Andino" } },
+}));
 
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
-    useActiveOrganization: () => ({ data: { id: "org-1", name: "Laboratorio Andino" } }),
+    useActiveOrganization: () => ({ data: activeOrgRef.current }),
     useActiveMemberRole: () => ({ data: { role: "admin" } }),
   },
 }));
@@ -51,5 +54,38 @@ describe("Dashboard", () => {
 
     await waitFor(() => expect(screen.getByText("ID de aplicación")).toBeTruthy());
     expect(client.get).toHaveBeenCalledWith("/applications/app-1");
+  });
+
+  it("ignores responses from a previous workspace after the workspace changes", async () => {
+    let resolveFirstRequest: (value: { data: unknown }) => void = () => {};
+    client.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstRequest = resolve;
+      }),
+    );
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    activeOrgRef.current = { id: "org-2", name: "Nuevo Workspace" };
+    client.get.mockResolvedValueOnce({
+      data: [{ id: "app-2", organizationId: "org-2", name: "App Dos", status: "active" }],
+    });
+
+    rerender(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    resolveFirstRequest({
+      data: [{ id: "app-1", organizationId: "org-1", name: "App Uno", status: "active" }],
+    });
+
+    expect(await screen.findByRole("button", { name: /app dos/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /app uno/i })).toBeNull();
   });
 });
