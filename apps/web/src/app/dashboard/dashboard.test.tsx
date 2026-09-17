@@ -318,6 +318,35 @@ describe("Dashboard", () => {
       error: { message: "Error al activar el workspace" },
     });
 
+    let workspacesFetch = 0;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        workspacesFetch++;
+        return {
+          data:
+            workspacesFetch === 1
+              ? [
+                  {
+                    id: "org-1",
+                    name: "Laboratorio Andino",
+                    slug: "laboratorio-andino",
+                    role: "admin",
+                  },
+                ]
+              : [
+                  {
+                    id: "org-1",
+                    name: "Laboratorio Andino",
+                    slug: "laboratorio-andino",
+                    role: "admin",
+                  },
+                  { id: "org-new", name: "BioTec", slug: "biotec-12345", role: "owner" },
+                ],
+        };
+      }
+      return { data: [] };
+    });
+
     render(
       <TooltipProvider>
         <Dashboard userName="Diego" />
@@ -341,6 +370,14 @@ describe("Dashboard", () => {
 
     expect(screen.queryByRole("dialog", { name: "Crear workspace" })).toBeNull();
     expect((screen.getByLabelText("Nombre del workspace") as HTMLInputElement).value).toBe("");
+
+    const selectorTrigger = screen.getByTestId("workspace-selector-trigger");
+    fireEvent.click(selectorTrigger);
+    const biotecOption = await screen.findByText("BioTec");
+    fireEvent.click(biotecOption);
+    await waitFor(() => {
+      expect(authOrgMock.setActive).toHaveBeenCalledWith({ organizationId: "org-new" });
+    });
   });
 
   it("retries creation with a new slug when Better Auth returns ORGANIZATION_SLUG_ALREADY_TAKEN", async () => {
