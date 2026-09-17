@@ -901,4 +901,210 @@ describe("Dashboard", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText("BioTec")).toBeTruthy();
   });
+
+  it("disables the members navigation while there is no active workspace", async () => {
+    activeOrgRef.current = null;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    const membersBtn = await screen.findByRole("button", { name: /miembros/i });
+    expect(membersBtn.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("lists workspace members with their names, emails and roles in the members section", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [
+            { id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "owner" },
+            { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+
+    expect(await screen.findByText("Ana Rojas")).toBeTruthy();
+    expect(screen.getByText("ana@biotec.io")).toBeTruthy();
+    expect(screen.getByText("Propietario")).toBeTruthy();
+    expect(screen.getByText("Luis Pérez")).toBeTruthy();
+    expect(screen.getByText("luis@biotec.io")).toBeTruthy();
+    expect(screen.getByText("Miembro")).toBeTruthy();
+  });
+
+  it("shows 'Cargando miembros…' while the member list is in-flight", async () => {
+    let resolveMembers: (value: { data: unknown }) => void = () => {};
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        return new Promise((resolve) => {
+          resolveMembers = resolve;
+        });
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+
+    expect(await screen.findByText("Cargando miembros…")).toBeTruthy();
+
+    resolveMembers({
+      data: [{ id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "member" }],
+    });
+
+    expect(await screen.findByText("Ana Rojas")).toBeTruthy();
+    expect(screen.queryByText("Cargando miembros…")).toBeNull();
+  });
+
+  it("shows the members error state with retry and reloads on retry", async () => {
+    let attempt = 0;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        attempt++;
+        if (attempt === 1) {
+          throw new Error("Network error");
+        }
+        return {
+          data: [{ id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "member" }],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+
+    expect(await screen.findByText(/No pudimos cargar los miembros/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /reintentar/i }));
+
+    expect(await screen.findByText("Ana Rojas")).toBeTruthy();
+    expect(attempt).toBe(2);
+  });
+
+  it("shows the access denied message when the server refuses to reveal the workspace members", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        throw {
+          isAxiosError: true,
+          response: {
+            status: 403,
+            data: { message: "No tienes acceso a este workspace." },
+          },
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+
+    expect(await screen.findByText("No tienes acceso a este workspace.")).toBeTruthy();
+  });
+
+  it("shows the empty state when the workspace has no members yet", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        return { data: [] };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+
+    expect(await screen.findByText("Este workspace aún no tiene otros miembros.")).toBeTruthy();
+  });
 });

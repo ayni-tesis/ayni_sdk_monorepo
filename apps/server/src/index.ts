@@ -6,15 +6,16 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, member, organization } from "@ayni/db/schema/index";
+import { application, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
+import { createMembersApp, type MemberItem } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -85,6 +86,23 @@ const workspaces = {
   },
 };
 
+const members = {
+  getMembership: applications.getMembership,
+  async listOthers(userId: string, organizationId: string): Promise<MemberItem[]> {
+    return db
+      .select({
+        id: member.id,
+        name: user.name,
+        email: user.email,
+        role: member.role,
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
+      .orderBy(asc(member.createdAt));
+  },
+};
+
 const app = new Hono();
 
 app.use(logger());
@@ -111,6 +129,13 @@ app.route(
   createWorkspacesApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     workspaces,
+  }),
+);
+app.route(
+  "/",
+  createMembersApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    members,
   }),
 );
 

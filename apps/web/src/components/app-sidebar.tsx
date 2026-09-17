@@ -1,6 +1,6 @@
 "use client";
 
-import { IconApps } from "@tabler/icons-react";
+import { IconApps, IconUsers } from "@tabler/icons-react";
 import Link from "next/link";
 
 import {
@@ -15,7 +15,19 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-export function AppSidebar({ workspaceName }: { workspaceName?: string }) {
+export type DashboardView = "applications" | "members";
+
+export function AppSidebar({
+  workspaceName,
+  activeView = "applications",
+  membersDisabled = false,
+  onViewChange,
+}: {
+  workspaceName?: string;
+  activeView?: DashboardView;
+  membersDisabled?: boolean;
+  onViewChange?: (view: DashboardView) => void;
+}) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-3">
@@ -34,9 +46,26 @@ export function AppSidebar({ workspaceName }: { workspaceName?: string }) {
           <SidebarGroupLabel>Espacio de trabajo</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive tooltip="Aplicaciones">
+              <SidebarMenuButton
+                isActive={activeView === "applications"}
+                tooltip="Aplicaciones"
+                onClick={() => onViewChange?.("applications")}
+              >
                 <IconApps />
                 <span>Aplicaciones</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeView === "members"}
+                tooltip="Miembros"
+                disabled={membersDisabled}
+                onClick={() => {
+                  if (!membersDisabled) onViewChange?.("members");
+                }}
+              >
+                <IconUsers />
+                <span>Miembros</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

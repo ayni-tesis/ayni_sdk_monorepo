@@ -11,7 +11,7 @@ import {
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -39,12 +39,112 @@ function errorMessage(error: unknown, fallback: string) {
     : fallback;
 }
 
+function membersErrorMessage(error: unknown) {
+  const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
+  if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
+  if (error.response?.status === 403) {
+    return error.response.data?.message ?? fallback;
+  }
+  return fallback;
+}
+
 export type WorkspaceItem = {
   id: string;
   name: string;
   slug: string;
   role: string;
 };
+
+type MemberItem = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
+function MembersPanel({
+  workspaceId,
+  workspaceName,
+}: {
+  workspaceId: string;
+  workspaceName: string;
+}) {
+  const [members, setMembers] = useState<MemberItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const workspaceIdRef = useRef(workspaceId);
+  workspaceIdRef.current = workspaceId;
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const loadMembers = useCallback(async (organizationId: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoading(true);
+    setError("");
+    try {
+      const { data } = await httpClient.get<MemberItem[]>(
+        `/organizations/${organizationId}/members`,
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted || workspaceIdRef.current !== organizationId) return;
+      setMembers(data);
+    } catch (loadError) {
+      if (controller.signal.aborted || workspaceIdRef.current !== organizationId) return;
+      setError(membersErrorMessage(loadError));
+    } finally {
+      if (!controller.signal.aborted && workspaceIdRef.current === organizationId) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMembers(workspaceId);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [workspaceId, loadMembers]);
+
+  return (
+    <section className="members-section" aria-live="polite">
+      <header className="applications-header">
+        <div>
+          <p>{workspaceName}</p>
+          <h1>Miembros</h1>
+        </div>
+      </header>
+      {loading ? (
+        <p>Cargando miembros…</p>
+      ) : error ? (
+        <div className="applications-error">
+          <p>{error}</p>
+          <Button variant="outline" onClick={() => void loadMembers(workspaceId)}>
+            <IconRefresh />
+            Reintentar
+          </Button>
+        </div>
+      ) : members.length === 0 ? (
+        <div className="applications-empty">
+          <h2>Este workspace aún no tiene otros miembros.</h2>
+        </div>
+      ) : (
+        <ul className="members-list">
+          {members.map((memberItem) => (
+            <li key={memberItem.id}>
+              <div>
+                <strong>{memberItem.name}</strong>
+                <span>{memberItem.email}</span>
+              </div>
+              <span className="application-status">{formatWorkspaceRole(memberItem.role)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 export function formatWorkspaceRole(role: string): string {
   switch (role) {
@@ -67,7 +167,10 @@ function DashboardShell({
   loadingWorkspaces = false,
   workspacesError = "",
   switchingWorkspace = false,
+  activeView = "applications",
+  membersDisabled = false,
   onSelectWorkspace,
+  onViewChange,
   onRetryWorkspaces,
   onCreateWorkspace,
 }: {
@@ -78,13 +181,21 @@ function DashboardShell({
   loadingWorkspaces?: boolean;
   workspacesError?: string;
   switchingWorkspace?: boolean;
+  activeView?: DashboardView;
+  membersDisabled?: boolean;
   onSelectWorkspace?: (id: string) => void;
+  onViewChange?: (view: DashboardView) => void;
   onRetryWorkspaces?: () => void;
   onCreateWorkspace?: () => void;
 }) {
   return (
     <SidebarProvider>
-      <AppSidebar workspaceName={workspaceName} />
+      <AppSidebar
+        workspaceName={workspaceName}
+        activeView={activeView}
+        membersDisabled={membersDisabled}
+        onViewChange={onViewChange}
+      />
       <SidebarInset>
         <header className="flex min-h-15 items-center justify-between border-b px-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -230,6 +341,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [workspaceError, setWorkspaceError] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [view, setView] = useState<DashboardView>("applications");
   const [selected, setSelected] = useState<Application | null>(null);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -575,9 +687,12 @@ export default function Dashboard({ userName }: { userName: string }) {
           loadingWorkspaces={loadingWorkspaces}
           workspacesError={workspacesError}
           switchingWorkspace={switchingWorkspace}
+          activeView={view}
           onSelectWorkspace={switchWorkspace}
+          onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -610,9 +725,12 @@ export default function Dashboard({ userName }: { userName: string }) {
           loadingWorkspaces={loadingWorkspaces}
           workspacesError={workspacesError}
           switchingWorkspace={switchingWorkspace}
+          activeView={view}
           onSelectWorkspace={switchWorkspace}
+          onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -645,9 +763,12 @@ export default function Dashboard({ userName }: { userName: string }) {
           loadingWorkspaces={loadingWorkspaces}
           workspacesError={workspacesError}
           switchingWorkspace={switchingWorkspace}
+          activeView={view}
           onSelectWorkspace={switchWorkspace}
+          onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -679,9 +800,12 @@ export default function Dashboard({ userName }: { userName: string }) {
         loadingWorkspaces={loadingWorkspaces}
         workspacesError={workspacesError}
         switchingWorkspace={switchingWorkspace}
+        activeView={view}
         onSelectWorkspace={switchWorkspace}
+        onViewChange={setView}
         onRetryWorkspaces={loadWorkspaces}
         onCreateWorkspace={openCreateWorkspace}
+        membersDisabled={!workspace || workspaceMissing}
       >
         <main className="applications-page">
           <div className="applications-empty">
@@ -710,106 +834,119 @@ export default function Dashboard({ userName }: { userName: string }) {
       loadingWorkspaces={loadingWorkspaces}
       workspacesError={workspacesError}
       switchingWorkspace={switchingWorkspace}
+      activeView={view}
       onSelectWorkspace={switchWorkspace}
+      onViewChange={setView}
       onRetryWorkspaces={loadWorkspaces}
       onCreateWorkspace={openCreateWorkspace}
+      membersDisabled={!workspace || workspaceMissing}
     >
       <main className="applications-page">
-        <header className="applications-header">
-          <div>
-            <p>{workspace?.name ?? "Cargando workspace…"}</p>
-            <h1>{selected ? selected.name : "Aplicaciones"}</h1>
-          </div>
-          {!selected && canManage && (
-            <Button onClick={openCreate}>
-              <IconCirclePlus />
-              Nueva aplicación
-            </Button>
-          )}
-        </header>
-        {selected ? (
-          <section className="application-detail" aria-live="polite">
-            <Button variant="ghost" onClick={() => setSelected(null)}>
-              <IconArrowLeft />
-              Aplicaciones
-            </Button>
-            <div className="detail-heading">
-              <div>
-                <span>ID de aplicación</span>
-                <code>{selected.id}</code>
-              </div>
-              <span className="application-status">
-                {selected.status === "active" ? "Activa" : "Archivada"}
-              </span>
-            </div>
-            {canManage && (
-              <Button variant="outline" onClick={openRename}>
-                <IconPencil />
-                Editar nombre
-              </Button>
-            )}
-            {canManage && selected.status === "active" && (
-              <Button variant="outline" onClick={() => archiveDialog.current?.showModal()}>
-                <IconArchive />
-                Archivar aplicación
-              </Button>
-            )}
-            <div className="application-sections">
-              <section>
-                <h2>Workflows</h2>
-                <p>Aún no hay workflows configurados.</p>
-              </section>
-              <section>
-                <h2>Modelos</h2>
-                <p>Aún no hay modelos configurados.</p>
-              </section>
-              <section>
-                <h2>Credenciales SDK</h2>
-                <p>Las credenciales no se muestran aquí.</p>
-              </section>
-              <section>
-                <h2>Datasets</h2>
-                <p>Aún no hay datasets configurados.</p>
-              </section>
-              <section>
-                <h2>Telemetría</h2>
-                <p>La telemetría estará disponible cuando la aplicación la configure.</p>
-              </section>
-            </div>
-          </section>
+        {view === "members" && workspace ? (
+          <MembersPanel
+            key={workspace.id}
+            workspaceId={workspace.id}
+            workspaceName={workspace?.name ?? ""}
+          />
         ) : (
-          <section className="applications-list" aria-live="polite">
-            {loading ? (
-              <p>Cargando aplicaciones…</p>
-            ) : error ? (
-              <div className="applications-error">
-                <p>{error}</p>
-                <Button variant="outline" onClick={() => void loadApplications(workspace?.id)}>
-                  <IconRefresh />
-                  Reintentar
+          <>
+            <header className="applications-header">
+              <div>
+                <p>{workspace?.name ?? "Cargando workspace…"}</p>
+                <h1>{selected ? selected.name : "Aplicaciones"}</h1>
+              </div>
+              {!selected && canManage && (
+                <Button onClick={openCreate}>
+                  <IconCirclePlus />
+                  Nueva aplicación
                 </Button>
-              </div>
-            ) : applications.length === 0 ? (
-              <div className="applications-empty">
-                <h2>Aún no hay aplicaciones en este workspace.</h2>
-                {canManage && <Button onClick={openCreate}>Crear aplicación</Button>}
-              </div>
+              )}
+            </header>
+            {selected ? (
+              <section className="application-detail" aria-live="polite">
+                <Button variant="ghost" onClick={() => setSelected(null)}>
+                  <IconArrowLeft />
+                  Aplicaciones
+                </Button>
+                <div className="detail-heading">
+                  <div>
+                    <span>ID de aplicación</span>
+                    <code>{selected.id}</code>
+                  </div>
+                  <span className="application-status">
+                    {selected.status === "active" ? "Activa" : "Archivada"}
+                  </span>
+                </div>
+                {canManage && (
+                  <Button variant="outline" onClick={openRename}>
+                    <IconPencil />
+                    Editar nombre
+                  </Button>
+                )}
+                {canManage && selected.status === "active" && (
+                  <Button variant="outline" onClick={() => archiveDialog.current?.showModal()}>
+                    <IconArchive />
+                    Archivar aplicación
+                  </Button>
+                )}
+                <div className="application-sections">
+                  <section>
+                    <h2>Workflows</h2>
+                    <p>Aún no hay workflows configurados.</p>
+                  </section>
+                  <section>
+                    <h2>Modelos</h2>
+                    <p>Aún no hay modelos configurados.</p>
+                  </section>
+                  <section>
+                    <h2>Credenciales SDK</h2>
+                    <p>Las credenciales no se muestran aquí.</p>
+                  </section>
+                  <section>
+                    <h2>Datasets</h2>
+                    <p>Aún no hay datasets configurados.</p>
+                  </section>
+                  <section>
+                    <h2>Telemetría</h2>
+                    <p>La telemetría estará disponible cuando la aplicación la configure.</p>
+                  </section>
+                </div>
+              </section>
             ) : (
-              <ul>
-                {applications.map((application) => (
-                  <li key={application.id}>
-                    <button type="button" onClick={() => void openApplication(application.id)}>
-                      <strong>{application.name}</strong>
-                      <code>{application.id}</code>
-                    </button>
-                    <span className="application-status">
-                      {application.status === "active" ? "Activa" : "Archivada"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <section className="applications-list" aria-live="polite">
+                {loading ? (
+                  <p>Cargando aplicaciones…</p>
+                ) : error ? (
+                  <div className="applications-error">
+                    <p>{error}</p>
+                    <Button variant="outline" onClick={() => void loadApplications(workspace?.id)}>
+                      <IconRefresh />
+                      Reintentar
+                    </Button>
+                  </div>
+                ) : applications.length === 0 ? (
+                  <div className="applications-empty">
+                    <h2>Aún no hay aplicaciones en este workspace.</h2>
+                    {canManage && <Button onClick={openCreate}>Crear aplicación</Button>}
+                  </div>
+                ) : (
+                  <ul>
+                    {applications.map((application) => (
+                      <li key={application.id}>
+                        <button type="button" onClick={() => void openApplication(application.id)}>
+                          <strong>{application.name}</strong>
+                          <code>{application.id}</code>
+                        </button>
+                        <span className="application-status">
+                          {application.status === "active" ? "Activa" : "Archivada"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             )}
-          </section>
+          </>
         )}
         <dialog ref={dialog} className="application-dialog" onClose={() => setName("")}>
           <form onSubmit={selected ? renameApplication : createApplication}>
