@@ -448,7 +448,7 @@ describe("Dashboard", () => {
     });
   });
 
-  it("displays error toast when switching workspace fails and restores selector", async () => {
+  it("displays error toast and restores applications when switching workspace fails", async () => {
     authOrgMock.setActive.mockResolvedValueOnce({
       error: { message: "No eres miembro de este workspace" },
     });
@@ -462,6 +462,11 @@ describe("Dashboard", () => {
           ],
         };
       }
+      if (url === "/organizations/org-1/applications") {
+        return {
+          data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }],
+        };
+      }
       return { data: [] };
     });
 
@@ -470,6 +475,8 @@ describe("Dashboard", () => {
         <Dashboard userName="Diego" />
       </TooltipProvider>,
     );
+
+    expect(await screen.findByRole("button", { name: /cámara/i })).toBeTruthy();
 
     const selectorTrigger = screen.getByTestId("workspace-selector-trigger");
     fireEvent.click(selectorTrigger);
@@ -488,6 +495,8 @@ describe("Dashboard", () => {
         false,
       );
     });
+
+    expect(await screen.findByRole("button", { name: /cámara/i })).toBeTruthy();
   });
 
   it("displays 'Aún no perteneces a ningún workspace.' and create workspace action when user has no workspaces", async () => {
@@ -515,5 +524,111 @@ describe("Dashboard", () => {
       fireEvent.click(createButton);
     }
     expect(screen.getByRole("dialog", { name: "Crear workspace" })).toBeTruthy();
+  });
+
+  it("ignores application detail responses from a previous workspace if workspace changes while loading", async () => {
+    let resolveDetail: (value: { data: unknown }) => void = () => {};
+    client.get.mockImplementation((url: string) => {
+      if (url === "/workspaces") {
+        return Promise.resolve({
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+            { id: "org-2", name: "Nuevo Workspace", slug: "nuevo-workspace", role: "admin" },
+          ],
+        });
+      }
+      if (url === "/organizations/org-1/applications") {
+        return Promise.resolve({
+          data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }],
+        });
+      }
+      if (url === "/applications/app-1") {
+        return new Promise((resolve) => {
+          resolveDetail = resolve;
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: /cámara/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /cámara/i }));
+
+    activeOrgRef.current = { id: "org-2", name: "Nuevo Workspace" };
+    rerender(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    resolveDetail({
+      data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("ID de aplicación")).toBeNull();
+  });
+
+  it("displays 'Cargando workspace…' while workspaces are loading and does not show empty state prematurely", async () => {
+    activeOrgRef.current = null;
+    let resolveWorkspaces: (value: { data: unknown }) => void = () => {};
+    client.get.mockImplementation((url: string) => {
+      if (url === "/workspaces") {
+        return new Promise((resolve) => {
+          resolveWorkspaces = resolve;
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByText("Aún no perteneces a ningún workspace.")).toBeNull();
+    expect(screen.getAllByText("Cargando workspace…").length).toBeGreaterThanOrEqual(1);
+
+    resolveWorkspaces({ data: [] });
+    expect(
+      (await screen.findAllByText("Aún no perteneces a ningún workspace.")).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("displays error message and retry button when workspaces fail to load, and retries on click", async () => {
+    activeOrgRef.current = null;
+    let attempt = 0;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        attempt++;
+        if (attempt === 1) {
+          throw new Error("Network error");
+        }
+        return { data: [{ id: "org-1", name: "BioTec", slug: "biotec", role: "owner" }] };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByText(/No pudimos cargar los workspaces/i)).toBeTruthy();
+    const retryBtn = screen.getByRole("button", { name: /reintentar/i });
+    expect(retryBtn).toBeTruthy();
+
+    fireEvent.click(retryBtn);
+
+    const selectorTrigger = await screen.findByTestId("workspace-selector-trigger");
+    fireEvent.click(selectorTrigger);
+    expect(await screen.findByText("BioTec")).toBeTruthy();
   });
 });

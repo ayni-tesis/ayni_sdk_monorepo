@@ -64,16 +64,22 @@ function DashboardShell({
   userName,
   workspaceName,
   workspaces = [],
+  loadingWorkspaces = false,
+  workspacesError = "",
   switchingWorkspace = false,
   onSelectWorkspace,
+  onRetryWorkspaces,
   onCreateWorkspace,
 }: {
   children: React.ReactNode;
   userName: string;
   workspaceName?: string;
   workspaces?: WorkspaceItem[];
+  loadingWorkspaces?: boolean;
+  workspacesError?: string;
   switchingWorkspace?: boolean;
   onSelectWorkspace?: (id: string) => void;
+  onRetryWorkspaces?: () => void;
   onCreateWorkspace?: () => void;
 }) {
   return (
@@ -101,13 +107,23 @@ function DashboardShell({
                   <span className="truncate">
                     {switchingWorkspace
                       ? "Cambiando workspace…"
-                      : workspaces.length === 0
-                        ? "Aún no perteneces a ningún workspace."
-                        : (workspaceName ?? "Cargando workspace…")}
+                      : loadingWorkspaces
+                        ? "Cargando workspace…"
+                        : workspacesError
+                          ? "Error al cargar workspaces"
+                          : workspaces.length === 0
+                            ? "Aún no perteneces a ningún workspace."
+                            : (workspaceName ?? "Cargando workspace…")}
                   </span>
                   <IconChevronDown className="size-4 opacity-50" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
+                  {workspacesError && onRetryWorkspaces && (
+                    <DropdownMenuItem onClick={onRetryWorkspaces}>
+                      <IconRefresh className="mr-2 size-4" />
+                      <span>Reintentar</span>
+                    </DropdownMenuItem>
+                  )}
                   {workspaces.map((ws) => (
                     <DropdownMenuItem
                       key={ws.id}
@@ -207,6 +223,8 @@ export default function Dashboard({ userName }: { userName: string }) {
   const archiveDialog = useRef<HTMLDialogElement>(null);
   const workspaceDialog = useRef<HTMLDialogElement>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [workspacesError, setWorkspacesError] = useState("");
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
@@ -226,11 +244,17 @@ export default function Dashboard({ userName }: { userName: string }) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
+    setLoadingWorkspaces(true);
+    setWorkspacesError("");
     try {
       const { data } = await httpClient.get<WorkspaceItem[]>("/workspaces");
       setWorkspaces(data);
-    } catch {
-      // Keep current state
+    } catch (err) {
+      setWorkspacesError(
+        errorMessage(err, "No pudimos cargar los workspaces. Inténtalo de nuevo."),
+      );
+    } finally {
+      setLoadingWorkspaces(false);
     }
   }, []);
 
@@ -247,9 +271,11 @@ export default function Dashboard({ userName }: { userName: string }) {
       const res = await authClient.organization.setActive({ organizationId });
       if (res?.error) {
         toast.error("No pudimos cambiar el workspace. Inténtalo de nuevo.");
+        void loadApplications(workspace?.id);
       }
     } catch {
       toast.error("No pudimos cambiar el workspace. Inténtalo de nuevo.");
+      void loadApplications(workspace?.id);
     } finally {
       setSwitchingWorkspace(false);
     }
@@ -445,23 +471,104 @@ export default function Dashboard({ userName }: { userName: string }) {
   }
 
   async function openApplication(id: string) {
+    const orgId = activeWorkspaceIdRef.current;
     try {
       const { data } = await httpClient.get<Application>(`/applications/${id}`);
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        data.organizationId !== activeWorkspaceIdRef.current
+      ) {
+        return;
+      }
       setSelected(data);
     } catch (detailError) {
+      if (activeWorkspaceIdRef.current !== orgId) return;
       toast.error(
         errorMessage(detailError, "No pudimos cargar la aplicación. Inténtalo nuevamente."),
       );
     }
   }
 
-  if (!workspace && !organization.isPending)
+  if (!workspace && !organization.isPending) {
+    if (loadingWorkspaces) {
+      return (
+        <DashboardShell
+          userName={userName}
+          workspaces={workspaces}
+          loadingWorkspaces={loadingWorkspaces}
+          workspacesError={workspacesError}
+          switchingWorkspace={switchingWorkspace}
+          onSelectWorkspace={switchWorkspace}
+          onRetryWorkspaces={loadWorkspaces}
+          onCreateWorkspace={openCreateWorkspace}
+        >
+          <main className="applications-page">
+            <div className="applications-empty">
+              <h1>Aplicaciones</h1>
+              <p>Cargando workspace…</p>
+              <Button data-testid="create-workspace-trigger" onClick={openCreateWorkspace}>
+                <IconCirclePlus />
+                Crear workspace
+              </Button>
+            </div>
+          </main>
+          <CreateWorkspaceDialog
+            dialogRef={workspaceDialog}
+            workspaceName={newWorkspaceName}
+            setWorkspaceName={setNewWorkspaceName}
+            workspaceError={workspaceError}
+            setWorkspaceError={setWorkspaceError}
+            creatingWorkspace={creatingWorkspace}
+            onSubmit={createWorkspace}
+          />
+        </DashboardShell>
+      );
+    }
+
+    if (workspacesError) {
+      return (
+        <DashboardShell
+          userName={userName}
+          workspaces={workspaces}
+          loadingWorkspaces={loadingWorkspaces}
+          workspacesError={workspacesError}
+          switchingWorkspace={switchingWorkspace}
+          onSelectWorkspace={switchWorkspace}
+          onRetryWorkspaces={loadWorkspaces}
+          onCreateWorkspace={openCreateWorkspace}
+        >
+          <main className="applications-page">
+            <div className="applications-empty">
+              <h1>Aplicaciones</h1>
+              <p>{workspacesError}</p>
+              <Button onClick={loadWorkspaces}>
+                <IconRefresh />
+                Reintentar
+              </Button>
+            </div>
+          </main>
+          <CreateWorkspaceDialog
+            dialogRef={workspaceDialog}
+            workspaceName={newWorkspaceName}
+            setWorkspaceName={setNewWorkspaceName}
+            workspaceError={workspaceError}
+            setWorkspaceError={setWorkspaceError}
+            creatingWorkspace={creatingWorkspace}
+            onSubmit={createWorkspace}
+          />
+        </DashboardShell>
+      );
+    }
+
     return (
       <DashboardShell
         userName={userName}
         workspaces={workspaces}
+        loadingWorkspaces={loadingWorkspaces}
+        workspacesError={workspacesError}
         switchingWorkspace={switchingWorkspace}
         onSelectWorkspace={switchWorkspace}
+        onRetryWorkspaces={loadWorkspaces}
         onCreateWorkspace={openCreateWorkspace}
       >
         <main className="applications-page">
@@ -485,14 +592,18 @@ export default function Dashboard({ userName }: { userName: string }) {
         />
       </DashboardShell>
     );
+  }
 
   return (
     <DashboardShell
       userName={userName}
       workspaceName={workspace?.name}
       workspaces={workspaces}
+      loadingWorkspaces={loadingWorkspaces}
+      workspacesError={workspacesError}
       switchingWorkspace={switchingWorkspace}
       onSelectWorkspace={switchWorkspace}
+      onRetryWorkspaces={loadWorkspaces}
       onCreateWorkspace={openCreateWorkspace}
     >
       <main className="applications-page">
