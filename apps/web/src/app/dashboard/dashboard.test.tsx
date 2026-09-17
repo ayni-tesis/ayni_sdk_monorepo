@@ -526,6 +526,29 @@ describe("Dashboard", () => {
     expect(screen.getByRole("dialog", { name: "Crear workspace" })).toBeTruthy();
   });
 
+  it("guides the user to select an active workspace when workspaces exist but none is active", async () => {
+    activeOrgRef.current = null;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByText(/no tienes un workspace activo/i)).toBeTruthy();
+    expect(screen.queryByText("Aún no perteneces a ningún workspace.")).toBeNull();
+  });
+
   it("ignores application detail responses from a previous workspace if workspace changes while loading", async () => {
     let resolveDetail: (value: { data: unknown }) => void = () => {};
     client.get.mockImplementation((url: string) => {
@@ -630,5 +653,122 @@ describe("Dashboard", () => {
     const selectorTrigger = await screen.findByTestId("workspace-selector-trigger");
     fireEvent.click(selectorTrigger);
     expect(await screen.findByText("BioTec")).toBeTruthy();
+  });
+
+  it("ignores application creation responses from a previous workspace if workspace changes while in-flight", async () => {
+    let resolvePost: (value: { data: unknown }) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePost = resolve;
+      }),
+    );
+
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+            { id: "org-2", name: "Nuevo Workspace", slug: "nuevo-workspace", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-2/applications") {
+        return { data: [] };
+      }
+      return { data: [] };
+    });
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    const newAppBtn = await screen.findByRole("button", { name: /nueva aplicación/i });
+    fireEvent.click(newAppBtn);
+
+    const input = screen.getByLabelText("Nombre de la aplicación");
+    fireEvent.change(input, { target: { value: "Sensor" } });
+    const form = input.closest("form");
+    expect(form).toBeTruthy();
+    if (form) {
+      fireEvent.submit(form);
+    }
+    expect(client.post).toHaveBeenCalledWith("/organizations/org-1/applications", {
+      name: "Sensor",
+    });
+
+    activeOrgRef.current = { id: "org-2", name: "Nuevo Workspace" };
+    rerender(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    resolvePost({
+      data: { id: "app-new", organizationId: "org-1", name: "Sensor", status: "active" },
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("app-new")).toBeNull();
+  });
+
+  it("ignores older concurrent loadWorkspaces responses when a newer request is in-flight", async () => {
+    activeOrgRef.current = null;
+    let resolveFirst: (value: { data: unknown }) => void = () => {};
+    let resolveSecond: (value: { data: unknown }) => void = () => {};
+    let count = 0;
+
+    authOrgMock.create.mockResolvedValue({
+      data: { id: "org-2", name: "BioTec" },
+    });
+    authOrgMock.setActive.mockResolvedValue({});
+
+    client.get.mockImplementation((url: string) => {
+      if (url === "/workspaces") {
+        count++;
+        if (count === 1) {
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return new Promise((resolve) => {
+          resolveSecond = resolve;
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    const openCreateBtn = screen.getByTestId("create-workspace-trigger");
+    fireEvent.click(openCreateBtn);
+
+    const nameInput = screen.getByLabelText("Nombre del workspace");
+    fireEvent.change(nameInput, { target: { value: "BioTec" } });
+    const submitBtn = screen.getByTestId("create-workspace-submit");
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => expect(count).toBe(2));
+
+    resolveSecond({
+      data: [{ id: "org-2", name: "BioTec", slug: "biotec", role: "owner" }],
+    });
+
+    const selectorTrigger = await screen.findByTestId("workspace-selector-trigger");
+    fireEvent.click(selectorTrigger);
+    expect(await screen.findByText("BioTec")).toBeTruthy();
+
+    resolveFirst({ data: [] });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText("BioTec")).toBeTruthy();
   });
 });

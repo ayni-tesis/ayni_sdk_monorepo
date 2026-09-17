@@ -242,24 +242,38 @@ export default function Dashboard({ userName }: { userName: string }) {
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
   const abortControllerRef = useRef<AbortController | null>(null);
+  const workspacesAbortRef = useRef<AbortController | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
+    workspacesAbortRef.current?.abort();
+    const controller = new AbortController();
+    workspacesAbortRef.current = controller;
+
     setLoadingWorkspaces(true);
     setWorkspacesError("");
     try {
-      const { data } = await httpClient.get<WorkspaceItem[]>("/workspaces");
+      const { data } = await httpClient.get<WorkspaceItem[]>("/workspaces", {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setWorkspaces(data);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setWorkspacesError(
         errorMessage(err, "No pudimos cargar los workspaces. Inténtalo de nuevo."),
       );
     } finally {
-      setLoadingWorkspaces(false);
+      if (!controller.signal.aborted) {
+        setLoadingWorkspaces(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadWorkspaces();
+    return () => {
+      workspacesAbortRef.current?.abort();
+    };
   }, [loadWorkspaces]);
 
   async function switchWorkspace(organizationId: string) {
@@ -400,45 +414,55 @@ export default function Dashboard({ userName }: { userName: string }) {
   async function createApplication(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!workspace) return;
+    const orgId = activeWorkspaceIdRef.current;
     setSaving(true);
     try {
       const { data } = await httpClient.post<Application>(
         `/organizations/${workspace.id}/applications`,
         { name },
       );
+      if (activeWorkspaceIdRef.current !== orgId) return;
       setApplications((items) => [...items, data]);
       setSelected(data);
       setName("");
       dialog.current?.close();
       toast.success("Aplicación creada.");
     } catch (createError) {
+      if (activeWorkspaceIdRef.current !== orgId) return;
       toast.error(
         errorMessage(createError, "No pudimos crear la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      setSaving(false);
+      if (activeWorkspaceIdRef.current === orgId) {
+        setSaving(false);
+      }
     }
   }
 
   async function renameApplication(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
+    const orgId = activeWorkspaceIdRef.current;
     setSaving(true);
     try {
       const { data } = await httpClient.patch<Application>(`/applications/${selected.id}`, {
         name,
       });
+      if (activeWorkspaceIdRef.current !== orgId) return;
       setApplications((items) => items.map((item) => (item.id === data.id ? data : item)));
       setSelected(data);
       setName("");
       dialog.current?.close();
       toast.success("Nombre actualizado.");
     } catch (renameError) {
+      if (activeWorkspaceIdRef.current !== orgId) return;
       toast.error(
         errorMessage(renameError, "No pudimos actualizar la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      setSaving(false);
+      if (activeWorkspaceIdRef.current === orgId) {
+        setSaving(false);
+      }
     }
   }
 
@@ -454,19 +478,24 @@ export default function Dashboard({ userName }: { userName: string }) {
   async function archiveApplication(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
+    const orgId = activeWorkspaceIdRef.current;
     setArchiving(true);
     try {
       const { data } = await httpClient.post<Application>(`/applications/${selected.id}/archive`);
+      if (activeWorkspaceIdRef.current !== orgId) return;
       setApplications((items) => items.filter((item) => item.id !== data.id));
       setSelected(data);
       archiveDialog.current?.close();
       toast.success("Aplicación archivada.");
     } catch (archiveError) {
+      if (activeWorkspaceIdRef.current !== orgId) return;
       toast.error(
         errorMessage(archiveError, "No pudimos archivar la aplicación. Inténtalo nuevamente."),
       );
     } finally {
-      setArchiving(false);
+      if (activeWorkspaceIdRef.current === orgId) {
+        setArchiving(false);
+      }
     }
   }
 
@@ -560,6 +589,41 @@ export default function Dashboard({ userName }: { userName: string }) {
       );
     }
 
+    if (workspaces.length === 0) {
+      return (
+        <DashboardShell
+          userName={userName}
+          workspaces={workspaces}
+          loadingWorkspaces={loadingWorkspaces}
+          workspacesError={workspacesError}
+          switchingWorkspace={switchingWorkspace}
+          onSelectWorkspace={switchWorkspace}
+          onRetryWorkspaces={loadWorkspaces}
+          onCreateWorkspace={openCreateWorkspace}
+        >
+          <main className="applications-page">
+            <div className="applications-empty">
+              <h1>Aplicaciones</h1>
+              <p>Aún no perteneces a ningún workspace.</p>
+              <Button data-testid="create-workspace-trigger" onClick={openCreateWorkspace}>
+                <IconCirclePlus />
+                Crear workspace
+              </Button>
+            </div>
+          </main>
+          <CreateWorkspaceDialog
+            dialogRef={workspaceDialog}
+            workspaceName={newWorkspaceName}
+            setWorkspaceName={setNewWorkspaceName}
+            workspaceError={workspaceError}
+            setWorkspaceError={setWorkspaceError}
+            creatingWorkspace={creatingWorkspace}
+            onSubmit={createWorkspace}
+          />
+        </DashboardShell>
+      );
+    }
+
     return (
       <DashboardShell
         userName={userName}
@@ -574,11 +638,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         <main className="applications-page">
           <div className="applications-empty">
             <h1>Aplicaciones</h1>
-            <p>Aún no perteneces a ningún workspace.</p>
-            <Button data-testid="create-workspace-trigger" onClick={openCreateWorkspace}>
-              <IconCirclePlus />
-              Crear workspace
-            </Button>
+            <p>No tienes un workspace activo. Selecciona un workspace para comenzar.</p>
           </div>
         </main>
         <CreateWorkspaceDialog
