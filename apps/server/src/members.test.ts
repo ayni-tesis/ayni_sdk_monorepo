@@ -7,7 +7,7 @@ describe("GET /organizations/:organizationId/members", () => {
       getSession: async () => null,
       members: {
         getMembership: async () => undefined,
-        list: async () => [],
+        listOthers: async () => [],
       },
     });
 
@@ -26,7 +26,7 @@ describe("GET /organizations/:organizationId/members", () => {
       getSession: async () => ({ user: { id: "user-outside" } }),
       members: {
         getMembership: async () => undefined,
-        list: async () => {
+        listOthers: async () => {
           throw new Error("must not be queried for non-members");
         },
       },
@@ -42,10 +42,10 @@ describe("GET /organizations/:organizationId/members", () => {
     });
   });
 
-  it("returns members with name, email and role for workspace members", async () => {
+  it("returns other members with name, email and role for workspace members", async () => {
     const mockMembers = [
-      { id: "member-1", name: "Diego Salas", email: "diego@biotec.io", role: "owner" },
-      { id: "member-2", name: "Ana Rojas", email: "ana@biotec.io", role: "member" },
+      { id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "owner" },
+      { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
     ];
 
     const app = createMembersApp({
@@ -55,8 +55,8 @@ describe("GET /organizations/:organizationId/members", () => {
           if (userId === "user-123" && organizationId === "org-1") return "member";
           return undefined;
         },
-        list: async (organizationId) => {
-          if (organizationId === "org-1") return mockMembers;
+        listOthers: async (userId, organizationId) => {
+          if (userId === "user-123" && organizationId === "org-1") return mockMembers;
           return [];
         },
       },

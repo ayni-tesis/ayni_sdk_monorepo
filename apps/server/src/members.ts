@@ -11,7 +11,7 @@ export type MembersDependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   members: {
     getMembership: (userId: string, organizationId: string) => Promise<string | undefined>;
-    list: (organizationId: string) => Promise<MemberItem[]>;
+    listOthers: (userId: string, organizationId: string) => Promise<MemberItem[]>;
   };
 };
 
@@ -27,7 +27,7 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
       return c.json({ message: "No tienes acceso a este workspace." }, 403);
     }
 
-    return c.json(await members.list(organizationId));
+    return c.json(await members.listOthers(session.user.id, organizationId));
   });
 
   return app;

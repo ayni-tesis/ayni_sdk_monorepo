@@ -10,7 +10,7 @@ import { application, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -88,7 +88,7 @@ const workspaces = {
 
 const members = {
   getMembership: applications.getMembership,
-  async list(organizationId: string): Promise<MemberItem[]> {
+  async listOthers(userId: string, organizationId: string): Promise<MemberItem[]> {
     return db
       .select({
         id: member.id,
@@ -98,7 +98,7 @@ const members = {
       })
       .from(member)
       .innerJoin(user, eq(member.userId, user.id))
-      .where(eq(member.organizationId, organizationId))
+      .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
       .orderBy(asc(member.createdAt));
   },
 };

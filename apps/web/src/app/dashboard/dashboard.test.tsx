@@ -917,8 +917,8 @@ describe("Dashboard", () => {
       if (url === "/organizations/org-1/members") {
         return {
           data: [
-            { id: "member-1", name: "Diego Salas", email: "diego@biotec.io", role: "owner" },
-            { id: "member-2", name: "Ana Rojas", email: "ana@biotec.io", role: "member" },
+            { id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "owner" },
+            { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
           ],
         };
       }
@@ -933,11 +933,11 @@ describe("Dashboard", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
 
-    expect(await screen.findByText("Diego Salas")).toBeTruthy();
-    expect(screen.getByText("diego@biotec.io")).toBeTruthy();
-    expect(screen.getByText("Propietario")).toBeTruthy();
-    expect(screen.getByText("Ana Rojas")).toBeTruthy();
+    expect(await screen.findByText("Ana Rojas")).toBeTruthy();
     expect(screen.getByText("ana@biotec.io")).toBeTruthy();
+    expect(screen.getByText("Propietario")).toBeTruthy();
+    expect(screen.getByText("Luis Pérez")).toBeTruthy();
+    expect(screen.getByText("luis@biotec.io")).toBeTruthy();
     expect(screen.getByText("Miembro")).toBeTruthy();
   });
 

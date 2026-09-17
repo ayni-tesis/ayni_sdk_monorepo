@@ -39,6 +39,15 @@ function errorMessage(error: unknown, fallback: string) {
     : fallback;
 }
 
+function membersErrorMessage(error: unknown) {
+  const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
+  if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
+  if (error.response?.status === 403) {
+    return error.response.data?.message ?? fallback;
+  }
+  return fallback;
+}
+
 export type WorkspaceItem = {
   id: string;
   name: string;
@@ -53,7 +62,13 @@ type MemberItem = {
   role: string;
 };
 
-function MembersPanel({ workspaceId }: { workspaceId: string }) {
+function MembersPanel({
+  workspaceId,
+  workspaceName,
+}: {
+  workspaceId: string;
+  workspaceName: string;
+}) {
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -77,7 +92,7 @@ function MembersPanel({ workspaceId }: { workspaceId: string }) {
       setMembers(data);
     } catch (loadError) {
       if (controller.signal.aborted || workspaceIdRef.current !== organizationId) return;
-      setError(errorMessage(loadError, "No pudimos cargar los miembros. Inténtalo de nuevo."));
+      setError(membersErrorMessage(loadError));
     } finally {
       if (!controller.signal.aborted && workspaceIdRef.current === organizationId) {
         setLoading(false);
@@ -96,7 +111,7 @@ function MembersPanel({ workspaceId }: { workspaceId: string }) {
     <section className="members-section" aria-live="polite">
       <header className="applications-header">
         <div>
-          <p>Personas con acceso a este workspace</p>
+          <p>{workspaceName}</p>
           <h1>Miembros</h1>
         </div>
       </header>
@@ -820,7 +835,7 @@ export default function Dashboard({ userName }: { userName: string }) {
     >
       <main className="applications-page">
         {view === "members" && workspace ? (
-          <MembersPanel workspaceId={workspace.id} />
+          <MembersPanel workspaceId={workspace.id} workspaceName={workspace?.name ?? ""} />
         ) : (
           <>
             <header className="applications-header">
