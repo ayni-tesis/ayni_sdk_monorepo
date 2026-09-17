@@ -1,9 +1,9 @@
 import "@ayni/env/web";
-import type { NextConfig } from "next";
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { NextConfig } from "next";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(appDir, "../..");
