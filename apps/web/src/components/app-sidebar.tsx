@@ -20,10 +20,12 @@ export type DashboardView = "applications" | "members";
 export function AppSidebar({
   workspaceName,
   activeView = "applications",
+  membersDisabled = false,
   onViewChange,
 }: {
   workspaceName?: string;
   activeView?: DashboardView;
+  membersDisabled?: boolean;
   onViewChange?: (view: DashboardView) => void;
 }) {
   return (
@@ -57,7 +59,10 @@ export function AppSidebar({
               <SidebarMenuButton
                 isActive={activeView === "members"}
                 tooltip="Miembros"
-                onClick={() => onViewChange?.("members")}
+                disabled={membersDisabled}
+                onClick={() => {
+                  if (!membersDisabled) onViewChange?.("members");
+                }}
               >
                 <IconUsers />
                 <span>Miembros</span>

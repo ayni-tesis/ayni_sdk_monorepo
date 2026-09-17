@@ -168,6 +168,7 @@ function DashboardShell({
   workspacesError = "",
   switchingWorkspace = false,
   activeView = "applications",
+  membersDisabled = false,
   onSelectWorkspace,
   onViewChange,
   onRetryWorkspaces,
@@ -181,6 +182,7 @@ function DashboardShell({
   workspacesError?: string;
   switchingWorkspace?: boolean;
   activeView?: DashboardView;
+  membersDisabled?: boolean;
   onSelectWorkspace?: (id: string) => void;
   onViewChange?: (view: DashboardView) => void;
   onRetryWorkspaces?: () => void;
@@ -191,6 +193,7 @@ function DashboardShell({
       <AppSidebar
         workspaceName={workspaceName}
         activeView={activeView}
+        membersDisabled={membersDisabled}
         onViewChange={onViewChange}
       />
       <SidebarInset>
@@ -689,6 +692,7 @@ export default function Dashboard({ userName }: { userName: string }) {
           onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -726,6 +730,7 @@ export default function Dashboard({ userName }: { userName: string }) {
           onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -763,6 +768,7 @@ export default function Dashboard({ userName }: { userName: string }) {
           onViewChange={setView}
           onRetryWorkspaces={loadWorkspaces}
           onCreateWorkspace={openCreateWorkspace}
+          membersDisabled={!workspace || workspaceMissing}
         >
           <main className="applications-page">
             <div className="applications-empty">
@@ -799,6 +805,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         onViewChange={setView}
         onRetryWorkspaces={loadWorkspaces}
         onCreateWorkspace={openCreateWorkspace}
+        membersDisabled={!workspace || workspaceMissing}
       >
         <main className="applications-page">
           <div className="applications-empty">
@@ -832,10 +839,15 @@ export default function Dashboard({ userName }: { userName: string }) {
       onViewChange={setView}
       onRetryWorkspaces={loadWorkspaces}
       onCreateWorkspace={openCreateWorkspace}
+      membersDisabled={!workspace || workspaceMissing}
     >
       <main className="applications-page">
         {view === "members" && workspace ? (
-          <MembersPanel workspaceId={workspace.id} workspaceName={workspace?.name ?? ""} />
+          <MembersPanel
+            key={workspace.id}
+            workspaceId={workspace.id}
+            workspaceName={workspace?.name ?? ""}
+          />
         ) : (
           <>
             <header className="applications-header">

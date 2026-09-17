@@ -902,6 +902,29 @@ describe("Dashboard", () => {
     expect(screen.queryByText("BioTec")).toBeTruthy();
   });
 
+  it("disables the members navigation while there is no active workspace", async () => {
+    activeOrgRef.current = null;
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    const membersBtn = await screen.findByRole("button", { name: /miembros/i });
+    expect(membersBtn.hasAttribute("disabled")).toBe(true);
+  });
+
   it("lists workspace members with their names, emails and roles in the members section", async () => {
     client.get.mockImplementation(async (url: string) => {
       if (url === "/workspaces") {
