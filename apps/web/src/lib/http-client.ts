@@ -7,6 +7,7 @@ export function createHttpClient(baseURL = serverBaseURL) {
   return axios.create({
     baseURL,
     headers: { "Content-Type": "application/json" },
+    withCredentials: true,
     timeout: 10_000,
   });
 }

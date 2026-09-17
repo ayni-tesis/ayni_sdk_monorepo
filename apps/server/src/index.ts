@@ -5,12 +5,76 @@ import {
   UnauthorizedResponseSchema,
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
+import { db } from "@ayni/db";
+import { application, member } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
+import { and, asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { type Application, createApp } from "./applications";
+
+export function toApplication(row: typeof application.$inferSelect): Application {
+  if (row.status !== "active" && row.status !== "archived") {
+    throw new Error(`Unsupported application status: ${String(row.status)}`);
+  }
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    name: row.name,
+    status: row.status,
+  };
+}
+
+const applications = {
+  async getMembership(userId: string, organizationId: string) {
+    const [membership] = await db
+      .select({ role: member.role })
+      .from(member)
+      .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
+      .limit(1);
+    return membership?.role;
+  },
+  async create({ organizationId, name }: Pick<Application, "organizationId" | "name">) {
+    const [created] = await db
+      .insert(application)
+      .values({ id: crypto.randomUUID(), organizationId, name })
+      .returning();
+    if (!created) throw new Error("Application creation returned no record");
+    return toApplication(created);
+  },
+  async list(organizationId: string) {
+    return (
+      await db
+        .select()
+        .from(application)
+        .where(eq(application.organizationId, organizationId))
+        .orderBy(asc(application.createdAt))
+    ).map(toApplication);
+  },
+  async get(id: string) {
+    const [found] = await db.select().from(application).where(eq(application.id, id)).limit(1);
+    return found && toApplication(found);
+  },
+  async rename(id: string, name: string) {
+    const [updated] = await db
+      .update(application)
+      .set({ name })
+      .where(eq(application.id, id))
+      .returning();
+    return updated && toApplication(updated);
+  },
+  async archive(id: string) {
+    const [updated] = await db
+      .update(application)
+      .set({ status: "archived" })
+      .where(eq(application.id, id))
+      .returning();
+    return updated && toApplication(updated);
+  },
+};
 
 const app = new Hono();
 
@@ -19,13 +83,20 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
 );
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+app.route(
+  "/",
+  createApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+  }),
+);
 
 const openApiApp = new OpenAPIHono();
 
