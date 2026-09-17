@@ -14,20 +14,10 @@ import { and, asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { type Application, createApp } from "./applications";
+import { type Application, createApp, toApplication } from "./applications";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
-export function toApplication(row: typeof application.$inferSelect): Application {
-  if (row.status !== "active" && row.status !== "archived") {
-    throw new Error(`Unsupported application status: ${String(row.status)}`);
-  }
-  return {
-    id: row.id,
-    organizationId: row.organizationId,
-    name: row.name,
-    status: row.status,
-  };
-}
+export { toApplication };
 
 const applications = {
   async getMembership(userId: string, organizationId: string) {
