@@ -5,9 +5,10 @@ import {
   IconArrowLeft,
   IconChevronDown,
   IconCirclePlus,
-  IconDotsVertical,
+  IconDots,
   IconPencil,
   IconRefresh,
+  IconTrash,
   IconUserPlus,
 } from "@tabler/icons-react";
 import axios from "axios";
@@ -156,6 +157,8 @@ function MembersPanel({
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [memberToRemove, setMemberToRemove] = useState<MemberItem | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberItem | null>(null);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"admin" | "member">("member");
@@ -198,6 +201,24 @@ function MembersPanel({
       abortControllerRef.current?.abort();
     };
   }, [workspaceId, loadMembers]);
+
+  async function removeMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!memberToRemove) return;
+    setRemoving(true);
+    try {
+      await httpClient.delete(`/organizations/${workspaceId}/members/${memberToRemove.id}`);
+      setMembers((items) => items.filter((item) => item.id !== memberToRemove.id));
+      setMemberToRemove(null);
+      toast.success("Miembro retirado.");
+    } catch (removeError) {
+      toast.error(
+        errorMessage(removeError, "No pudimos retirar al miembro. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRemoving(false);
+    }
+  }
 
   function openChangeRole(memberItem: MemberItem) {
     setSelectedMember(memberItem);
@@ -298,21 +319,27 @@ function MembersPanel({
                 {canManage && memberItem.role !== "owner" && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      data-testid={`member-menu-${memberItem.id}`}
                       render={
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8"
-                          aria-label={`Opciones de ${memberItem.name}`}
+                          data-testid={`member-menu-${memberItem.id}`}
+                          aria-label={`Acciones de ${memberItem.name}`}
                         >
-                          <IconDotsVertical className="size-4" />
+                          <IconDots />
                         </Button>
                       }
                     />
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => openChangeRole(memberItem)}>
                         Cambiar rol
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setMemberToRemove(memberItem)}
+                      >
+                        <IconTrash className="mr-2 size-4" />
+                        <span>Retirar miembro</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -322,6 +349,41 @@ function MembersPanel({
           ))}
         </ul>
       )}
+      <Dialog
+        open={memberToRemove !== null}
+        onOpenChange={(open) => {
+          if (!removing && !open) setMemberToRemove(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Retirar a este miembro del workspace?</DialogTitle>
+            <DialogDescription>
+              Perderá el acceso a las aplicaciones y recursos de este workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={removeMember} className="flex flex-col gap-4">
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={removing}
+                onClick={() => setMemberToRemove(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={removing}
+                data-testid="confirm-remove-member"
+              >
+                {removing ? "Retirando miembro…" : "Retirar miembro"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <ChangeRoleDialog
         open={roleDialogOpen}
         onOpenChange={setRoleDialogOpen}

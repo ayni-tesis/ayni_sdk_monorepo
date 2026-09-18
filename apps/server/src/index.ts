@@ -11,7 +11,7 @@ import { application, invitationLink, member, organization, user } from "@ayni/d
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, gt, ne, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -23,7 +23,12 @@ import {
   type InvitationPreview,
   type InvitationRole,
 } from "./invitations";
-import { createMembersApp, type MemberItem, type UpdateMemberRoleResult } from "./members";
+import {
+  createMembersApp,
+  type MemberItem,
+  type RemoveMemberResult,
+  type UpdateMemberRoleResult,
+} from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -109,6 +114,55 @@ const members = {
       .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
       .orderBy(asc(member.createdAt));
   },
+  async remove(
+    requesterUserId: string,
+    organizationId: string,
+    memberId: string,
+  ): Promise<RemoveMemberResult> {
+    return db.transaction(async (tx) => {
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .for("update");
+
+      const [requester] = await tx
+        .select({ id: member.id, role: member.role })
+        .from(member)
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, requesterUserId)))
+        .limit(1)
+        .for("update");
+      if (!requester || (requester.role !== "admin" && requester.role !== "owner")) {
+        return { ok: false, reason: "forbidden" as const };
+      }
+
+      const [target] = await tx
+        .select({ id: member.id, role: member.role })
+        .from(member)
+        .where(and(eq(member.organizationId, organizationId), eq(member.id, memberId)))
+        .limit(1)
+        .for("update");
+      if (!target) return { ok: false, reason: "not-found" as const };
+      if (target.role === "owner") return { ok: false, reason: "owner" as const };
+
+      if (target.role === "admin") {
+        const admins = await tx
+          .select({ id: member.id })
+          .from(member)
+          .where(
+            and(
+              eq(member.organizationId, organizationId),
+              inArray(member.role, ["admin", "owner"]),
+            ),
+          )
+          .for("update");
+        if (admins.length <= 1) return { ok: false, reason: "last-admin" as const };
+      }
+
+      await tx.delete(member).where(eq(member.id, target.id));
+      return { ok: true } as const;
+    });
+  },
   async updateRole(
     requesterUserId: string,
     organizationId: string,
@@ -116,6 +170,12 @@ const members = {
     newRole: "admin" | "member",
   ): Promise<UpdateMemberRoleResult> {
     return await db.transaction(async (tx) => {
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .for("update");
+
       const [requester] = await tx
         .select({ role: member.role })
         .from(member)
@@ -325,7 +385,7 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
