@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import z from "zod";
 
 import { authClient } from "@/lib/auth-client";
+import { getBrowserPostAuthRedirect } from "@/lib/post-auth";
 
 import Loader from "./loader";
 import { Button } from "./ui/button";
@@ -34,7 +35,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
         },
         {
           onSuccess: () => {
-            router.push("/dashboard");
+            router.push(getBrowserPostAuthRedirect());
             toast.success("Cuenta creada correctamente");
           },
           onError: () => {

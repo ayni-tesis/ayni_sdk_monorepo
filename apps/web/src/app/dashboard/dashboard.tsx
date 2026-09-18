@@ -8,6 +8,7 @@ import {
   IconDotsVertical,
   IconPencil,
   IconRefresh,
+  IconUserPlus,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,9 +38,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { errorMessage } from "@/lib/api-error";
 import { authClient } from "@/lib/auth-client";
 import { httpClient } from "@/lib/http-client";
 import { generateWorkspaceSlug } from "@/lib/slug";
+import { formatWorkspaceRole } from "@/lib/workspace-roles";
 import "./dashboard.css";
 
 type Application = {
@@ -48,12 +51,6 @@ type Application = {
   name: string;
   status: "active" | "archived";
 };
-
-function errorMessage(error: unknown, fallback: string) {
-  return axios.isAxiosError<{ message?: string }>(error)
-    ? (error.response?.data?.message ?? fallback)
-    : fallback;
-}
 
 function membersErrorMessage(error: unknown) {
   const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
@@ -114,8 +111,12 @@ function ChangeRoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Administrador</SelectItem>
-                <SelectItem value="member">Miembro</SelectItem>
+                <SelectItem value="admin" data-testid="role-option-admin">
+                  Administrador
+                </SelectItem>
+                <SelectItem value="member" data-testid="role-option-member">
+                  Miembro
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -154,6 +155,10 @@ function MembersPanel({
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<"admin" | "member">("member");
   const [updatingRole, setUpdatingRole] = useState(false);
+  const inviteDialog = useRef<HTMLDialogElement>(null);
+  const [invitationRole, setInvitationRole] = useState<"admin" | "member">("member");
+  const [creatingInvitation, setCreatingInvitation] = useState(false);
+  const [invitationUrl, setInvitationUrl] = useState("");
   const workspaceIdRef = useRef(workspaceId);
   workspaceIdRef.current = workspaceId;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -214,6 +219,39 @@ function MembersPanel({
     }
   }
 
+  function openCreateInvitation() {
+    setInvitationRole("member");
+    setInvitationUrl("");
+    inviteDialog.current?.showModal();
+  }
+
+  async function createInvitation(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (creatingInvitation) return;
+    setCreatingInvitation(true);
+    try {
+      const { data } = await httpClient.post<{ invitation: { token: string } }>(
+        `/organizations/${workspaceId}/invitation-links`,
+        { role: invitationRole },
+      );
+      setInvitationUrl(`${window.location.origin}/join?token=${data.invitation.token}`);
+      toast.success("Enlace de invitación creado.");
+    } catch (inviteError) {
+      toast.error(errorMessage(inviteError, "No pudimos crear el enlace. Inténtalo de nuevo."));
+    } finally {
+      setCreatingInvitation(false);
+    }
+  }
+
+  async function copyInvitationUrl() {
+    try {
+      await navigator.clipboard.writeText(invitationUrl);
+      toast.success("Enlace copiado.");
+    } catch {
+      toast.error("No pudimos copiar el enlace. Inténtalo de nuevo.");
+    }
+  }
+
   return (
     <section className="members-section" aria-live="polite">
       <header className="applications-header">
@@ -221,6 +259,12 @@ function MembersPanel({
           <p>{workspaceName}</p>
           <h1>Miembros</h1>
         </div>
+        {canManage && (
+          <Button onClick={openCreateInvitation}>
+            <IconUserPlus />
+            Crear enlace de invitación
+          </Button>
+        )}
       </header>
       {loading ? (
         <p>Cargando miembros…</p>
@@ -282,21 +326,65 @@ function MembersPanel({
         updatingRole={updatingRole}
         onSubmit={handleUpdateRole}
       />
+      <dialog
+        ref={inviteDialog}
+        className="application-dialog"
+        aria-labelledby="invitation-dialog-title"
+        onClose={() => setInvitationUrl("")}
+      >
+        <form onSubmit={createInvitation}>
+          <h2 id="invitation-dialog-title">Crear enlace de invitación</h2>
+          {invitationUrl ? (
+            <>
+              <p>Comparte este enlace con la persona que quieres invitar.</p>
+              <p className="invitation-url" data-testid="invitation-url">
+                {invitationUrl}
+              </p>
+              <div>
+                <Button type="button" variant="ghost" onClick={() => inviteDialog.current?.close()}>
+                  Cerrar
+                </Button>
+                <Button type="button" onClick={() => void copyInvitationUrl()}>
+                  Copiar enlace
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label htmlFor="invitation-role">Rol</label>
+              <select
+                id="invitation-role"
+                value={invitationRole}
+                onChange={(event) => {
+                  setInvitationRole(event.target.value as "admin" | "member");
+                }}
+              >
+                <option value="admin">Administrador</option>
+                <option value="member">Miembro</option>
+              </select>
+              <div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={creatingInvitation}
+                  onClick={() => inviteDialog.current?.close()}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  data-testid="create-invitation-submit"
+                  disabled={creatingInvitation}
+                >
+                  {creatingInvitation ? "Creando enlace…" : "Crear enlace"}
+                </Button>
+              </div>
+            </>
+          )}
+        </form>
+      </dialog>
     </section>
   );
-}
-
-export function formatWorkspaceRole(role: string): string {
-  switch (role) {
-    case "owner":
-      return "Propietario";
-    case "admin":
-      return "Administrador";
-    case "member":
-      return "Miembro";
-    default:
-      return role;
-  }
 }
 
 function DashboardShell({
