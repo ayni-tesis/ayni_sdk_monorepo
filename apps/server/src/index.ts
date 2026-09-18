@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   createOpenApiDocument,
   HealthResponseSchema,
@@ -6,15 +7,22 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, member, organization, user } from "@ayni/db/schema/index";
+import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, count, eq, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
+import {
+  type AcceptResult,
+  type CreatedInvitation,
+  createInvitationsApp,
+  type InvitationPreview,
+  type InvitationRole,
+} from "./invitations";
 import { createMembersApp, type MemberItem, type RemoveMemberResult } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -102,27 +110,152 @@ const members = {
       .orderBy(asc(member.createdAt));
   },
   async remove(organizationId: string, memberId: string): Promise<RemoveMemberResult> {
-    const [target] = await db
-      .select({ id: member.id, userId: member.userId, role: member.role })
-      .from(member)
-      .where(and(eq(member.organizationId, organizationId), eq(member.id, memberId)))
-      .limit(1);
-    if (!target) return { ok: false, reason: "not-found" };
-
-    if (target.role === "admin" || target.role === "owner") {
-      const adminsCondition: SQL = and(
-        eq(member.organizationId, organizationId),
-        or(eq(member.role, "admin"), eq(member.role, "owner")),
-      ) as SQL;
-      const [adminCount] = await db
-        .select({ total: count() })
+    return db.transaction(async (tx) => {
+      const [target] = await tx
+        .select({ id: member.id, role: member.role })
         .from(member)
-        .where(adminsCondition);
-      if (!adminCount || adminCount.total <= 1) return { ok: false, reason: "last-admin" };
-    }
+        .where(and(eq(member.organizationId, organizationId), eq(member.id, memberId)))
+        .limit(1)
+        .for("update");
+      if (!target) return { ok: false, reason: "not-found" as const };
 
-    await db.delete(member).where(eq(member.id, target.id));
-    return { ok: true };
+      if (target.role === "admin" || target.role === "owner") {
+        const admins = await tx
+          .select({ id: member.id })
+          .from(member)
+          .where(
+            and(
+              eq(member.organizationId, organizationId),
+              inArray(member.role, ["admin", "owner"]),
+            ),
+          )
+          .for("update");
+        if (admins.length <= 1) return { ok: false, reason: "last-admin" as const };
+      }
+
+      await tx.delete(member).where(eq(member.id, target.id));
+      return { ok: true } as const;
+    });
+  },
+};
+
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function generateInvitationToken() {
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+}
+
+function hashInvitationToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+const invitations = {
+  getMembership: applications.getMembership,
+  async create({
+    organizationId,
+    role,
+    createdById,
+  }: {
+    organizationId: string;
+    role: InvitationRole;
+    createdById: string;
+  }): Promise<CreatedInvitation> {
+    const token = generateInvitationToken();
+    const [created] = await db
+      .insert(invitationLink)
+      .values({
+        id: crypto.randomUUID(),
+        tokenHash: hashInvitationToken(token),
+        organizationId,
+        role,
+        inviterId: createdById,
+        expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+      })
+      .returning();
+    if (!created) throw new Error("Invitation creation returned no record");
+    return {
+      id: created.id,
+      token,
+      organizationId: created.organizationId,
+      role: created.role,
+      inviterId: created.inviterId,
+      expiresAt: created.expiresAt.toISOString(),
+    };
+  },
+  async getByToken(token: string): Promise<InvitationPreview | undefined> {
+    const [found] = await db
+      .select({
+        id: invitationLink.id,
+        organizationId: organization.id,
+        organizationName: organization.name,
+        role: invitationLink.role,
+        expiresAt: invitationLink.expiresAt,
+      })
+      .from(invitationLink)
+      .innerJoin(organization, eq(invitationLink.organizationId, organization.id))
+      .where(
+        and(
+          eq(invitationLink.tokenHash, hashInvitationToken(token)),
+          eq(invitationLink.status, "pending"),
+          gt(invitationLink.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (!found) return undefined;
+    return { ...found, expiresAt: found.expiresAt.toISOString() };
+  },
+  async accept(token: string, userId: string): Promise<AcceptResult | undefined> {
+    return db.transaction(async (tx) => {
+      const [invitation] = await tx
+        .select()
+        .from(invitationLink)
+        .where(eq(invitationLink.tokenHash, hashInvitationToken(token)))
+        .limit(1)
+        .for("update");
+      if (invitation?.status !== "pending" || invitation.expiresAt.getTime() <= Date.now()) {
+        return undefined;
+      }
+
+      const [organizationRow] = await tx
+        .select({ id: organization.id, name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, invitation.organizationId))
+        .limit(1);
+      if (!organizationRow) return undefined;
+
+      const [existingMembership] = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(and(eq(member.userId, userId), eq(member.organizationId, invitation.organizationId)))
+        .limit(1);
+      if (existingMembership) return "already-member";
+
+      const [insertedMembership] = await tx
+        .insert(member)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: invitation.organizationId,
+          userId,
+          role: invitation.role,
+        })
+        .onConflictDoNothing()
+        .returning({ id: member.id });
+      if (!insertedMembership) {
+        return "already-member";
+      }
+
+      await tx
+        .update(invitationLink)
+        .set({ status: "accepted" })
+        .where(eq(invitationLink.id, invitation.id));
+
+      return {
+        id: invitation.id,
+        organizationId: organizationRow.id,
+        organizationName: organizationRow.name,
+        role: invitation.role,
+      };
+    });
   },
 };
 
@@ -159,6 +292,13 @@ app.route(
   createMembersApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     members,
+  }),
+);
+app.route(
+  "/",
+  createInvitationsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    invitations,
   }),
 );
 
