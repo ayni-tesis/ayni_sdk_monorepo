@@ -3,10 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const { client, activeOrgRef, authOrgMock, toastMock } = vi.hoisted(() => ({
+const { client, activeOrgRef, activeMemberRoleRef, authOrgMock, toastMock } = vi.hoisted(() => ({
   client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
   activeOrgRef: {
     current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
+  },
+  activeMemberRoleRef: {
+    current: "admin",
   },
   authOrgMock: {
     create: vi.fn(),
@@ -21,7 +24,7 @@ const { client, activeOrgRef, authOrgMock, toastMock } = vi.hoisted(() => ({
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     useActiveOrganization: () => ({ data: activeOrgRef.current, isPending: false }),
-    useActiveMemberRole: () => ({ data: { role: "admin" } }),
+    useActiveMemberRole: () => ({ data: { role: activeMemberRoleRef.current } }),
     organization: authOrgMock,
   },
 }));
@@ -30,6 +33,10 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("./dashboard.css", () => ({}));
 
 beforeAll(() => {
+  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.HTMLElement.prototype.hasPointerCapture = vi.fn();
+  window.HTMLElement.prototype.setPointerCapture = vi.fn();
+  window.HTMLElement.prototype.releasePointerCapture = vi.fn();
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
     this.open = true;
   });
@@ -57,6 +64,7 @@ import Dashboard from "./dashboard";
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activeMemberRoleRef.current = "admin";
     activeOrgRef.current = { id: "org-1", name: "Laboratorio Andino" };
     client.get.mockImplementation(async (url: string) => {
       if (url === "/workspaces") {
@@ -1105,5 +1113,235 @@ describe("Dashboard", () => {
     fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
 
     expect(await screen.findByText("Este workspace aún no tiene otros miembros.")).toBeTruthy();
+  });
+
+  it("shows member actions menu and 'Cambiar rol' for manageable members when user is admin", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [
+            { id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "owner" },
+            { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    expect(screen.queryByTestId("member-menu-member-1")).toBeNull();
+
+    const menuTrigger = screen.getByTestId("member-menu-member-2");
+    expect(menuTrigger).toBeTruthy();
+
+    fireEvent.click(menuTrigger);
+    expect(await screen.findByText("Cambiar rol")).toBeTruthy();
+  });
+
+  it("does not show member actions menus when logged-in user is only a member", async () => {
+    activeMemberRoleRef.current = "member";
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "member" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [{ id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" }],
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    expect(screen.queryByTestId("member-menu-member-2")).toBeNull();
+  });
+
+  it("opens 'Cambiar rol' dialog, updates role to admin, and displays success toast", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [{ id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" }],
+        };
+      }
+      return { data: [] };
+    });
+
+    client.patch.mockResolvedValueOnce({
+      data: { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "admin" },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Cambiar rol"));
+
+    expect(await screen.findByRole("heading", { name: "Cambiar rol" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Actualizar rol" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeTruthy();
+
+    fireEvent.pointerDown(screen.getByTestId("role-selector-trigger"), {
+      button: 0,
+      pointerType: "mouse",
+    });
+    const adminOptions = await screen.findAllByText("Administrador");
+    fireEvent.click(adminOptions[0]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar rol" }));
+
+    await waitFor(() => {
+      expect(client.patch).toHaveBeenCalledWith("/organizations/org-1/members/member-2", {
+        role: "admin",
+      });
+    });
+
+    await waitFor(() => {
+      expect(toastMock.success).toHaveBeenCalledWith("Rol actualizado.");
+    });
+  });
+
+  it("handles rejection when removing the last administrator with error toast", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [{ id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "admin" }],
+        };
+      }
+      return { data: [] };
+    });
+
+    client.patch.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 400,
+        data: { message: "El workspace debe conservar al menos un administrador." },
+      },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Cambiar rol"));
+
+    fireEvent.pointerDown(screen.getByTestId("role-selector-trigger"), {
+      button: 0,
+      pointerType: "mouse",
+    });
+    const memberOptions = await screen.findAllByText("Miembro");
+    fireEvent.click(memberOptions[0]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar rol" }));
+
+    await waitFor(() => {
+      expect(client.patch).toHaveBeenCalledWith("/organizations/org-1/members/member-2", {
+        role: "member",
+      });
+    });
+
+    await waitFor(() => {
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "El workspace debe conservar al menos un administrador.",
+      );
+    });
+  });
+
+  it("handles permission rejection with specific error toast", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [{ id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" }],
+        };
+      }
+      return { data: [] };
+    });
+
+    client.patch.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { message: "No tienes permiso para cambiar roles en este workspace." },
+      },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Cambiar rol"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar rol" }));
+
+    await waitFor(() => {
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No tienes permiso para cambiar roles en este workspace.",
+      );
+    });
   });
 });

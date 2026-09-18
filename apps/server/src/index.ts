@@ -10,12 +10,12 @@ import { application, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
-import { createMembersApp, type MemberItem } from "./members";
+import { createMembersApp, type MemberItem, type UpdateMemberRoleResult } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -100,6 +100,75 @@ const members = {
       .innerJoin(user, eq(member.userId, user.id))
       .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
       .orderBy(asc(member.createdAt));
+  },
+  async updateRole(
+    requesterUserId: string,
+    organizationId: string,
+    memberId: string,
+    newRole: "admin" | "member",
+  ): Promise<UpdateMemberRoleResult> {
+    const [targetMember] = await db
+      .select({
+        id: member.id,
+        userId: member.userId,
+        role: member.role,
+        organizationId: member.organizationId,
+        name: user.name,
+        email: user.email,
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+      .limit(1);
+
+    if (!targetMember) {
+      return { success: false, error: "MEMBER_NOT_FOUND" };
+    }
+
+    if (targetMember.userId === requesterUserId) {
+      return { success: false, error: "SELF_MODIFICATION_NOT_ALLOWED" };
+    }
+
+    if (targetMember.role === "owner") {
+      return { success: false, error: "CANNOT_MODIFY_OWNER" };
+    }
+
+    if (targetMember.role === "admin" && newRole === "member") {
+      const remainingAdmins = await db
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, organizationId),
+            ne(member.id, memberId),
+            or(eq(member.role, "admin"), eq(member.role, "owner")),
+          ),
+        );
+
+      if (remainingAdmins.length === 0) {
+        return { success: false, error: "AT_LEAST_ONE_ADMIN_REQUIRED" };
+      }
+    }
+
+    const [updated] = await db
+      .update(member)
+      .set({ role: newRole })
+      .where(eq(member.id, memberId))
+      .returning();
+
+    if (!updated) {
+      return { success: false, error: "MEMBER_NOT_FOUND" };
+    }
+
+    return {
+      success: true,
+      member: {
+        id: targetMember.id,
+        name: targetMember.name,
+        email: targetMember.email,
+        role: newRole,
+      },
+    };
   },
 };
 

@@ -7,11 +7,29 @@ export type MemberItem = {
   role: string;
 };
 
+export type UpdateMemberRoleResult =
+  | { success: true; member: MemberItem }
+  | {
+      success: false;
+      error:
+        | "FORBIDDEN"
+        | "SELF_MODIFICATION_NOT_ALLOWED"
+        | "MEMBER_NOT_FOUND"
+        | "CANNOT_MODIFY_OWNER"
+        | "AT_LEAST_ONE_ADMIN_REQUIRED";
+    };
+
 export type MembersDependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   members: {
     getMembership: (userId: string, organizationId: string) => Promise<string | undefined>;
     listOthers: (userId: string, organizationId: string) => Promise<MemberItem[]>;
+    updateRole?: (
+      requesterUserId: string,
+      organizationId: string,
+      memberId: string,
+      newRole: "admin" | "member",
+    ) => Promise<UpdateMemberRoleResult>;
   };
 };
 
@@ -28,6 +46,56 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
     }
 
     return c.json(await members.listOthers(session.user.id, organizationId));
+  });
+
+  app.patch("/organizations/:organizationId/members/:memberId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const organizationId = c.req.param("organizationId");
+    const callerRole = await members.getMembership(session.user.id, organizationId);
+    if (callerRole !== "admin" && callerRole !== "owner") {
+      return c.json({ message: "No tienes permiso para cambiar roles en este workspace." }, 403);
+    }
+
+    const body = (await c.req.json().catch(() => ({}))) as { role?: unknown };
+    if (body.role !== "admin" && body.role !== "member") {
+      return c.json({ message: "Rol inválido." }, 400);
+    }
+
+    if (!members.updateRole) {
+      return c.json({ message: "Operación no implementada." }, 501);
+    }
+
+    const memberId = c.req.param("memberId");
+    const result = await members.updateRole(
+      session.user.id,
+      organizationId,
+      memberId,
+      body.role as "admin" | "member",
+    );
+
+    if (!result.success) {
+      switch (result.error) {
+        case "FORBIDDEN":
+          return c.json(
+            { message: "No tienes permiso para cambiar roles en este workspace." },
+            403,
+          );
+        case "SELF_MODIFICATION_NOT_ALLOWED":
+          return c.json({ message: "No puedes cambiar tu propio rol." }, 400);
+        case "CANNOT_MODIFY_OWNER":
+          return c.json({ message: "No se puede cambiar el rol del propietario." }, 400);
+        case "AT_LEAST_ONE_ADMIN_REQUIRED":
+          return c.json({ message: "El workspace debe conservar al menos un administrador." }, 400);
+        case "MEMBER_NOT_FOUND":
+          return c.json({ message: "Miembro no encontrado." }, 404);
+        default:
+          return c.json({ message: "Error al actualizar rol." }, 400);
+      }
+    }
+
+    return c.json(result.member, 200);
   });
 
   return app;
