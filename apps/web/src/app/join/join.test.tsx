@@ -12,14 +12,11 @@ const { client, setActiveMock, toastMock, pushMock } = vi.hoisted(() => ({
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
-    useActiveOrganization: () => ({ data: null, isPending: false }),
-    useActiveMemberRole: () => ({ data: { role: "member" } }),
-    organization: { setActive: setActiveMock, create: vi.fn() },
+    organization: { setActive: setActiveMock },
   },
 }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
-vi.mock("@/app/dashboard/dashboard.css", () => ({}));
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -56,6 +53,12 @@ describe("JoinInvitation", () => {
     client.get.mockReturnValue(new Promise(() => {}));
     renderJoin();
     expect(await screen.findByText("Cargando invitación…")).toBeTruthy();
+  });
+
+  it("shows the invalid message without any request when the URL has no token", async () => {
+    render(<JoinInvitation token="" userName="Diego" />);
+    expect(await screen.findByText("Este enlace de invitación no es válido.")).toBeTruthy();
+    expect(client.get).not.toHaveBeenCalled();
   });
 
   it("previews the invited workspace and role for a valid token", async () => {

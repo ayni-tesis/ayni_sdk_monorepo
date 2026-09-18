@@ -4,11 +4,11 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { formatWorkspaceRole } from "@/app/dashboard/dashboard";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/api-error";
 import { authClient } from "@/lib/auth-client";
 import { httpClient } from "@/lib/http-client";
+import { formatWorkspaceRole } from "@/lib/workspace-roles";
 
 type InvitationPreview = {
   id: string;
@@ -27,6 +27,11 @@ export default function JoinInvitation({ token, userName }: { token: string; use
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    if (!token) {
+      setStatus("invalid");
+      setMessage("Este enlace de invitación no es válido.");
+      return;
+    }
     let active = true;
     setStatus("loading");
     void (async () => {

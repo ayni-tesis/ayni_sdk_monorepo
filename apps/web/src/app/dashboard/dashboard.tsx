@@ -26,6 +26,7 @@ import { errorMessage } from "@/lib/api-error";
 import { authClient } from "@/lib/auth-client";
 import { httpClient } from "@/lib/http-client";
 import { generateWorkspaceSlug } from "@/lib/slug";
+import { formatWorkspaceRole } from "@/lib/workspace-roles";
 import "./dashboard.css";
 
 type Application = {
@@ -242,19 +243,6 @@ function MembersPanel({
       </dialog>
     </section>
   );
-}
-
-export function formatWorkspaceRole(role: string): string {
-  switch (role) {
-    case "owner":
-      return "Propietario";
-    case "admin":
-      return "Administrador";
-    case "member":
-      return "Miembro";
-    default:
-      return role;
-  }
 }
 
 function DashboardShell({

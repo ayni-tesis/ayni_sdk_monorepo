@@ -14,4 +14,5 @@ CREATE TABLE "invitation_link" (
 ALTER TABLE "invitation_link" ADD CONSTRAINT "invitation_link_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invitation_link" ADD CONSTRAINT "invitation_link_inviter_id_user_id_fk" FOREIGN KEY ("inviter_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "invitation_link_token_idx" ON "invitation_link" USING btree ("token");--> statement-breakpoint
-CREATE INDEX "invitation_link_organization_id_idx" ON "invitation_link" USING btree ("organization_id");
+CREATE INDEX "invitation_link_organization_id_idx" ON "invitation_link" USING btree ("organization_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "member_user_org_unique" ON "member" USING btree ("user_id","organization_id");

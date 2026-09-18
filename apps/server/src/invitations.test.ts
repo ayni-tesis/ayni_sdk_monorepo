@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { createInvitationsApp, type InvitationsDependencies } from "./invitations";
 
-function buildApp(overrides: Partial<InvitationsDependencies["invitations"]> = {}) {
+const ADMIN = { user: { id: "admin-1" } };
+
+function forbidden(name: string) {
+  return async (): Promise<never> => {
+    throw new Error(`${name} must not be called`);
+  };
+}
+
+function buildApp(
+  options: {
+    session?: { user: { id: string } } | null;
+    invitations?: Partial<InvitationsDependencies["invitations"]>;
+  } = {},
+) {
   const invitations: InvitationsDependencies["invitations"] = {
-    getMembership: async (userId: string) => (userId === "admin-1" ? "admin" : "member"),
+    getMembership: async () => "admin",
     create: async ({ organizationId, role, createdById }) => ({
       id: "inv-1",
       token: "tok-123",
@@ -12,7 +25,7 @@ function buildApp(overrides: Partial<InvitationsDependencies["invitations"]> = {
       inviterId: createdById,
       expiresAt: "2026-10-01T00:00:00.000Z",
     }),
-    getByToken: async (token: string) =>
+    getByToken: async (token) =>
       token === "tok-123"
         ? {
             id: "inv-1",
@@ -22,7 +35,7 @@ function buildApp(overrides: Partial<InvitationsDependencies["invitations"]> = {
             expiresAt: "2026-10-01T00:00:00.000Z",
           }
         : undefined,
-    accept: async (token: string, userId: string) =>
+    accept: async (token, userId) =>
       token === "tok-123" && userId === "user-9"
         ? {
             id: "inv-1",
@@ -31,29 +44,21 @@ function buildApp(overrides: Partial<InvitationsDependencies["invitations"]> = {
             role: "member",
           }
         : undefined,
-    ...overrides,
+    ...options.invitations,
   };
 
-  return {
-    app: createInvitationsApp({
-      getSession: async () => ({ user: { id: "admin-1" } }),
-      invitations,
-    }),
-  };
+  const app = createInvitationsApp({
+    getSession: async () => (options.session === undefined ? ADMIN : options.session),
+    invitations,
+  });
+  return { app };
 }
 
 describe("POST /organizations/:organizationId/invitation-links", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    const app = createInvitationsApp({
-      getSession: async () => null,
-      invitations: {
-        getMembership: async () => undefined,
-        create: async () => {
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
-        accept: async () => undefined,
-      },
+    const { app } = buildApp({
+      session: null,
+      invitations: { create: forbidden("create") },
     });
 
     const response = await app.request("/organizations/org-1/invitation-links", {
@@ -66,18 +71,9 @@ describe("POST /organizations/:organizationId/invitation-links", () => {
   });
 
   it("rejects members without admin permissions and does not create the invitation", async () => {
-    let created = false;
-    const app = createInvitationsApp({
-      getSession: async () => ({ user: { id: "plain-user" } }),
-      invitations: {
-        getMembership: async () => "member",
-        create: async () => {
-          created = true;
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
-        accept: async () => undefined,
-      },
+    const { app } = buildApp({
+      session: { user: { id: "plain-user" } },
+      invitations: { getMembership: async () => "member", create: forbidden("create") },
     });
 
     const response = await app.request("/organizations/org-1/invitation-links", {
@@ -90,25 +86,12 @@ describe("POST /organizations/:organizationId/invitation-links", () => {
     await expect(response.json()).resolves.toEqual({
       message: "No tienes permiso para crear invitaciones en este workspace.",
     });
-    expect(created).toBe(false);
   });
 
   it("allows owners to create invitation links", async () => {
-    const app = createInvitationsApp({
-      getSession: async () => ({ user: { id: "owner-1" } }),
-      invitations: {
-        getMembership: async () => "owner",
-        create: async ({ role }) => ({
-          id: "inv-1",
-          token: "tok-abc",
-          organizationId: "org-1",
-          role,
-          inviterId: "owner-1",
-          expiresAt: "2026-10-01T00:00:00.000Z",
-        }),
-        getByToken: async () => undefined,
-        accept: async () => undefined,
-      },
+    const { app } = buildApp({
+      session: { user: { id: "owner-1" } },
+      invitations: { getMembership: async () => "owner" },
     });
 
     const response = await app.request("/organizations/org-1/invitation-links", {
@@ -121,7 +104,7 @@ describe("POST /organizations/:organizationId/invitation-links", () => {
     await expect(response.json()).resolves.toEqual({
       invitation: {
         id: "inv-1",
-        token: "tok-abc",
+        token: "tok-123",
         organizationId: "org-1",
         role: "admin",
         expiresAt: "2026-10-01T00:00:00.000Z",
@@ -130,7 +113,7 @@ describe("POST /organizations/:organizationId/invitation-links", () => {
   });
 
   it("rejects roles outside the supported workspace roles", async () => {
-    const { app } = buildApp();
+    const { app } = buildApp({ invitations: { create: forbidden("create") } });
 
     const response = await app.request("/organizations/org-1/invitation-links", {
       method: "POST",
@@ -145,7 +128,7 @@ describe("POST /organizations/:organizationId/invitation-links", () => {
   });
 
   it("rejects malformed request bodies", async () => {
-    const { app } = buildApp();
+    const { app } = buildApp({ invitations: { create: forbidden("create") } });
 
     const response = await app.request("/organizations/org-1/invitation-links", {
       method: "POST",
@@ -192,18 +175,9 @@ describe("GET /invitation-links/:token", () => {
 
 describe("POST /invitation-links/:token/accept", () => {
   it("rejects unauthenticated requests with 401", async () => {
-    const app = createInvitationsApp({
-      getSession: async () => null,
-      invitations: {
-        getMembership: async () => undefined,
-        create: async () => {
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
-        accept: async () => {
-          throw new Error("must not be called");
-        },
-      },
+    const { app } = buildApp({
+      session: null,
+      invitations: { accept: forbidden("accept") },
     });
 
     const response = await app.request("/invitation-links/tok-123/accept", { method: "POST" });
@@ -213,14 +187,9 @@ describe("POST /invitation-links/:token/accept", () => {
 
   it("adds the signed-in user to the invited workspace only", async () => {
     let acceptedWith: { token: string; userId: string } | undefined;
-    const app = createInvitationsApp({
-      getSession: async () => ({ user: { id: "user-9" } }),
+    const { app } = buildApp({
+      session: { user: { id: "user-9" } },
       invitations: {
-        getMembership: async () => undefined,
-        create: async () => {
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
         accept: async (token, userId) => {
           acceptedWith = { token, userId };
           return {
@@ -243,16 +212,9 @@ describe("POST /invitation-links/:token/accept", () => {
   });
 
   it("returns 404 when the invitation token cannot be accepted", async () => {
-    const app = createInvitationsApp({
-      getSession: async () => ({ user: { id: "user-9" } }),
-      invitations: {
-        getMembership: async () => undefined,
-        create: async () => {
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
-        accept: async () => undefined,
-      },
+    const { app } = buildApp({
+      session: { user: { id: "user-9" } },
+      invitations: { accept: async () => undefined },
     });
 
     const response = await app.request("/invitation-links/expired-tok/accept", {
@@ -266,16 +228,9 @@ describe("POST /invitation-links/:token/accept", () => {
   });
 
   it("returns 409 when the user is already a member of the invited workspace", async () => {
-    const app = createInvitationsApp({
-      getSession: async () => ({ user: { id: "user-9" } }),
-      invitations: {
-        getMembership: async () => undefined,
-        create: async () => {
-          throw new Error("must not be called");
-        },
-        getByToken: async () => undefined,
-        accept: async () => "already-member",
-      },
+    const { app } = buildApp({
+      session: { user: { id: "user-9" } },
+      invitations: { accept: async () => "already-member" },
     });
 
     const response = await app.request("/invitation-links/tok-123/accept", { method: "POST" });

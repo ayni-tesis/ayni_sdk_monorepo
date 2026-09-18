@@ -196,12 +196,15 @@ const invitations = {
         .limit(1);
       if (existingMembership) return "already-member";
 
-      await tx.insert(member).values({
-        id: crypto.randomUUID(),
-        organizationId: invitation.organizationId,
-        userId,
-        role: invitation.role,
-      });
+      await tx
+        .insert(member)
+        .values({
+          id: crypto.randomUUID(),
+          organizationId: invitation.organizationId,
+          userId,
+          role: invitation.role,
+        })
+        .onConflictDoNothing();
       await tx
         .update(invitationLink)
         .set({ status: "accepted" })
