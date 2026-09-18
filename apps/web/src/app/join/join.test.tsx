@@ -107,6 +107,65 @@ describe("JoinInvitation", () => {
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
   });
 
+  it("does not claim activation when setActive reports an error, but confirms the membership", async () => {
+    client.get.mockResolvedValue({
+      data: {
+        invitation: {
+          id: "inv-1",
+          organizationId: "org-1",
+          organizationName: "Laboratorio Andino",
+          role: "member",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    });
+    client.post.mockResolvedValue({
+      data: { organization: { id: "org-1", name: "Laboratorio Andino", role: "member" } },
+    });
+    setActiveMock.mockResolvedValue({ error: { message: "activation failed" } });
+
+    renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /unirse al workspace/i }));
+
+    expect(
+      await screen.findByText(
+        "Te uniste a Laboratorio Andino, pero no pudimos cambiar al workspace automáticamente.",
+      ),
+    ).toBeTruthy();
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /ir al dashboard/i })).toBeTruthy();
+  });
+
+  it("keeps the join confirmation when setActive throws", async () => {
+    client.get.mockResolvedValue({
+      data: {
+        invitation: {
+          id: "inv-1",
+          organizationId: "org-1",
+          organizationName: "Laboratorio Andino",
+          role: "member",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    });
+    client.post.mockResolvedValue({
+      data: { organization: { id: "org-1", name: "Laboratorio Andino", role: "member" } },
+    });
+    setActiveMock.mockRejectedValue(new Error("network"));
+
+    renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /unirse al workspace/i }));
+
+    expect(
+      await screen.findByText(
+        "Te uniste a Laboratorio Andino, pero no pudimos cambiar al workspace automáticamente.",
+      ),
+    ).toBeTruthy();
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("shows the invalid message when the token is unknown, used or expired", async () => {
     client.get.mockRejectedValue({
       isAxiosError: true,

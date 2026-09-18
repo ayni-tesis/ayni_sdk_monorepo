@@ -18,7 +18,7 @@ type InvitationPreview = {
   expiresAt: string;
 };
 
-type JoinStatus = "loading" | "ready" | "joining" | "invalid" | "already-member";
+type JoinStatus = "loading" | "ready" | "joining" | "invalid" | "joined";
 
 export default function JoinInvitation({ token, userName }: { token: string; userName: string }) {
   const router = useRouter();
@@ -60,13 +60,28 @@ export default function JoinInvitation({ token, userName }: { token: string; use
       const { data } = await httpClient.post<{
         organization: { id: string; name: string; role: string };
       }>(`/invitation-links/${token}/accept`);
-      await authClient.organization.setActive({ organizationId: data.organization.id });
+      let activationFailed = false;
+      try {
+        const result = await authClient.organization.setActive({
+          organizationId: data.organization.id,
+        });
+        activationFailed = !!result?.error;
+      } catch {
+        activationFailed = true;
+      }
+      if (activationFailed) {
+        setMessage(
+          `Te uniste a ${data.organization.name}, pero no pudimos cambiar al workspace automáticamente.`,
+        );
+        setStatus("joined");
+        return;
+      }
       toast.success(`Te uniste a ${data.organization.name}.`);
       router.push("/dashboard");
     } catch (joinError) {
       if (axios.isAxiosError(joinError) && joinError.response?.status === 409) {
         setMessage(errorMessage(joinError, "Ya eres miembro de este workspace."));
-        setStatus("already-member");
+        setStatus("joined");
         return;
       }
       setMessage(errorMessage(joinError, "No pudimos unirte al workspace. Inténtalo de nuevo."));
@@ -106,7 +121,7 @@ export default function JoinInvitation({ token, userName }: { token: string; use
         <p aria-live="polite" role="alert">
           {message}
         </p>
-        {status === "already-member" && (
+        {status === "joined" && (
           <Button onClick={() => router.push("/dashboard")}>Ir al dashboard</Button>
         )}
       </div>
