@@ -14,6 +14,14 @@ import { toast } from "sonner";
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -266,7 +274,8 @@ function DashboardShell({
 }
 
 function CreateWorkspaceDialog({
-  dialogRef,
+  open,
+  onOpenChange,
   workspaceName,
   setWorkspaceName,
   workspaceError,
@@ -274,7 +283,8 @@ function CreateWorkspaceDialog({
   creatingWorkspace,
   onSubmit,
 }: {
-  dialogRef: React.RefObject<HTMLDialogElement | null>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   workspaceName: string;
   setWorkspaceName: (value: string) => void;
   workspaceError: string;
@@ -283,56 +293,72 @@ function CreateWorkspaceDialog({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <dialog
-      ref={dialogRef}
-      className="application-dialog"
-      aria-labelledby="workspace-dialog-title"
-      onClose={() => {
-        setWorkspaceName("");
-        setWorkspaceError("");
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setWorkspaceName("");
+          setWorkspaceError("");
+        }
+        onOpenChange(nextOpen);
       }}
     >
-      <form onSubmit={onSubmit}>
-        <h2 id="workspace-dialog-title">Crear workspace</h2>
-        <label htmlFor="workspace-name">Nombre del workspace</label>
-        <Input
-          id="workspace-name"
-          autoFocus
-          value={workspaceName}
-          onChange={(event) => {
-            setWorkspaceName(event.target.value);
-            if (workspaceError) setWorkspaceError("");
-          }}
-        />
-        {workspaceError && (
-          <p className="text-destructive text-sm" role="alert">
-            {workspaceError}
-          </p>
-        )}
-        <div>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={creatingWorkspace}
-            onClick={() => dialogRef.current?.close()}
-          >
-            Cancelar
-          </Button>
-          <Button type="submit" data-testid="create-workspace-submit" disabled={creatingWorkspace}>
-            {creatingWorkspace ? "Creando workspace…" : "Crear workspace"}
-          </Button>
-        </div>
-      </form>
-    </dialog>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Crear workspace</DialogTitle>
+          <DialogDescription className="sr-only">
+            Ingresa el nombre del nuevo workspace.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="workspace-name" className="font-semibold text-sm">
+              Nombre del workspace
+            </label>
+            <Input
+              id="workspace-name"
+              autoFocus
+              value={workspaceName}
+              onChange={(event) => {
+                setWorkspaceName(event.target.value);
+                if (workspaceError) setWorkspaceError("");
+              }}
+            />
+            {workspaceError && (
+              <p className="text-destructive text-sm" role="alert">
+                {workspaceError}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={creatingWorkspace}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              data-testid="create-workspace-submit"
+              disabled={creatingWorkspace}
+            >
+              {creatingWorkspace ? "Creando workspace…" : "Crear workspace"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const archiveDialog = useRef<HTMLDialogElement>(null);
-  const workspaceDialog = useRef<HTMLDialogElement>(null);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [appDialogOpen, setAppDialogOpen] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -465,7 +491,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   function openCreateWorkspace() {
     setNewWorkspaceName("");
     setWorkspaceError("");
-    workspaceDialog.current?.showModal();
+    setWorkspaceDialogOpen(true);
   }
 
   async function createWorkspace(event: React.FormEvent<HTMLFormElement>) {
@@ -520,14 +546,16 @@ export default function Dashboard({ userName }: { userName: string }) {
         );
         void loadWorkspaces();
         setNewWorkspaceName("");
-        workspaceDialog.current?.close();
+        setCreatingWorkspace(false);
+        setWorkspaceDialogOpen(false);
         return;
       }
 
       toast.success("Workspace creado.");
       void loadWorkspaces();
       setNewWorkspaceName("");
-      workspaceDialog.current?.close();
+      setCreatingWorkspace(false);
+      setWorkspaceDialogOpen(false);
     } catch (createError) {
       toast.error(
         errorMessage(createError, "No pudimos crear el workspace. Inténtalo nuevamente."),
@@ -557,7 +585,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       setApplications((items) => [...items, data]);
       setSelected(data);
       setName("");
-      dialog.current?.close();
+      setAppDialogOpen(false);
       toast.success("Aplicación creada.");
     } catch (createError) {
       if (
@@ -593,7 +621,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       setApplications((items) => items.map((item) => (item.id === data.id ? data : item)));
       setSelected(data);
       setName("");
-      dialog.current?.close();
+      setAppDialogOpen(false);
       toast.success("Nombre actualizado.");
     } catch (renameError) {
       if (
@@ -612,11 +640,11 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   function openCreate() {
     setName("");
-    dialog.current?.showModal();
+    setAppDialogOpen(true);
   }
   function openRename() {
     setName(selected?.name ?? "");
-    dialog.current?.showModal();
+    setAppDialogOpen(true);
   }
 
   async function archiveApplication(event: React.FormEvent<HTMLFormElement>) {
@@ -635,7 +663,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       }
       setApplications((items) => items.filter((item) => item.id !== data.id));
       setSelected(data);
-      archiveDialog.current?.close();
+      setArchiveDialogOpen(false);
       toast.success("Aplicación archivada.");
     } catch (archiveError) {
       if (
@@ -705,7 +733,8 @@ export default function Dashboard({ userName }: { userName: string }) {
             </div>
           </main>
           <CreateWorkspaceDialog
-            dialogRef={workspaceDialog}
+            open={workspaceDialogOpen}
+            onOpenChange={setWorkspaceDialogOpen}
             workspaceName={newWorkspaceName}
             setWorkspaceName={setNewWorkspaceName}
             workspaceError={workspaceError}
@@ -743,7 +772,8 @@ export default function Dashboard({ userName }: { userName: string }) {
             </div>
           </main>
           <CreateWorkspaceDialog
-            dialogRef={workspaceDialog}
+            open={workspaceDialogOpen}
+            onOpenChange={setWorkspaceDialogOpen}
             workspaceName={newWorkspaceName}
             setWorkspaceName={setNewWorkspaceName}
             workspaceError={workspaceError}
@@ -781,7 +811,8 @@ export default function Dashboard({ userName }: { userName: string }) {
             </div>
           </main>
           <CreateWorkspaceDialog
-            dialogRef={workspaceDialog}
+            open={workspaceDialogOpen}
+            onOpenChange={setWorkspaceDialogOpen}
             workspaceName={newWorkspaceName}
             setWorkspaceName={setNewWorkspaceName}
             workspaceError={workspaceError}
@@ -814,7 +845,8 @@ export default function Dashboard({ userName }: { userName: string }) {
           </div>
         </main>
         <CreateWorkspaceDialog
-          dialogRef={workspaceDialog}
+          open={workspaceDialogOpen}
+          onOpenChange={setWorkspaceDialogOpen}
           workspaceName={newWorkspaceName}
           setWorkspaceName={setNewWorkspaceName}
           workspaceError={workspaceError}
@@ -884,7 +916,7 @@ export default function Dashboard({ userName }: { userName: string }) {
                   </Button>
                 )}
                 {canManage && selected.status === "active" && (
-                  <Button variant="outline" onClick={() => archiveDialog.current?.showModal()}>
+                  <Button variant="outline" onClick={() => setArchiveDialogOpen(true)}>
                     <IconArchive />
                     Archivar aplicación
                   </Button>
@@ -948,53 +980,79 @@ export default function Dashboard({ userName }: { userName: string }) {
             )}
           </>
         )}
-        <dialog ref={dialog} className="application-dialog" onClose={() => setName("")}>
-          <form onSubmit={selected ? renameApplication : createApplication}>
-            <h2>{selected ? "Editar nombre de la aplicación" : "Crear aplicación"}</h2>
-            <label htmlFor="application-name">Nombre de la aplicación</label>
-            {!selected && <p>Usa un nombre que tu equipo pueda reconocer.</p>}
-            <Input
-              id="application-name"
-              autoFocus
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <div>
-              <Button type="button" variant="ghost" onClick={() => dialog.current?.close()}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving
-                  ? selected
-                    ? "Guardando cambios…"
-                    : "Creando aplicación…"
-                  : selected
-                    ? "Guardar cambios"
-                    : "Crear aplicación"}
-              </Button>
-            </div>
-          </form>
-        </dialog>
-        <dialog ref={archiveDialog} className="application-dialog">
-          <form onSubmit={archiveApplication}>
-            <h2>¿Archivar &quot;{selected?.name}&quot;?</h2>
-            <p>
-              La aplicación dejará de sincronizar recursos nuevos. Sus workflows y modelos se
-              conservarán.
-            </p>
-            <div>
-              <Button type="button" variant="ghost" onClick={() => archiveDialog.current?.close()}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={archiving}>
-                {archiving ? "Archivando aplicación…" : "Archivar aplicación"}
-              </Button>
-            </div>
-          </form>
-        </dialog>
+        <Dialog
+          open={appDialogOpen}
+          onOpenChange={(open) => {
+            setAppDialogOpen(open);
+            if (!open) setName("");
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {selected ? "Editar nombre de la aplicación" : "Crear aplicación"}
+              </DialogTitle>
+              {!selected && (
+                <DialogDescription>Usa un nombre que tu equipo pueda reconocer.</DialogDescription>
+              )}
+            </DialogHeader>
+            <form
+              onSubmit={selected ? renameApplication : createApplication}
+              className="flex flex-col gap-4"
+            >
+              <div className="flex flex-col gap-2">
+                <label htmlFor="application-name" className="font-semibold text-sm">
+                  Nombre de la aplicación
+                </label>
+                <Input
+                  id="application-name"
+                  autoFocus
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setAppDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={saving}>
+                  {saving
+                    ? selected
+                      ? "Guardando cambios…"
+                      : "Creando aplicación…"
+                    : selected
+                      ? "Guardar cambios"
+                      : "Crear aplicación"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>¿Archivar &quot;{selected?.name}&quot;?</DialogTitle>
+              <DialogDescription>
+                La aplicación dejará de sincronizar recursos nuevos. Sus workflows y modelos se
+                conservarán.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={archiveApplication} className="flex flex-col gap-4">
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setArchiveDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={archiving}>
+                  {archiving ? "Archivando aplicación…" : "Archivar aplicación"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
         <CreateWorkspaceDialog
-          dialogRef={workspaceDialog}
+          open={workspaceDialogOpen}
+          onOpenChange={setWorkspaceDialogOpen}
           workspaceName={newWorkspaceName}
           setWorkspaceName={setNewWorkspaceName}
           workspaceError={workspaceError}
