@@ -1,27 +1,31 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const { client, activeOrgRef, authOrgMock, toastMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
-  activeOrgRef: {
-    current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
-  },
-  authOrgMock: {
-    create: vi.fn(),
-    setActive: vi.fn(),
-  },
-  toastMock: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+const { client, activeOrgRef, activeRoleRef, authOrgMock, toastMock, writeTextMock } = vi.hoisted(
+  () => ({
+    client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+    activeOrgRef: {
+      current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
+    },
+    activeRoleRef: { current: "admin" },
+    authOrgMock: {
+      create: vi.fn(),
+      setActive: vi.fn(),
+    },
+    toastMock: {
+      success: vi.fn(),
+      error: vi.fn(),
+    },
+    writeTextMock: vi.fn().mockResolvedValue(undefined),
+  }),
+);
 
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     useActiveOrganization: () => ({ data: activeOrgRef.current, isPending: false }),
-    useActiveMemberRole: () => ({ data: { role: "admin" } }),
+    useActiveMemberRole: () => ({ data: { role: activeRoleRef.current } }),
     organization: authOrgMock,
   },
 }));
@@ -35,6 +39,10 @@ beforeAll(() => {
   });
   HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
     this.open = false;
+  });
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: writeTextMock },
   });
 });
 
@@ -58,6 +66,7 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     activeOrgRef.current = { id: "org-1", name: "Laboratorio Andino" };
+    activeRoleRef.current = "admin";
     client.get.mockImplementation(async (url: string) => {
       if (url === "/workspaces") {
         return {
@@ -957,11 +966,12 @@ describe("Dashboard", () => {
     fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
 
     expect(await screen.findByText("Ana Rojas")).toBeTruthy();
-    expect(screen.getByText("ana@biotec.io")).toBeTruthy();
-    expect(screen.getByText("Propietario")).toBeTruthy();
-    expect(screen.getByText("Luis Pérez")).toBeTruthy();
-    expect(screen.getByText("luis@biotec.io")).toBeTruthy();
-    expect(screen.getByText("Miembro")).toBeTruthy();
+    const anaRow = screen.getByText("Ana Rojas").closest("li") as HTMLElement;
+    const luisRow = screen.getByText("Luis Pérez").closest("li") as HTMLElement;
+    expect(within(anaRow).getByText("ana@biotec.io")).toBeTruthy();
+    expect(within(anaRow).getByText("Propietario")).toBeTruthy();
+    expect(within(luisRow).getByText("luis@biotec.io")).toBeTruthy();
+    expect(within(luisRow).getByText("Miembro")).toBeTruthy();
   });
 
   it("shows 'Cargando miembros…' while the member list is in-flight", async () => {
@@ -1106,5 +1116,170 @@ describe("Dashboard", () => {
     fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
 
     expect(await screen.findByText("Este workspace aún no tiene otros miembros.")).toBeTruthy();
+  });
+
+  async function renderOpenMembersView() {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/members") {
+        return { data: [] };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+  }
+
+  it("lets admins open the invitation dialog with a role selector", async () => {
+    await renderOpenMembersView();
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+
+    expect(screen.getByRole("dialog", { name: "Crear enlace de invitación" })).toBeTruthy();
+    const roleSelect = screen.getByLabelText("Rol") as HTMLSelectElement;
+    expect(screen.getByRole("option", { name: "Administrador" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Miembro" })).toBeTruthy();
+    expect(roleSelect.value).toBe("member");
+  });
+
+  it("creates an invitation link and shows a copyable URL", async () => {
+    await renderOpenMembersView();
+    client.post.mockImplementation(async () => ({
+      data: {
+        invitation: {
+          id: "inv-1",
+          token: "tok-123",
+          organizationId: "org-1",
+          role: "member",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^crear enlace$/i }));
+
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith("/organizations/org-1/invitation-links", {
+        role: "member",
+      }),
+    );
+    expect(await screen.findByText((text) => text.includes("/join?token=tok-123"))).toBeTruthy();
+    expect(toastMock.success).toHaveBeenCalledWith("Enlace de invitación creado.");
+
+    fireEvent.click(screen.getByRole("button", { name: /copiar enlace/i }));
+    await waitFor(() =>
+      expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining("/join?token=tok-123")),
+    );
+  });
+
+  it("sends the role selected by the admin", async () => {
+    await renderOpenMembersView();
+    client.post.mockResolvedValue({
+      data: {
+        invitation: {
+          id: "inv-1",
+          token: "tok-456",
+          organizationId: "org-1",
+          role: "admin",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+    fireEvent.change(screen.getByLabelText("Rol"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^crear enlace$/i }));
+
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith("/organizations/org-1/invitation-links", {
+        role: "admin",
+      }),
+    );
+  });
+
+  it("shows 'Creando enlace…' while the invitation request is in flight", async () => {
+    await renderOpenMembersView();
+    let resolveCreate: (value: unknown) => void = () => {};
+    client.post.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^crear enlace$/i }));
+
+    expect(screen.getByRole("button", { name: /creando enlace…/i }).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    resolveCreate({
+      data: {
+        invitation: {
+          id: "inv-1",
+          token: "tok-789",
+          organizationId: "org-1",
+          role: "member",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    });
+    expect(await screen.findByText((text) => text.includes("/join?token=tok-789"))).toBeTruthy();
+  });
+
+  it("surfaces the permission error returned by the server", async () => {
+    await renderOpenMembersView();
+    client.post.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { message: "No tienes permiso para crear invitaciones en este workspace." },
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^crear enlace$/i }));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No tienes permiso para crear invitaciones en este workspace.",
+      ),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("shows the retry-friendly error when the invitation request fails unexpectedly", async () => {
+    await renderOpenMembersView();
+    client.post.mockRejectedValue(new Error("Network error"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /crear enlace de invitación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^crear enlace$/i }));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No pudimos crear el enlace. Inténtalo de nuevo.",
+      ),
+    );
+    expect(screen.queryByText((text) => text.includes("/join?token="))).toBeNull();
+  });
+
+  it("hides the invitation link action for members without admin permissions", async () => {
+    activeRoleRef.current = "member";
+    await renderOpenMembersView();
+
+    expect(screen.queryByRole("button", { name: /crear enlace de invitación/i })).toBeNull();
   });
 });

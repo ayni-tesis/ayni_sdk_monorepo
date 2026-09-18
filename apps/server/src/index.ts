@@ -6,15 +6,22 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, member, organization, user } from "@ayni/db/schema/index";
+import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, gt, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
+import {
+  type AcceptResult,
+  type CreatedInvitation,
+  createInvitationsApp,
+  type InvitationPreview,
+  type InvitationRole,
+} from "./invitations";
 import { createMembersApp, type MemberItem } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -103,6 +110,113 @@ const members = {
   },
 };
 
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function generateInvitationToken() {
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+}
+
+const invitations = {
+  getMembership: applications.getMembership,
+  async create({
+    organizationId,
+    role,
+    createdById,
+  }: {
+    organizationId: string;
+    role: InvitationRole;
+    createdById: string;
+  }): Promise<CreatedInvitation> {
+    const [created] = await db
+      .insert(invitationLink)
+      .values({
+        id: crypto.randomUUID(),
+        token: generateInvitationToken(),
+        organizationId,
+        role,
+        inviterId: createdById,
+        expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
+      })
+      .returning();
+    if (!created) throw new Error("Invitation creation returned no record");
+    return {
+      id: created.id,
+      token: created.token,
+      organizationId: created.organizationId,
+      role: created.role,
+      inviterId: created.inviterId,
+      expiresAt: created.expiresAt.toISOString(),
+    };
+  },
+  async getByToken(token: string): Promise<InvitationPreview | undefined> {
+    const [found] = await db
+      .select({
+        id: invitationLink.id,
+        organizationId: organization.id,
+        organizationName: organization.name,
+        role: invitationLink.role,
+        expiresAt: invitationLink.expiresAt,
+      })
+      .from(invitationLink)
+      .innerJoin(organization, eq(invitationLink.organizationId, organization.id))
+      .where(
+        and(
+          eq(invitationLink.token, token),
+          eq(invitationLink.status, "pending"),
+          gt(invitationLink.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (!found) return undefined;
+    return { ...found, expiresAt: found.expiresAt.toISOString() };
+  },
+  async accept(token: string, userId: string): Promise<AcceptResult | undefined> {
+    return db.transaction(async (tx) => {
+      const [invitation] = await tx
+        .select()
+        .from(invitationLink)
+        .where(eq(invitationLink.token, token))
+        .limit(1)
+        .for("update");
+      if (invitation?.status !== "pending" || invitation.expiresAt.getTime() <= Date.now()) {
+        return undefined;
+      }
+
+      const [organizationRow] = await tx
+        .select({ id: organization.id, name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, invitation.organizationId))
+        .limit(1);
+      if (!organizationRow) return undefined;
+
+      const [existingMembership] = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(and(eq(member.userId, userId), eq(member.organizationId, invitation.organizationId)))
+        .limit(1);
+      if (existingMembership) return "already-member";
+
+      await tx.insert(member).values({
+        id: crypto.randomUUID(),
+        organizationId: invitation.organizationId,
+        userId,
+        role: invitation.role,
+      });
+      await tx
+        .update(invitationLink)
+        .set({ status: "accepted" })
+        .where(eq(invitationLink.id, invitation.id));
+
+      return {
+        id: invitation.id,
+        organizationId: organizationRow.id,
+        organizationName: organizationRow.name,
+        role: invitation.role,
+      };
+    });
+  },
+};
+
 const app = new Hono();
 
 app.use(logger());
@@ -136,6 +250,13 @@ app.route(
   createMembersApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     members,
+  }),
+);
+app.route(
+  "/",
+  createInvitationsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    invitations,
   }),
 );
 
