@@ -5,6 +5,12 @@ interface CommonControlledStateProps<T> {
   defaultValue?: T;
 }
 
+/**
+ * Manages local state initialized from `value`, or from `defaultValue` when `value` is undefined.
+ *
+ * The setter updates local state and invokes `onChange` with the same arguments. Later changes to
+ * a defined `value` resynchronize the local state.
+ */
 export function useControlledState<T, Rest extends unknown[] = []>(
   props: CommonControlledStateProps<T> & {
     onChange?: (value: T, ...args: Rest) => void;
