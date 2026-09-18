@@ -65,6 +65,9 @@ type DialogContentProps = DialogContentPrimitiveProps & {
   showCloseButton?: boolean;
 };
 
+/**
+ * Renders dialog content in a portal with an overlay and, by default, an accessible close button.
+ */
 function DialogContent({
   className,
   children,

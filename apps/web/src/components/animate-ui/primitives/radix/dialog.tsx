@@ -85,6 +85,10 @@ type DialogContentProps = Omit<
     transition?: Transition;
   };
 
+/**
+ * Renders dialog content with a perspective flip from the edge selected by `from` and hides it
+ * from accessibility APIs while its exit animation is running.
+ */
 function DialogContent({
   from = "top",
   onOpenAutoFocus,

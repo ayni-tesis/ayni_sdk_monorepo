@@ -1,5 +1,10 @@
 import * as React from "react";
 
+/**
+ * Creates a typed context provider and a hook that requires that provider.
+ *
+ * The returned hook throws when called without the matching provider; `name` labels that error.
+ */
 function getStrictContext<T>(
   name?: string,
 ): readonly [
