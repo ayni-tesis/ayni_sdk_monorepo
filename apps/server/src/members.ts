@@ -7,9 +7,7 @@ export type MemberItem = {
   role: string;
 };
 
-export type RemoveMemberResult =
-  | { ok: true }
-  | { ok: false; reason: "not-found" | "last-admin" };
+export type RemoveMemberResult = { ok: true } | { ok: false; reason: "not-found" | "last-admin" };
 
 export type MembersDependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -45,10 +43,7 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
       return c.json({ message: "No tienes acceso a este workspace." }, 403);
     }
     if (role !== "admin" && role !== "owner") {
-      return c.json(
-        { message: "No tienes permiso para retirar miembros de este workspace." },
-        403,
-      );
+      return c.json({ message: "No tienes permiso para retirar miembros de este workspace." }, 403);
     }
 
     const memberId = c.req.param("memberId");
@@ -57,10 +52,7 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
       if (result.reason === "not-found") {
         return c.json({ message: "No encontramos a este miembro en el workspace." }, 404);
       }
-      return c.json(
-        { message: "El workspace necesita al menos un administrador." },
-        409,
-      );
+      return c.json({ message: "El workspace necesita al menos un administrador." }, 409);
     }
 
     return c.json({ message: "Miembro retirado." });
