@@ -5,8 +5,10 @@ import {
   IconArrowLeft,
   IconChevronDown,
   IconCirclePlus,
+  IconDots,
   IconPencil,
   IconRefresh,
+  IconTrash,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -73,13 +75,17 @@ type MemberItem = {
 function MembersPanel({
   workspaceId,
   workspaceName,
+  canManage,
 }: {
   workspaceId: string;
   workspaceName: string;
+  canManage: boolean;
 }) {
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [memberToRemove, setMemberToRemove] = useState<MemberItem | null>(null);
+  const [removing, setRemoving] = useState(false);
   const workspaceIdRef = useRef(workspaceId);
   workspaceIdRef.current = workspaceId;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -115,6 +121,24 @@ function MembersPanel({
     };
   }, [workspaceId, loadMembers]);
 
+  async function removeMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!memberToRemove) return;
+    setRemoving(true);
+    try {
+      await httpClient.delete(`/organizations/${workspaceId}/members/${memberToRemove.id}`);
+      setMembers((items) => items.filter((item) => item.id !== memberToRemove.id));
+      setMemberToRemove(null);
+      toast.success("Miembro retirado.");
+    } catch (removeError) {
+      toast.error(
+        errorMessage(removeError, "No pudimos retirar al miembro. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
     <section className="members-section" aria-live="polite">
       <header className="applications-header">
@@ -145,11 +169,68 @@ function MembersPanel({
                 <strong>{memberItem.name}</strong>
                 <span>{memberItem.email}</span>
               </div>
-              <span className="application-status">{formatWorkspaceRole(memberItem.role)}</span>
+              <div className="flex items-center gap-2">
+                <span className="application-status">{formatWorkspaceRole(memberItem.role)}</span>
+                {canManage && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          data-testid={`member-menu-${memberItem.id}`}
+                          aria-label={`Acciones de ${memberItem.name}`}
+                        >
+                          <IconDots />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setMemberToRemove(memberItem)}
+                      >
+                        <IconTrash className="mr-2 size-4" />
+                        <span>Retirar miembro</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </li>
           ))}
         </ul>
       )}
+      <Dialog
+        open={memberToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setMemberToRemove(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Retirar a este miembro del workspace?</DialogTitle>
+            <DialogDescription>
+              Perderá el acceso a las aplicaciones y recursos de este workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={removeMember} className="flex flex-col gap-4">
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={removing}
+                onClick={() => setMemberToRemove(null)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" variant="destructive" disabled={removing} data-testid="confirm-remove-member">
+                {removing ? "Retirando miembro…" : "Retirar miembro"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -879,6 +960,7 @@ export default function Dashboard({ userName }: { userName: string }) {
             key={workspace.id}
             workspaceId={workspace.id}
             workspaceName={workspace?.name ?? ""}
+            canManage={canManage}
           />
         ) : (
           <>

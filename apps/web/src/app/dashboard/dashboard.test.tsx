@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const { client, activeOrgRef, authOrgMock, toastMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   activeOrgRef: {
     current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
   },
@@ -1105,5 +1105,111 @@ describe("Dashboard", () => {
     fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
 
     expect(await screen.findByText("Este workspace aún no tiene otros miembros.")).toBeTruthy();
+  });
+
+  it("removes a member after explicit confirmation", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [
+            { id: "member-1", name: "Ana Rojas", email: "ana@biotec.io", role: "owner" },
+            { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
+          ],
+        };
+      }
+      return { data: [] };
+    });
+    client.delete.mockResolvedValue({ data: { message: "Miembro retirado." } });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Ana Rojas")).toBeTruthy();
+
+    fireEvent.click(await screen.findByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Retirar miembro"));
+
+    expect(
+      await screen.findByText("¿Retirar a este miembro del workspace?"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Perderá el acceso a las aplicaciones y recursos de este workspace."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("confirm-remove-member"));
+
+    await waitFor(() => {
+      expect(client.delete).toHaveBeenCalledWith("/organizations/org-1/members/member-2");
+    });
+    await waitFor(() => {
+      expect(toastMock.success).toHaveBeenCalledWith("Miembro retirado.");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Luis Pérez")).toBeNull();
+    });
+    expect(screen.getByText("Ana Rojas")).toBeTruthy();
+  });
+
+  it("shows the permission message when the server refuses to remove the member", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [] };
+      }
+      if (url === "/organizations/org-1/members") {
+        return {
+          data: [{ id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" }],
+        };
+      }
+      return { data: [] };
+    });
+    client.delete.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { message: "No tienes permiso para retirar miembros de este workspace." },
+      },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /miembros/i }));
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    fireEvent.click(await screen.findByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Retirar miembro"));
+
+    fireEvent.click(await screen.findByTestId("confirm-remove-member"));
+
+    await waitFor(() => {
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No tienes permiso para retirar miembros de este workspace.",
+      );
+    });
+    expect(screen.getByText("Luis Pérez")).toBeTruthy();
   });
 });

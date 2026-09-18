@@ -10,12 +10,12 @@ import { application, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq, ne, or, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
-import { createMembersApp, type MemberItem } from "./members";
+import { createMembersApp, type MemberItem, type RemoveMemberResult } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -101,6 +101,29 @@ const members = {
       .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
       .orderBy(asc(member.createdAt));
   },
+  async remove(organizationId: string, memberId: string): Promise<RemoveMemberResult> {
+    const [target] = await db
+      .select({ id: member.id, userId: member.userId, role: member.role })
+      .from(member)
+      .where(and(eq(member.organizationId, organizationId), eq(member.id, memberId)))
+      .limit(1);
+    if (!target) return { ok: false, reason: "not-found" };
+
+    if (target.role === "admin" || target.role === "owner") {
+      const adminsCondition: SQL = and(
+        eq(member.organizationId, organizationId),
+        or(eq(member.role, "admin"), eq(member.role, "owner")),
+      ) as SQL;
+      const [adminCount] = await db
+        .select({ total: count() })
+        .from(member)
+        .where(adminsCondition);
+      if (!adminCount || adminCount.total <= 1) return { ok: false, reason: "last-admin" };
+    }
+
+    await db.delete(member).where(eq(member.id, target.id));
+    return { ok: true };
+  },
 };
 
 const app = new Hono();
@@ -110,7 +133,7 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
