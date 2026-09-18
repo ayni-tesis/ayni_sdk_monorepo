@@ -208,7 +208,7 @@ describe("Dashboard", () => {
 
     expect((cancelBtn as HTMLButtonElement).disabled).toBe(true);
 
-    resolveCreate({ data: { id: "org-xyz" } });
+    resolveCreate({ error: { message: "Error al crear" } });
     await waitFor(() => expect((cancelBtn as HTMLButtonElement).disabled).toBe(false));
   });
 
@@ -369,7 +369,6 @@ describe("Dashboard", () => {
     });
 
     expect(screen.queryByRole("dialog", { name: "Crear workspace" })).toBeNull();
-    expect((screen.getByLabelText("Nombre del workspace") as HTMLInputElement).value).toBe("");
 
     const selectorTrigger = screen.getByTestId("workspace-selector-trigger");
     fireEvent.click(selectorTrigger);

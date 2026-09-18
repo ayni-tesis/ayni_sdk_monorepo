@@ -546,6 +546,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         );
         void loadWorkspaces();
         setNewWorkspaceName("");
+        setCreatingWorkspace(false);
         setWorkspaceDialogOpen(false);
         return;
       }
@@ -553,6 +554,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       toast.success("Workspace creado.");
       void loadWorkspaces();
       setNewWorkspaceName("");
+      setCreatingWorkspace(false);
       setWorkspaceDialogOpen(false);
     } catch (createError) {
       toast.error(
