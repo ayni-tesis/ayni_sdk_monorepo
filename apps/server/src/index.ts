@@ -196,7 +196,7 @@ const invitations = {
         .limit(1);
       if (existingMembership) return "already-member";
 
-      await tx
+      const [insertedMembership] = await tx
         .insert(member)
         .values({
           id: crypto.randomUUID(),
@@ -204,7 +204,12 @@ const invitations = {
           userId,
           role: invitation.role,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: member.id });
+      if (!insertedMembership) {
+        return "already-member";
+      }
+
       await tx
         .update(invitationLink)
         .set({ status: "accepted" })
