@@ -143,6 +143,50 @@ describe("PATCH /organizations/:organizationId/members/:memberId", () => {
     });
   });
 
+  it("rejects null or non-object body with 400", async () => {
+    const app = createMembersApp({
+      getSession: async () => ({ user: { id: "user-admin" } }),
+      members: {
+        getMembership: async () => "admin",
+        listOthers: async () => [],
+        updateRole: async () => ({ success: false, error: "FORBIDDEN" }),
+      },
+    });
+
+    const response = await app.request("/organizations/org-1/members/member-2", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(null),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      message: "Rol inválido.",
+    });
+  });
+
+  it("rejects with 403 when updateRole reports forbidden concurrent demotion", async () => {
+    const app = createMembersApp({
+      getSession: async () => ({ user: { id: "user-admin" } }),
+      members: {
+        getMembership: async () => "admin",
+        listOthers: async () => [],
+        updateRole: async () => ({ success: false, error: "FORBIDDEN" }),
+      },
+    });
+
+    const response = await app.request("/organizations/org-1/members/member-2", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "admin" }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para cambiar roles en este workspace.",
+    });
+  });
+
   it("rejects modifying own role with 400", async () => {
     const app = createMembersApp({
       getSession: async () => ({ user: { id: "user-admin" } }),

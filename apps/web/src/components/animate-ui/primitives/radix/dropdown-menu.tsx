@@ -111,11 +111,7 @@ type DropdownMenuLabelProps = React.ComponentProps<typeof DropdownMenuPrimitive.
 
 function DropdownMenuLabel({ inset, ...props }: DropdownMenuLabelProps) {
   return (
-    <DropdownMenuPrimitive.Label
-      data-slot="dropdown-menu-label"
-      data-inset={inset}
-      {...props}
-    />
+    <DropdownMenuPrimitive.Label data-slot="dropdown-menu-label" data-inset={inset} {...props} />
   );
 }
 
@@ -141,10 +137,7 @@ type DropdownMenuItemIndicatorProps = React.ComponentProps<
 
 function DropdownMenuItemIndicator(props: DropdownMenuItemIndicatorProps) {
   return (
-    <DropdownMenuPrimitive.ItemIndicator
-      data-slot="dropdown-menu-item-indicator"
-      {...props}
-    />
+    <DropdownMenuPrimitive.ItemIndicator data-slot="dropdown-menu-item-indicator" {...props} />
   );
 }
 
@@ -153,45 +146,25 @@ type DropdownMenuCheckboxItemProps = React.ComponentProps<
 >;
 
 function DropdownMenuCheckboxItem(props: DropdownMenuCheckboxItemProps) {
-  return (
-    <DropdownMenuPrimitive.CheckboxItem
-      data-slot="dropdown-menu-checkbox-item"
-      {...props}
-    />
-  );
+  return <DropdownMenuPrimitive.CheckboxItem data-slot="dropdown-menu-checkbox-item" {...props} />;
 }
 
 type DropdownMenuRadioGroupProps = React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>;
 
 function DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) {
-  return (
-    <DropdownMenuPrimitive.RadioGroup
-      data-slot="dropdown-menu-radio-group"
-      {...props}
-    />
-  );
+  return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />;
 }
 
 type DropdownMenuRadioItemProps = React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>;
 
 function DropdownMenuRadioItem(props: DropdownMenuRadioItemProps) {
-  return (
-    <DropdownMenuPrimitive.RadioItem
-      data-slot="dropdown-menu-radio-item"
-      {...props}
-    />
-  );
+  return <DropdownMenuPrimitive.RadioItem data-slot="dropdown-menu-radio-item" {...props} />;
 }
 
 type DropdownMenuSeparatorProps = React.ComponentProps<typeof DropdownMenuPrimitive.Separator>;
 
 function DropdownMenuSeparator(props: DropdownMenuSeparatorProps) {
-  return (
-    <DropdownMenuPrimitive.Separator
-      data-slot="dropdown-menu-separator"
-      {...props}
-    />
-  );
+  return <DropdownMenuPrimitive.Separator data-slot="dropdown-menu-separator" {...props} />;
 }
 
 type DropdownMenuShortcutProps = React.ComponentProps<"span">;
@@ -206,9 +179,7 @@ function DropdownMenuSub(props: DropdownMenuSubProps) {
   return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />;
 }
 
-type DropdownMenuSubTriggerProps = React.ComponentProps<
-  typeof DropdownMenuPrimitive.SubTrigger
-> & {
+type DropdownMenuSubTriggerProps = React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
   inset?: boolean;
 };
 
@@ -249,6 +220,24 @@ function DropdownMenuSubContent({
   );
 }
 
+export type {
+  DropdownMenuCheckboxItemProps,
+  DropdownMenuContentProps,
+  DropdownMenuGroupProps,
+  DropdownMenuItemIndicatorProps,
+  DropdownMenuItemProps,
+  DropdownMenuLabelProps,
+  DropdownMenuPortalProps,
+  DropdownMenuProps,
+  DropdownMenuRadioGroupProps,
+  DropdownMenuRadioItemProps,
+  DropdownMenuSeparatorProps,
+  DropdownMenuShortcutProps,
+  DropdownMenuSubContentProps,
+  DropdownMenuSubProps,
+  DropdownMenuSubTriggerProps,
+  DropdownMenuTriggerProps,
+};
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -267,22 +256,4 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   useDropdownMenu,
-};
-export type {
-  DropdownMenuCheckboxItemProps,
-  DropdownMenuContentProps,
-  DropdownMenuGroupProps,
-  DropdownMenuItemIndicatorProps,
-  DropdownMenuItemProps,
-  DropdownMenuLabelProps,
-  DropdownMenuPortalProps,
-  DropdownMenuProps,
-  DropdownMenuRadioGroupProps,
-  DropdownMenuRadioItemProps,
-  DropdownMenuSeparatorProps,
-  DropdownMenuShortcutProps,
-  DropdownMenuSubContentProps,
-  DropdownMenuSubProps,
-  DropdownMenuSubTriggerProps,
-  DropdownMenuTriggerProps,
 };

@@ -58,7 +58,9 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
       return c.json({ message: "No tienes permiso para cambiar roles en este workspace." }, 403);
     }
 
-    const body = (await c.req.json().catch(() => ({}))) as { role?: unknown };
+    const rawBody = await c.req.json().catch(() => ({}));
+    const body =
+      typeof rawBody === "object" && rawBody !== null ? (rawBody as { role?: unknown }) : {};
     if (body.role !== "admin" && body.role !== "member") {
       return c.json({ message: "Rol inválido." }, 400);
     }

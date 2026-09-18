@@ -39,6 +39,7 @@ This file provides context about the project for AI assistants.
 - Caching: upstash-redis
 - Logging: pino
 - Application management: workspace-scoped applications with administrator- and owner-only create, rename, and archive actions
+- Workspace member management: workspace-scoped member listing and role updating (admin and member) restricted to workspace administrators and owners
 
 ## Project Structure
 

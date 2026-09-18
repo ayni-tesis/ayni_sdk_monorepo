@@ -4,27 +4,27 @@ import { IconCheck, IconChevronRight } from "@tabler/icons-react";
 import * as React from "react";
 
 import {
-  DropdownMenu as DropdownMenuPrimitive,
   DropdownMenuCheckboxItem as DropdownMenuCheckboxItemPrimitive,
   type DropdownMenuCheckboxItemProps as DropdownMenuCheckboxItemPrimitiveProps,
   DropdownMenuContent as DropdownMenuContentPrimitive,
   type DropdownMenuContentProps as DropdownMenuContentPrimitiveProps,
   DropdownMenuGroup as DropdownMenuGroupPrimitive,
-  DropdownMenuItem as DropdownMenuItemPrimitive,
   DropdownMenuItemIndicator as DropdownMenuItemIndicatorPrimitive,
+  DropdownMenuItem as DropdownMenuItemPrimitive,
   type DropdownMenuItemProps as DropdownMenuItemPrimitiveProps,
   DropdownMenuLabel as DropdownMenuLabelPrimitive,
   type DropdownMenuLabelProps as DropdownMenuLabelPrimitiveProps,
   DropdownMenuPortal as DropdownMenuPortalPrimitive,
+  DropdownMenu as DropdownMenuPrimitive,
   DropdownMenuRadioGroup as DropdownMenuRadioGroupPrimitive,
   DropdownMenuRadioItem as DropdownMenuRadioItemPrimitive,
   type DropdownMenuRadioItemProps as DropdownMenuRadioItemPrimitiveProps,
   DropdownMenuSeparator as DropdownMenuSeparatorPrimitive,
   type DropdownMenuSeparatorProps as DropdownMenuSeparatorPrimitiveProps,
   DropdownMenuShortcut as DropdownMenuShortcutPrimitive,
-  DropdownMenuSub as DropdownMenuSubPrimitive,
   DropdownMenuSubContent as DropdownMenuSubContentPrimitive,
   type DropdownMenuSubContentProps as DropdownMenuSubContentPrimitiveProps,
+  DropdownMenuSub as DropdownMenuSubPrimitive,
   DropdownMenuSubTrigger as DropdownMenuSubTriggerPrimitive,
   type DropdownMenuSubTriggerProps as DropdownMenuSubTriggerPrimitiveProps,
   DropdownMenuTrigger as DropdownMenuTriggerPrimitive,
@@ -46,18 +46,33 @@ function DropdownMenuTrigger({
   children,
   asChild,
   onClick,
+  onPointerDown,
   ...props
 }: DropdownMenuTriggerProps) {
   const { isOpen, setIsOpen } = useDropdownMenu();
+  const pointerDownHandledRef = React.useRef(false);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    pointerDownHandledRef.current = true;
+    onPointerDown?.(e);
+  };
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    setIsOpen(!isOpen);
+    if (!pointerDownHandledRef.current) {
+      setIsOpen(!isOpen);
+    }
+    pointerDownHandledRef.current = false;
     onClick?.(e);
   };
 
   if (render && React.isValidElement(render)) {
     return (
-      <DropdownMenuTriggerPrimitive asChild onClick={handleClick} {...props}>
+      <DropdownMenuTriggerPrimitive
+        asChild
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+        {...props}
+      >
         {React.cloneElement(render as React.ReactElement<{ children?: React.ReactNode }>, {
           children: (render.props as { children?: React.ReactNode }).children ?? children,
         })}
@@ -66,7 +81,12 @@ function DropdownMenuTrigger({
   }
 
   return (
-    <DropdownMenuTriggerPrimitive asChild={asChild} onClick={handleClick} {...props}>
+    <DropdownMenuTriggerPrimitive
+      asChild={asChild}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+      {...props}
+    >
       {children}
     </DropdownMenuTriggerPrimitive>
   );
@@ -78,11 +98,7 @@ function DropdownMenuPortal(props: React.ComponentProps<typeof DropdownMenuPorta
 
 type DropdownMenuContentProps = DropdownMenuContentPrimitiveProps;
 
-function DropdownMenuContent({
-  className,
-  sideOffset = 4,
-  ...props
-}: DropdownMenuContentProps) {
+function DropdownMenuContent({ className, sideOffset = 4, ...props }: DropdownMenuContentProps) {
   return (
     <DropdownMenuContentPrimitive
       sideOffset={sideOffset}
@@ -105,28 +121,16 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
-  onClick,
-  onSelect,
   ...props
 }: DropdownMenuItemProps) {
-  const { setIsOpen } = useDropdownMenu();
-
   return (
     <DropdownMenuItemPrimitive
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 data-[variant=destructive]:*:[svg]:text-destructive",
+        "group/dropdown-menu-item relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[inset]:pl-8 data-[variant=destructive]:text-destructive data-[disabled]:opacity-50 data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 data-[variant=destructive]:*:[svg]:text-destructive",
         className,
       )}
-      onClick={(e) => {
-        setIsOpen(false);
-        onClick?.(e);
-      }}
-      onSelect={(e) => {
-        setIsOpen(false);
-        onSelect?.(e);
-      }}
       {...props}
     />
   );
@@ -192,7 +196,10 @@ function DropdownMenuLabel({ className, inset, ...props }: DropdownMenuLabelProp
   return (
     <DropdownMenuLabelPrimitive
       data-inset={inset}
-      className={cn("px-2 py-1.5 font-semibold text-muted-foreground text-xs data-[inset]:pl-8", className)}
+      className={cn(
+        "px-2 py-1.5 font-semibold text-muted-foreground text-xs data-[inset]:pl-8",
+        className,
+      )}
       {...props}
     />
   );
