@@ -20,6 +20,10 @@ _Avoid_: App project, client app
 A Workspace member holding the owner or admin role with full management permissions over applications and workspace resources.
 _Avoid_: Manager, superuser
 
+**SDK Credential**:
+An application-scoped secret that lets an SDK installation authenticate to synchronize that application's resources. The server stores only a SHA-256 hash and shows the secret once at creation.
+_Avoid_: API key, token
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

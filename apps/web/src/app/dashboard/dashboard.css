@@ -109,6 +109,20 @@
 .application-sections h2 {
   font-size: var(--text-lg);
 }
+.application-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.credential-secret {
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
 .application-sections p {
   margin-top: 0.5rem;
 }

@@ -7,7 +7,14 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
+import {
+  application,
+  invitationLink,
+  member,
+  organization,
+  sdkCredential,
+  user,
+} from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
@@ -29,6 +36,12 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
+import {
+  type CreatedSdkCredential,
+  createSdkCredentialsApp,
+  generateSdkCredentialSecret,
+  hashSdkCredentialSecret,
+} from "./sdk-credentials";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -78,6 +91,36 @@ const applications = {
       .where(eq(application.id, id))
       .returning();
     return updated && toApplication(updated);
+  },
+};
+
+const sdkCredentials = {
+  async create({
+    applicationId,
+  }: {
+    applicationId: string;
+  }): Promise<CreatedSdkCredential | undefined> {
+    return db.transaction(async (tx) => {
+      const [activeApplication] = await tx
+        .select({ id: application.id })
+        .from(application)
+        .where(and(eq(application.id, applicationId), eq(application.status, "active")))
+        .limit(1)
+        .for("update");
+      if (!activeApplication) return undefined;
+
+      const secret = generateSdkCredentialSecret();
+      const [created] = await tx
+        .insert(sdkCredential)
+        .values({
+          id: crypto.randomUUID(),
+          applicationId: activeApplication.id,
+          secretHash: hashSdkCredentialSecret(secret),
+        })
+        .returning();
+      if (!created) throw new Error("SDK credential creation returned no record");
+      return { id: created.id, applicationId: created.applicationId, secret };
+    });
   },
 };
 
@@ -418,6 +461,14 @@ app.route(
   createInvitationsApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     invitations,
+  }),
+);
+app.route(
+  "/",
+  createSdkCredentialsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    credentials: sdkCredentials,
   }),
 );
 

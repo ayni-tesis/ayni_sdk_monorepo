@@ -53,6 +53,12 @@ type Application = {
   status: "active" | "archived";
 };
 
+type GeneratedCredential = {
+  id: string;
+  applicationId: string;
+  secret: string;
+};
+
 function membersErrorMessage(error: unknown) {
   const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
   if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
@@ -640,12 +646,91 @@ function CreateWorkspaceDialog({
   );
 }
 
+function GenerateCredentialDialog({
+  open,
+  onOpenChange,
+  onDiscard,
+  generated,
+  generating,
+  onGenerate,
+  onCopy,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDiscard: () => void;
+  generated: GeneratedCredential | null;
+  generating: boolean;
+  onGenerate: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCopy: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (generating) return;
+        if (!nextOpen && generated) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={!generated && !generating}>
+        <DialogHeader>
+          <DialogTitle>Generar credencial SDK</DialogTitle>
+          <DialogDescription>
+            {generated
+              ? "Copia tu credencial ahora. No podrás verla nuevamente."
+              : "El secreto se mostrará una sola vez. Guárdalo en un lugar seguro."}
+          </DialogDescription>
+        </DialogHeader>
+        {generated ? (
+          <div className="flex flex-col gap-4">
+            <code className="credential-secret" data-testid="credential-secret">
+              {generated.secret}
+            </code>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                data-testid="close-credential"
+                onClick={onDiscard}
+              >
+                Cerrar
+              </Button>
+              <Button type="button" data-testid="copy-credential" onClick={onCopy}>
+                Copiar credencial
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={onGenerate} className="flex flex-col gap-4">
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={generating}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" data-testid="generate-credential-submit" disabled={generating}>
+                {generating ? "Generando credencial…" : "Generar credencial"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [appDialogOpen, setAppDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
+  const [generatingCredential, setGeneratingCredential] = useState(false);
+  const [generatedCredential, setGeneratedCredential] = useState<GeneratedCredential | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -713,6 +798,8 @@ export default function Dashboard({ userName }: { userName: string }) {
     setSwitchingWorkspace(true);
     setSelected(null);
     setApplications([]);
+    setCredentialDialogOpen(false);
+    setGeneratedCredential(null);
     try {
       const res = await authClient.organization.setActive({ organizationId });
       if (res?.error) {
@@ -766,6 +853,8 @@ export default function Dashboard({ userName }: { userName: string }) {
     workspaceSwitchGenerationRef.current += 1;
     setSelected(null);
     setApplications([]);
+    setCredentialDialogOpen(false);
+    setGeneratedCredential(null);
     if (workspaceMissing) {
       return;
     }
@@ -990,6 +1079,60 @@ export default function Dashboard({ userName }: { userName: string }) {
       toast.error(
         errorMessage(detailError, "No pudimos cargar la aplicación. Inténtalo nuevamente."),
       );
+    }
+  }
+
+  function openGenerateCredential() {
+    setGeneratedCredential(null);
+    setCredentialDialogOpen(true);
+  }
+
+  function closeCredentialDialog() {
+    setCredentialDialogOpen(false);
+    setGeneratedCredential(null);
+  }
+
+  async function generateCredential(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    const applicationId = selected.id;
+    const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
+    setGeneratingCredential(true);
+    try {
+      const { data } = await httpClient.post<{ credential: GeneratedCredential }>(
+        `/applications/${applicationId}/sdk-credentials`,
+      );
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      setGeneratedCredential(data.credential);
+      toast.success("Credencial generada.");
+    } catch (credentialError) {
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.error(
+        errorMessage(credentialError, "No pudimos generar la credencial. Inténtalo nuevamente."),
+      );
+    } finally {
+      setGeneratingCredential(false);
+    }
+  }
+
+  async function copyCredential() {
+    if (!generatedCredential) return;
+    try {
+      await navigator.clipboard.writeText(generatedCredential.secret);
+      toast.success("Credencial copiada.");
+    } catch {
+      toast.error("No pudimos copiar la credencial. Inténtalo de nuevo.");
     }
   }
 
@@ -1219,8 +1362,20 @@ export default function Dashboard({ userName }: { userName: string }) {
                     <p>Aún no hay modelos configurados.</p>
                   </section>
                   <section>
-                    <h2>Credenciales SDK</h2>
-                    <p>Las credenciales no se muestran aquí.</p>
+                    <div className="application-section-heading">
+                      <h2>Credenciales SDK</h2>
+                      {canManage && selected.status === "active" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="generate-credential-trigger"
+                          onClick={openGenerateCredential}
+                        >
+                          Generar credencial
+                        </Button>
+                      )}
+                    </div>
+                    <p>Genera una credencial para autenticar al SDK de esta aplicación.</p>
                   </section>
                   <section>
                     <h2>Datasets</h2>
@@ -1338,6 +1493,18 @@ export default function Dashboard({ userName }: { userName: string }) {
             </form>
           </DialogContent>
         </Dialog>
+        <GenerateCredentialDialog
+          open={credentialDialogOpen}
+          onOpenChange={(open) => {
+            if (open) setCredentialDialogOpen(true);
+            else closeCredentialDialog();
+          }}
+          onDiscard={closeCredentialDialog}
+          generated={generatedCredential}
+          generating={generatingCredential}
+          onGenerate={generateCredential}
+          onCopy={() => void copyCredential()}
+        />
         <CreateWorkspaceDialog
           open={workspaceDialogOpen}
           onOpenChange={setWorkspaceDialogOpen}
