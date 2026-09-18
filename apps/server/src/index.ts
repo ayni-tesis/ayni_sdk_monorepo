@@ -11,7 +11,7 @@ import { application, invitationLink, member, organization, user } from "@ayni/d
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, gt, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -23,7 +23,7 @@ import {
   type InvitationPreview,
   type InvitationRole,
 } from "./invitations";
-import { createMembersApp, type MemberItem, type RemoveMemberResult } from "./members";
+import { createMembersApp, type MemberItem, type RemoveMemberResult, type UpdateMemberRoleResult } from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -111,6 +111,12 @@ const members = {
   },
   async remove(organizationId: string, memberId: string): Promise<RemoveMemberResult> {
     return db.transaction(async (tx) => {
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .for("update");
+
       const [target] = await tx
         .select({ id: member.id, role: member.role })
         .from(member)
@@ -135,6 +141,93 @@ const members = {
 
       await tx.delete(member).where(eq(member.id, target.id));
       return { ok: true } as const;
+    });
+  },
+  async updateRole(
+    requesterUserId: string,
+    organizationId: string,
+    memberId: string,
+    newRole: "admin" | "member",
+  ): Promise<UpdateMemberRoleResult> {
+    return await db.transaction(async (tx) => {
+      const [requester] = await tx
+        .select({ role: member.role })
+        .from(member)
+        .where(and(eq(member.userId, requesterUserId), eq(member.organizationId, organizationId)))
+        .limit(1);
+
+      if (!requester || (requester.role !== "admin" && requester.role !== "owner")) {
+        return { success: false, error: "FORBIDDEN" };
+      }
+
+      const [targetMember] = await tx
+        .select({
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          organizationId: member.organizationId,
+          name: user.name,
+          email: user.email,
+        })
+        .from(member)
+        .innerJoin(user, eq(member.userId, user.id))
+        .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+        .limit(1);
+
+      if (!targetMember) {
+        return { success: false, error: "MEMBER_NOT_FOUND" };
+      }
+
+      if (targetMember.userId === requesterUserId) {
+        return { success: false, error: "SELF_MODIFICATION_NOT_ALLOWED" };
+      }
+
+      if (targetMember.role === "owner") {
+        return { success: false, error: "CANNOT_MODIFY_OWNER" };
+      }
+
+      if (targetMember.role === "admin" && newRole === "member") {
+        const remainingAdmins = await tx
+          .select({ id: member.id })
+          .from(member)
+          .where(
+            and(
+              eq(member.organizationId, organizationId),
+              ne(member.id, memberId),
+              or(eq(member.role, "admin"), eq(member.role, "owner")),
+            ),
+          );
+
+        if (remainingAdmins.length === 0) {
+          return { success: false, error: "AT_LEAST_ONE_ADMIN_REQUIRED" };
+        }
+      }
+
+      const [updated] = await tx
+        .update(member)
+        .set({ role: newRole })
+        .where(
+          and(
+            eq(member.id, memberId),
+            eq(member.organizationId, organizationId),
+            ne(member.role, "owner"),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        return { success: false, error: "MEMBER_NOT_FOUND" };
+      }
+
+      return {
+        success: true,
+        member: {
+          id: targetMember.id,
+          name: targetMember.name,
+          email: targetMember.email,
+          role: newRole,
+        },
+      };
     });
   },
 };
