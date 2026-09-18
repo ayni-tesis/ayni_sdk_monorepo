@@ -352,7 +352,7 @@ function MembersPanel({
       <Dialog
         open={memberToRemove !== null}
         onOpenChange={(open) => {
-          if (!open) setMemberToRemove(null);
+          if (!removing && !open) setMemberToRemove(null);
         }}
       >
         <DialogContent>

@@ -1176,6 +1176,38 @@ describe("Dashboard", () => {
     expect(screen.getByText("Ana Rojas")).toBeTruthy();
   });
 
+  it("keeps the confirmation dialog open while the removal is in flight", async () => {
+    let resolveDelete: (value: unknown) => void = () => {};
+    client.delete.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    await renderOpenMembersView([
+      { id: "member-2", name: "Luis Pérez", email: "luis@biotec.io", role: "member" },
+    ]);
+
+    expect(await screen.findByText("Luis Pérez")).toBeTruthy();
+
+    fireEvent.click(await screen.findByTestId("member-menu-member-2"));
+    fireEvent.click(await screen.findByText("Retirar miembro"));
+
+    expect(await screen.findByText("¿Retirar a este miembro del workspace?")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("confirm-remove-member"));
+    expect(screen.getByRole("button", { name: /retirando miembro…/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    resolveDelete({ data: { message: "Miembro retirado." } });
+
+    await waitFor(() => {
+      expect(screen.queryByText("¿Retirar a este miembro del workspace?")).toBeNull();
+    });
+  });
+
   it("shows the permission message when the server refuses to remove the member", async () => {
     client.delete.mockRejectedValue({
       isAxiosError: true,

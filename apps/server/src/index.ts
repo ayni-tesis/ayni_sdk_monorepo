@@ -23,7 +23,12 @@ import {
   type InvitationPreview,
   type InvitationRole,
 } from "./invitations";
-import { createMembersApp, type MemberItem, type RemoveMemberResult, type UpdateMemberRoleResult } from "./members";
+import {
+  createMembersApp,
+  type MemberItem,
+  type RemoveMemberResult,
+  type UpdateMemberRoleResult,
+} from "./members";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -109,13 +114,27 @@ const members = {
       .where(and(eq(member.organizationId, organizationId), ne(member.userId, userId)))
       .orderBy(asc(member.createdAt));
   },
-  async remove(organizationId: string, memberId: string): Promise<RemoveMemberResult> {
+  async remove(
+    requesterUserId: string,
+    organizationId: string,
+    memberId: string,
+  ): Promise<RemoveMemberResult> {
     return db.transaction(async (tx) => {
       await tx
         .select({ id: organization.id })
         .from(organization)
         .where(eq(organization.id, organizationId))
         .for("update");
+
+      const [requester] = await tx
+        .select({ id: member.id, role: member.role })
+        .from(member)
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, requesterUserId)))
+        .limit(1)
+        .for("update");
+      if (!requester || (requester.role !== "admin" && requester.role !== "owner")) {
+        return { ok: false, reason: "forbidden" as const };
+      }
 
       const [target] = await tx
         .select({ id: member.id, role: member.role })
@@ -124,8 +143,9 @@ const members = {
         .limit(1)
         .for("update");
       if (!target) return { ok: false, reason: "not-found" as const };
+      if (target.role === "owner") return { ok: false, reason: "owner" as const };
 
-      if (target.role === "admin" || target.role === "owner") {
+      if (target.role === "admin") {
         const admins = await tx
           .select({ id: member.id })
           .from(member)
@@ -150,6 +170,12 @@ const members = {
     newRole: "admin" | "member",
   ): Promise<UpdateMemberRoleResult> {
     return await db.transaction(async (tx) => {
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .for("update");
+
       const [requester] = await tx
         .select({ role: member.role })
         .from(member)

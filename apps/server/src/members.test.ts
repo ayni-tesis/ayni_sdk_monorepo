@@ -182,6 +182,47 @@ describe("DELETE /organizations/:organizationId/members/:memberId", () => {
     });
   });
 
+  it("rejects removing the workspace owner with 403", async () => {
+    const remove = vi.fn(async () => ({ ok: false as const, reason: "owner" as const }));
+    const app = createMembersApp(
+      createMembersDependencies({
+        getSession: async () => ({ user: { id: "user-123" } }),
+        getMembership: async () => "admin",
+        remove,
+      }),
+    );
+
+    const response = await app.request("/organizations/org-1/members/member-owner", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No se puede retirar al propietario del workspace.",
+    });
+  });
+
+  it("rejects with 403 when the requester lost admin permissions before the removal", async () => {
+    const remove = vi.fn(async () => ({ ok: false as const, reason: "forbidden" as const }));
+    const app = createMembersApp(
+      createMembersDependencies({
+        getSession: async () => ({ user: { id: "user-demoted" } }),
+        getMembership: async () => "admin",
+        remove,
+      }),
+    );
+
+    const response = await app.request("/organizations/org-1/members/member-2", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para retirar miembros de este workspace.",
+    });
+    expect(remove).toHaveBeenCalledWith("user-demoted", "org-1", "member-2");
+  });
+
   it("removes the membership for admins", async () => {
     const remove = vi.fn(async () => ({ ok: true as const }));
     const app = createMembersApp(
@@ -198,7 +239,7 @@ describe("DELETE /organizations/:organizationId/members/:memberId", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ message: "Miembro retirado." });
-    expect(remove).toHaveBeenCalledWith("org-1", "member-2");
+    expect(remove).toHaveBeenCalledWith("user-123", "org-1", "member-2");
   });
 });
 
