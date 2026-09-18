@@ -203,6 +203,7 @@ type DropdownMenuSubContentProps = Omit<
 
 function DropdownMenuSubContent({
   transition = { duration: 0.2 },
+  className,
   ...props
 }: DropdownMenuSubContentProps) {
   return (
@@ -214,6 +215,11 @@ function DropdownMenuSubContent({
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
         transition={transition}
+        className={
+          className
+            ? `data-[state=closed]:pointer-events-none data-[state=closed]:invisible ${className}`
+            : "data-[state=closed]:pointer-events-none data-[state=closed]:invisible"
+        }
         {...props}
       />
     </DropdownMenuPrimitive.SubContent>

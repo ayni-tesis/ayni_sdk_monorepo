@@ -172,7 +172,13 @@ const members = {
       const [updated] = await tx
         .update(member)
         .set({ role: newRole })
-        .where(and(eq(member.id, memberId), eq(member.organizationId, organizationId)))
+        .where(
+          and(
+            eq(member.id, memberId),
+            eq(member.organizationId, organizationId),
+            ne(member.role, "owner"),
+          ),
+        )
         .returning();
 
       if (!updated) {
