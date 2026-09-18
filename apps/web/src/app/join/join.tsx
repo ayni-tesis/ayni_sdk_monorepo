@@ -53,6 +53,15 @@ export default function JoinInvitation({ token, userName }: { token: string; use
     };
   }, [token]);
 
+  async function activateWorkspace(organizationId: string) {
+    try {
+      const result = await authClient.organization.setActive({ organizationId });
+      return !!result?.error;
+    } catch {
+      return true;
+    }
+  }
+
   async function joinWorkspace() {
     if (!invitation) return;
     setStatus("joining");
@@ -60,16 +69,7 @@ export default function JoinInvitation({ token, userName }: { token: string; use
       const { data } = await httpClient.post<{
         organization: { id: string; name: string; role: string };
       }>(`/invitation-links/${token}/accept`);
-      let activationFailed = false;
-      try {
-        const result = await authClient.organization.setActive({
-          organizationId: data.organization.id,
-        });
-        activationFailed = !!result?.error;
-      } catch {
-        activationFailed = true;
-      }
-      if (activationFailed) {
+      if (await activateWorkspace(data.organization.id)) {
         setMessage(
           `Te uniste a ${data.organization.name}, pero no pudimos cambiar al workspace automáticamente.`,
         );
@@ -80,7 +80,15 @@ export default function JoinInvitation({ token, userName }: { token: string; use
       router.push("/dashboard");
     } catch (joinError) {
       if (axios.isAxiosError(joinError) && joinError.response?.status === 409) {
-        setMessage(errorMessage(joinError, "Ya eres miembro de este workspace."));
+        const base = errorMessage(joinError, "Ya eres miembro de este workspace.").replace(
+          /[.\s]+$/,
+          "",
+        );
+        if (await activateWorkspace(invitation.organizationId)) {
+          setMessage(`${base}, pero no pudimos cambiar al workspace automáticamente.`);
+        } else {
+          setMessage(`${base}.`);
+        }
         setStatus("joined");
         return;
       }

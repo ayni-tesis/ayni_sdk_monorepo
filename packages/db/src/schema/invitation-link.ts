@@ -7,7 +7,7 @@ export const invitationLink = pgTable(
   "invitation_link",
   {
     id: text("id").primaryKey(),
-    token: text("token").notNull(),
+    tokenHash: text("token_hash").notNull(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
@@ -22,7 +22,7 @@ export const invitationLink = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
   },
   (table) => [
-    uniqueIndex("invitation_link_token_idx").on(table.token),
+    uniqueIndex("invitation_link_token_hash_idx").on(table.tokenHash),
     index("invitation_link_organization_id_idx").on(table.organizationId),
     check("invitation_link_status_check", sql`${table.status} in ('pending', 'accepted')`),
     check("invitation_link_role_check", sql`${table.role} in ('admin', 'member')`),

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   createOpenApiDocument,
   HealthResponseSchema,
@@ -116,6 +117,10 @@ function generateInvitationToken() {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 }
 
+function hashInvitationToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 const invitations = {
   getMembership: applications.getMembership,
   async create({
@@ -127,11 +132,12 @@ const invitations = {
     role: InvitationRole;
     createdById: string;
   }): Promise<CreatedInvitation> {
+    const token = generateInvitationToken();
     const [created] = await db
       .insert(invitationLink)
       .values({
         id: crypto.randomUUID(),
-        token: generateInvitationToken(),
+        tokenHash: hashInvitationToken(token),
         organizationId,
         role,
         inviterId: createdById,
@@ -141,7 +147,7 @@ const invitations = {
     if (!created) throw new Error("Invitation creation returned no record");
     return {
       id: created.id,
-      token: created.token,
+      token,
       organizationId: created.organizationId,
       role: created.role,
       inviterId: created.inviterId,
@@ -161,7 +167,7 @@ const invitations = {
       .innerJoin(organization, eq(invitationLink.organizationId, organization.id))
       .where(
         and(
-          eq(invitationLink.token, token),
+          eq(invitationLink.tokenHash, hashInvitationToken(token)),
           eq(invitationLink.status, "pending"),
           gt(invitationLink.expiresAt, new Date()),
         ),
@@ -175,7 +181,7 @@ const invitations = {
       const [invitation] = await tx
         .select()
         .from(invitationLink)
-        .where(eq(invitationLink.token, token))
+        .where(eq(invitationLink.tokenHash, hashInvitationToken(token)))
         .limit(1)
         .for("update");
       if (invitation?.status !== "pending" || invitation.expiresAt.getTime() <= Date.now()) {

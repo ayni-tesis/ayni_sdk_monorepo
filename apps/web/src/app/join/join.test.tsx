@@ -193,12 +193,42 @@ describe("JoinInvitation", () => {
       isAxiosError: true,
       response: { status: 409, data: { message: "Ya eres miembro de este workspace." } },
     });
+    setActiveMock.mockResolvedValue({});
 
     renderJoin();
     fireEvent.click(await screen.findByRole("button", { name: /unirse al workspace/i }));
 
     expect(await screen.findByText("Ya eres miembro de este workspace.")).toBeTruthy();
+    await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith({ organizationId: "org-1" }));
     expect(pushMock).not.toHaveBeenCalled();
-    expect(setActiveMock).not.toHaveBeenCalled();
+  });
+
+  it("still activates the invited workspace when the user is already a member", async () => {
+    client.get.mockResolvedValue({
+      data: {
+        invitation: {
+          id: "inv-1",
+          organizationId: "org-1",
+          organizationName: "Laboratorio Andino",
+          role: "member",
+          expiresAt: "2026-10-01T00:00:00.000Z",
+        },
+      },
+    });
+    client.post.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 409, data: { message: "Ya eres miembro de este workspace." } },
+    });
+    setActiveMock.mockResolvedValue({ error: { message: "activation failed" } });
+
+    renderJoin();
+    fireEvent.click(await screen.findByRole("button", { name: /unirse al workspace/i }));
+
+    expect(
+      await screen.findByText(
+        "Ya eres miembro de este workspace, pero no pudimos cambiar al workspace automáticamente.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /ir al dashboard/i })).toBeTruthy();
   });
 });

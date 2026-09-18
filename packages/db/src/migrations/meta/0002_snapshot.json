@@ -1,5 +1,5 @@
 {
-  "id": "158310da-30ab-4db2-a15b-2c592d41a2ef",
+  "id": "8c8d67d4-821c-441d-b9e9-0a646d629c08",
   "prevId": "575a3fdb-929b-4eec-a4d6-aebf3e4eaa47",
   "version": "7",
   "dialect": "postgresql",
@@ -731,8 +731,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "token": {
-          "name": "token",
+        "token_hash": {
+          "name": "token_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -777,11 +777,11 @@
         }
       },
       "indexes": {
-        "invitation_link_token_idx": {
-          "name": "invitation_link_token_idx",
+        "invitation_link_token_hash_idx": {
+          "name": "invitation_link_token_hash_idx",
           "columns": [
             {
-              "expression": "token",
+              "expression": "token_hash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
