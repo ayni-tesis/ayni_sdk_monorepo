@@ -5,6 +5,7 @@ import {
   IconArrowLeft,
   IconChevronDown,
   IconCirclePlus,
+  IconDotsVertical,
   IconPencil,
   IconRefresh,
   IconUserPlus,
@@ -29,6 +30,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { errorMessage } from "@/lib/api-error";
 import { authClient } from "@/lib/auth-client";
@@ -67,18 +75,91 @@ type MemberItem = {
   role: string;
 };
 
+function ChangeRoleDialog({
+  open,
+  onOpenChange,
+  member,
+  role,
+  setRole,
+  updatingRole,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  member: MemberItem | null;
+  role: "admin" | "member";
+  setRole: (role: "admin" | "member") => void;
+  updatingRole: boolean;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!updatingRole) onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cambiar rol</DialogTitle>
+          <DialogDescription>
+            Selecciona el nuevo rol para {member?.name ?? "el miembro"}.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="member-role" className="font-semibold text-sm">
+              Rol
+            </label>
+            <Select value={role} onValueChange={(val) => setRole(val as "admin" | "member")}>
+              <SelectTrigger id="member-role" data-testid="role-selector-trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin" data-testid="role-option-admin">
+                  Administrador
+                </SelectItem>
+                <SelectItem value="member" data-testid="role-option-member">
+                  Miembro
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={updatingRole}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={updatingRole}>
+              {updatingRole ? "Actualizando rol…" : "Actualizar rol"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MembersPanel({
   workspaceId,
   workspaceName,
-  canManage,
+  canManage = false,
 }: {
   workspaceId: string;
   workspaceName: string;
-  canManage: boolean;
+  canManage?: boolean;
 }) {
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedMember, setSelectedMember] = useState<MemberItem | null>(null);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<"admin" | "member">("member");
+  const [updatingRole, setUpdatingRole] = useState(false);
   const inviteDialog = useRef<HTMLDialogElement>(null);
   const [invitationRole, setInvitationRole] = useState<"admin" | "member">("member");
   const [creatingInvitation, setCreatingInvitation] = useState(false);
@@ -117,6 +198,31 @@ function MembersPanel({
       abortControllerRef.current?.abort();
     };
   }, [workspaceId, loadMembers]);
+
+  function openChangeRole(memberItem: MemberItem) {
+    setSelectedMember(memberItem);
+    setSelectedRole(memberItem.role === "admin" ? "admin" : "member");
+    setRoleDialogOpen(true);
+  }
+
+  async function handleUpdateRole(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedMember) return;
+    setUpdatingRole(true);
+    try {
+      const { data } = await httpClient.patch<MemberItem>(
+        `/organizations/${workspaceId}/members/${selectedMember.id}`,
+        { role: selectedRole },
+      );
+      setMembers((items) => items.map((m) => (m.id === data.id ? { ...m, role: data.role } : m)));
+      toast.success("Rol actualizado.");
+      setRoleDialogOpen(false);
+    } catch (err) {
+      toast.error(errorMessage(err, "No pudimos actualizar el rol."));
+    } finally {
+      setUpdatingRole(false);
+    }
+  }
 
   function openCreateInvitation() {
     setInvitationRole("member");
@@ -187,11 +293,44 @@ function MembersPanel({
                 <strong>{memberItem.name}</strong>
                 <span>{memberItem.email}</span>
               </div>
-              <span className="application-status">{formatWorkspaceRole(memberItem.role)}</span>
+              <div className="flex items-center gap-2">
+                <span className="application-status">{formatWorkspaceRole(memberItem.role)}</span>
+                {canManage && memberItem.role !== "owner" && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      data-testid={`member-menu-${memberItem.id}`}
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          aria-label={`Opciones de ${memberItem.name}`}
+                        >
+                          <IconDotsVertical className="size-4" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openChangeRole(memberItem)}>
+                        Cambiar rol
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             </li>
           ))}
         </ul>
       )}
+      <ChangeRoleDialog
+        open={roleDialogOpen}
+        onOpenChange={setRoleDialogOpen}
+        member={selectedMember}
+        role={selectedRole}
+        setRole={setSelectedRole}
+        updatingRole={updatingRole}
+        onSubmit={handleUpdateRole}
+      />
       <dialog
         ref={inviteDialog}
         className="application-dialog"

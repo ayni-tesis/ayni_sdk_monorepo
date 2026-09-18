@@ -38,6 +38,8 @@ This file provides context about the project for AI assistants.
 - Testing: vitest
 - Caching: upstash-redis
 - Logging: pino
+- Application management: workspace-scoped applications with administrator- and owner-only create, rename, and archive actions
+- Workspace member management: workspace-scoped member listing and role updating (admin and member) restricted to workspace administrators and owners
 - Workspace invitation links: administrator- and owner-only creation of single-use, expiring links bound to one workspace and role (`admin` or `member`). The server stores only the SHA-256 hash of the token, the system never sends e-mail, and accepting a link grants membership only to the invited workspace.
 
 ## Project Structure
