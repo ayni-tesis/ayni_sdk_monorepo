@@ -93,6 +93,9 @@ describe("Dashboard", () => {
 
   it("lists workspace applications and opens their protected detail", async () => {
     client.get.mockImplementation(async (url: string) => {
+      if (url === "/applications/app-1/sdk-credentials") {
+        return { data: { credentials: [] } };
+      }
       if (url === "/workspaces") {
         return {
           data: [
@@ -1614,6 +1617,9 @@ describe("Dashboard", () => {
     activeRoleRef.current = role;
     client.post.mockReset();
     client.get.mockImplementation(async (url: string) => {
+      if (url === "/applications/app-1/sdk-credentials") {
+        return { data: { credentials: [] } };
+      }
       if (url === "/workspaces") {
         return {
           data: [{ id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role }],
