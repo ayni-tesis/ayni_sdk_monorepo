@@ -750,6 +750,53 @@ function GenerateCredentialDialog({
   );
 }
 
+function RevokeCredentialDialog({
+  open,
+  onOpenChange,
+  revoking,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  revoking: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (revoking) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={!revoking}>
+        <DialogHeader>
+          <DialogTitle>¿Revocar esta credencial?</DialogTitle>
+          <DialogDescription>
+            Los SDK que la usan no podrán sincronizar recursos nuevos. Esta acción no elimina
+            recursos ya guardados offline.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={revoking}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" data-testid="revoke-credential-submit" disabled={revoking}>
+              {revoking ? "Revocando credencial…" : "Revocar credencial"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
@@ -759,6 +806,12 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [generatingCredential, setGeneratingCredential] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState<GeneratedCredential | null>(null);
+  const [credentials, setCredentials] = useState<SdkCredentialItem[]>([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [credentialsError, setCredentialsError] = useState("");
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [credentialToRevoke, setCredentialToRevoke] = useState<SdkCredentialItem | null>(null);
+  const [revokingCredential, setRevokingCredential] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -786,11 +839,8 @@ export default function Dashboard({ userName }: { userName: string }) {
     !workspaces.some((ws) => ws.id === workspace.id);
   const abortControllerRef = useRef<AbortController | null>(null);
   const workspacesAbortRef = useRef<AbortController | null>(null);
-  const workspaceSwitchGenerationRef = useRef(0);
-  const [credentials, setCredentials] = useState<SdkCredentialItem[]>([]);
-  const [credentialsLoading, setCredentialsLoading] = useState(false);
-  const [credentialsError, setCredentialsError] = useState("");
   const credentialsAbortRef = useRef<AbortController | null>(null);
+  const workspaceSwitchGenerationRef = useRef(0);
   const selectedApplicationIdRef = useRef<string | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
@@ -825,14 +875,32 @@ export default function Dashboard({ userName }: { userName: string }) {
     };
   }, [loadWorkspaces]);
 
+  const clearCredentials = useCallback(() => {
+    credentialsAbortRef.current?.abort();
+    setCredentials([]);
+    setCredentialsError("");
+    setCredentialsLoading(false);
+    setRevokeDialogOpen(false);
+    setCredentialToRevoke(null);
+  }, []);
+
   async function switchWorkspace(organizationId: string) {
-    if (organizationId === workspace?.id || switchingWorkspace || saving || archiving) return;
+    if (
+      organizationId === workspace?.id ||
+      switchingWorkspace ||
+      saving ||
+      archiving ||
+      revokingCredential
+    ) {
+      return;
+    }
     workspaceSwitchGenerationRef.current += 1;
     setSwitchingWorkspace(true);
     setSelected(null);
     setApplications([]);
     setCredentialDialogOpen(false);
     setGeneratedCredential(null);
+    clearCredentials();
     try {
       const res = await authClient.organization.setActive({ organizationId });
       if (res?.error) {
@@ -888,14 +956,16 @@ export default function Dashboard({ userName }: { userName: string }) {
     setApplications([]);
     setCredentialDialogOpen(false);
     setGeneratedCredential(null);
+    clearCredentials();
     if (workspaceMissing) {
       return;
     }
     void loadApplications(workspace?.id);
     return () => {
       abortControllerRef.current?.abort();
+      credentialsAbortRef.current?.abort();
     };
-  }, [workspace?.id, workspaceMissing, loadApplications]);
+  }, [workspace?.id, workspaceMissing, loadApplications, clearCredentials]);
 
   const loadCredentials = useCallback(async (applicationId: string) => {
     credentialsAbortRef.current?.abort();
@@ -938,13 +1008,15 @@ export default function Dashboard({ userName }: { userName: string }) {
     setCredentials([]);
     setCredentialsError("");
     setCredentialsLoading(false);
-    if (selectedApplicationId) {
+    setRevokeDialogOpen(false);
+    setCredentialToRevoke(null);
+    if (selectedApplicationId && canManage) {
       void loadCredentials(selectedApplicationId);
     }
     return () => {
       credentialsAbortRef.current?.abort();
     };
-  }, [selectedApplicationId, loadCredentials]);
+  }, [selectedApplicationId, canManage, loadCredentials]);
 
   function openCreateWorkspace() {
     setNewWorkspaceName("");
@@ -1219,6 +1291,55 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
   }
 
+  function openRevokeCredential(credential: SdkCredentialItem) {
+    setCredentialToRevoke(credential);
+    setRevokeDialogOpen(true);
+  }
+
+  function closeRevokeDialog() {
+    setRevokeDialogOpen(false);
+    setCredentialToRevoke(null);
+  }
+
+  async function revokeCredential(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || !credentialToRevoke) return;
+    const credentialId = credentialToRevoke.id;
+    const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
+    setRevokingCredential(true);
+    try {
+      await httpClient.post<{ credential: { id: string; revokedAt: string } }>(
+        `/applications/${selected.id}/sdk-credentials/${credentialId}/revoke`,
+      );
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      setCredentials((items) =>
+        items.map((item) =>
+          item.id === credentialId ? { ...item, status: "revoked" as const } : item,
+        ),
+      );
+      closeRevokeDialog();
+      toast.success("Credencial revocada.");
+    } catch (revokeError) {
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.error(
+        errorMessage(revokeError, "No pudimos revocar la credencial. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRevokingCredential(false);
+    }
+  }
+
   if ((!workspace && !organization.isPending) || workspaceMissing) {
     if (loadingWorkspaces) {
       return (
@@ -1410,7 +1531,13 @@ export default function Dashboard({ userName }: { userName: string }) {
             </header>
             {selected ? (
               <section className="application-detail" aria-live="polite">
-                <Button variant="ghost" onClick={() => setSelected(null)}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSelected(null);
+                    clearCredentials();
+                  }}
+                >
                   <IconArrowLeft />
                   Aplicaciones
                 </Button>
@@ -1458,52 +1585,80 @@ export default function Dashboard({ userName }: { userName: string }) {
                         </Button>
                       )}
                     </div>
-                    {credentialsLoading ? (
-                      <p data-testid="credentials-loading">Cargando credenciales…</p>
-                    ) : credentialsError ? (
-                      <div className="applications-error" data-testid="credentials-error">
-                        <p>{credentialsError}</p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          data-testid="credentials-retry"
-                          onClick={() => selected && void loadCredentials(selected.id)}
-                        >
-                          <IconRefresh />
-                          Reintentar
-                        </Button>
+                    {canManage && (
+                      <div className="credential-rows" data-testid="credential-rows">
+                        {credentialsLoading ? (
+                          <p data-testid="credentials-loading">Cargando credenciales…</p>
+                        ) : credentialsError ? (
+                          <div className="applications-error" data-testid="credentials-error">
+                            <p>{credentialsError}</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid="credentials-retry"
+                              onClick={() => selected && void loadCredentials(selected.id)}
+                            >
+                              <IconRefresh />
+                              Reintentar
+                            </Button>
+                          </div>
+                        ) : credentials.length === 0 ? (
+                          <p data-testid="credentials-empty">
+                            Esta aplicación aún no tiene credenciales SDK.
+                          </p>
+                        ) : (
+                          <table className="credentials-table" data-testid="credentials-table">
+                            <thead>
+                              <tr>
+                                <th>Prefijo</th>
+                                <th>Estado</th>
+                                <th>Creada el</th>
+                                <th>Último uso</th>
+                                <th>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {credentials.map((credential) => (
+                                <tr
+                                  key={credential.id}
+                                  data-testid={`credential-row-${credential.id}`}
+                                >
+                                  <td>
+                                    <code>{credential.prefix ?? "—"}</code>
+                                  </td>
+                                  <td>
+                                    <span
+                                      className="credential-status"
+                                      data-testid={`credential-status-${credential.id}`}
+                                      data-status={credential.status}
+                                    >
+                                      {credential.status === "active" ? "Activa" : "Revocada"}
+                                    </span>
+                                  </td>
+                                  <td>{formatCredentialDate(credential.createdAt)}</td>
+                                  <td>
+                                    {credential.lastUsedAt
+                                      ? formatCredentialDate(credential.lastUsedAt)
+                                      : "Nunca"}
+                                  </td>
+                                  <td>
+                                    {credential.status === "active" && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        data-testid={`revoke-credential-${credential.id}`}
+                                        onClick={() => openRevokeCredential(credential)}
+                                      >
+                                        Revocar
+                                      </Button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
                       </div>
-                    ) : credentials.length === 0 ? (
-                      <p data-testid="credentials-empty">
-                        Esta aplicación aún no tiene credenciales SDK.
-                      </p>
-                    ) : (
-                      <table className="credentials-table" data-testid="credentials-table">
-                        <thead>
-                          <tr>
-                            <th>Prefijo</th>
-                            <th>Estado</th>
-                            <th>Creada el</th>
-                            <th>Último uso</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {credentials.map((credential) => (
-                            <tr key={credential.id} data-testid={`credential-row-${credential.id}`}>
-                              <td>
-                                <code>{credential.prefix ?? "—"}</code>
-                              </td>
-                              <td>{credential.status === "active" ? "Activa" : "Revocada"}</td>
-                              <td>{formatCredentialDate(credential.createdAt)}</td>
-                              <td>
-                                {credential.lastUsedAt
-                                  ? formatCredentialDate(credential.lastUsedAt)
-                                  : "Nunca"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
                     )}
                   </section>
                   <section>
@@ -1633,6 +1788,14 @@ export default function Dashboard({ userName }: { userName: string }) {
           generating={generatingCredential}
           onGenerate={generateCredential}
           onCopy={() => void copyCredential()}
+        />
+        <RevokeCredentialDialog
+          open={revokeDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) closeRevokeDialog();
+          }}
+          revoking={revokingCredential}
+          onSubmit={(event) => void revokeCredential(event)}
         />
         <CreateWorkspaceDialog
           open={workspaceDialogOpen}

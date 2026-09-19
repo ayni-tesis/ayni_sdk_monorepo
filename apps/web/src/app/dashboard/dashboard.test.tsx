@@ -1607,7 +1607,7 @@ describe("Dashboard", () => {
   async function renderOpenApplicationDetail({
     status = "active",
     role = "admin",
-    credentials = { data: { credentials: [] } },
+    credentials = [],
   }: {
     status?: "active" | "archived";
     role?: string;
@@ -1628,7 +1628,9 @@ describe("Dashboard", () => {
         return { data: { id: "app-1", organizationId: "org-1", name: "Cámara", status } };
       }
       if (url === "/applications/app-1/sdk-credentials") {
-        return typeof credentials === "function" ? (credentials as () => unknown)() : credentials;
+        const payload =
+          typeof credentials === "function" ? (credentials as () => unknown)() : credentials;
+        return Array.isArray(payload) ? { data: { credentials: payload } } : payload;
       }
       return { data: [] };
     });
@@ -1781,6 +1783,129 @@ describe("Dashboard", () => {
         "No tienes permiso para administrar credenciales.",
       ),
     );
+  });
+
+  const activeCredentialRow = {
+    id: "cred-1",
+    applicationId: "app-1",
+    prefix: "ayni_sk_abcd",
+    status: "active" as const,
+    createdAt: "2026-09-18T00:00:00.000Z",
+    lastUsedAt: null,
+  };
+
+  it("lists application credentials with an active state", async () => {
+    await renderOpenApplicationDetail({ credentials: [activeCredentialRow] });
+
+    expect(await screen.findByTestId("credential-row-cred-1")).toBeTruthy();
+    expect(screen.getByTestId("credential-status-cred-1").textContent).toBe("Activa");
+  });
+
+  it("revokes an active credential and moves its row to the revoked state", async () => {
+    await renderOpenApplicationDetail({ credentials: [activeCredentialRow] });
+
+    fireEvent.click(await screen.findByTestId("revoke-credential-cred-1"));
+
+    expect(screen.getByRole("heading", { name: "¿Revocar esta credencial?" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Los SDK que la usan no podrán sincronizar recursos nuevos. Esta acción no elimina recursos ya guardados offline.",
+      ),
+    ).toBeTruthy();
+
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          revokedAt: "2026-09-18T12:00:00.000Z",
+        },
+      },
+    });
+    fireEvent.click(screen.getByTestId("revoke-credential-submit"));
+
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/sdk-credentials/cred-1/revoke"),
+    );
+    expect(toastMock.success).toHaveBeenCalledWith("Credencial revocada.");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("credential-status-cred-1").textContent).toBe("Revocada"),
+    );
+    expect(screen.queryByTestId("revoke-credential-cred-1")).toBeNull();
+  });
+
+  it("shows 'Revocando credencial…' while the revocation request is in flight", async () => {
+    await renderOpenApplicationDetail({ credentials: [activeCredentialRow] });
+    let resolveRevoke: (value: unknown) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRevoke = resolve;
+      }),
+    );
+
+    fireEvent.click(await screen.findByTestId("revoke-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("revoke-credential-submit"));
+
+    expect(
+      screen.getByRole("button", { name: /revocando credencial…/i }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    resolveRevoke({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          revokedAt: "2026-09-18T12:00:00.000Z",
+        },
+      },
+    });
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Credencial revocada."));
+    await waitFor(() =>
+      expect(screen.getByTestId("credential-status-cred-1").textContent).toBe("Revocada"),
+    );
+  });
+
+  it("keeps the credential active and surfaces the revoke permission error", async () => {
+    await renderOpenApplicationDetail({ credentials: [activeCredentialRow] });
+    client.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { message: "No tienes permiso para revocar credenciales." },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("revoke-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("revoke-credential-submit"));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith("No tienes permiso para revocar credenciales."),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(screen.getByTestId("credential-status-cred-1").textContent).toBe("Activa");
+  });
+
+  it("does not offer revoking a credential that is already revoked", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [{ ...activeCredentialRow, status: "revoked" as const }],
+    });
+
+    const status = await screen.findByTestId("credential-status-cred-1");
+    expect(status.textContent).toBe("Revocada");
+    expect(screen.queryByTestId("revoke-credential-cred-1")).toBeNull();
+  });
+
+  it("does not list credentials for workspace members", async () => {
+    await renderOpenApplicationDetail({ role: "member", credentials: [activeCredentialRow] });
+
+    expect(screen.queryByTestId("credential-rows")).toBeNull();
+  });
+
+  it("shows the empty state when the application has no credentials", async () => {
+    await renderOpenApplicationDetail();
+
+    expect(await screen.findByText("Esta aplicación aún no tiene credenciales SDK.")).toBeTruthy();
   });
 
   it("requires an explicit close before discarding the generated secret", async () => {

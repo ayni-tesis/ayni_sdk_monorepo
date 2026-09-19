@@ -123,6 +123,17 @@
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;
 }
+.credential-rows {
+  display: grid;
+  margin-top: 0.75rem;
+}
+.credential-status {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.credential-status[data-status="revoked"] {
+  color: var(--destructive);
+}
 .credentials-table {
   width: 100%;
   margin-top: 0.75rem;
