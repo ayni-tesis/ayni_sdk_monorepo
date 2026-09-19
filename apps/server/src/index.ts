@@ -113,18 +113,30 @@ const sdkCredentials = {
   },
   async authenticate(secret: string) {
     const secretHash = createHash("sha256").update(secret).digest("hex");
-    const [credential] = await db
-      .select({ id: sdkCredential.id, applicationStatus: application.status })
-      .from(sdkCredential)
-      .innerJoin(application, eq(sdkCredential.applicationId, application.id))
-      .where(and(eq(sdkCredential.secretHash, secretHash), isNull(sdkCredential.revokedAt)))
-      .limit(1);
-    if (credential?.applicationStatus !== "active") return false;
-    await db
-      .update(sdkCredential)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(sdkCredential.id, credential.id));
-    return true;
+    return db.transaction(async (tx) => {
+      const [credential] = await tx
+        .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
+        .from(sdkCredential)
+        .where(and(eq(sdkCredential.secretHash, secretHash), isNull(sdkCredential.revokedAt)))
+        .limit(1)
+        .for("update");
+      if (!credential) return false;
+
+      const [foundApplication] = await tx
+        .select({ status: application.status })
+        .from(application)
+        .where(eq(application.id, credential.applicationId))
+        .limit(1)
+        .for("update");
+      if (foundApplication?.status !== "active") return false;
+
+      const [updated] = await tx
+        .update(sdkCredential)
+        .set({ lastUsedAt: new Date() })
+        .where(and(eq(sdkCredential.id, credential.id), isNull(sdkCredential.revokedAt)))
+        .returning({ id: sdkCredential.id });
+      return Boolean(updated);
+    });
   },
 };
 

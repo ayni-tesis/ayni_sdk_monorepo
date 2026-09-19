@@ -763,6 +763,7 @@ export default function Dashboard({ userName }: { userName: string }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const workspacesAbortRef = useRef<AbortController | null>(null);
   const workspaceSwitchGenerationRef = useRef(0);
+  const selectedApplicationRequestRef = useRef(0);
 
   const loadWorkspaces = useCallback(async () => {
     workspacesAbortRef.current?.abort();
@@ -799,8 +800,11 @@ export default function Dashboard({ userName }: { userName: string }) {
   async function switchWorkspace(organizationId: string) {
     if (organizationId === workspace?.id || switchingWorkspace || saving || archiving) return;
     workspaceSwitchGenerationRef.current += 1;
+    selectedApplicationRequestRef.current += 1;
     setSwitchingWorkspace(true);
     setSelected(null);
+    setSdkCredentials([]);
+    setLoadingSdkCredentials(false);
     setApplications([]);
     setCredentialDialogOpen(false);
     setGeneratedCredential(null);
@@ -1061,11 +1065,15 @@ export default function Dashboard({ userName }: { userName: string }) {
   }
 
   async function openApplication(id: string) {
+    const requestId = ++selectedApplicationRequestRef.current;
     const orgId = activeWorkspaceIdRef.current;
     const switchGen = workspaceSwitchGenerationRef.current;
+    setSdkCredentials([]);
+    setLoadingSdkCredentials(true);
     try {
       const { data } = await httpClient.get<Application>(`/applications/${id}`);
       if (
+        selectedApplicationRequestRef.current !== requestId ||
         activeWorkspaceIdRef.current !== orgId ||
         workspaceSwitchGenerationRef.current !== switchGen ||
         data.organizationId !== activeWorkspaceIdRef.current
@@ -1073,12 +1081,12 @@ export default function Dashboard({ userName }: { userName: string }) {
         return;
       }
       setSelected(data);
-      setLoadingSdkCredentials(true);
       try {
         const result = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
           `/applications/${id}/sdk-credentials`,
         );
         if (
+          selectedApplicationRequestRef.current === requestId &&
           activeWorkspaceIdRef.current === orgId &&
           workspaceSwitchGenerationRef.current === switchGen
         ) {
@@ -1086,6 +1094,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         }
       } finally {
         if (
+          selectedApplicationRequestRef.current === requestId &&
           activeWorkspaceIdRef.current === orgId &&
           workspaceSwitchGenerationRef.current === switchGen
         ) {
@@ -1094,6 +1103,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       }
     } catch (detailError) {
       if (
+        selectedApplicationRequestRef.current !== requestId ||
         activeWorkspaceIdRef.current !== orgId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
@@ -1119,6 +1129,7 @@ export default function Dashboard({ userName }: { userName: string }) {
     event.preventDefault();
     if (!selected) return;
     const applicationId = selected.id;
+    const requestId = selectedApplicationRequestRef.current;
     const orgId = activeWorkspaceIdRef.current;
     const switchGen = workspaceSwitchGenerationRef.current;
     setGeneratingCredential(true);
@@ -1127,6 +1138,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         `/applications/${applicationId}/sdk-credentials`,
       );
       if (
+        selectedApplicationRequestRef.current !== requestId ||
         activeWorkspaceIdRef.current !== orgId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
@@ -1137,13 +1149,20 @@ export default function Dashboard({ userName }: { userName: string }) {
         const { data: credentialList } = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
           `/applications/${applicationId}/sdk-credentials`,
         );
-        setSdkCredentials(credentialList.credentials);
+        if (
+          selectedApplicationRequestRef.current === requestId &&
+          activeWorkspaceIdRef.current === orgId &&
+          workspaceSwitchGenerationRef.current === switchGen
+        ) {
+          setSdkCredentials(credentialList.credentials);
+        }
       } catch {
         // The credential was created successfully; a list refresh can be retried on next visit.
       }
       toast.success("Credencial generada.");
     } catch (credentialError) {
       if (
+        selectedApplicationRequestRef.current !== requestId ||
         activeWorkspaceIdRef.current !== orgId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
@@ -1358,7 +1377,15 @@ export default function Dashboard({ userName }: { userName: string }) {
             </header>
             {selected ? (
               <section className="application-detail" aria-live="polite">
-                <Button variant="ghost" onClick={() => setSelected(null)}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    selectedApplicationRequestRef.current += 1;
+                    setSelected(null);
+                    setSdkCredentials([]);
+                    setLoadingSdkCredentials(false);
+                  }}
+                >
                   <IconArrowLeft />
                   Aplicaciones
                 </Button>
