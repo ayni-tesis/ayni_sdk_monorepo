@@ -9,8 +9,8 @@ import {
   listSdkCredentials,
   type ReadOnlyExecutor,
   type RegenerateSdkCredentialResult,
-  regenerateSdkCredential,
   type RevokeSdkCredentialResult,
+  regenerateSdkCredential,
   revokeSdkCredential,
   verifySdkCredential,
 } from "./sdk-credential-store";

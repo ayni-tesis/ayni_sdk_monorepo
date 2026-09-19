@@ -2476,5 +2476,4 @@ describe("Dashboard", () => {
     fireEvent.click(screen.getByTestId("close-regenerated-credential"));
     await waitFor(() => expect(screen.queryByTestId("regenerated-credential-secret")).toBeNull());
   });
-
 });

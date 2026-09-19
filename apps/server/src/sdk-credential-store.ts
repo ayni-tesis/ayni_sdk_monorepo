@@ -127,7 +127,7 @@ export const SDK_CREDENTIAL_REVOKED_MESSAGE =
 
 const INVALID_CREDENTIAL_MESSAGE = "La credencial no es válida.";
 
-type ApplicationRow = { id: string; organizationId: string };
+type ApplicationRow = { id: string; organizationId: string; status: string };
 
 async function findManagedApplication(
   tx: TransactionExecutor,
@@ -137,7 +137,11 @@ async function findManagedApplication(
   { ok: true; application: ApplicationRow } | { ok: false; reason: "forbidden" | "notFound" }
 > {
   const applicationRows = (await tx
-    .select({ id: application.id, organizationId: application.organizationId })
+    .select({
+      id: application.id,
+      organizationId: application.organizationId,
+      status: application.status,
+    })
     .from(application)
     .where(eq(application.id, applicationId))
     .limit(1)
@@ -176,36 +180,11 @@ export async function createSdkCredential(
   return database.transaction(async (transaction) => {
     const tx = transaction as TransactionExecutor;
 
-    const applicationRows = (await tx
-      .select({
-        id: application.id,
-        organizationId: application.organizationId,
-        status: application.status,
-      })
-      .from(application)
-      .where(eq(application.id, applicationId))
-      .limit(1)
-      .for("update")) as { id: string; organizationId: string; status: string }[];
-    const foundApplication = applicationRows[0];
+    const authorized = await findManagedApplication(tx, applicationId, userId);
+    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
 
-    if (!foundApplication) return { ok: false, reason: "notFound" };
-
-    const membershipRows = (await tx
-      .select({ role: member.role })
-      .from(member)
-      .where(
-        and(eq(member.userId, userId), eq(member.organizationId, foundApplication.organizationId)),
-      )
-      .limit(1)
-      .for("update")) as { role: string }[];
-    const membership = membershipRows[0];
-
-    if (!membership) return { ok: false, reason: "notFound" };
-    if (membership.role !== "admin" && membership.role !== "owner") {
-      return { ok: false, reason: "forbidden" };
-    }
-    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
-
+    const foundApplication = authorized.application;
     const secret = generateSdkCredentialSecret();
     const credentialRows = (await tx
       .insert(sdkCredential)
@@ -297,35 +276,11 @@ export async function regenerateSdkCredential(
   return database.transaction(async (transaction) => {
     const tx = transaction as TransactionExecutor;
 
-    const applicationRows = (await tx
-      .select({
-        id: application.id,
-        organizationId: application.organizationId,
-        status: application.status,
-      })
-      .from(application)
-      .where(eq(application.id, applicationId))
-      .limit(1)
-      .for("update")) as { id: string; organizationId: string; status: string }[];
-    const foundApplication = applicationRows[0];
+    const authorized = await findManagedApplication(tx, applicationId, userId);
+    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
 
-    if (!foundApplication) return { ok: false, reason: "notFound" };
-
-    const membershipRows = (await tx
-      .select({ role: member.role })
-      .from(member)
-      .where(
-        and(eq(member.userId, userId), eq(member.organizationId, foundApplication.organizationId)),
-      )
-      .limit(1)
-      .for("update")) as { role: string }[];
-    const membership = membershipRows[0];
-
-    if (!membership) return { ok: false, reason: "notFound" };
-    if (membership.role !== "admin" && membership.role !== "owner") {
-      return { ok: false, reason: "forbidden" };
-    }
-    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
+    const foundApplication = authorized.application;
 
     const credentialRows = (await tx
       .select({
