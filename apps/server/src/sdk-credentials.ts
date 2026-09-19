@@ -2,12 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Hono } from "hono";
 
 import type { Application } from "./applications";
-
-export type CreatedSdkCredential = {
-  id: string;
-  applicationId: string;
-  secret: string;
-};
+import type { CreateSdkCredentialResult } from "./sdk-credential-store";
 
 export const SDK_CREDENTIAL_SECRET_PREFIX = "ayni_sk_";
 
@@ -25,11 +20,13 @@ const APPLICATION_ARCHIVED_MESSAGE =
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   applications: {
-    getMembership: (userId: string, organizationId: string) => Promise<string | undefined>;
     get: (id: string) => Promise<Application | undefined>;
   };
   credentials: {
-    create: (input: { applicationId: string }) => Promise<CreatedSdkCredential | undefined>;
+    create: (input: {
+      applicationId: string;
+      userId: string;
+    }) => Promise<CreateSdkCredentialResult>;
   };
 };
 
@@ -43,21 +40,19 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
     const application = await applications.get(c.req.param("applicationId"));
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
 
-    const role = await applications.getMembership(session.user.id, application.organizationId);
-    if (role !== "admin" && role !== "owner") {
+    const result = await credentials.create({
+      applicationId: application.id,
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ credential: result.credential }, 201);
+    if (result.reason === "forbidden") {
       return c.json({ message: "No tienes permiso para administrar credenciales." }, 403);
     }
-
-    if (application.status === "archived") {
+    if (result.reason === "archived") {
       return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
     }
 
-    const credential = await credentials.create({ applicationId: application.id });
-    if (!credential) {
-      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
-    }
-
-    return c.json({ credential }, 201);
+    return c.json({ message: "No encontramos esta aplicación." }, 404);
   });
 
   return app;
