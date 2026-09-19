@@ -29,7 +29,7 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
-import { createSdkCredential } from "./sdk-credential-store";
+import { createSdkCredential, listSdkCredentials } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -86,6 +86,9 @@ const applications = {
 const sdkCredentials = {
   create(input: { applicationId: string; userId: string }) {
     return createSdkCredential(db, input);
+  },
+  list(input: { applicationId: string; userId: string }) {
+    return listSdkCredentials(db, input);
   },
 };
 

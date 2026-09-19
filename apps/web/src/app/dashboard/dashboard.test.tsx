@@ -1607,9 +1607,11 @@ describe("Dashboard", () => {
   async function renderOpenApplicationDetail({
     status = "active",
     role = "admin",
+    credentials = { data: { credentials: [] } },
   }: {
     status?: "active" | "archived";
     role?: string;
+    credentials?: unknown;
   } = {}) {
     activeRoleRef.current = role;
     client.post.mockReset();
@@ -1624,6 +1626,9 @@ describe("Dashboard", () => {
       }
       if (url === "/applications/app-1") {
         return { data: { id: "app-1", organizationId: "org-1", name: "Cámara", status } };
+      }
+      if (url === "/applications/app-1/sdk-credentials") {
+        return typeof credentials === "function" ? (credentials as () => unknown)() : credentials;
       }
       return { data: [] };
     });
@@ -1809,5 +1814,185 @@ describe("Dashboard", () => {
       screen.getByText("El secreto se mostrará una sola vez. Guárdalo en un lugar seguro."),
     ).toBeTruthy();
     expect(screen.queryByTestId("credential-secret")).toBeNull();
+  });
+
+  const listedCredential = {
+    id: "cred-1",
+    applicationId: "app-1",
+    prefix: "ayni_sk_abcd",
+    status: "active",
+    createdAt: "2026-09-18T12:00:00.000Z",
+    lastUsedAt: null,
+  };
+
+  it("requests the SDK credentials of the opened application", async () => {
+    await renderOpenApplicationDetail();
+
+    await waitFor(() =>
+      expect(client.get).toHaveBeenCalledWith(
+        "/applications/app-1/sdk-credentials",
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("lists credential metadata in a table without revealing any secret", async () => {
+    await renderOpenApplicationDetail({
+      credentials: { data: { credentials: [listedCredential] } },
+    });
+
+    const table = await screen.findByTestId("credentials-table");
+    expect(within(table).getByText("Prefijo")).toBeTruthy();
+    expect(within(table).getByText("Estado")).toBeTruthy();
+    expect(within(table).getByText("Creada el")).toBeTruthy();
+    expect(within(table).getByText("Último uso")).toBeTruthy();
+
+    const row = within(table).getByTestId("credential-row-cred-1");
+    expect(within(row).getByText("ayni_sk_abcd")).toBeTruthy();
+    expect(within(row).getByText("Activa")).toBeTruthy();
+    expect(
+      within(row).getByText(
+        new Date("2026-09-18T12:00:00.000Z").toLocaleDateString("es", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        }),
+      ),
+    ).toBeTruthy();
+    expect(within(row).getByText("Nunca")).toBeTruthy();
+
+    expect(screen.queryByText(/rest-of-secret|ayni_sk_abcd1234secret/)).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: /secreto/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /revelar|ver secreto|mostrar secreto/i }),
+    ).toBeNull();
+  });
+
+  it("shows an empty state when the application has no credentials", async () => {
+    await renderOpenApplicationDetail();
+
+    const empty = await screen.findByTestId("credentials-empty");
+    expect(empty.textContent).toBe("Esta aplicación aún no tiene credenciales SDK.");
+    expect(screen.queryByTestId("credentials-table")).toBeNull();
+  });
+
+  it("shows the loading state while credentials are being fetched", async () => {
+    let resolveCredentials: (value: unknown) => void = () => {};
+
+    await renderOpenApplicationDetail({
+      credentials: new Promise((resolve) => {
+        resolveCredentials = resolve;
+      }),
+    });
+
+    const loading = await screen.findByTestId("credentials-loading");
+    expect(loading.textContent).toBe("Cargando credenciales…");
+
+    resolveCredentials({ data: { credentials: [listedCredential] } });
+    expect(await screen.findByTestId("credential-row-cred-1")).toBeTruthy();
+    expect(screen.queryByTestId("credentials-loading")).toBeNull();
+  });
+
+  it("shows a retryable error state when loading fails", async () => {
+    let credentialsCalls = 0;
+
+    await renderOpenApplicationDetail({
+      credentials: () => {
+        credentialsCalls += 1;
+        if (credentialsCalls === 1) {
+          throw { isAxiosError: true, response: { status: 500, data: {} } };
+        }
+        return { data: { credentials: [listedCredential] } };
+      },
+    });
+
+    expect(
+      await screen.findByText("No pudimos cargar las credenciales. Inténtalo nuevamente."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("credentials-table")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("credentials-retry"));
+
+    expect(await screen.findByTestId("credential-row-cred-1")).toBeTruthy();
+    expect(credentialsCalls).toBe(2);
+  });
+
+  it("shows the permission state when the server rejects a member", async () => {
+    await renderOpenApplicationDetail({
+      credentials: () => {
+        throw {
+          isAxiosError: true,
+          response: {
+            status: 403,
+            data: { message: "No tienes permiso para ver las credenciales de esta aplicación." },
+          },
+        };
+      },
+    });
+
+    expect(
+      await screen.findByText("No tienes permiso para ver las credenciales de esta aplicación."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("credentials-table")).toBeNull();
+    expect(screen.queryByTestId("credential-row-cred-1")).toBeNull();
+  });
+
+  it("ignores credentials that belong to a different application", async () => {
+    await renderOpenApplicationDetail({
+      credentials: {
+        data: {
+          credentials: [{ ...listedCredential, applicationId: "app-other" }],
+        },
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("credentials-empty")).toBeTruthy());
+    expect(screen.queryByTestId("credential-row-cred-1")).toBeNull();
+  });
+
+  it("reloads the credentials list after generating a new credential", async () => {
+    let credentialsFetch = 0;
+    activeRoleRef.current = "admin";
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return {
+          data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }],
+        };
+      }
+      if (url === "/applications/app-1") {
+        return { data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" } };
+      }
+      if (url === "/applications/app-1/sdk-credentials") {
+        credentialsFetch += 1;
+        return { data: { credentials: credentialsFetch > 1 ? [listedCredential] : [] } };
+      }
+      return { data: [] };
+    });
+    client.post.mockReset();
+    client.post.mockResolvedValueOnce({
+      data: { credential: { id: "cred-1", applicationId: "app-1", secret: "ayni_sk_abcd1234" } },
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
+    await screen.findByText("ID de aplicación");
+    expect(await screen.findByTestId("credentials-empty")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    expect(await screen.findByTestId("credential-row-cred-1")).toBeTruthy();
   });
 });

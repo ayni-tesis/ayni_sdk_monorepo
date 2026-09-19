@@ -1,6 +1,10 @@
 ﻿import { application, member, sdkCredential } from "@ayni/db/schema/index";
 import { and, eq } from "drizzle-orm";
-import { generateSdkCredentialSecret, hashSdkCredentialSecret } from "./sdk-credentials";
+import {
+  deriveSdkCredentialPrefix,
+  generateSdkCredentialSecret,
+  hashSdkCredentialSecret,
+} from "./sdk-credentials";
 
 export type TransactionExecutor = {
   select: (fields: Record<string, unknown>) => {
@@ -82,6 +86,7 @@ export async function createSdkCredential(
         id: crypto.randomUUID(),
         applicationId: foundApplication.id,
         secretHash: hashSdkCredentialSecret(secret),
+        prefix: deriveSdkCredentialPrefix(secret),
       })
       .returning()) as { id: string; applicationId: string }[];
     const created = credentialRows[0];
@@ -96,5 +101,91 @@ export async function createSdkCredential(
         secret,
       },
     };
+  });
+}
+
+export type ReadOnlyExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => Promise<Record<string, unknown>[]>;
+    };
+  };
+};
+
+export type ListedSdkCredential = {
+  id: string;
+  applicationId: string;
+  prefix: string | null;
+  status: "active";
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+export type ListSdkCredentialsInput = {
+  applicationId: string;
+  userId: string;
+};
+
+export type ListSdkCredentialsResult =
+  | { ok: true; credentials: ListedSdkCredential[] }
+  | { ok: false; reason: "forbidden" | "notFound" };
+
+export async function listSdkCredentials(
+  database: CredentialDatabase,
+  { applicationId, userId }: ListSdkCredentialsInput,
+): Promise<ListSdkCredentialsResult> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as ReadOnlyExecutor;
+
+    const applicationRows = await tx
+      .select({ id: application.id, organizationId: application.organizationId })
+      .from(application)
+      .where(eq(application.id, applicationId));
+    const foundApplication = applicationRows[0] as
+      | { id: string; organizationId: string }
+      | undefined;
+
+    if (!foundApplication) return { ok: false, reason: "notFound" };
+
+    const membershipRows = await tx
+      .select({ role: member.role })
+      .from(member)
+      .where(
+        and(eq(member.userId, userId), eq(member.organizationId, foundApplication.organizationId)),
+      );
+    const membership = membershipRows[0] as { role: string } | undefined;
+
+    if (!membership) return { ok: false, reason: "notFound" };
+    if (membership.role !== "admin" && membership.role !== "owner") {
+      return { ok: false, reason: "forbidden" };
+    }
+
+    const credentialRows = (await tx
+      .select({
+        id: sdkCredential.id,
+        applicationId: sdkCredential.applicationId,
+        prefix: sdkCredential.prefix,
+        createdAt: sdkCredential.createdAt,
+      })
+      .from(sdkCredential)
+      .where(eq(sdkCredential.applicationId, foundApplication.id))) as {
+      id: string;
+      applicationId: string;
+      prefix: string | null;
+      createdAt: Date;
+    }[];
+
+    const credentials = credentialRows
+      .map((row) => ({
+        id: row.id,
+        applicationId: row.applicationId,
+        prefix: row.prefix,
+        status: "active" as const,
+        createdAt: row.createdAt.toISOString(),
+        lastUsedAt: null,
+      }))
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+
+    return { ok: true, credentials };
   });
 }
