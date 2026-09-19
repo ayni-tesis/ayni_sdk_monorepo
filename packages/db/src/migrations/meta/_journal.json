@@ -43,6 +43,13 @@
       "when": 1789786752022,
       "tag": "0005_messy_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789792385893,
+      "tag": "0006_spicy_odin",
+      "breakpoints": true
     }
   ]
 }

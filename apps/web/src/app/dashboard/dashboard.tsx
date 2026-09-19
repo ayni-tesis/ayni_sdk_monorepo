@@ -1636,10 +1636,18 @@ export default function Dashboard({ userName }: { userName: string }) {
                                     </span>
                                   </td>
                                   <td>{formatCredentialDate(credential.createdAt)}</td>
-                                  <td>
-                                    {credential.lastUsedAt
-                                      ? formatCredentialDate(credential.lastUsedAt)
-                                      : "Nunca"}
+                                  <td
+                                    title={
+                                      credential.status === "active" && credential.lastUsedAt
+                                        ? "Última autenticación correcta del SDK"
+                                        : undefined
+                                    }
+                                  >
+                                    {credential.status === "revoked"
+                                      ? "—"
+                                      : credential.lastUsedAt
+                                        ? new Date(credential.lastUsedAt).toLocaleString()
+                                        : "Sin uso registrado"}
                                   </td>
                                   <td>
                                     {credential.status === "active" && (

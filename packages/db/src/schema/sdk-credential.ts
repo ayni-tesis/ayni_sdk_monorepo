@@ -12,6 +12,7 @@ export const sdkCredential = pgTable(
     secretHash: text("secret_hash").notNull(),
     prefix: text("prefix"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at"),
     revokedAt: timestamp("revoked_at"),
   },
   (table) => [

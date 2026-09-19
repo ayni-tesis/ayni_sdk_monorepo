@@ -93,6 +93,9 @@ describe("Dashboard", () => {
 
   it("lists workspace applications and opens their protected detail", async () => {
     client.get.mockImplementation(async (url: string) => {
+      if (url === "/applications/app-1/sdk-credentials") {
+        return { data: { credentials: [] } };
+      }
       if (url === "/workspaces") {
         return {
           data: [
@@ -1984,7 +1987,7 @@ describe("Dashboard", () => {
         }),
       ),
     ).toBeTruthy();
-    expect(within(row).getByText("Nunca")).toBeTruthy();
+    expect(within(row).getByText("Sin uso registrado")).toBeTruthy();
 
     expect(screen.queryByText(/rest-of-secret|ayni_sk_abcd1234secret/)).toBeNull();
     expect(screen.queryByRole("columnheader", { name: /secreto/i })).toBeNull();
@@ -1999,6 +2002,28 @@ describe("Dashboard", () => {
     const empty = await screen.findByTestId("credentials-empty");
     expect(empty.textContent).toBe("Esta aplicación aún no tiene credenciales SDK.");
     expect(screen.queryByTestId("credentials-table")).toBeNull();
+  });
+
+  it("shows the date and time of the last successful SDK authentication", async () => {
+    const lastUsedAt = "2026-09-18T12:00:00.000Z";
+    await renderOpenApplicationDetail({
+      credentials: [{ ...listedCredential, lastUsedAt }],
+    });
+
+    const lastUsedCell = await screen.findByTitle("Última autenticación correcta del SDK");
+    expect(lastUsedCell.textContent).toBe(new Date(lastUsedAt).toLocaleString());
+  });
+
+  it("does not show a last-used event for revoked credentials", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        { ...listedCredential, status: "revoked", lastUsedAt: "2026-09-18T12:00:00.000Z" },
+      ],
+    });
+
+    const row = await screen.findByTestId("credential-row-cred-1");
+    expect(within(row).getByText("—")).toBeTruthy();
+    expect(within(row).queryByTitle("Última autenticación correcta del SDK")).toBeNull();
   });
 
   it("shows the loading state while credentials are being fetched", async () => {

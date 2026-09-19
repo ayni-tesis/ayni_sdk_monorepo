@@ -47,6 +47,7 @@ type Dependencies = {
       credentialId: string;
       userId: string;
     }) => Promise<RevokeSdkCredentialResult>;
+    authenticate?: (secret: string) => Promise<boolean>;
   };
 };
 
@@ -112,6 +113,16 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
     }
 
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+  });
+
+  app.post("/sdk/sync", async (c) => {
+    const authorization = c.req.header("Authorization") ?? "";
+    const match = /^Bearer (ayni_sk_[A-Za-z0-9_-]+)$/.exec(authorization);
+    const secret = match?.[1];
+    if (!secret || !(await credentials.authenticate?.(secret))) {
+      return c.json({ message: "Credencial SDK inválida." }, 401);
+    }
+    return c.json({ authenticated: true });
   });
 
   return app;

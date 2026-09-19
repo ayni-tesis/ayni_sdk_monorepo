@@ -301,6 +301,7 @@ export async function listSdkCredentials(
         applicationId: sdkCredential.applicationId,
         prefix: sdkCredential.prefix,
         createdAt: sdkCredential.createdAt,
+        lastUsedAt: sdkCredential.lastUsedAt,
         revokedAt: sdkCredential.revokedAt,
       })
       .from(sdkCredential)
@@ -309,6 +310,7 @@ export async function listSdkCredentials(
       applicationId: string;
       prefix: string | null;
       createdAt: Date;
+      lastUsedAt: Date | null;
       revokedAt: Date | null;
     }[];
 
@@ -319,7 +321,7 @@ export async function listSdkCredentials(
         prefix: row.prefix,
         status: row.revokedAt ? ("revoked" as const) : ("active" as const),
         createdAt: row.createdAt.toISOString(),
-        lastUsedAt: null,
+        lastUsedAt: row.revokedAt ? null : (row.lastUsedAt?.toISOString() ?? null),
       }))
       .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
 
