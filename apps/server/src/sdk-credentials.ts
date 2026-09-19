@@ -11,14 +11,23 @@ import type {
 export const SDK_CREDENTIAL_SECRET_PREFIX = "ayni_sk_";
 export const SDK_CREDENTIAL_DISPLAY_PREFIX_LENGTH = 12;
 
+/**
+ * Generates a cryptographically secure SDK credential secret with the standard prefix.
+ */
 export function generateSdkCredentialSecret() {
   return `${SDK_CREDENTIAL_SECRET_PREFIX}${randomBytes(32).toString("base64url")}`;
 }
 
+/**
+ * Derives a human-readable display prefix from a full secret.
+ */
 export function deriveSdkCredentialPrefix(secret: string) {
   return secret.slice(0, SDK_CREDENTIAL_DISPLAY_PREFIX_LENGTH);
 }
 
+/**
+ * Computes the SHA-256 hash of an SDK credential secret for secure storage.
+ */
 export function hashSdkCredentialSecret(secret: string) {
   return createHash("sha256").update(secret).digest("hex");
 }
@@ -50,6 +59,9 @@ type Dependencies = {
   };
 };
 
+/**
+ * Creates the Hono sub-application handling SDK credential creation, listing, and regeneration routes.
+ */
 export function createSdkCredentialsApp({ getSession, applications, credentials }: Dependencies) {
   const app = new Hono();
 

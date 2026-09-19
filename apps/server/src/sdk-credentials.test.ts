@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
 import {
+  authenticateSdkCredential,
   type CreateSdkCredentialResult,
   createSdkCredential,
   type ListSdkCredentialsResult,
@@ -915,5 +916,144 @@ describe("SDK credential secrets", () => {
     expect(hash).toBe(hashSdkCredentialSecret(secret));
     expect(hash).not.toBe(secret);
     expect(hash).not.toBe(hashSdkCredentialSecret(generateSdkCredentialSecret()));
+  });
+});
+
+function makeAuthTransactionDb(state: {
+  credential?: Record<string, unknown> | undefined;
+  application?: Record<string, unknown> | undefined;
+  updated?: Record<string, unknown>[];
+}) {
+  state.updated = state.updated ?? [];
+  let selectCount = 0;
+  const updateSet = vi.fn((value: Record<string, unknown>) => {
+    state.updated?.push(value);
+    return { where: vi.fn(async () => []) };
+  });
+  const executor = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => ({
+            for: () => {
+              const rows =
+                selectCount === 0
+                  ? state.credential
+                    ? [state.credential]
+                    : []
+                  : state.application
+                    ? [state.application]
+                    : [];
+              selectCount += 1;
+              return Promise.resolve(rows);
+            },
+          }),
+        }),
+      }),
+    }),
+    update: () => ({ set: updateSet }),
+    insert: vi.fn(),
+  };
+  return {
+    db: {
+      transaction: async <T>(callback: (tx: unknown) => Promise<T>) => callback(executor),
+    },
+    state,
+    updateSet,
+  };
+}
+
+describe("authenticateSdkCredential", () => {
+  it("authenticates an active credential and records lastUsedAt", async () => {
+    const secret = "ayni_sk_active_secret_123456789";
+    const secretHash = hashSdkCredentialSecret(secret);
+    const transaction = makeAuthTransactionDb({
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        prefix: "ayni_sk_acti",
+        status: "active",
+        secretHash,
+      },
+      application: {
+        id: "app-1",
+        status: "active",
+      },
+    });
+
+    const result = await authenticateSdkCredential(transaction.db, { secret });
+
+    expect(result).toEqual({
+      ok: true,
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        prefix: "ayni_sk_acti",
+        status: "active",
+      },
+    });
+    expect(transaction.state.updated?.[0]).toHaveProperty("lastUsedAt");
+  });
+
+  it("rejects an unknown secret with notFound", async () => {
+    const transaction = makeAuthTransactionDb({ credential: undefined });
+
+    const result = await authenticateSdkCredential(transaction.db, {
+      secret: "ayni_sk_unknown",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+  });
+
+  it("rejects a revoked credential with revoked", async () => {
+    const secret = "ayni_sk_revoked_secret";
+    const transaction = makeAuthTransactionDb({
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        prefix: "ayni_sk_revo",
+        status: "revoked",
+      },
+    });
+
+    const result = await authenticateSdkCredential(transaction.db, { secret });
+
+    expect(result).toEqual({ ok: false, reason: "revoked" });
+  });
+
+  it("rejects an inactive non-revoked credential with notActive", async () => {
+    const secret = "ayni_sk_other_status";
+    const transaction = makeAuthTransactionDb({
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        prefix: "ayni_sk_othe",
+        status: "suspended",
+      },
+    });
+
+    const result = await authenticateSdkCredential(transaction.db, { secret });
+
+    expect(result).toEqual({ ok: false, reason: "notActive" });
+  });
+
+  it("rejects a credential belonging to an archived application with archived", async () => {
+    const secret = "ayni_sk_active_secret";
+    const transaction = makeAuthTransactionDb({
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        prefix: "ayni_sk_acti",
+        status: "active",
+      },
+      application: {
+        id: "app-1",
+        status: "archived",
+      },
+    });
+
+    const result = await authenticateSdkCredential(transaction.db, { secret });
+
+    expect(result).toEqual({ ok: false, reason: "archived" });
   });
 });

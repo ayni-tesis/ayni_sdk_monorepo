@@ -71,6 +71,9 @@ type SdkCredentialItem = {
 const CREDENTIALS_LOAD_ERROR = "No pudimos cargar las credenciales. Inténtalo nuevamente.";
 const CREDENTIALS_FORBIDDEN = "No tienes permiso para ver las credenciales de esta aplicación.";
 
+/**
+ * Maps an error thrown when fetching credentials to a localized user message.
+ */
 function credentialsErrorMessage(error: unknown) {
   if (!axios.isAxiosError<{ message?: string }>(error)) return CREDENTIALS_LOAD_ERROR;
   if (error.response?.status === 403) {
@@ -79,6 +82,9 @@ function credentialsErrorMessage(error: unknown) {
   return CREDENTIALS_LOAD_ERROR;
 }
 
+/**
+ * Formats an ISO date string into a localized Spanish date representation.
+ */
 function formatCredentialDate(value: string) {
   return new Date(value).toLocaleDateString("es", {
     day: "2-digit",
@@ -750,6 +756,9 @@ function GenerateCredentialDialog({
   );
 }
 
+/**
+ * Dialog for confirming SDK credential regeneration and displaying the new secret once.
+ */
 function RegenerateCredentialDialog({
   open,
   onOpenChange,
@@ -830,6 +839,9 @@ function RegenerateCredentialDialog({
   );
 }
 
+/**
+ * Main dashboard application page managing workspaces, applications, members, and SDK credentials.
+ */
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
@@ -1015,13 +1027,13 @@ export default function Dashboard({ userName }: { userName: string }) {
     setRegenerateDialogOpen(false);
     setTargetCredentialToRegenerate(null);
     setRegeneratedCredential(null);
-    if (selectedApplicationId) {
+    if (selectedApplicationId && canManage) {
       void loadCredentials(selectedApplicationId);
     }
     return () => {
       credentialsAbortRef.current?.abort();
     };
-  }, [selectedApplicationId, loadCredentials]);
+  }, [selectedApplicationId, canManage, loadCredentials]);
 
   useEffect(() => {
     workspaceSwitchGenerationRef.current += 1;
@@ -1614,7 +1626,12 @@ export default function Dashboard({ userName }: { userName: string }) {
                         </Button>
                       )}
                     </div>
-                    {credentialsLoading ? (
+                    {!canManage ? (
+                      <p data-testid="credentials-restricted">
+                        Solo los administradores del workspace pueden gestionar las credenciales
+                        SDK.
+                      </p>
+                    ) : credentialsLoading ? (
                       <p data-testid="credentials-loading">Cargando credenciales…</p>
                     ) : credentialsError ? (
                       <div className="applications-error" data-testid="credentials-error">

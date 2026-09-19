@@ -47,6 +47,11 @@ export type CreateSdkCredentialInput = {
   userId: string;
 };
 
+/**
+ * Creates a new SDK credential for an active application.
+ * Verifies that the user has admin or owner permissions in the application's workspace.
+ * Rejects archived applications. Stores only the SHA-256 hash of the secret.
+ */
 export async function createSdkCredential(
   database: CredentialDatabase,
   { applicationId, userId }: CreateSdkCredentialInput,
@@ -126,6 +131,13 @@ export type RegenerateSdkCredentialResult =
   | { ok: true; credential: RegeneratedSdkCredential; revokedCredentialId: string }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" | "notActive" };
 
+/**
+ * Regenerates an active SDK credential for an active application.
+ * Verifies that the user has admin or owner permissions in the workspace.
+ * Revokes the target credential immediately (status: "revoked", revokedAt: now)
+ * and issues a replacement credential with status: "active".
+ * Rejects non-active credentials and archived applications.
+ */
 export async function regenerateSdkCredential(
   database: CredentialDatabase,
   { applicationId, credentialId, userId }: RegenerateSdkCredentialInput,
@@ -244,6 +256,11 @@ export type ReadOnlyExecutor = {
   };
 };
 
+/**
+ * Lists all SDK credentials for an application.
+ * Verifies that the user has admin or owner permissions in the workspace.
+ * Returns credentials sorted by creation date descending with metadata.
+ */
 export async function listSdkCredentials(
   database: CredentialDatabase,
   { applicationId, userId }: ListSdkCredentialsInput,
@@ -303,5 +320,91 @@ export async function listSdkCredentials(
       .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
 
     return { ok: true, credentials };
+  });
+}
+
+export type AuthenticateSdkCredentialInput = {
+  secret: string;
+};
+
+export type AuthenticatedSdkCredential = {
+  id: string;
+  applicationId: string;
+  prefix: string | null;
+  status: "active";
+};
+
+export type AuthenticateSdkCredentialResult =
+  | { ok: true; credential: AuthenticatedSdkCredential }
+  | { ok: false; reason: "notFound" | "revoked" | "notActive" | "archived" };
+
+/**
+ * Authenticates an SDK credential secret.
+ *
+ * Enforces the SDK security boundary by requiring both the matched credential
+ * and its parent application to have an "active" status before granting access.
+ * Rejects revoked credentials (immediate rejection after regeneration),
+ * inactive credentials, and credentials belonging to archived applications.
+ * Updates lastUsedAt on successful authentication.
+ */
+export async function authenticateSdkCredential(
+  database: CredentialDatabase,
+  { secret }: AuthenticateSdkCredentialInput,
+): Promise<AuthenticateSdkCredentialResult> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as TransactionExecutor;
+    const secretHash = hashSdkCredentialSecret(secret);
+
+    const credentialRows = (await tx
+      .select({
+        id: sdkCredential.id,
+        applicationId: sdkCredential.applicationId,
+        prefix: sdkCredential.prefix,
+        status: sdkCredential.status,
+      })
+      .from(sdkCredential)
+      .where(eq(sdkCredential.secretHash, secretHash))
+      .limit(1)
+      .for("update")) as {
+      id: string;
+      applicationId: string;
+      prefix: string | null;
+      status: "active" | "revoked";
+    }[];
+    const foundCredential = credentialRows[0];
+
+    if (!foundCredential) return { ok: false, reason: "notFound" };
+    if (foundCredential.status === "revoked") return { ok: false, reason: "revoked" };
+    if (foundCredential.status !== "active") return { ok: false, reason: "notActive" };
+
+    const applicationRows = (await tx
+      .select({
+        id: application.id,
+        status: application.status,
+      })
+      .from(application)
+      .where(eq(application.id, foundCredential.applicationId))
+      .limit(1)
+      .for("update")) as { id: string; status: string }[];
+    const foundApplication = applicationRows[0];
+
+    if (foundApplication?.status !== "active") {
+      return { ok: false, reason: "archived" };
+    }
+
+    await tx
+      .update(sdkCredential)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(sdkCredential.id, foundCredential.id));
+
+    return {
+      ok: true,
+      credential: {
+        id: foundCredential.id,
+        applicationId: foundCredential.applicationId,
+        prefix: foundCredential.prefix,
+        status: "active",
+      },
+    };
   });
 }

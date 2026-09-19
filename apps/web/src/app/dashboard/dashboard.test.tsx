@@ -1737,6 +1737,15 @@ describe("Dashboard", () => {
     await renderOpenApplicationDetail({ role: "member" });
 
     expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
+    expect(
+      screen.getByText(
+        "Solo los administradores del workspace pueden gestionar las credenciales SDK.",
+      ),
+    ).toBeTruthy();
+    expect(client.get).not.toHaveBeenCalledWith(
+      "/applications/app-1/sdk-credentials",
+      expect.anything(),
+    );
   });
 
   it("does not offer generating credentials for archived applications", async () => {
@@ -2023,8 +2032,13 @@ describe("Dashboard", () => {
       ],
     });
 
-    await screen.findByText("ayni_sk_abcd");
+    expect(
+      screen.getByText(
+        "Solo los administradores del workspace pueden gestionar las credenciales SDK.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByTestId("regenerate-credential-cred-1")).toBeNull();
+    expect(screen.queryByTestId("credentials-table")).toBeNull();
   });
 
   it("does not offer regenerate button for archived applications", async () => {

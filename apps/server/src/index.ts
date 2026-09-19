@@ -30,6 +30,7 @@ import {
   type UpdateMemberRoleResult,
 } from "./members";
 import {
+  authenticateSdkCredential,
   createSdkCredential,
   listSdkCredentials,
   regenerateSdkCredential,
@@ -96,6 +97,9 @@ const sdkCredentials = {
   },
   regenerate(input: { applicationId: string; credentialId: string; userId: string }) {
     return regenerateSdkCredential(db, input);
+  },
+  authenticate(input: { secret: string }) {
+    return authenticateSdkCredential(db, input);
   },
 };
 
