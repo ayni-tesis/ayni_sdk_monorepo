@@ -2010,7 +2010,7 @@ describe("Dashboard", () => {
       credentials: [{ ...listedCredential, lastUsedAt }],
     });
 
-    const lastUsedCell = screen.getByTitle("Última autenticación correcta del SDK");
+    const lastUsedCell = await screen.findByTitle("Última autenticación correcta del SDK");
     expect(lastUsedCell.textContent).toBe(new Date(lastUsedAt).toLocaleString());
   });
 
