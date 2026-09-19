@@ -59,6 +59,34 @@ type GeneratedCredential = {
   secret: string;
 };
 
+type SdkCredentialItem = {
+  id: string;
+  applicationId: string;
+  prefix: string | null;
+  status: "active" | "revoked";
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+const CREDENTIALS_LOAD_ERROR = "No pudimos cargar las credenciales. Inténtalo nuevamente.";
+const CREDENTIALS_FORBIDDEN = "No tienes permiso para ver las credenciales de esta aplicación.";
+
+function credentialsErrorMessage(error: unknown) {
+  if (!axios.isAxiosError<{ message?: string }>(error)) return CREDENTIALS_LOAD_ERROR;
+  if (error.response?.status === 403) {
+    return error.response.data?.message ?? CREDENTIALS_FORBIDDEN;
+  }
+  return CREDENTIALS_LOAD_ERROR;
+}
+
+function formatCredentialDate(value: string) {
+  return new Date(value).toLocaleDateString("es", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function membersErrorMessage(error: unknown) {
   const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
   if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
@@ -722,6 +750,86 @@ function GenerateCredentialDialog({
   );
 }
 
+function RegenerateCredentialDialog({
+  open,
+  onOpenChange,
+  onDiscard,
+  regenerated,
+  regenerating,
+  onRegenerate,
+  onCopy,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDiscard: () => void;
+  regenerated: GeneratedCredential | null;
+  regenerating: boolean;
+  onRegenerate: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCopy: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (regenerating) return;
+        if (!nextOpen && regenerated) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={!regenerated && !regenerating}>
+        <DialogHeader>
+          <DialogTitle>¿Regenerar esta credencial?</DialogTitle>
+          <DialogDescription>
+            {regenerated
+              ? "Copia la nueva credencial ahora. No podrás verla nuevamente."
+              : "La credencial actual se revocará inmediatamente. Actualiza la configuración de tu app con el nuevo secreto."}
+          </DialogDescription>
+        </DialogHeader>
+        {regenerated ? (
+          <div className="flex flex-col gap-4">
+            <code className="credential-secret" data-testid="regenerated-credential-secret">
+              {regenerated.secret}
+            </code>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                data-testid="close-regenerated-credential"
+                onClick={onDiscard}
+              >
+                Cerrar
+              </Button>
+              <Button type="button" data-testid="copy-regenerated-credential" onClick={onCopy}>
+                Copiar credencial
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={onRegenerate} className="flex flex-col gap-4">
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={regenerating}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                data-testid="regenerate-credential-submit"
+                disabled={regenerating}
+              >
+                {regenerating ? "Regenerando credencial…" : "Regenerar credencial"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
@@ -731,6 +839,18 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [generatingCredential, setGeneratingCredential] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState<GeneratedCredential | null>(null);
+  const [credentials, setCredentials] = useState<SdkCredentialItem[]>([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [credentialsError, setCredentialsError] = useState("");
+  const credentialsAbortRef = useRef<AbortController | null>(null);
+  const selectedApplicationIdRef = useRef<string | null>(null);
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [targetCredentialToRegenerate, setTargetCredentialToRegenerate] =
+    useState<SdkCredentialItem | null>(null);
+  const [regeneratingCredential, setRegeneratingCredential] = useState(false);
+  const [regeneratedCredential, setRegeneratedCredential] = useState<GeneratedCredential | null>(
+    null,
+  );
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -800,6 +920,9 @@ export default function Dashboard({ userName }: { userName: string }) {
     setApplications([]);
     setCredentialDialogOpen(false);
     setGeneratedCredential(null);
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
     try {
       const res = await authClient.organization.setActive({ organizationId });
       if (res?.error) {
@@ -849,12 +972,69 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
   }, []);
 
+  const loadCredentials = useCallback(async (applicationId: string) => {
+    credentialsAbortRef.current?.abort();
+    const controller = new AbortController();
+    credentialsAbortRef.current = controller;
+
+    setCredentialsLoading(true);
+    setCredentialsError("");
+    try {
+      const { data } = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
+        `/applications/${applicationId}/sdk-credentials`,
+        { signal: controller.signal },
+      );
+      const items = data.credentials ?? [];
+      if (
+        controller.signal.aborted ||
+        selectedApplicationIdRef.current !== applicationId ||
+        items.some((credential) => credential.applicationId !== applicationId)
+      ) {
+        return;
+      }
+      setCredentials(items);
+    } catch (loadError) {
+      if (controller.signal.aborted || selectedApplicationIdRef.current !== applicationId) {
+        return;
+      }
+      setCredentialsError(credentialsErrorMessage(loadError));
+    } finally {
+      if (!controller.signal.aborted && selectedApplicationIdRef.current === applicationId) {
+        setCredentialsLoading(false);
+      }
+    }
+  }, []);
+
+  const selectedApplicationId = selected?.id;
+  useEffect(() => {
+    selectedApplicationIdRef.current = selectedApplicationId ?? null;
+    credentialsAbortRef.current?.abort();
+    setCredentials([]);
+    setCredentialsError("");
+    setCredentialsLoading(false);
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
+    if (selectedApplicationId) {
+      void loadCredentials(selectedApplicationId);
+    }
+    return () => {
+      credentialsAbortRef.current?.abort();
+    };
+  }, [selectedApplicationId, loadCredentials]);
+
   useEffect(() => {
     workspaceSwitchGenerationRef.current += 1;
     setSelected(null);
     setApplications([]);
     setCredentialDialogOpen(false);
     setGeneratedCredential(null);
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
+    setCredentials([]);
+    setCredentialsError("");
+    setCredentialsLoading(false);
     if (workspaceMissing) {
       return;
     }
@@ -1111,6 +1291,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       }
       setGeneratedCredential(data.credential);
       toast.success("Credencial generada.");
+      void loadCredentials(applicationId);
     } catch (credentialError) {
       if (
         activeWorkspaceIdRef.current !== orgId ||
@@ -1130,6 +1311,64 @@ export default function Dashboard({ userName }: { userName: string }) {
     if (!generatedCredential) return;
     try {
       await navigator.clipboard.writeText(generatedCredential.secret);
+      toast.success("Credencial copiada.");
+    } catch {
+      toast.error("No pudimos copiar la credencial. Inténtalo de nuevo.");
+    }
+  }
+
+  function openRegenerateCredential(credential: SdkCredentialItem) {
+    setTargetCredentialToRegenerate(credential);
+    setRegeneratedCredential(null);
+    setRegenerateDialogOpen(true);
+  }
+
+  function closeRegenerateDialog() {
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
+  }
+
+  async function handleRegenerateCredential(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || !targetCredentialToRegenerate) return;
+    const applicationId = selected.id;
+    const credentialId = targetCredentialToRegenerate.id;
+    const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
+    setRegeneratingCredential(true);
+    try {
+      const { data } = await httpClient.post<{ credential: GeneratedCredential }>(
+        `/applications/${applicationId}/sdk-credentials/${credentialId}/regenerate`,
+      );
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      setRegeneratedCredential(data.credential);
+      toast.success("Nueva credencial generada. La anterior fue revocada.");
+      void loadCredentials(applicationId);
+    } catch (credentialError) {
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.error(
+        errorMessage(credentialError, "No pudimos regenerar la credencial. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRegeneratingCredential(false);
+    }
+  }
+
+  async function copyRegeneratedCredential() {
+    if (!regeneratedCredential) return;
+    try {
+      await navigator.clipboard.writeText(regeneratedCredential.secret);
       toast.success("Credencial copiada.");
     } catch {
       toast.error("No pudimos copiar la credencial. Inténtalo de nuevo.");
@@ -1375,7 +1614,68 @@ export default function Dashboard({ userName }: { userName: string }) {
                         </Button>
                       )}
                     </div>
-                    <p>Genera una credencial para autenticar al SDK de esta aplicación.</p>
+                    {credentialsLoading ? (
+                      <p data-testid="credentials-loading">Cargando credenciales…</p>
+                    ) : credentialsError ? (
+                      <div className="applications-error" data-testid="credentials-error">
+                        <p>{credentialsError}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid="credentials-retry"
+                          onClick={() => selected && void loadCredentials(selected.id)}
+                        >
+                          <IconRefresh />
+                          Reintentar
+                        </Button>
+                      </div>
+                    ) : credentials.length === 0 ? (
+                      <p data-testid="credentials-empty">
+                        Esta aplicación aún no tiene credenciales SDK.
+                      </p>
+                    ) : (
+                      <table className="credentials-table" data-testid="credentials-table">
+                        <thead>
+                          <tr>
+                            <th>Prefijo</th>
+                            <th>Estado</th>
+                            <th>Creada el</th>
+                            <th>Último uso</th>
+                            <th>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {credentials.map((credential) => (
+                            <tr key={credential.id} data-testid={`credential-row-${credential.id}`}>
+                              <td>
+                                <code>{credential.prefix ?? "—"}</code>
+                              </td>
+                              <td>{credential.status === "active" ? "Activa" : "Revocada"}</td>
+                              <td>{formatCredentialDate(credential.createdAt)}</td>
+                              <td>
+                                {credential.lastUsedAt
+                                  ? formatCredentialDate(credential.lastUsedAt)
+                                  : "Sin uso registrado"}
+                              </td>
+                              <td>
+                                {canManage &&
+                                  credential.status === "active" &&
+                                  selected.status === "active" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      data-testid={`regenerate-credential-${credential.id}`}
+                                      onClick={() => openRegenerateCredential(credential)}
+                                    >
+                                      Regenerar
+                                    </Button>
+                                  )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </section>
                   <section>
                     <h2>Datasets</h2>
@@ -1504,6 +1804,18 @@ export default function Dashboard({ userName }: { userName: string }) {
           generating={generatingCredential}
           onGenerate={generateCredential}
           onCopy={() => void copyCredential()}
+        />
+        <RegenerateCredentialDialog
+          open={regenerateDialogOpen}
+          onOpenChange={(open) => {
+            if (open) setRegenerateDialogOpen(true);
+            else closeRegenerateDialog();
+          }}
+          onDiscard={closeRegenerateDialog}
+          regenerated={regeneratedCredential}
+          regenerating={regeneratingCredential}
+          onRegenerate={handleRegenerateCredential}
+          onCopy={() => void copyRegeneratedCredential()}
         />
         <CreateWorkspaceDialog
           open={workspaceDialogOpen}
