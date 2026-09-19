@@ -9,9 +9,14 @@ import type {
 } from "./sdk-credential-store";
 
 export const SDK_CREDENTIAL_SECRET_PREFIX = "ayni_sk_";
+export const SDK_CREDENTIAL_DISPLAY_PREFIX_LENGTH = 12;
 
 export function generateSdkCredentialSecret() {
   return `${SDK_CREDENTIAL_SECRET_PREFIX}${randomBytes(32).toString("base64url")}`;
+}
+
+export function deriveSdkCredentialPrefix(secret: string) {
+  return secret.slice(0, SDK_CREDENTIAL_DISPLAY_PREFIX_LENGTH);
 }
 
 export function hashSdkCredentialSecret(secret: string) {
@@ -52,11 +57,14 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
+    const application = await applications.get(c.req.param("applicationId"));
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+
     const result = await credentials.list({
-      applicationId: c.req.param("applicationId"),
+      applicationId: application.id,
       userId: session.user.id,
     });
-    if (result.ok) return c.json(result.credentials);
+    if (result.ok) return c.json({ credentials: result.credentials });
     if (result.reason === "forbidden") {
       return c.json({ message: CREDENTIAL_LIST_FORBIDDEN_MESSAGE }, 403);
     }

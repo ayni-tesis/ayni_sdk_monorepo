@@ -10,6 +10,7 @@ export const sdkCredential = pgTable(
       .notNull()
       .references(() => application.id, { onDelete: "cascade" }),
     secretHash: text("secret_hash").notNull(),
+    prefix: text("prefix"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
   },

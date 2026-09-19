@@ -1,6 +1,10 @@
 import { application, member, sdkCredential } from "@ayni/db/schema/index";
 import { and, eq } from "drizzle-orm";
-import { generateSdkCredentialSecret, hashSdkCredentialSecret } from "./sdk-credentials";
+import {
+  deriveSdkCredentialPrefix,
+  generateSdkCredentialSecret,
+  hashSdkCredentialSecret,
+} from "./sdk-credentials";
 
 type RowsPromise = PromiseLike<Record<string, unknown>[]>;
 
@@ -75,11 +79,13 @@ export type RevokeSdkCredentialResult =
   | { ok: true; credential: RevokedSdkCredential }
   | { ok: false; reason: "forbidden" | "notFound" };
 
-export type SdkCredentialListItem = {
+export type ListedSdkCredential = {
   id: string;
+  applicationId: string;
+  prefix: string | null;
   status: "active" | "revoked";
   createdAt: string;
-  revokedAt: string | null;
+  lastUsedAt: string | null;
 };
 
 export type ListSdkCredentialsInput = {
@@ -88,7 +94,7 @@ export type ListSdkCredentialsInput = {
 };
 
 export type ListSdkCredentialsResult =
-  | { ok: true; credentials: SdkCredentialListItem[] }
+  | { ok: true; credentials: ListedSdkCredential[] }
   | { ok: false; reason: "forbidden" | "notFound" };
 
 export type VerifiedSdkCredential = {
@@ -186,6 +192,7 @@ export async function createSdkCredential(
         id: crypto.randomUUID(),
         applicationId: foundApplication.id,
         secretHash: hashSdkCredentialSecret(secret),
+        prefix: deriveSdkCredentialPrefix(secret),
       })
       .returning()) as { id: string; applicationId: string }[];
     const created = credentialRows[0];
@@ -250,40 +257,73 @@ export async function revokeSdkCredential(
   });
 }
 
+export type ReadOnlyExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => Promise<Record<string, unknown>[]>;
+    };
+  };
+};
+
 export async function listSdkCredentials(
   database: CredentialDatabase,
   { applicationId, userId }: ListSdkCredentialsInput,
 ): Promise<ListSdkCredentialsResult> {
   return database.transaction(async (transaction) => {
-    const tx = transaction as TransactionExecutor;
+    const tx = transaction as ReadOnlyExecutor;
 
-    const authorized = await findManagedApplication(tx, applicationId, userId);
-    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    const applicationRows = await tx
+      .select({ id: application.id, organizationId: application.organizationId })
+      .from(application)
+      .where(eq(application.id, applicationId));
+    const foundApplication = applicationRows[0] as
+      | { id: string; organizationId: string }
+      | undefined;
+
+    if (!foundApplication) return { ok: false, reason: "notFound" };
+
+    const membershipRows = await tx
+      .select({ role: member.role })
+      .from(member)
+      .where(
+        and(eq(member.userId, userId), eq(member.organizationId, foundApplication.organizationId)),
+      );
+    const membership = membershipRows[0] as { role: string } | undefined;
+
+    if (!membership) return { ok: false, reason: "notFound" };
+    if (membership.role !== "admin" && membership.role !== "owner") {
+      return { ok: false, reason: "forbidden" };
+    }
 
     const credentialRows = (await tx
       .select({
         id: sdkCredential.id,
+        applicationId: sdkCredential.applicationId,
+        prefix: sdkCredential.prefix,
         createdAt: sdkCredential.createdAt,
         revokedAt: sdkCredential.revokedAt,
       })
       .from(sdkCredential)
-      .where(eq(sdkCredential.applicationId, authorized.application.id))) as {
+      .where(eq(sdkCredential.applicationId, foundApplication.id))) as {
       id: string;
+      applicationId: string;
+      prefix: string | null;
       createdAt: Date;
       revokedAt: Date | null;
     }[];
 
-    return {
-      ok: true,
-      credentials: credentialRows
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-        .map((row) => ({
-          id: row.id,
-          status: row.revokedAt ? ("revoked" as const) : ("active" as const),
-          createdAt: row.createdAt.toISOString(),
-          revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
-        })),
-    };
+    const credentials = credentialRows
+      .map((row) => ({
+        id: row.id,
+        applicationId: row.applicationId,
+        prefix: row.prefix,
+        status: row.revokedAt ? ("revoked" as const) : ("active" as const),
+        createdAt: row.createdAt.toISOString(),
+        lastUsedAt: null,
+      }))
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+
+    return { ok: true, credentials };
   });
 }
 
