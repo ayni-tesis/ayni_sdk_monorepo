@@ -1603,4 +1603,211 @@ describe("Dashboard", () => {
 
     expect(screen.queryByRole("button", { name: /crear enlace de invitación/i })).toBeNull();
   });
+
+  async function renderOpenApplicationDetail({
+    status = "active",
+    role = "admin",
+  }: {
+    status?: "active" | "archived";
+    role?: string;
+  } = {}) {
+    activeRoleRef.current = role;
+    client.post.mockReset();
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [{ id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role }],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return { data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status }] };
+      }
+      if (url === "/applications/app-1") {
+        return { data: { id: "app-1", organizationId: "org-1", name: "Cámara", status } };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
+    await screen.findByText("ID de aplicación");
+  }
+
+  it("generates an SDK credential from the application detail and shows the secret once", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          secret: "ayni_sk_abcd1234secret",
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+
+    expect(screen.getByRole("heading", { name: "Generar credencial SDK" })).toBeTruthy();
+    expect(
+      screen.getByText("El secreto se mostrará una sola vez. Guárdalo en un lugar seguro."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/sdk-credentials"),
+    );
+    expect(
+      await screen.findByText("Copia tu credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+    expect(screen.getByTestId("credential-secret").textContent).toBe("ayni_sk_abcd1234secret");
+    expect(toastMock.success).toHaveBeenCalledWith("Credencial generada.");
+  });
+
+  it("copies the generated credential to the clipboard", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          secret: "ayni_sk_abcd1234secret",
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    fireEvent.click(await screen.findByTestId("copy-credential"));
+
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_abcd1234secret"));
+    expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
+  });
+
+  it("shows 'Generando credencial…' while the credential request is in flight", async () => {
+    await renderOpenApplicationDetail();
+    let resolveCreate: (value: unknown) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    expect(
+      screen.getByRole("button", { name: /generando credencial…/i }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    resolveCreate({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          secret: "ayni_sk_abcd1234secret",
+        },
+      },
+    });
+
+    expect(
+      await screen.findByText("Copia tu credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+  });
+
+  it("does not offer generating credentials to workspace members", async () => {
+    await renderOpenApplicationDetail({ role: "member" });
+
+    expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
+  });
+
+  it("does not offer generating credentials for archived applications", async () => {
+    await renderOpenApplicationDetail({ status: "archived" });
+
+    expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
+  });
+
+  it("surfaces the applicationArchived rejection from the server", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          message: "No puedes generar credenciales para una aplicación archivada.",
+          code: "applicationArchived",
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No puedes generar credenciales para una aplicación archivada.",
+      ),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("credential-secret")).toBeNull();
+  });
+
+  it("surfaces the permission rejection from the server", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { message: "No tienes permiso para administrar credenciales." },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No tienes permiso para administrar credenciales.",
+      ),
+    );
+  });
+
+  it("requires an explicit close before discarding the generated secret", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          secret: "ayni_sk_abcd1234secret",
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    expect(
+      await screen.findByText("Copia tu credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("credential-secret")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("close-credential"));
+    await waitFor(() => expect(screen.queryByTestId("credential-secret")).toBeNull());
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    expect(
+      screen.getByText("El secreto se mostrará una sola vez. Guárdalo en un lugar seguro."),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("credential-secret")).toBeNull();
+  });
 });

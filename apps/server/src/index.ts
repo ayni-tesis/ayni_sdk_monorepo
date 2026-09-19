@@ -29,6 +29,8 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
+import { createSdkCredential } from "./sdk-credential-store";
+import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -78,6 +80,12 @@ const applications = {
       .where(eq(application.id, id))
       .returning();
     return updated && toApplication(updated);
+  },
+};
+
+const sdkCredentials = {
+  create(input: { applicationId: string; userId: string }) {
+    return createSdkCredential(db, input);
   },
 };
 
@@ -418,6 +426,14 @@ app.route(
   createInvitationsApp({
     getSession: (headers) => auth.api.getSession({ headers }),
     invitations,
+  }),
+);
+app.route(
+  "/",
+  createSdkCredentialsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    credentials: sdkCredentials,
   }),
 );
 
