@@ -3,8 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import {
   type CreateSdkCredentialResult,
+  type CredentialQueryDatabase,
   createSdkCredential,
-  type TransactionExecutor,
+  type ListSdkCredentialsResult,
+  listSdkCredentials,
+  type RevokeSdkCredentialResult,
+  revokeSdkCredential,
+  verifySdkCredential,
 } from "./sdk-credential-store";
 import {
   createSdkCredentialsApp,
@@ -35,20 +40,56 @@ function makeApp({
       secret: "ayni_sk_abcd1234rest-of-secret",
     },
   }),
+  list = async (): Promise<ListSdkCredentialsResult> => ({
+    ok: true,
+    credentials: [
+      {
+        id: "cred-1",
+        status: "active",
+        createdAt: "2026-09-18T00:00:00.000Z",
+        revokedAt: null,
+      },
+    ],
+  }),
+  revoke = async ({
+    applicationId,
+    credentialId,
+  }: {
+    applicationId: string;
+    credentialId: string;
+    userId: string;
+  }): Promise<RevokeSdkCredentialResult> => ({
+    ok: true,
+    credential: {
+      id: credentialId,
+      applicationId,
+      revokedAt: "2026-09-18T12:00:00.000Z",
+    },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
   create?: (input: { applicationId: string; userId: string }) => Promise<CreateSdkCredentialResult>;
+  list?: (input: { applicationId: string; userId: string }) => Promise<ListSdkCredentialsResult>;
+  revoke?: (input: {
+    applicationId: string;
+    credentialId: string;
+    userId: string;
+  }) => Promise<RevokeSdkCredentialResult>;
 } = {}) {
   const createMock = vi.fn(create);
+  const listMock = vi.fn(list);
+  const revokeMock = vi.fn(revoke);
   return {
     create: createMock,
+    list: listMock,
+    revoke: revokeMock,
     request: createSdkCredentialsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
       },
-      credentials: { create: createMock },
+      credentials: { create: createMock, list: listMock, revoke: revokeMock },
     }),
   };
 }
@@ -148,31 +189,189 @@ describe("POST /applications/:applicationId/sdk-credentials", () => {
   });
 });
 
+describe("GET /applications/:applicationId/sdk-credentials", () => {
+  it("lists credential metadata without secrets for administrators", async () => {
+    const { request, list } = makeApp();
+
+    const response = await request.request("/applications/app-1/sdk-credentials");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([
+      {
+        id: "cred-1",
+        status: "active",
+        createdAt: "2026-09-18T00:00:00.000Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(list).toHaveBeenCalledWith({ applicationId: "app-1", userId: "admin" });
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, list } = makeApp({ session: null });
+
+    const response = await request.request("/applications/app-1/sdk-credentials");
+
+    expect(response.status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member without administration permissions", async () => {
+    const { request } = makeApp({
+      list: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await request.request("/applications/app-1/sdk-credentials");
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para ver las credenciales de esta aplicación.",
+    });
+  });
+
+  it("returns not found when the user is not a workspace member", async () => {
+    const { request } = makeApp({
+      list: async () => ({ ok: false, reason: "notFound" }),
+    });
+
+    const response = await request.request("/applications/app-1/sdk-credentials");
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos esta aplicación.",
+    });
+  });
+});
+
+describe("POST /applications/:applicationId/sdk-credentials/:credentialId/revoke", () => {
+  it("allows an administrator to revoke a credential", async () => {
+    const { request, revoke } = makeApp();
+
+    const response = await request.request("/applications/app-1/sdk-credentials/cred-1/revoke", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        revokedAt: "2026-09-18T12:00:00.000Z",
+      },
+    });
+    expect(revoke).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, revoke } = makeApp({ session: null });
+
+    const response = await request.request("/applications/app-1/sdk-credentials/cred-1/revoke", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(401);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member without administration permissions with the revoke message", async () => {
+    const { request } = makeApp({
+      revoke: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await request.request("/applications/app-1/sdk-credentials/cred-1/revoke", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para revocar credenciales.",
+    });
+  });
+
+  it("returns not found when the credential is outside the workspace", async () => {
+    const { request } = makeApp({
+      revoke: async () => ({ ok: false, reason: "notFound" }),
+    });
+
+    const response = await request.request("/applications/app-1/sdk-credentials/cred-x/revoke", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos esta aplicación.",
+    });
+  });
+
+  it("returns not found when the application does not exist", async () => {
+    const { request, revoke } = makeApp({ application: null });
+
+    const response = await request.request("/applications/missing/sdk-credentials/cred-1/revoke", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(404);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
 type FakeTransactionState = {
   application: Record<string, unknown> | undefined;
   membership: Record<string, unknown> | undefined;
+  credential: Record<string, unknown> | undefined;
   inserted: Record<string, unknown>[];
+  updated: Record<string, unknown>[];
 };
 
+function awaitableRows(rows: Record<string, unknown>[]) {
+  const promise = Promise.resolve(rows);
+  return Object.assign(promise, {
+    limit: (count: number) => {
+      void count;
+      const limited = Promise.resolve(rows);
+      return Object.assign(limited, {
+        for: (strength: "update") => {
+          void strength;
+          return Promise.resolve(rows);
+        },
+      });
+    },
+  });
+}
+
 function makeTransactionDb(state: FakeTransactionState) {
+  let selectCount = 0;
+  const rowsForStep = () => {
+    if (selectCount === 0) return state.application ? [state.application] : [];
+    if (selectCount === 1) return state.membership ? [state.membership] : [];
+    return state.credential ? [state.credential] : [];
+  };
+
   const values = vi.fn((value: Record<string, unknown>) => {
     const row = { id: "cred-1", applicationId: value.applicationId };
     state.inserted.push(row);
     return { returning: async () => [row] };
   });
 
-  let selectCount = 0;
-  const executor: TransactionExecutor = {
+  const set = vi.fn((value: Record<string, unknown>) => {
+    const row = { id: "cred-1", applicationId: "app-1", ...value };
+    state.updated.push(row);
+    return {
+      where: (condition: unknown) => {
+        void condition;
+        return { returning: async () => [row] };
+      },
+    };
+  });
+
+  const executor = {
     select: (fields: Record<string, unknown>) => {
       void fields;
-      const rows =
-        selectCount === 0
-          ? state.application
-            ? [state.application]
-            : []
-          : state.membership
-            ? [state.membership]
-            : [];
+      const rows = rowsForStep();
       selectCount += 1;
       return {
         from: (table: unknown) => {
@@ -180,17 +379,7 @@ function makeTransactionDb(state: FakeTransactionState) {
           return {
             where: (condition: unknown) => {
               void condition;
-              return {
-                limit: (count: number) => {
-                  void count;
-                  return {
-                    for: (strength: "update") => {
-                      void strength;
-                      return Promise.resolve(rows);
-                    },
-                  };
-                },
-              };
+              return awaitableRows(rows);
             },
           };
         },
@@ -200,10 +389,15 @@ function makeTransactionDb(state: FakeTransactionState) {
       void table;
       return { values };
     },
+    update: (table: unknown) => {
+      void table;
+      return { set };
+    },
   };
 
   return {
     values,
+    set,
     db: {
       transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => {
         selectCount = 0;
@@ -213,13 +407,25 @@ function makeTransactionDb(state: FakeTransactionState) {
   };
 }
 
+function makeState(overrides: Partial<FakeTransactionState> = {}): FakeTransactionState {
+  return {
+    application: { id: "app-1", organizationId: "org-1", status: "active" },
+    membership: { role: "admin" },
+    credential: undefined,
+    inserted: [],
+    updated: [],
+    ...overrides,
+  };
+}
+
 describe("createSdkCredential", () => {
   it("creates a credential for an administrator of an active application", async () => {
-    const transaction = makeTransactionDb({
-      application: { id: "app-1", organizationId: "org-1", status: "active" },
-      membership: { role: "owner" },
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(
+      makeState({
+        application: { id: "app-1", organizationId: "org-1", status: "active" },
+        membership: { role: "owner" },
+      }),
+    );
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "app-1",
@@ -241,11 +447,11 @@ describe("createSdkCredential", () => {
   });
 
   it("rejects an application archived before issuance without inserting a credential", async () => {
-    const transaction = makeTransactionDb({
-      application: { id: "app-1", organizationId: "org-1", status: "archived" },
-      membership: { role: "admin" },
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(
+      makeState({
+        application: { id: "app-1", organizationId: "org-1", status: "archived" },
+      }),
+    );
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "app-1",
@@ -257,11 +463,12 @@ describe("createSdkCredential", () => {
   });
 
   it("returns not found for an archived application when the user is not a member", async () => {
-    const transaction = makeTransactionDb({
-      application: { id: "app-1", organizationId: "org-1", status: "archived" },
-      membership: undefined,
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(
+      makeState({
+        application: { id: "app-1", organizationId: "org-1", status: "archived" },
+        membership: undefined,
+      }),
+    );
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "app-1",
@@ -273,11 +480,7 @@ describe("createSdkCredential", () => {
   });
 
   it("rejects a member without administration permissions without inserting a credential", async () => {
-    const transaction = makeTransactionDb({
-      application: { id: "app-1", organizationId: "org-1", status: "active" },
-      membership: { role: "member" },
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(makeState({ membership: { role: "member" } }));
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "app-1",
@@ -289,11 +492,7 @@ describe("createSdkCredential", () => {
   });
 
   it("rejects a user without membership without inserting a credential", async () => {
-    const transaction = makeTransactionDb({
-      application: { id: "app-1", organizationId: "org-1", status: "active" },
-      membership: undefined,
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(makeState({ membership: undefined }));
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "app-1",
@@ -305,11 +504,7 @@ describe("createSdkCredential", () => {
   });
 
   it("checks membership inside the creation transaction so a demotion before commit blocks issuance", async () => {
-    const state: FakeTransactionState = {
-      application: { id: "app-1", organizationId: "org-1", status: "active" },
-      membership: { role: "admin" },
-      inserted: [],
-    };
+    const state = makeState({ membership: { role: "admin" } });
     const transaction = makeTransactionDb(state);
 
     const allowed = await createSdkCredential(transaction.db, {
@@ -332,11 +527,7 @@ describe("createSdkCredential", () => {
   });
 
   it("returns not found when the application does not exist", async () => {
-    const transaction = makeTransactionDb({
-      application: undefined,
-      membership: { role: "admin" },
-      inserted: [],
-    });
+    const transaction = makeTransactionDb(makeState({ application: undefined }));
 
     const result = await createSdkCredential(transaction.db, {
       applicationId: "missing",
@@ -345,6 +536,272 @@ describe("createSdkCredential", () => {
 
     expect(result).toEqual({ ok: false, reason: "notFound" });
     expect(transaction.values).not.toHaveBeenCalled();
+  });
+});
+
+describe("revokeSdkCredential", () => {
+  it("revokes an active credential for an administrator", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        membership: { role: "owner" },
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.credential.id).toBe("cred-1");
+      expect(result.credential.applicationId).toBe("app-1");
+      expect(new Date(result.credential.revokedAt).getTime()).not.toBeNaN();
+    }
+    expect(transaction.set).toHaveBeenCalledWith({ revokedAt: expect.any(Date) });
+  });
+
+  it("keeps a revoked credential revoked without touching workflows or models", async () => {
+    const revokedAt = new Date("2026-09-01T00:00:00.000Z");
+    const transaction = makeTransactionDb(
+      makeState({
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt },
+      }),
+    );
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      credential: {
+        id: "cred-1",
+        applicationId: "app-1",
+        revokedAt: "2026-09-01T00:00:00.000Z",
+      },
+    });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member without administration permissions keeping the credential active", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        membership: { role: "member" },
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  it("rejects a user without membership without revealing the credential", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        membership: undefined,
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "user-outside",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the credential does not belong to the application", async () => {
+    const transaction = makeTransactionDb(makeState({ credential: undefined }));
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-from-other-app",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.set).not.toHaveBeenCalled();
+  });
+
+  it("revokes credentials of an archived application", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        application: { id: "app-1", organizationId: "org-1", status: "archived" },
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(transaction.set).toHaveBeenCalledWith({ revokedAt: expect.any(Date) });
+  });
+
+  it("checks membership inside the revocation transaction so a demotion before commit blocks it", async () => {
+    const state = makeState({
+      membership: { role: "admin" },
+      credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+    });
+    const transaction = makeTransactionDb(state);
+
+    const allowed = await revokeSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+    expect(allowed.ok).toBe(true);
+    expect(state.updated).toHaveLength(1);
+
+    state.membership = { role: "member" };
+    state.updated = [];
+
+    const other = makeTransactionDb(state);
+    state.credential = { id: "cred-2", applicationId: "app-1", revokedAt: null };
+    const demoted = await revokeSdkCredential(other.db, {
+      applicationId: "app-1",
+      credentialId: "cred-2",
+      userId: "admin",
+    });
+
+    expect(demoted).toEqual({ ok: false, reason: "forbidden" });
+    expect(state.updated).toHaveLength(0);
+  });
+});
+
+describe("listSdkCredentials", () => {
+  it("returns credential metadata with a revoked status after revocation", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          createdAt: new Date("2026-09-18T00:00:00.000Z"),
+          revokedAt: new Date("2026-09-19T00:00:00.000Z"),
+        },
+      }),
+    );
+
+    const result = await listSdkCredentials(transaction.db, {
+      applicationId: "app-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      credentials: [
+        {
+          id: "cred-1",
+          status: "revoked",
+          createdAt: "2026-09-18T00:00:00.000Z",
+          revokedAt: "2026-09-19T00:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("rejects a member without administration permissions", async () => {
+    const transaction = makeTransactionDb(makeState({ membership: { role: "member" } }));
+
+    const result = await listSdkCredentials(transaction.db, {
+      applicationId: "app-1",
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  it("returns not found when the application does not exist", async () => {
+    const transaction = makeTransactionDb(makeState({ application: undefined }));
+
+    const result = await listSdkCredentials(transaction.db, {
+      applicationId: "missing",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+  });
+});
+
+describe("verifySdkCredential", () => {
+  function makeQueryDb(rows: Record<string, unknown>[]): CredentialQueryDatabase {
+    return {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => rows,
+          }),
+        }),
+      }),
+    };
+  }
+
+  it("accepts an active credential secret", async () => {
+    const secret = generateSdkCredentialSecret();
+    const database = makeQueryDb([
+      {
+        id: "cred-1",
+        applicationId: "app-1",
+        secretHash: hashSdkCredentialSecret(secret),
+        revokedAt: null,
+      },
+    ]);
+
+    const result = await verifySdkCredential(database, secret);
+
+    expect(result).toEqual({
+      ok: true,
+      credential: { credentialId: "cred-1", applicationId: "app-1" },
+    });
+  });
+
+  it("rejects a revoked credential with the credentialRevoked state", async () => {
+    const secret = generateSdkCredentialSecret();
+    const database = makeQueryDb([
+      {
+        id: "cred-1",
+        applicationId: "app-1",
+        secretHash: hashSdkCredentialSecret(secret),
+        revokedAt: new Date("2026-09-19T00:00:00.000Z"),
+      },
+    ]);
+
+    const result = await verifySdkCredential(database, secret);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("credentialRevoked");
+      expect(result.message).toBe(
+        "La credencial fue revocada. Genera una nueva credencial para continuar.",
+      );
+    }
+  });
+
+  it("rejects an unknown secret", async () => {
+    const database = makeQueryDb([]);
+
+    const result = await verifySdkCredential(database, generateSdkCredentialSecret());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("invalidCredential");
   });
 });
 

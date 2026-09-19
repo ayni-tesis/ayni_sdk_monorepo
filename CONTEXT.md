@@ -21,7 +21,7 @@ A Workspace member holding the owner or admin role with full management permissi
 _Avoid_: Manager, superuser
 
 **SDK Credential**:
-An application-scoped secret that lets an SDK installation authenticate to synchronize that application's resources. The server stores only a SHA-256 hash and shows the secret once at creation.
+An application-scoped secret that lets an SDK installation authenticate to synchronize that application's resources. The server stores only a SHA-256 hash and shows the secret once at creation. Revoking a credential marks it `revoked`, after which it can never authenticate or synchronize new resources (`credentialRevoked`); revocation never deletes existing workflows, models, or versions, nor removes resources already stored offline on devices.
 _Avoid_: API key, token
 
 **Slug**:
