@@ -1,6 +1,6 @@
 {
-  "id": "4835adb3-7e55-42b3-900a-383b09ac8313",
-  "prevId": "15bb7b8f-c226-45ef-a092-dfe25d1215dd",
+  "id": "e810ab0c-bf1a-4299-84f5-33833e7e7713",
+  "prevId": "53b4a7a3-6425-46c4-80b7-7a2a47fa918e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -877,6 +877,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

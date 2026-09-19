@@ -36,7 +36,11 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
-import { createSdkCredential } from "./sdk-credential-store";
+import {
+  createSdkCredential,
+  listSdkCredentials,
+  revokeSdkCredential,
+} from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -94,41 +98,43 @@ const sdkCredentials = {
   create(input: { applicationId: string; userId: string }) {
     return createSdkCredential(db, input);
   },
-  async list(applicationId: string) {
-    const rows = await db
-      .select({
-        id: sdkCredential.id,
-        createdAt: sdkCredential.createdAt,
-        lastUsedAt: sdkCredential.lastUsedAt,
-        revokedAt: sdkCredential.revokedAt,
-      })
-      .from(sdkCredential)
-      .where(eq(sdkCredential.applicationId, applicationId))
-      .orderBy(asc(sdkCredential.createdAt));
-    return rows.map(({ revokedAt, ...row }) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-      lastUsedAt: revokedAt ? null : (row.lastUsedAt?.toISOString() ?? null),
-    }));
+  list(input: { applicationId: string; userId: string }) {
+    return listSdkCredentials(db, input);
+  },
+  revoke(input: { applicationId: string; credentialId: string; userId: string }) {
+    return revokeSdkCredential(db, input);
   },
   async authenticate(secret: string) {
     const secretHash = createHash("sha256").update(secret).digest("hex");
-    return db.transaction(async (tx) => {
-      const [credential] = await tx
-        .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
-        .from(sdkCredential)
-        .where(and(eq(sdkCredential.secretHash, secretHash), isNull(sdkCredential.revokedAt)))
-        .limit(1)
-        .for("update");
-      if (!credential) return false;
+    const [candidate] = await db
+      .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
+      .from(sdkCredential)
+      .where(eq(sdkCredential.secretHash, secretHash))
+      .limit(1);
+    if (!candidate) return false;
 
+    return db.transaction(async (tx) => {
       const [foundApplication] = await tx
         .select({ status: application.status })
         .from(application)
-        .where(eq(application.id, credential.applicationId))
+        .where(eq(application.id, candidate.applicationId))
         .limit(1)
         .for("update");
       if (foundApplication?.status !== "active") return false;
+
+      const [credential] = await tx
+        .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
+        .from(sdkCredential)
+        .where(
+          and(
+            eq(sdkCredential.id, candidate.id),
+            eq(sdkCredential.secretHash, secretHash),
+            isNull(sdkCredential.revokedAt),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!credential) return false;
 
       const [updated] = await tx
         .update(sdkCredential)
