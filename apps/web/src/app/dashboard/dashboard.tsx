@@ -59,6 +59,8 @@ type GeneratedCredential = {
   secret: string;
 };
 
+type SdkCredentialItem = { id: string; createdAt: string; lastUsedAt: string | null };
+
 function membersErrorMessage(error: unknown) {
   const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
   if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
@@ -731,6 +733,8 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [generatingCredential, setGeneratingCredential] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState<GeneratedCredential | null>(null);
+  const [sdkCredentials, setSdkCredentials] = useState<SdkCredentialItem[]>([]);
+  const [loadingSdkCredentials, setLoadingSdkCredentials] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -1069,6 +1073,25 @@ export default function Dashboard({ userName }: { userName: string }) {
         return;
       }
       setSelected(data);
+      setLoadingSdkCredentials(true);
+      try {
+        const result = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
+          `/applications/${id}/sdk-credentials`,
+        );
+        if (
+          activeWorkspaceIdRef.current === orgId &&
+          workspaceSwitchGenerationRef.current === switchGen
+        ) {
+          setSdkCredentials(result.data.credentials);
+        }
+      } finally {
+        if (
+          activeWorkspaceIdRef.current === orgId &&
+          workspaceSwitchGenerationRef.current === switchGen
+        ) {
+          setLoadingSdkCredentials(false);
+        }
+      }
     } catch (detailError) {
       if (
         activeWorkspaceIdRef.current !== orgId ||
@@ -1110,6 +1133,14 @@ export default function Dashboard({ userName }: { userName: string }) {
         return;
       }
       setGeneratedCredential(data.credential);
+      try {
+        const { data: credentialList } = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
+          `/applications/${applicationId}/sdk-credentials`,
+        );
+        setSdkCredentials(credentialList.credentials);
+      } catch {
+        // The credential was created successfully; a list refresh can be retried on next visit.
+      }
       toast.success("Credencial generada.");
     } catch (credentialError) {
       if (
@@ -1376,6 +1407,40 @@ export default function Dashboard({ userName }: { userName: string }) {
                       )}
                     </div>
                     <p>Genera una credencial para autenticar al SDK de esta aplicación.</p>
+                  </section>
+                  <section>
+                    {loadingSdkCredentials ? (
+                      <p>Cargando credenciales…</p>
+                    ) : sdkCredentials.length > 0 ? (
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Credencial</th>
+                            <th>Último uso</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sdkCredentials.map((credential) => (
+                            <tr key={credential.id}>
+                              <td>
+                                <code>{credential.id}</code>
+                              </td>
+                              <td
+                                title={
+                                  credential.lastUsedAt
+                                    ? "Última autenticación correcta del SDK"
+                                    : undefined
+                                }
+                              >
+                                {credential.lastUsedAt
+                                  ? new Date(credential.lastUsedAt).toLocaleString()
+                                  : "Sin uso registrado"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : null}
                   </section>
                   <section>
                     <h2>Datasets</h2>

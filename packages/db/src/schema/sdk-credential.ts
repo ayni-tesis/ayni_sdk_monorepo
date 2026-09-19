@@ -11,6 +11,8 @@ export const sdkCredential = pgTable(
       .references(() => application.id, { onDelete: "cascade" }),
     secretHash: text("secret_hash").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
   },
   (table) => [
     uniqueIndex("sdk_credential_secret_hash_idx").on(table.secretHash),

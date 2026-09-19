@@ -7,11 +7,18 @@ import {
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
+import {
+  application,
+  invitationLink,
+  member,
+  organization,
+  sdkCredential,
+  user,
+} from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -86,6 +93,38 @@ const applications = {
 const sdkCredentials = {
   create(input: { applicationId: string; userId: string }) {
     return createSdkCredential(db, input);
+  },
+  async list(applicationId: string) {
+    const rows = await db
+      .select({
+        id: sdkCredential.id,
+        createdAt: sdkCredential.createdAt,
+        lastUsedAt: sdkCredential.lastUsedAt,
+        revokedAt: sdkCredential.revokedAt,
+      })
+      .from(sdkCredential)
+      .where(eq(sdkCredential.applicationId, applicationId))
+      .orderBy(asc(sdkCredential.createdAt));
+    return rows.map(({ revokedAt, ...row }) => ({
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: revokedAt ? null : (row.lastUsedAt?.toISOString() ?? null),
+    }));
+  },
+  async authenticate(secret: string) {
+    const secretHash = createHash("sha256").update(secret).digest("hex");
+    const [credential] = await db
+      .select({ id: sdkCredential.id, applicationStatus: application.status })
+      .from(sdkCredential)
+      .innerJoin(application, eq(sdkCredential.applicationId, application.id))
+      .where(and(eq(sdkCredential.secretHash, secretHash), isNull(sdkCredential.revokedAt)))
+      .limit(1);
+    if (credential?.applicationStatus !== "active") return false;
+    await db
+      .update(sdkCredential)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(sdkCredential.id, credential.id));
+    return true;
   },
 };
 
