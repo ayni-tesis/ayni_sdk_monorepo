@@ -58,7 +58,6 @@ export async function createSdkCredential(
     const foundApplication = applicationRows[0];
 
     if (!foundApplication) return { ok: false, reason: "notFound" };
-    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
 
     const membershipRows = (await tx
       .select({ role: member.role })
@@ -74,6 +73,7 @@ export async function createSdkCredential(
     if (membership.role !== "admin" && membership.role !== "owner") {
       return { ok: false, reason: "forbidden" };
     }
+    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
 
     const secret = generateSdkCredentialSecret();
     const credentialRows = (await tx

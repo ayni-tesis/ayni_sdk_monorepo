@@ -256,6 +256,22 @@ describe("createSdkCredential", () => {
     expect(transaction.values).not.toHaveBeenCalled();
   });
 
+  it("returns not found for an archived application when the user is not a member", async () => {
+    const transaction = makeTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "archived" },
+      membership: undefined,
+      inserted: [],
+    });
+
+    const result = await createSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      userId: "user-outside",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
   it("rejects a member without administration permissions without inserting a credential", async () => {
     const transaction = makeTransactionDb({
       application: { id: "app-1", organizationId: "org-1", status: "active" },
