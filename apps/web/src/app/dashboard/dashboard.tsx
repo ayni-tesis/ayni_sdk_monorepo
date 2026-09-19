@@ -59,6 +59,34 @@ type GeneratedCredential = {
   secret: string;
 };
 
+type SdkCredentialItem = {
+  id: string;
+  applicationId: string;
+  prefix: string | null;
+  status: "active" | "revoked";
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+const CREDENTIALS_LOAD_ERROR = "No pudimos cargar las credenciales. Inténtalo nuevamente.";
+const CREDENTIALS_FORBIDDEN = "No tienes permiso para ver las credenciales de esta aplicación.";
+
+function credentialsErrorMessage(error: unknown) {
+  if (!axios.isAxiosError<{ message?: string }>(error)) return CREDENTIALS_LOAD_ERROR;
+  if (error.response?.status === 403) {
+    return error.response.data?.message ?? CREDENTIALS_FORBIDDEN;
+  }
+  return CREDENTIALS_LOAD_ERROR;
+}
+
+function formatCredentialDate(value: string) {
+  return new Date(value).toLocaleDateString("es", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function membersErrorMessage(error: unknown) {
   const fallback = "No pudimos cargar los miembros. Inténtalo de nuevo.";
   if (!axios.isAxiosError<{ message?: string }>(error)) return fallback;
@@ -759,6 +787,11 @@ export default function Dashboard({ userName }: { userName: string }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const workspacesAbortRef = useRef<AbortController | null>(null);
   const workspaceSwitchGenerationRef = useRef(0);
+  const [credentials, setCredentials] = useState<SdkCredentialItem[]>([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [credentialsError, setCredentialsError] = useState("");
+  const credentialsAbortRef = useRef<AbortController | null>(null);
+  const selectedApplicationIdRef = useRef<string | null>(null);
 
   const loadWorkspaces = useCallback(async () => {
     workspacesAbortRef.current?.abort();
@@ -863,6 +896,55 @@ export default function Dashboard({ userName }: { userName: string }) {
       abortControllerRef.current?.abort();
     };
   }, [workspace?.id, workspaceMissing, loadApplications]);
+
+  const loadCredentials = useCallback(async (applicationId: string) => {
+    credentialsAbortRef.current?.abort();
+    const controller = new AbortController();
+    credentialsAbortRef.current = controller;
+
+    setCredentialsLoading(true);
+    setCredentialsError("");
+    try {
+      const { data } = await httpClient.get<{ credentials: SdkCredentialItem[] }>(
+        `/applications/${applicationId}/sdk-credentials`,
+        { signal: controller.signal },
+      );
+      const items = data.credentials ?? [];
+      if (
+        controller.signal.aborted ||
+        selectedApplicationIdRef.current !== applicationId ||
+        items.some((credential) => credential.applicationId !== applicationId)
+      ) {
+        return;
+      }
+      setCredentials(items);
+    } catch (loadError) {
+      if (controller.signal.aborted || selectedApplicationIdRef.current !== applicationId) {
+        return;
+      }
+      setCredentialsError(credentialsErrorMessage(loadError));
+    } finally {
+      if (!controller.signal.aborted && selectedApplicationIdRef.current === applicationId) {
+        setCredentialsLoading(false);
+      }
+    }
+  }, []);
+
+  const selectedApplicationId = selected?.id;
+
+  useEffect(() => {
+    selectedApplicationIdRef.current = selectedApplicationId ?? null;
+    credentialsAbortRef.current?.abort();
+    setCredentials([]);
+    setCredentialsError("");
+    setCredentialsLoading(false);
+    if (selectedApplicationId) {
+      void loadCredentials(selectedApplicationId);
+    }
+    return () => {
+      credentialsAbortRef.current?.abort();
+    };
+  }, [selectedApplicationId, loadCredentials]);
 
   function openCreateWorkspace() {
     setNewWorkspaceName("");
@@ -1111,6 +1193,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       }
       setGeneratedCredential(data.credential);
       toast.success("Credencial generada.");
+      void loadCredentials(applicationId);
     } catch (credentialError) {
       if (
         activeWorkspaceIdRef.current !== orgId ||
@@ -1375,7 +1458,53 @@ export default function Dashboard({ userName }: { userName: string }) {
                         </Button>
                       )}
                     </div>
-                    <p>Genera una credencial para autenticar al SDK de esta aplicación.</p>
+                    {credentialsLoading ? (
+                      <p data-testid="credentials-loading">Cargando credenciales…</p>
+                    ) : credentialsError ? (
+                      <div className="applications-error" data-testid="credentials-error">
+                        <p>{credentialsError}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid="credentials-retry"
+                          onClick={() => selected && void loadCredentials(selected.id)}
+                        >
+                          <IconRefresh />
+                          Reintentar
+                        </Button>
+                      </div>
+                    ) : credentials.length === 0 ? (
+                      <p data-testid="credentials-empty">
+                        Esta aplicación aún no tiene credenciales SDK.
+                      </p>
+                    ) : (
+                      <table className="credentials-table" data-testid="credentials-table">
+                        <thead>
+                          <tr>
+                            <th>Prefijo</th>
+                            <th>Estado</th>
+                            <th>Creada el</th>
+                            <th>Último uso</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {credentials.map((credential) => (
+                            <tr key={credential.id} data-testid={`credential-row-${credential.id}`}>
+                              <td>
+                                <code>{credential.prefix ?? "—"}</code>
+                              </td>
+                              <td>{credential.status === "active" ? "Activa" : "Revocada"}</td>
+                              <td>{formatCredentialDate(credential.createdAt)}</td>
+                              <td>
+                                {credential.lastUsedAt
+                                  ? formatCredentialDate(credential.lastUsedAt)
+                                  : "Nunca"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </section>
                   <section>
                     <h2>Datasets</h2>

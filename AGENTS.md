@@ -41,7 +41,7 @@ This file provides context about the project for AI assistants.
 - Application management: workspace-scoped applications with administrator- and owner-only create, rename, and archive actions
 - Workspace member management: workspace-scoped member listing and role updating (admin and member) restricted to workspace administrators and owners
 - Workspace invitation links: administrator- and owner-only creation of single-use, expiring links bound to one workspace and role (`admin` or `member`). The server stores only the SHA-256 hash of the token, the system never sends e-mail, and accepting a link grants membership only to the invited workspace.
-- SDK credentials: administrator- and owner-only generation of credentials scoped to one application. The server stores only the SHA-256 hash of the secret, reveals the secret once at creation, and rejects archived applications with the `applicationArchived` state.
+- SDK credentials: administrator- and owner-only generation and listing of credentials scoped to one application. Listing exposes operational metadata only (prefix, status, creation date, last use) and never the secret; status and last use are placeholders ("active", never used) until revocation and SDK telemetry land. The server stores only the SHA-256 hash of the secret, reveals the secret once at creation, and rejects archived applications with the `applicationArchived` state.
 
 ## Project Structure
 
