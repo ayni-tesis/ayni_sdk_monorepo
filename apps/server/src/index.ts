@@ -39,6 +39,7 @@ import {
 import {
   createSdkCredential,
   listSdkCredentials,
+  regenerateSdkCredential,
   revokeSdkCredential,
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
@@ -103,6 +104,9 @@ const sdkCredentials = {
   },
   revoke(input: { applicationId: string; credentialId: string; userId: string }) {
     return revokeSdkCredential(db, input);
+  },
+  regenerate(input: { applicationId: string; credentialId: string; userId: string }) {
+    return regenerateSdkCredential(db, input);
   },
   async authenticate(secret: string) {
     const secretHash = createHash("sha256").update(secret).digest("hex");

@@ -71,6 +71,9 @@ type SdkCredentialItem = {
 const CREDENTIALS_LOAD_ERROR = "No pudimos cargar las credenciales. Inténtalo nuevamente.";
 const CREDENTIALS_FORBIDDEN = "No tienes permiso para ver las credenciales de esta aplicación.";
 
+/**
+ * Maps an error thrown when fetching credentials to a localized user message.
+ */
 function credentialsErrorMessage(error: unknown) {
   if (!axios.isAxiosError<{ message?: string }>(error)) return CREDENTIALS_LOAD_ERROR;
   if (error.response?.status === 403) {
@@ -79,6 +82,9 @@ function credentialsErrorMessage(error: unknown) {
   return CREDENTIALS_LOAD_ERROR;
 }
 
+/**
+ * Formats an ISO date string into a localized Spanish date representation.
+ */
 function formatCredentialDate(value: string) {
   return new Date(value).toLocaleDateString("es", {
     day: "2-digit",
@@ -750,6 +756,89 @@ function GenerateCredentialDialog({
   );
 }
 
+/**
+ * Dialog for confirming SDK credential regeneration and displaying the new secret once.
+ */
+function RegenerateCredentialDialog({
+  open,
+  onOpenChange,
+  onDiscard,
+  regenerated,
+  regenerating,
+  onRegenerate,
+  onCopy,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDiscard: () => void;
+  regenerated: GeneratedCredential | null;
+  regenerating: boolean;
+  onRegenerate: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCopy: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (regenerating) return;
+        if (!nextOpen && regenerated) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={!regenerated && !regenerating}>
+        <DialogHeader>
+          <DialogTitle>¿Regenerar esta credencial?</DialogTitle>
+          <DialogDescription>
+            {regenerated
+              ? "Copia la nueva credencial ahora. No podrás verla nuevamente."
+              : "La credencial actual se revocará inmediatamente. Actualiza la configuración de tu app con el nuevo secreto."}
+          </DialogDescription>
+        </DialogHeader>
+        {regenerated ? (
+          <div className="flex flex-col gap-4">
+            <code className="credential-secret" data-testid="regenerated-credential-secret">
+              {regenerated.secret}
+            </code>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                data-testid="close-regenerated-credential"
+                onClick={onDiscard}
+              >
+                Cerrar
+              </Button>
+              <Button type="button" data-testid="copy-regenerated-credential" onClick={onCopy}>
+                Copiar credencial
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={onRegenerate} className="flex flex-col gap-4">
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={regenerating}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                data-testid="regenerate-credential-submit"
+                disabled={regenerating}
+              >
+                {regenerating ? "Regenerando credencial…" : "Regenerar credencial"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RevokeCredentialDialog({
   open,
   onOpenChange,
@@ -797,6 +886,9 @@ function RevokeCredentialDialog({
   );
 }
 
+/**
+ * Main dashboard application page managing workspaces, applications, members, and SDK credentials.
+ */
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
@@ -812,6 +904,13 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [credentialToRevoke, setCredentialToRevoke] = useState<SdkCredentialItem | null>(null);
   const [revokingCredential, setRevokingCredential] = useState(false);
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [targetCredentialToRegenerate, setTargetCredentialToRegenerate] =
+    useState<SdkCredentialItem | null>(null);
+  const [regeneratingCredential, setRegeneratingCredential] = useState(false);
+  const [regeneratedCredential, setRegeneratedCredential] = useState<GeneratedCredential | null>(
+    null,
+  );
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -882,6 +981,9 @@ export default function Dashboard({ userName }: { userName: string }) {
     setCredentialsLoading(false);
     setRevokeDialogOpen(false);
     setCredentialToRevoke(null);
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
   }, []);
 
   async function switchWorkspace(organizationId: string) {
@@ -890,7 +992,8 @@ export default function Dashboard({ userName }: { userName: string }) {
       switchingWorkspace ||
       saving ||
       archiving ||
-      revokingCredential
+      revokingCredential ||
+      regeneratingCredential
     ) {
       return;
     }
@@ -1004,19 +1107,14 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   useEffect(() => {
     selectedApplicationIdRef.current = selectedApplicationId ?? null;
-    credentialsAbortRef.current?.abort();
-    setCredentials([]);
-    setCredentialsError("");
-    setCredentialsLoading(false);
-    setRevokeDialogOpen(false);
-    setCredentialToRevoke(null);
+    clearCredentials();
     if (selectedApplicationId && canManage) {
       void loadCredentials(selectedApplicationId);
     }
     return () => {
       credentialsAbortRef.current?.abort();
     };
-  }, [selectedApplicationId, canManage, loadCredentials]);
+  }, [selectedApplicationId, canManage, loadCredentials, clearCredentials]);
 
   function openCreateWorkspace() {
     setNewWorkspaceName("");
@@ -1340,6 +1438,64 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
   }
 
+  function openRegenerateCredential(credential: SdkCredentialItem) {
+    setTargetCredentialToRegenerate(credential);
+    setRegeneratedCredential(null);
+    setRegenerateDialogOpen(true);
+  }
+
+  function closeRegenerateDialog() {
+    setRegenerateDialogOpen(false);
+    setTargetCredentialToRegenerate(null);
+    setRegeneratedCredential(null);
+  }
+
+  async function handleRegenerateCredential(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || !targetCredentialToRegenerate) return;
+    const applicationId = selected.id;
+    const credentialId = targetCredentialToRegenerate.id;
+    const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
+    setRegeneratingCredential(true);
+    try {
+      const { data } = await httpClient.post<{ credential: GeneratedCredential }>(
+        `/applications/${applicationId}/sdk-credentials/${credentialId}/regenerate`,
+      );
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      setRegeneratedCredential(data.credential);
+      toast.success("Nueva credencial generada. La anterior fue revocada.");
+      void loadCredentials(applicationId);
+    } catch (credentialError) {
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.error(
+        errorMessage(credentialError, "No pudimos regenerar la credencial. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRegeneratingCredential(false);
+    }
+  }
+
+  async function copyRegeneratedCredential() {
+    if (!regeneratedCredential) return;
+    try {
+      await navigator.clipboard.writeText(regeneratedCredential.secret);
+      toast.success("Credencial copiada.");
+    } catch {
+      toast.error("No pudimos copiar la credencial. Inténtalo de nuevo.");
+    }
+  }
+
   if ((!workspace && !organization.isPending) || workspaceMissing) {
     if (loadingWorkspaces) {
       return (
@@ -1585,7 +1741,12 @@ export default function Dashboard({ userName }: { userName: string }) {
                         </Button>
                       )}
                     </div>
-                    {canManage && (
+                    {!canManage ? (
+                      <p data-testid="credentials-restricted">
+                        Solo los administradores del workspace pueden gestionar las credenciales
+                        SDK.
+                      </p>
+                    ) : (
                       <div className="credential-rows" data-testid="credential-rows">
                         {credentialsLoading ? (
                           <p data-testid="credentials-loading">Cargando credenciales…</p>
@@ -1651,14 +1812,26 @@ export default function Dashboard({ userName }: { userName: string }) {
                                   </td>
                                   <td>
                                     {credential.status === "active" && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        data-testid={`revoke-credential-${credential.id}`}
-                                        onClick={() => openRevokeCredential(credential)}
-                                      >
-                                        Revocar
-                                      </Button>
+                                      <div className="flex items-center gap-2">
+                                        {selected.status === "active" && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            data-testid={`regenerate-credential-${credential.id}`}
+                                            onClick={() => openRegenerateCredential(credential)}
+                                          >
+                                            Regenerar
+                                          </Button>
+                                        )}
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          data-testid={`revoke-credential-${credential.id}`}
+                                          onClick={() => openRevokeCredential(credential)}
+                                        >
+                                          Revocar
+                                        </Button>
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
@@ -1804,6 +1977,18 @@ export default function Dashboard({ userName }: { userName: string }) {
           }}
           revoking={revokingCredential}
           onSubmit={(event) => void revokeCredential(event)}
+        />
+        <RegenerateCredentialDialog
+          open={regenerateDialogOpen}
+          onOpenChange={(open) => {
+            if (open) setRegenerateDialogOpen(true);
+            else closeRegenerateDialog();
+          }}
+          onDiscard={closeRegenerateDialog}
+          regenerated={regeneratedCredential}
+          regenerating={regeneratingCredential}
+          onRegenerate={handleRegenerateCredential}
+          onCopy={() => void copyRegeneratedCredential()}
         />
         <CreateWorkspaceDialog
           open={workspaceDialogOpen}

@@ -8,7 +8,9 @@ import {
   type ListSdkCredentialsResult,
   listSdkCredentials,
   type ReadOnlyExecutor,
+  type RegenerateSdkCredentialResult,
   type RevokeSdkCredentialResult,
+  regenerateSdkCredential,
   revokeSdkCredential,
   verifySdkCredential,
 } from "./sdk-credential-store";
@@ -70,6 +72,22 @@ function makeApp({
       revokedAt: "2026-09-18T12:00:00.000Z",
     },
   }),
+  regenerate = async ({
+    applicationId,
+    credentialId,
+  }: {
+    applicationId: string;
+    credentialId: string;
+    userId: string;
+  }): Promise<RegenerateSdkCredentialResult> => ({
+    ok: true,
+    credential: {
+      id: "cred-2",
+      applicationId,
+      secret: "ayni_sk_newsecret123456789",
+    },
+    revokedCredentialId: credentialId,
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -80,20 +98,32 @@ function makeApp({
     credentialId: string;
     userId: string;
   }) => Promise<RevokeSdkCredentialResult>;
+  regenerate?: (input: {
+    applicationId: string;
+    credentialId: string;
+    userId: string;
+  }) => Promise<RegenerateSdkCredentialResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(list);
   const revokeMock = vi.fn(revoke);
+  const regenerateMock = vi.fn(regenerate);
   return {
     create: createMock,
     list: listMock,
     revoke: revokeMock,
+    regenerate: regenerateMock,
     request: createSdkCredentialsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
       },
-      credentials: { create: createMock, list: listMock, revoke: revokeMock },
+      credentials: {
+        create: createMock,
+        list: listMock,
+        revoke: revokeMock,
+        regenerate: regenerateMock,
+      },
     }),
   };
 }
@@ -337,6 +367,125 @@ describe("POST /applications/:applicationId/sdk-credentials/:credentialId/revoke
 
     expect(response.status).toBe(404);
     expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /applications/:applicationId/sdk-credentials/:credentialId/regenerate", () => {
+  it("allows an administrator to regenerate an active credential, returning the new secret", async () => {
+    const { request, regenerate } = makeApp();
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      credential: {
+        id: "cred-2",
+        applicationId: "app-1",
+        secret: "ayni_sk_newsecret123456789",
+      },
+    });
+    expect(regenerate).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, regenerate } = makeApp({ session: null });
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ message: "Authentication required" });
+    expect(regenerate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member without administration permissions", async () => {
+    const { request } = makeApp({
+      regenerate: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para regenerar credenciales.",
+    });
+  });
+
+  it("rejects an inactive or revoked credential with 409 and credentialNotActive", async () => {
+    const { request } = makeApp({
+      regenerate: async () => ({ ok: false, reason: "notActive" }),
+    });
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Solo puedes regenerar credenciales activas.",
+      code: "credentialNotActive",
+    });
+  });
+
+  it("rejects an archived application with 409 and applicationArchived", async () => {
+    const { request } = makeApp({
+      regenerate: async () => ({ ok: false, reason: "archived" }),
+    });
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "No puedes generar credenciales para una aplicación archivada.",
+      code: "applicationArchived",
+    });
+  });
+
+  it("returns not found when the application does not exist", async () => {
+    const { request, regenerate } = makeApp({ application: null });
+
+    const response = await request.request(
+      "/applications/missing/sdk-credentials/cred-1/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos esta aplicación.",
+    });
+    expect(regenerate).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the credential does not exist", async () => {
+    const { request } = makeApp({
+      regenerate: async () => ({ ok: false, reason: "notFound" }),
+    });
+
+    const response = await request.request(
+      "/applications/app-1/sdk-credentials/missing/regenerate",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos esta aplicación.",
+    });
   });
 });
 
@@ -706,6 +855,167 @@ describe("revokeSdkCredential", () => {
 
     expect(demoted).toEqual({ ok: false, reason: "forbidden" });
     expect(state.updated).toHaveLength(0);
+  });
+});
+
+describe("regenerateSdkCredential", () => {
+  it("revokes the previous active credential and creates a new one with a new secret", async () => {
+    const state = makeState({
+      credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+    });
+    const transaction = makeTransactionDb(state);
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.credential.id).toBe("cred-1");
+      expect(result.credential.applicationId).toBe("app-1");
+      expect(result.credential.secret.startsWith("ayni_sk_")).toBe(true);
+      expect(result.revokedCredentialId).toBe("cred-1");
+    }
+
+    expect(transaction.set).toHaveBeenCalledWith({
+      revokedAt: expect.any(Date),
+    });
+    expect(transaction.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "app-1",
+        prefix: expect.stringMatching(/^ayni_sk_/),
+        secretHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
+  });
+
+  it("rejects a credential that is already revoked without modifying or inserting", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: new Date() },
+      }),
+    );
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notActive" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("rejects a member without administration permissions, conserving the active credential", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        membership: { role: "member" },
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("rejects an archived application before regenerating", async () => {
+    const transaction = makeTransactionDb(
+      makeState({
+        application: { id: "app-1", organizationId: "org-1", status: "archived" },
+        credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+      }),
+    );
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "archived" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the credential does not exist", async () => {
+    const transaction = makeTransactionDb(makeState({ credential: undefined }));
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "missing-cred",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the application does not exist", async () => {
+    const transaction = makeTransactionDb(makeState({ application: undefined }));
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "missing",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when the user is not a member", async () => {
+    const transaction = makeTransactionDb(makeState({ membership: undefined }));
+
+    const result = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "outside-user",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(transaction.set).not.toHaveBeenCalled();
+    expect(transaction.values).not.toHaveBeenCalled();
+  });
+
+  it("checks membership inside the transaction so demotion before commit blocks issuance", async () => {
+    const state = makeState({
+      credential: { id: "cred-1", applicationId: "app-1", revokedAt: null },
+    });
+    const transaction = makeTransactionDb(state);
+
+    const allowed = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(allowed).toEqual({
+      ok: true,
+      credential: expect.objectContaining({ id: "cred-1" }),
+      revokedCredentialId: "cred-1",
+    });
+
+    state.membership = { role: "member" };
+
+    const demoted = await regenerateSdkCredential(transaction.db, {
+      applicationId: "app-1",
+      credentialId: "cred-1",
+      userId: "admin",
+    });
+
+    expect(demoted).toEqual({ ok: false, reason: "forbidden" });
   });
 });
 

@@ -79,6 +79,22 @@ export type RevokeSdkCredentialResult =
   | { ok: true; credential: RevokedSdkCredential }
   | { ok: false; reason: "forbidden" | "notFound" };
 
+export type RegeneratedSdkCredential = {
+  id: string;
+  applicationId: string;
+  secret: string;
+};
+
+export type RegenerateSdkCredentialInput = {
+  applicationId: string;
+  credentialId: string;
+  userId: string;
+};
+
+export type RegenerateSdkCredentialResult =
+  | { ok: true; credential: RegeneratedSdkCredential; revokedCredentialId: string }
+  | { ok: false; reason: "forbidden" | "notFound" | "archived" | "notActive" };
+
 export type ListedSdkCredential = {
   id: string;
   applicationId: string;
@@ -111,7 +127,7 @@ export const SDK_CREDENTIAL_REVOKED_MESSAGE =
 
 const INVALID_CREDENTIAL_MESSAGE = "La credencial no es válida.";
 
-type ApplicationRow = { id: string; organizationId: string };
+type ApplicationRow = { id: string; organizationId: string; status: string };
 
 async function findManagedApplication(
   tx: TransactionExecutor,
@@ -121,7 +137,11 @@ async function findManagedApplication(
   { ok: true; application: ApplicationRow } | { ok: false; reason: "forbidden" | "notFound" }
 > {
   const applicationRows = (await tx
-    .select({ id: application.id, organizationId: application.organizationId })
+    .select({
+      id: application.id,
+      organizationId: application.organizationId,
+      status: application.status,
+    })
     .from(application)
     .where(eq(application.id, applicationId))
     .limit(1)
@@ -148,6 +168,11 @@ async function findManagedApplication(
   return { ok: true, application: foundApplication };
 }
 
+/**
+ * Creates a new SDK credential for an active application.
+ * Verifies that the user has admin or owner permissions in the application's workspace.
+ * Rejects archived applications. Stores only the SHA-256 hash of the secret.
+ */
 export async function createSdkCredential(
   database: CredentialDatabase,
   { applicationId, userId }: CreateSdkCredentialInput,
@@ -155,36 +180,11 @@ export async function createSdkCredential(
   return database.transaction(async (transaction) => {
     const tx = transaction as TransactionExecutor;
 
-    const applicationRows = (await tx
-      .select({
-        id: application.id,
-        organizationId: application.organizationId,
-        status: application.status,
-      })
-      .from(application)
-      .where(eq(application.id, applicationId))
-      .limit(1)
-      .for("update")) as { id: string; organizationId: string; status: string }[];
-    const foundApplication = applicationRows[0];
+    const authorized = await findManagedApplication(tx, applicationId, userId);
+    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
 
-    if (!foundApplication) return { ok: false, reason: "notFound" };
-
-    const membershipRows = (await tx
-      .select({ role: member.role })
-      .from(member)
-      .where(
-        and(eq(member.userId, userId), eq(member.organizationId, foundApplication.organizationId)),
-      )
-      .limit(1)
-      .for("update")) as { role: string }[];
-    const membership = membershipRows[0];
-
-    if (!membership) return { ok: false, reason: "notFound" };
-    if (membership.role !== "admin" && membership.role !== "owner") {
-      return { ok: false, reason: "forbidden" };
-    }
-    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
-
+    const foundApplication = authorized.application;
     const secret = generateSdkCredentialSecret();
     const credentialRows = (await tx
       .insert(sdkCredential)
@@ -210,6 +210,11 @@ export async function createSdkCredential(
   });
 }
 
+/**
+ * Revokes an SDK credential for an application.
+ * Verifies that the user has admin or owner permissions in the workspace.
+ * Sets revokedAt timestamp if not already set.
+ */
 export async function revokeSdkCredential(
   database: CredentialDatabase,
   { applicationId, credentialId, userId }: RevokeSdkCredentialInput,
@@ -257,6 +262,79 @@ export async function revokeSdkCredential(
   });
 }
 
+/**
+ * Regenerates an active SDK credential for an active application.
+ * Verifies that the user has admin or owner permissions in the workspace.
+ * Revokes the target credential immediately (revokedAt: now)
+ * and issues a replacement credential.
+ * Rejects non-active (already revoked) credentials and archived applications.
+ */
+export async function regenerateSdkCredential(
+  database: CredentialDatabase,
+  { applicationId, credentialId, userId }: RegenerateSdkCredentialInput,
+): Promise<RegenerateSdkCredentialResult> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as TransactionExecutor;
+
+    const authorized = await findManagedApplication(tx, applicationId, userId);
+    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
+
+    const foundApplication = authorized.application;
+
+    const credentialRows = (await tx
+      .select({
+        id: sdkCredential.id,
+        applicationId: sdkCredential.applicationId,
+        revokedAt: sdkCredential.revokedAt,
+      })
+      .from(sdkCredential)
+      .where(
+        and(
+          eq(sdkCredential.id, credentialId),
+          eq(sdkCredential.applicationId, foundApplication.id),
+        ),
+      )
+      .limit(1)
+      .for("update")) as { id: string; applicationId: string; revokedAt: Date | null }[];
+    const foundCredential = credentialRows[0];
+
+    if (!foundCredential) return { ok: false, reason: "notFound" };
+    if (foundCredential.revokedAt !== null) return { ok: false, reason: "notActive" };
+
+    const revokedAt = new Date();
+    await tx
+      .update(sdkCredential)
+      .set({ revokedAt })
+      .where(eq(sdkCredential.id, foundCredential.id))
+      .returning();
+
+    const secret = generateSdkCredentialSecret();
+    const newCredentialRows = (await tx
+      .insert(sdkCredential)
+      .values({
+        id: crypto.randomUUID(),
+        applicationId: foundApplication.id,
+        secretHash: hashSdkCredentialSecret(secret),
+        prefix: deriveSdkCredentialPrefix(secret),
+      })
+      .returning()) as { id: string; applicationId: string }[];
+    const created = newCredentialRows[0];
+
+    if (!created) throw new Error("SDK credential regeneration returned no record");
+
+    return {
+      ok: true,
+      credential: {
+        id: created.id,
+        applicationId: created.applicationId,
+        secret,
+      },
+      revokedCredentialId: foundCredential.id,
+    };
+  });
+}
+
 export type ReadOnlyExecutor = {
   select: (fields: Record<string, unknown>) => {
     from: (table: unknown) => {
@@ -265,6 +343,11 @@ export type ReadOnlyExecutor = {
   };
 };
 
+/**
+ * Lists all SDK credentials for an application.
+ * Verifies that the user has admin or owner permissions in the workspace.
+ * Returns credentials sorted by creation date descending with operational metadata.
+ */
 export async function listSdkCredentials(
   database: CredentialDatabase,
   { applicationId, userId }: ListSdkCredentialsInput,
@@ -329,6 +412,10 @@ export async function listSdkCredentials(
   });
 }
 
+/**
+ * Verifies an SDK credential secret for SDK synchronization requests.
+ * Rejects nonexistent or revoked credentials.
+ */
 export async function verifySdkCredential(
   database: CredentialQueryDatabase,
   secret: string,

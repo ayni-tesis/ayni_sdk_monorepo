@@ -2145,4 +2145,335 @@ describe("Dashboard", () => {
 
     expect(await screen.findByTestId("credential-row-cred-1")).toBeTruthy();
   });
+
+  it("lists credentials with prefix, status, and dates", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+        {
+          id: "cred-2",
+          applicationId: "app-1",
+          prefix: "ayni_sk_wxyz",
+          status: "revoked",
+          createdAt: "2026-09-17T12:00:00.000Z",
+          lastUsedAt: "2026-09-18T08:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(await screen.findByText("ayni_sk_abcd")).toBeTruthy();
+    expect(screen.getByText("ayni_sk_wxyz")).toBeTruthy();
+    expect(within(screen.getByTestId("credential-row-cred-1")).getByText("Activa")).toBeTruthy();
+    expect(within(screen.getByTestId("credential-row-cred-2")).getByText("Revocada")).toBeTruthy();
+    expect(screen.getByText("Sin uso registrado")).toBeTruthy();
+    expect(screen.getByTestId("regenerate-credential-cred-1")).toBeTruthy();
+    expect(screen.queryByTestId("regenerate-credential-cred-2")).toBeNull();
+  });
+
+  it("regenerates an active credential and shows the new secret once", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-2",
+          applicationId: "app-1",
+          secret: "ayni_sk_newsecret99999",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+
+    expect(screen.getByRole("heading", { name: "¿Regenerar esta credencial?" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "La credencial actual se revocará inmediatamente. Actualiza la configuración de tu app con el nuevo secreto.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Regenerar credencial" })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    await waitFor(() =>
+      expect(client.post).toHaveBeenCalledWith(
+        "/applications/app-1/sdk-credentials/cred-1/regenerate",
+      ),
+    );
+
+    expect(
+      await screen.findByText("Copia la nueva credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+    expect(screen.getByTestId("regenerated-credential-secret").textContent).toBe(
+      "ayni_sk_newsecret99999",
+    );
+    expect(toastMock.success).toHaveBeenCalledWith(
+      "Nueva credencial generada. La anterior fue revocada.",
+    );
+  });
+
+  it("copies the regenerated credential to the clipboard", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-2",
+          applicationId: "app-1",
+          secret: "ayni_sk_newsecret99999",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    fireEvent.click(await screen.findByTestId("copy-regenerated-credential"));
+
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_newsecret99999"));
+    expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
+  });
+
+  it("shows 'Regenerando credencial…' while regeneration is in flight", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    let resolveRegenerate: (value: unknown) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRegenerate = resolve;
+      }),
+    );
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    expect(
+      screen.getByRole("button", { name: /regenerando credencial…/i }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    resolveRegenerate({
+      data: {
+        credential: {
+          id: "cred-2",
+          applicationId: "app-1",
+          secret: "ayni_sk_newsecret99999",
+        },
+      },
+    });
+
+    expect(
+      await screen.findByText("Copia la nueva credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+  });
+
+  it("does not offer regenerate button for revoked credentials", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-revoked",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "revoked",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    await screen.findByText("ayni_sk_abcd");
+    expect(screen.queryByTestId("regenerate-credential-cred-revoked")).toBeNull();
+  });
+
+  it("does not offer regenerate button to workspace members", async () => {
+    await renderOpenApplicationDetail({
+      role: "member",
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    expect(
+      screen.getByText(
+        "Solo los administradores del workspace pueden gestionar las credenciales SDK.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("regenerate-credential-cred-1")).toBeNull();
+    expect(screen.queryByTestId("credentials-table")).toBeNull();
+  });
+
+  it("does not offer regenerate button for archived applications", async () => {
+    await renderOpenApplicationDetail({
+      status: "archived",
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    await screen.findByText("ayni_sk_abcd");
+    expect(screen.queryByTestId("regenerate-credential-cred-1")).toBeNull();
+  });
+
+  it("surfaces error when trying to regenerate an inactive credential", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    client.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          message: "Solo puedes regenerar credenciales activas.",
+          code: "credentialNotActive",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith("Solo puedes regenerar credenciales activas."),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("regenerated-credential-secret")).toBeNull();
+  });
+
+  it("surfaces permission error when user lacks permission to regenerate", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    client.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: {
+          message: "No tienes permiso para regenerar credenciales.",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No tienes permiso para regenerar credenciales.",
+      ),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit close before discarding the regenerated secret", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-2",
+          applicationId: "app-1",
+          secret: "ayni_sk_newsecret99999",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    expect(
+      await screen.findByText("Copia la nueva credencial ahora. No podrás verla nuevamente."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("regenerated-credential-secret")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("close-regenerated-credential"));
+    await waitFor(() => expect(screen.queryByTestId("regenerated-credential-secret")).toBeNull());
+  });
 });
