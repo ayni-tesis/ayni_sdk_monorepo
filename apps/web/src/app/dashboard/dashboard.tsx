@@ -722,6 +722,97 @@ function GenerateCredentialDialog({
   );
 }
 
+function RegisterModelDialog({
+  open,
+  onOpenChange,
+  modelName,
+  setModelName,
+  modelError,
+  setModelError,
+  registering,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  modelName: string;
+  setModelName: (value: string) => void;
+  modelError: string;
+  setModelError: (value: string) => void;
+  registering: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setModelName("");
+          setModelError("");
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Registrar modelo</DialogTitle>
+          <DialogDescription className="sr-only">
+            Registra un nuevo modelo TensorFlow Lite para esta aplicación.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="model-name" className="font-semibold text-sm">
+              Nombre del modelo
+            </label>
+            <Input
+              id="model-name"
+              autoFocus
+              value={modelName}
+              onChange={(event) => {
+                setModelName(event.target.value);
+                if (modelError) setModelError("");
+              }}
+            />
+            {modelError && (
+              <p className="text-destructive text-sm" role="alert">
+                {modelError}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="model-runtime" className="font-semibold text-sm">
+              Runtime
+            </label>
+            <Input
+              id="model-runtime"
+              value="TensorFlow Lite"
+              disabled
+              readOnly
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={registering}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              data-testid="register-model-submit"
+              disabled={registering}
+            >
+              {registering ? "Registrando modelo…" : "Registrar modelo"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard({ userName }: { userName: string }) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
@@ -731,6 +822,10 @@ export default function Dashboard({ userName }: { userName: string }) {
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [generatingCredential, setGeneratingCredential] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState<GeneratedCredential | null>(null);
+  const [registerModelDialogOpen, setRegisterModelDialogOpen] = useState(false);
+  const [modelName, setModelName] = useState("");
+  const [modelError, setModelError] = useState("");
+  const [registeringModel, setRegisteringModel] = useState(false);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState("");
@@ -1136,6 +1231,54 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
   }
 
+  function openRegisterModel() {
+    setModelName("");
+    setModelError("");
+    setRegisterModelDialogOpen(true);
+  }
+
+  async function registerModel(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = modelName.trim();
+    if (!trimmedName) {
+      setModelError("Ingresa un nombre para el modelo.");
+      return;
+    }
+    if (!selected) return;
+
+    const orgId = activeWorkspaceIdRef.current;
+    const switchGen = workspaceSwitchGenerationRef.current;
+    setRegisteringModel(true);
+    try {
+      await httpClient.post(`/applications/${selected.id}/models`, {
+        name: trimmedName,
+        runtime: "tensorflow_lite",
+      });
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.success("Modelo registrado.");
+      setRegisterModelDialogOpen(false);
+      setModelName("");
+      setModelError("");
+    } catch (err) {
+      if (
+        activeWorkspaceIdRef.current !== orgId ||
+        workspaceSwitchGenerationRef.current !== switchGen
+      ) {
+        return;
+      }
+      toast.error(
+        errorMessage(err, "No pudimos registrar el modelo. Inténtalo nuevamente."),
+      );
+    } finally {
+      setRegisteringModel(false);
+    }
+  }
+
   if ((!workspace && !organization.isPending) || workspaceMissing) {
     if (loadingWorkspaces) {
       return (
@@ -1358,7 +1501,19 @@ export default function Dashboard({ userName }: { userName: string }) {
                     <p>Aún no hay workflows configurados.</p>
                   </section>
                   <section>
-                    <h2>Modelos</h2>
+                    <div className="application-section-heading">
+                      <h2>Modelos</h2>
+                      {canManage && selected.status === "active" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid="register-model-trigger"
+                          onClick={openRegisterModel}
+                        >
+                          Registrar modelo
+                        </Button>
+                      )}
+                    </div>
                     <p>Aún no hay modelos configurados.</p>
                   </section>
                   <section>
@@ -1504,6 +1659,16 @@ export default function Dashboard({ userName }: { userName: string }) {
           generating={generatingCredential}
           onGenerate={generateCredential}
           onCopy={() => void copyCredential()}
+        />
+        <RegisterModelDialog
+          open={registerModelDialogOpen}
+          onOpenChange={setRegisterModelDialogOpen}
+          modelName={modelName}
+          setModelName={setModelName}
+          modelError={modelError}
+          setModelError={setModelError}
+          registering={registeringModel}
+          onSubmit={registerModel}
         />
         <CreateWorkspaceDialog
           open={workspaceDialogOpen}

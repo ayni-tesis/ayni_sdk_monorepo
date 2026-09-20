@@ -24,6 +24,10 @@ _Avoid_: Manager, superuser
 An application-scoped secret that lets an SDK installation authenticate to synchronize that application's resources. The server stores only a SHA-256 hash and shows the secret once at creation.
 _Avoid_: API key, token
 
+**Model**:
+An on-device AI model registered within an Application that manages its supported runtime (such as TensorFlow Lite) and versions for use in workflows.
+_Avoid_: ML file, weights, algorithm
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code
