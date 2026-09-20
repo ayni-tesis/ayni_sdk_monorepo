@@ -1,0 +1,1 @@
+ALTER TABLE "sdk_credential" ADD COLUMN "last_used_at" timestamp;

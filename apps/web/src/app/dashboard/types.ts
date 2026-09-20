@@ -24,3 +24,12 @@ export type GeneratedCredential = {
   applicationId: string;
   secret: string;
 };
+
+export type SdkCredentialItem = {
+  id: string;
+  applicationId: string;
+  prefix: string | null;
+  status: "active" | "revoked";
+  createdAt: string;
+  lastUsedAt: string | null;
+};

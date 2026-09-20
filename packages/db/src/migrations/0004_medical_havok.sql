@@ -1,0 +1,1 @@
+ALTER TABLE "sdk_credential" ADD COLUMN "prefix" text;
