@@ -1,6 +1,7 @@
 export * from "./application";
 export * from "./auth";
 export * from "./invitation-link";
+export * from "./model";
 export * from "./sdk-credential";
 export * from "./task";
 

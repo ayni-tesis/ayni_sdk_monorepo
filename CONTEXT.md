@@ -24,6 +24,10 @@ _Avoid_: Manager, superuser
 An application-scoped secret that lets an SDK installation authenticate to synchronize that application's resources. The server never stores the reusable secret itself: it persists only the secret's SHA-256 hash and its display prefix, and shows the secret once at creation. Afterwards administrators may list only the prefix and operational metadata (status and dates), never the secret. Revoking a credential marks it `revoked`, after which it can never authenticate or synchronize new resources (`credentialRevoked`); revocation never deletes existing workflows, models, or versions, nor removes resources already stored offline on devices.
 _Avoid_: API key, token
 
+**Model**:
+An on-device AI model registered within an Application that manages its supported runtime (such as TensorFlow Lite) and versions for use in workflows.
+_Avoid_: ML file, weights, algorithm
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

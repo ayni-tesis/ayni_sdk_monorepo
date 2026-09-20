@@ -36,6 +36,8 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
+import { createModel } from "./model-store";
+import { createModelsApp } from "./models";
 import {
   createSdkCredential,
   listSdkCredentials,
@@ -92,6 +94,17 @@ const applications = {
       .where(eq(application.id, id))
       .returning();
     return updated && toApplication(updated);
+  },
+};
+
+const models = {
+  create(input: {
+    applicationId: string;
+    userId: string;
+    name: string;
+    runtime: "tensorflow_lite";
+  }) {
+    return createModel(db, input);
   },
 };
 
@@ -495,6 +508,14 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     credentials: sdkCredentials,
+  }),
+);
+app.route(
+  "/",
+  createModelsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    models,
   }),
 );
 

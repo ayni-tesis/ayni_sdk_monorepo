@@ -50,6 +50,13 @@
       "when": 1789792385893,
       "tag": "0006_spicy_odin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789881452920,
+      "tag": "0007_careless_plazm",
+      "breakpoints": true
     }
   ]
 }

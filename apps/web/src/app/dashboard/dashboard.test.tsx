@@ -1944,6 +1944,173 @@ describe("Dashboard", () => {
     expect(screen.queryByTestId("credential-secret")).toBeNull();
   });
 
+  describe("US-012: Registrar modelo TensorFlow Lite", () => {
+    it("allows an administrator to register a TensorFlow Lite model for an active application", async () => {
+      await renderOpenApplicationDetail();
+      client.post.mockResolvedValueOnce({
+        data: {
+          model: {
+            id: "model-1",
+            applicationId: "app-1",
+            name: "Detector de roya",
+            runtime: "tensorflow_lite",
+            createdAt: "2026-09-19T20:00:00.000Z",
+            updatedAt: "2026-09-19T20:00:00.000Z",
+          },
+        },
+      });
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+
+      expect(screen.getByRole("heading", { name: "Registrar modelo" })).toBeTruthy();
+      const runtimeInput = screen.getByLabelText(/runtime/i);
+      expect(runtimeInput).toBeTruthy();
+      expect(runtimeInput.getAttribute("value")).toBe("TensorFlow Lite");
+      expect(runtimeInput.hasAttribute("disabled") || runtimeInput.hasAttribute("readonly")).toBe(
+        true,
+      );
+
+      const nameInput = screen.getByLabelText(/nombre del modelo/i);
+      fireEvent.change(nameInput, { target: { value: "Detector de roya" } });
+
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+
+      await waitFor(() =>
+        expect(client.post).toHaveBeenCalledWith("/applications/app-1/models", {
+          name: "Detector de roya",
+          runtime: "tensorflow_lite",
+        }),
+      );
+      expect(toastMock.success).toHaveBeenCalledWith("Modelo registrado.");
+      await waitFor(() =>
+        expect(screen.queryByRole("heading", { name: "Registrar modelo" })).toBeNull(),
+      );
+    });
+
+    it("shows validation error 'Ingresa un nombre para el modelo.' when attempting to submit without a name", async () => {
+      await renderOpenApplicationDetail();
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+
+      expect(screen.getByText("Ingresa un nombre para el modelo.")).toBeTruthy();
+      expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it("shows 'Registrando modelo…' while the model registration request is in flight", async () => {
+      await renderOpenApplicationDetail();
+      let resolveCreate: (value: unknown) => void = () => {};
+      client.post.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+      );
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      const nameInput = screen.getByLabelText(/nombre del modelo/i);
+      fireEvent.change(nameInput, { target: { value: "Detector de roya" } });
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+
+      expect(
+        screen.getByRole("button", { name: /registrando modelo…/i }).hasAttribute("disabled"),
+      ).toBe(true);
+
+      resolveCreate({
+        data: {
+          model: {
+            id: "model-1",
+            applicationId: "app-1",
+            name: "Detector de roya",
+            runtime: "tensorflow_lite",
+          },
+        },
+      });
+
+      await waitFor(() =>
+        expect(screen.queryByRole("heading", { name: "Registrar modelo" })).toBeNull(),
+      );
+    });
+
+    it("does not offer registering models to workspace members", async () => {
+      await renderOpenApplicationDetail({ role: "member" });
+
+      expect(screen.queryByTestId("register-model-trigger")).toBeNull();
+    });
+
+    it("does not offer registering models for archived applications", async () => {
+      await renderOpenApplicationDetail({ status: "archived" });
+
+      expect(screen.queryByTestId("register-model-trigger")).toBeNull();
+    });
+
+    it("surfaces the applicationArchived rejection from the server when registering a model", async () => {
+      await renderOpenApplicationDetail();
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: {
+            message: "No puedes registrar modelos en una aplicación archivada.",
+            code: "applicationArchived",
+          },
+        },
+      });
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      const nameInput = screen.getByLabelText(/nombre del modelo/i);
+      fireEvent.change(nameInput, { target: { value: "Detector de roya" } });
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No puedes registrar modelos en una aplicación archivada.",
+        ),
+      );
+      expect(toastMock.success).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the permission rejection from the server when registering a model", async () => {
+      await renderOpenApplicationDetail();
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para registrar modelos." },
+        },
+      });
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      const nameInput = screen.getByLabelText(/nombre del modelo/i);
+      fireEvent.change(nameInput, { target: { value: "Detector de roya" } });
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No tienes permiso para registrar modelos."),
+      );
+    });
+
+    it("resets form and error when canceling dialog", async () => {
+      await renderOpenApplicationDetail();
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      fireEvent.click(screen.getByTestId("register-model-submit"));
+      expect(screen.getByText("Ingresa un nombre para el modelo.")).toBeTruthy();
+
+      const nameInput = screen.getByLabelText(/nombre del modelo/i);
+      fireEvent.change(nameInput, { target: { value: "Detector" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("heading", { name: "Registrar modelo" })).toBeNull(),
+      );
+
+      fireEvent.click(screen.getByTestId("register-model-trigger"));
+      expect(screen.queryByText("Ingresa un nombre para el modelo.")).toBeNull();
+      const reopenedInput = screen.getByLabelText(/nombre del modelo/i);
+      expect((reopenedInput as HTMLInputElement).value).toBe("");
+    });
+  });
+
   const listedCredential = {
     id: "cred-1",
     applicationId: "app-1",
