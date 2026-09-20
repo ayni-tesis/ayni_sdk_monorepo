@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  executeApplicationAction,
-  type TransactionExecutor,
-} from "./application-actions";
+import { executeApplicationAction, type TransactionExecutor } from "./application-actions";
 
 type FakeTransactionState = {
   application: Record<string, unknown> | undefined;
