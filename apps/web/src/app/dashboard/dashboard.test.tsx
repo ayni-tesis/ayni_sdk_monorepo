@@ -1952,9 +1952,7 @@ describe("Dashboard", () => {
       fireEvent.click(screen.getByTestId("register-model-submit"));
 
       await waitFor(() =>
-        expect(toastMock.error).toHaveBeenCalledWith(
-          "No tienes permiso para registrar modelos.",
-        ),
+        expect(toastMock.error).toHaveBeenCalledWith("No tienes permiso para registrar modelos."),
       );
     });
 
