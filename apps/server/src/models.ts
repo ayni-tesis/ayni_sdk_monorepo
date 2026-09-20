@@ -4,11 +4,13 @@ import { z } from "zod";
 import type { Application } from "./applications";
 import type { CreateModelResult } from "./model-store";
 
-const APPLICATION_ARCHIVED_MESSAGE =
-  "No puedes registrar modelos en una aplicación archivada.";
+const APPLICATION_ARCHIVED_MESSAGE = "No puedes registrar modelos en una aplicación archivada.";
 
 const registerModelSchema = z.object({
-  name: z.string().trim().min(1, { message: "Ingresa un nombre para el modelo." }),
+  name: z
+    .string({ error: "Ingresa un nombre para el modelo." })
+    .trim()
+    .min(1, { message: "Ingresa un nombre para el modelo." }),
   runtime: z
     .enum(["tensorflow_lite", "TensorFlow Lite"], {
       error: "El primer runtime admitido es TensorFlow Lite.",

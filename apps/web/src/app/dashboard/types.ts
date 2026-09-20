@@ -24,12 +24,3 @@ export type GeneratedCredential = {
   applicationId: string;
   secret: string;
 };
-
-export type RegisteredModel = {
-  id: string;
-  applicationId: string;
-  name: string;
-  runtime: "tensorflow_lite";
-  createdAt?: string;
-  updatedAt?: string;
-};

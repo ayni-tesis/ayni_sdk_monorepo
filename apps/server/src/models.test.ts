@@ -146,6 +146,22 @@ describe("POST /applications/:applicationId/models", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("rejects an omitted name with 400", async () => {
+    const { request, create } = makeApp();
+
+    const response = await request.request("/applications/app-1/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runtime: "tensorflow_lite" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      message: "Ingresa un nombre para el modelo.",
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("rejects an unsupported runtime with 400", async () => {
     const { request, create } = makeApp();
 

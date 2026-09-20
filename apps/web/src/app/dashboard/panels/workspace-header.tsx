@@ -162,7 +162,7 @@ export function WorkspaceHeader({
     setWorkspaceError("");
     setCreatingWorkspace(true);
     try {
-      let createdOrg: { id: string } | null = null;
+      let createdOrganization: { id: string } | null = null;
       const maxRetries = 3;
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -185,17 +185,17 @@ export function WorkspaceHeader({
           return;
         }
 
-        createdOrg = res?.data ?? null;
+        createdOrganization = res?.data ?? null;
         break;
       }
 
-      if (!createdOrg?.id) {
+      if (!createdOrganization?.id) {
         toast.error("No pudimos crear el workspace. Inténtalo nuevamente.");
         return;
       }
 
       const activeRes = await authClient.organization.setActive({
-        organizationId: createdOrg.id,
+        organizationId: createdOrganization.id,
       });
 
       if (activeRes?.error) {
@@ -204,7 +204,7 @@ export function WorkspaceHeader({
         );
         handleOpenChange(false);
         if (onWorkspaceCreated) {
-          await onWorkspaceCreated(createdOrg.id);
+          await onWorkspaceCreated(createdOrganization.id);
         }
         return;
       }
@@ -212,7 +212,7 @@ export function WorkspaceHeader({
       toast.success("Workspace creado.");
       handleOpenChange(false);
       if (onWorkspaceCreated) {
-        await onWorkspaceCreated(createdOrg.id);
+        await onWorkspaceCreated(createdOrganization.id);
       }
     } catch {
       toast.error("No pudimos crear el workspace. Inténtalo nuevamente.");

@@ -153,7 +153,7 @@ export default function Dashboard({ userName }: { userName: string }) {
 
   async function handleCreateApplication(appName: string) {
     if (!workspace) return false;
-    const orgId = activeWorkspaceIdRef.current;
+    const activeWorkspaceId = activeWorkspaceIdRef.current;
     const switchGen = workspaceSwitchGenerationRef.current;
     setSaving(true);
     try {
@@ -162,7 +162,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         { name: appName },
       );
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== activeWorkspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
         return false;
@@ -173,7 +173,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       return true;
     } catch (createError) {
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== activeWorkspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
         return false;
@@ -188,12 +188,12 @@ export default function Dashboard({ userName }: { userName: string }) {
   }
 
   async function openApplication(id: string) {
-    const orgId = activeWorkspaceIdRef.current;
+    const activeWorkspaceId = activeWorkspaceIdRef.current;
     const switchGen = workspaceSwitchGenerationRef.current;
     try {
       const { data } = await httpClient.get<Application>(`/applications/${id}`);
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== activeWorkspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen ||
         data.organizationId !== activeWorkspaceIdRef.current
       ) {
@@ -202,7 +202,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       setSelected(data);
     } catch (detailError) {
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== activeWorkspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
         return;
