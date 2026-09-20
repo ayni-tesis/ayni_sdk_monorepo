@@ -13,6 +13,13 @@ const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
 
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("sonner", () => ({ toast: toastMock }));
+vi.mock("next/link", async () => {
+  const React = await import("react");
+  return {
+    default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) =>
+      React.createElement("a", { href, ...rest }, children),
+  };
+});
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -70,32 +77,31 @@ describe("ApplicationDetailPanel", () => {
     status: "archived",
   };
 
-  it("renders detail view and navigates back on click", () => {
-    const onBack = vi.fn();
+  it("renders overview sections with links to each application area", () => {
     render(
       <TooltipProvider>
         <ApplicationDetailPanel
           application={activeApp}
           workspaceName="Laboratorio Andino"
           canManage={true}
-          onBack={onBack}
           onApplicationUpdated={vi.fn()}
           onApplicationArchived={vi.fn()}
         />
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("ID de aplicación")).toBeTruthy();
-    expect(screen.getByText("app-1")).toBeTruthy();
-    expect(screen.getByText("Activa")).toBeTruthy();
     expect(screen.getByText("Workflows")).toBeTruthy();
+    expect(screen.getByText("0 workflows configurados")).toBeTruthy();
     expect(screen.getByText("Modelos")).toBeTruthy();
+    expect(screen.getByText("0 modelos registrados")).toBeTruthy();
     expect(screen.getByText("Credenciales SDK")).toBeTruthy();
+    expect(screen.getByText("Configuración")).toBeTruthy();
+    expect(screen.getByText("Activa")).toBeTruthy();
     expect(screen.getByText("Datasets")).toBeTruthy();
     expect(screen.getByText("Telemetría")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /aplicaciones/i }));
-    expect(onBack).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /aplicaciones/i })).toBeNull();
+    expect(screen.queryByText("ID de aplicación")).toBeNull();
   });
 
   it("renames application via dialog", async () => {
@@ -110,6 +116,7 @@ describe("ApplicationDetailPanel", () => {
           application={activeApp}
           workspaceName="Laboratorio Andino"
           canManage={true}
+          activeSection="settings"
           onBack={vi.fn()}
           onApplicationUpdated={onUpdated}
           onApplicationArchived={vi.fn()}
@@ -147,6 +154,7 @@ describe("ApplicationDetailPanel", () => {
           application={activeApp}
           workspaceName="Laboratorio Andino"
           canManage={true}
+          activeSection="settings"
           onBack={vi.fn()}
           onApplicationUpdated={vi.fn()}
           onApplicationArchived={onArchived}
@@ -181,6 +189,7 @@ describe("ApplicationDetailPanel", () => {
           application={activeApp}
           workspaceName="Laboratorio Andino"
           canManage={true}
+          activeSection="credentials"
           onBack={vi.fn()}
           onApplicationUpdated={vi.fn()}
           onApplicationArchived={vi.fn()}
@@ -200,6 +209,11 @@ describe("ApplicationDetailPanel", () => {
       expect(client.post).toHaveBeenCalledWith("/applications/app-1/sdk-credentials");
       expect(toastMock.success).toHaveBeenCalledWith("Credencial generada.");
       expect(screen.getByTestId("credential-secret").textContent).toBe("ayni_secret_abc123");
+    });
+
+    fireEvent.click(screen.getByTestId("copy-credential-inline"));
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith("ayni_secret_abc123");
     });
 
     fireEvent.click(screen.getByTestId("copy-credential"));
@@ -226,6 +240,7 @@ describe("ApplicationDetailPanel", () => {
             application={activeApp}
             workspaceName="Laboratorio Andino"
             canManage={true}
+            activeSection="models"
             onBack={vi.fn()}
             onApplicationUpdated={vi.fn()}
             onApplicationArchived={vi.fn()}
@@ -262,12 +277,13 @@ describe("ApplicationDetailPanel", () => {
     });
 
     it("hides model registration for archived applications and non-admins", () => {
-      const { rerender } = render(
+      render(
         <TooltipProvider>
           <ApplicationDetailPanel
             application={archivedApp}
             workspaceName="Laboratorio Andino"
             canManage={true}
+            activeSection="models"
             onBack={vi.fn()}
             onApplicationUpdated={vi.fn()}
             onApplicationArchived={vi.fn()}
@@ -276,14 +292,15 @@ describe("ApplicationDetailPanel", () => {
       );
 
       expect(screen.queryByTestId("register-model-trigger")).toBeNull();
-      expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
+      cleanup();
 
-      rerender(
+      render(
         <TooltipProvider>
           <ApplicationDetailPanel
             application={activeApp}
             workspaceName="Laboratorio Andino"
             canManage={false}
+            activeSection="models"
             onBack={vi.fn()}
             onApplicationUpdated={vi.fn()}
             onApplicationArchived={vi.fn()}
@@ -292,6 +309,40 @@ describe("ApplicationDetailPanel", () => {
       );
 
       expect(screen.queryByTestId("register-model-trigger")).toBeNull();
+    });
+
+    it("hides credential generation for archived applications and non-admins", () => {
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={archivedApp}
+            workspaceName="Laboratorio Andino"
+            canManage={true}
+            activeSection="credentials"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
+      cleanup();
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="credentials"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
       expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
     });
   });

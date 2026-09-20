@@ -1,27 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { Application } from "../types";
 import { WorkspaceHeader } from "./workspace-header";
-
-const { authOrgMock, toastMock } = vi.hoisted(() => ({
-  authOrgMock: {
-    create: vi.fn(),
-    setActive: vi.fn(),
-  },
-  toastMock: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
-vi.mock("@/lib/auth-client", () => ({
-  authClient: {
-    organization: authOrgMock,
-  },
-}));
-vi.mock("sonner", () => ({ toast: toastMock }));
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -45,148 +28,107 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 describe("WorkspaceHeader", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    authOrgMock.create.mockResolvedValue({
-      data: { id: "org-new", name: "BioTec", slug: "biotec-12345" },
-    });
-    authOrgMock.setActive.mockResolvedValue({});
-  });
-
   afterEach(() => {
     cleanup();
   });
 
-  it("displays current workspace name, user name, and lists workspaces with localized roles", async () => {
-    const onSelect = vi.fn();
-    const workspaces = [
-      { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
-      { id: "org-2", name: "BioTec", slug: "biotec", role: "member" },
-    ];
+  const appOne: Application = {
+    id: "app-1",
+    organizationId: "org-1",
+    name: "Cámara",
+    status: "active",
+  };
+  const appTwo: Application = {
+    id: "app-2",
+    organizationId: "org-1",
+    name: "Sensores",
+    status: "active",
+  };
 
-    render(
+  function renderHeader(props: Partial<Parameters<typeof WorkspaceHeader>[0]> = {}) {
+    return render(
       <SidebarProvider>
         <TooltipProvider>
-          <WorkspaceHeader
-            userName="Diego"
-            workspaceName="Laboratorio Andino"
-            workspaces={workspaces}
-            loadingWorkspaces={false}
-            workspacesError=""
-            switchingWorkspace={false}
-            onSelectWorkspace={onSelect}
-          />
+          <WorkspaceHeader userName="Diego" workspaceName="Laboratorio Andino" {...props} />
         </TooltipProvider>
       </SidebarProvider>,
     );
+  }
+
+  it("shows the user name and the workspace as the current page when no application is open", () => {
+    renderHeader({ activeView: "applications" });
 
     expect(screen.getByText("Diego")).toBeTruthy();
-    const trigger = screen.getByTestId("workspace-selector-trigger");
-    expect(trigger.textContent).toContain("Laboratorio Andino");
-
-    fireEvent.click(trigger);
-
-    expect(await screen.findByText("BioTec")).toBeTruthy();
-    expect(screen.getByText("Miembro")).toBeTruthy();
-    expect(screen.getByText("Administrador")).toBeTruthy();
-
-    fireEvent.click(screen.getByText("BioTec"));
-    expect(onSelect).toHaveBeenCalledWith("org-2");
+    expect(screen.getByText("Workspace actual")).toBeTruthy();
+    expect(screen.getByText("Laboratorio Andino")).toBeTruthy();
+    expect(screen.getByText("Aplicaciones")).toBeTruthy();
   });
 
-  it("shows loading and error states in the workspace selector", async () => {
-    const onRetry = vi.fn();
-    const { rerender } = render(
-      <SidebarProvider>
-        <TooltipProvider>
-          <WorkspaceHeader
-            userName="Diego"
-            workspaces={[]}
-            loadingWorkspaces={true}
-            workspacesError=""
-            switchingWorkspace={false}
-          />
-        </TooltipProvider>
-      </SidebarProvider>,
-    );
+  it("labels the section crumb for the members view", () => {
+    renderHeader({ activeView: "members" });
 
-    expect(screen.getByText("Cargando workspace…")).toBeTruthy();
-
-    rerender(
-      <SidebarProvider>
-        <TooltipProvider>
-          <WorkspaceHeader
-            userName="Diego"
-            workspaces={[]}
-            loadingWorkspaces={false}
-            workspacesError="Fallo al conectar"
-            switchingWorkspace={false}
-            onRetryWorkspaces={onRetry}
-          />
-        </TooltipProvider>
-      </SidebarProvider>,
-    );
-
-    expect(screen.getByText("Error al cargar workspaces")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("workspace-selector-trigger"));
-
-    const retryItem = await screen.findByRole("menuitem", { name: /reintentar/i });
-    expect(retryItem).toBeTruthy();
-    fireEvent.click(retryItem);
-    expect(onRetry).toHaveBeenCalled();
+    expect(screen.getByText("Miembros")).toBeTruthy();
   });
 
-  it("opens create workspace dialog from dropdown, validates input, and creates workspace", async () => {
-    const onCreated = vi.fn();
-    render(
-      <SidebarProvider>
-        <TooltipProvider>
-          <WorkspaceHeader
-            userName="Diego"
-            workspaceName="Laboratorio Andino"
-            workspaces={[
-              {
-                id: "org-1",
-                name: "Laboratorio Andino",
-                slug: "laboratorio-andino",
-                role: "admin",
-              },
-            ]}
-            loadingWorkspaces={false}
-            workspacesError=""
-            switchingWorkspace={false}
-            onWorkspaceCreated={onCreated}
-          />
-        </TooltipProvider>
-      </SidebarProvider>,
-    );
-
-    fireEvent.click(screen.getByTestId("workspace-selector-trigger"));
-    const createItem = await screen.findByRole("menuitem", { name: /crear workspace/i });
-    fireEvent.click(createItem);
-
-    expect(screen.getByRole("dialog", { name: "Crear workspace" })).toBeTruthy();
-    const submitBtn = screen.getByTestId("create-workspace-submit");
-
-    // Empty validation
-    fireEvent.click(submitBtn);
-    expect(await screen.findByText("Ingresa un nombre para el workspace.")).toBeTruthy();
-    expect(authOrgMock.create).not.toHaveBeenCalled();
-
-    // Fill name and submit
-    fireEvent.change(screen.getByLabelText("Nombre del workspace"), {
-      target: { value: "BioTec" },
+  it("links back to the dashboard and shows the section crumb when an application is open", () => {
+    const onNavigateHome = vi.fn();
+    renderHeader({
+      selectedApplication: appOne,
+      applications: [appOne],
+      activeView: "models",
+      onNavigateHome,
     });
-    fireEvent.click(submitBtn);
 
-    await waitFor(() => {
-      expect(authOrgMock.create).toHaveBeenCalledWith({
-        name: "BioTec",
-        slug: expect.stringMatching(/^biotec-[a-z0-9]+$/),
-      });
-      expect(authOrgMock.setActive).toHaveBeenCalledWith({ organizationId: "org-new" });
-      expect(toastMock.success).toHaveBeenCalledWith("Workspace creado.");
-      expect(onCreated).toHaveBeenCalledWith("org-new");
+    expect(screen.getByText("Cámara")).toBeTruthy();
+    expect(screen.getByText("Modelos")).toBeTruthy();
+
+    const workspaceLink = screen.getByRole("link", { name: "Laboratorio Andino" });
+    expect(workspaceLink.getAttribute("href")).toBe("/dashboard");
+    fireEvent.click(workspaceLink);
+    expect(onNavigateHome).toHaveBeenCalled();
+  });
+
+  it("does not repeat a section crumb on the application overview", () => {
+    renderHeader({
+      selectedApplication: appOne,
+      applications: [appOne],
+      activeView: "overview",
     });
+
+    expect(screen.getByText("Cámara")).toBeTruthy();
+    expect(screen.queryByText("Resumen")).toBeNull();
+    expect(screen.queryByText("Aplicaciones")).toBeNull();
+  });
+
+  it("lists other applications in the dropdown and selects one", async () => {
+    const onSelectApplication = vi.fn();
+    renderHeader({
+      selectedApplication: appOne,
+      applications: [appOne, appTwo],
+      activeView: "overview",
+      onSelectApplication,
+    });
+
+    fireEvent.click(screen.getByText("Cámara"));
+
+    const option = await screen.findByRole("menuitem", { name: /sensores/i });
+    fireEvent.click(option);
+    expect(onSelectApplication).toHaveBeenCalledWith("app-2");
+  });
+
+  it("shows a 'ver todas' option that navigates home", async () => {
+    const onNavigateHome = vi.fn();
+    renderHeader({
+      selectedApplication: appOne,
+      applications: [appOne, appTwo],
+      activeView: "overview",
+      onNavigateHome,
+    });
+
+    fireEvent.click(screen.getByText("Cámara"));
+
+    const allItem = await screen.findByRole("menuitem", { name: /ver todas las aplicaciones/i });
+    fireEvent.click(allItem);
+    expect(onNavigateHome).toHaveBeenCalled();
   });
 });

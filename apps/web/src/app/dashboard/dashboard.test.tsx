@@ -1,26 +1,38 @@
 // @vitest-environment jsdom
+
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { initialDashboardState, useDashboardStore } from "@/stores/dashboard-store";
 
-const { client, activeOrgRef, activeRoleRef, authOrgMock, toastMock, writeTextMock } = vi.hoisted(
-  () => ({
-    client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
-    activeOrgRef: {
-      current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
-    },
-    activeRoleRef: { current: "admin" },
-    authOrgMock: {
-      create: vi.fn(),
-      setActive: vi.fn(),
-    },
-    toastMock: {
-      success: vi.fn(),
-      error: vi.fn(),
-    },
-    writeTextMock: vi.fn().mockResolvedValue(undefined),
-  }),
-);
+const {
+  client,
+  activeOrgRef,
+  activeRoleRef,
+  authOrgMock,
+  toastMock,
+  writeTextMock,
+  pushMock,
+  routerRef,
+} = vi.hoisted(() => ({
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  activeOrgRef: {
+    current: { id: "org-1", name: "Laboratorio Andino" } as { id: string; name: string } | null,
+  },
+  activeRoleRef: { current: "admin" },
+  authOrgMock: {
+    create: vi.fn(),
+    setActive: vi.fn(),
+  },
+  toastMock: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+  writeTextMock: vi.fn().mockResolvedValue(undefined),
+  pushMock: vi.fn(),
+  routerRef: { pathname: "/dashboard" },
+}));
 
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
@@ -32,6 +44,41 @@ vi.mock("@/lib/auth-client", () => ({
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("./dashboard.css", () => ({}));
+vi.mock("next/navigation", async () => {
+  const React = await import("react");
+  const listeners = new Set<() => void>();
+  const navigateTo = (to: string) => {
+    pushMock(to, { scroll: false });
+    if (routerRef.pathname !== to) {
+      routerRef.pathname = to;
+      listeners.forEach((listener) => {
+        listener();
+      });
+    }
+  };
+  const router = {
+    push: (to: string) => navigateTo(to),
+    replace: (to: string) => navigateTo(to),
+  };
+  return {
+    useRouter: () => router,
+    usePathname: () =>
+      React.useSyncExternalStore(
+        (cb) => {
+          listeners.add(cb);
+          return () => listeners.delete(cb);
+        },
+        () => routerRef.pathname,
+      ),
+  };
+});
+vi.mock("next/link", async () => {
+  const React = await import("react");
+  return {
+    default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) =>
+      React.createElement("a", { href, ...rest }, children),
+  };
+});
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -69,6 +116,8 @@ import Dashboard from "./dashboard";
 describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    routerRef.pathname = "/dashboard";
+    useDashboardStore.setState(initialDashboardState);
     activeOrgRef.current = { id: "org-1", name: "Laboratorio Andino" };
     activeRoleRef.current = "admin";
     client.get.mockImplementation(async (url: string) => {
@@ -125,8 +174,161 @@ describe("Dashboard", () => {
     expect(await screen.findByRole("button", { name: /cámara/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /cámara/i }));
 
-    await waitFor(() => expect(screen.getByText("ID de aplicación")).toBeTruthy());
+    expect(await screen.findByText("Grafos DAG de inferencia on-device")).toBeTruthy();
     expect(client.get).toHaveBeenCalledWith("/applications/app-1");
+  });
+
+  it("opens a deep-linked application once the active workspace hydrates", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/applications/app-1") {
+        return {
+          data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" },
+        };
+      }
+      return { data: [] };
+    });
+
+    routerRef.pathname = "/dashboard/applications/app-1";
+    activeOrgRef.current = null;
+    const { rerender } = render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByText("Grafos DAG de inferencia on-device")).toBeNull();
+    expect(client.get).not.toHaveBeenCalledWith("/applications/app-1");
+
+    activeOrgRef.current = { id: "org-1", name: "Laboratorio Andino" };
+    rerender(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByText("Grafos DAG de inferencia on-device")).toBeTruthy();
+    expect(client.get).toHaveBeenCalledWith("/applications/app-1");
+    expect(routerRef.pathname).toBe("/dashboard/applications/app-1");
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the deep-linked application open when effects run twice", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/applications/app-1") {
+        return {
+          data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" },
+        };
+      }
+      return { data: [] };
+    });
+
+    routerRef.pathname = "/dashboard/applications/app-1";
+    render(
+      <StrictMode>
+        <TooltipProvider>
+          <Dashboard userName="Diego" />
+        </TooltipProvider>
+      </StrictMode>,
+    );
+
+    expect(screen.getByTestId("application-loading")).toBeTruthy();
+    expect(await screen.findByText("Grafos DAG de inferencia on-device")).toBeTruthy();
+    expect(screen.queryByTestId("application-loading")).toBeNull();
+    expect(client.get.mock.calls.filter(([url]) => url === "/applications/app-1")).toHaveLength(1);
+  });
+
+  it("returns to the applications list without re-pushing the application URL", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return {
+          data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }],
+        };
+      }
+      if (url === "/applications/app-1") {
+        return {
+          data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" },
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
+    await screen.findByText("Grafos DAG de inferencia on-device");
+
+    pushMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /todas las aplicaciones/i }));
+
+    expect(await screen.findByRole("button", { name: /nueva aplicación/i })).toBeTruthy();
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).toHaveBeenCalledWith("/dashboard", { scroll: false });
+    expect(screen.queryByText("Grafos DAG de inferencia on-device")).toBeNull();
+  });
+
+  it("caches an opened application and does not refetch it when revisited", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return {
+          data: [
+            { id: "org-1", name: "Laboratorio Andino", slug: "laboratorio-andino", role: "admin" },
+          ],
+        };
+      }
+      if (url === "/organizations/org-1/applications") {
+        return {
+          data: [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }],
+        };
+      }
+      if (url === "/applications/app-1") {
+        return {
+          data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" },
+        };
+      }
+      return { data: [] };
+    });
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
+    await screen.findByText("Grafos DAG de inferencia on-device");
+
+    fireEvent.click(screen.getByRole("button", { name: /todas las aplicaciones/i }));
+    await screen.findByRole("button", { name: /nueva aplicación/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /cámara/i }));
+    expect(screen.getByText("Grafos DAG de inferencia on-device")).toBeTruthy();
+    expect(screen.queryByTestId("application-loading")).toBeNull();
+    expect(client.get.mock.calls.filter(([url]) => url === "/applications/app-1")).toHaveLength(1);
   });
 
   it("ignores responses from a previous workspace after the workspace changes", async () => {
@@ -307,7 +509,7 @@ describe("Dashboard", () => {
     expect((await screen.findAllByText("BioTec")).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("allows opening create workspace dialog from the workspace selector in the header", async () => {
+  it("allows opening create workspace dialog from the workspace switcher in the sidebar", async () => {
     client.get.mockResolvedValueOnce({ data: [] });
     render(
       <TooltipProvider>
@@ -678,7 +880,7 @@ describe("Dashboard", () => {
     });
 
     await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByText("ID de aplicación")).toBeNull();
+    expect(screen.queryByText("Grafos DAG de inferencia on-device")).toBeNull();
   });
 
   it("displays 'Cargando workspace…' while workspaces are loading and does not show empty state prematurely", async () => {
@@ -1611,10 +1813,12 @@ describe("Dashboard", () => {
     status = "active",
     role = "admin",
     credentials = [],
+    section = "credentials",
   }: {
     status?: "active" | "archived";
     role?: string;
     credentials?: unknown;
+    section?: "credentials" | "models" | "settings";
   } = {}) {
     activeRoleRef.current = role;
     client.post.mockReset();
@@ -1645,7 +1849,20 @@ describe("Dashboard", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
-    await screen.findByText("ID de aplicación");
+    const sectionButton =
+      section === "credentials"
+        ? /^credenciales sdk$/i
+        : section === "models"
+          ? /^modelos$/i
+          : /^configuración$/i;
+    fireEvent.click(await screen.findByRole("button", { name: sectionButton }));
+    if (section === "credentials") {
+      await screen.findByRole("heading", { name: "Credenciales SDK" });
+    } else if (section === "models") {
+      await screen.findByRole("heading", { name: "Modelos" });
+    } else {
+      await screen.findByText("ID de aplicación");
+    }
   }
 
   it("generates an SDK credential from the application detail and shows the secret once", async () => {
@@ -1697,6 +1914,7 @@ describe("Dashboard", () => {
     fireEvent.click(await screen.findByTestId("copy-credential"));
 
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_abcd1234secret"));
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
     expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
   });
 
@@ -1946,7 +2164,7 @@ describe("Dashboard", () => {
 
   describe("US-012: Registrar modelo TensorFlow Lite", () => {
     it("allows an administrator to register a TensorFlow Lite model for an active application", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
       client.post.mockResolvedValueOnce({
         data: {
           model: {
@@ -1988,7 +2206,7 @@ describe("Dashboard", () => {
     });
 
     it("shows validation error 'Ingresa un nombre para el modelo.' when attempting to submit without a name", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
 
       fireEvent.click(screen.getByTestId("register-model-trigger"));
       fireEvent.click(screen.getByTestId("register-model-submit"));
@@ -1998,7 +2216,7 @@ describe("Dashboard", () => {
     });
 
     it("shows 'Registrando modelo…' while the model registration request is in flight", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
       let resolveCreate: (value: unknown) => void = () => {};
       client.post.mockReturnValueOnce(
         new Promise((resolve) => {
@@ -2032,19 +2250,19 @@ describe("Dashboard", () => {
     });
 
     it("does not offer registering models to workspace members", async () => {
-      await renderOpenApplicationDetail({ role: "member" });
+      await renderOpenApplicationDetail({ role: "member", section: "models" });
 
       expect(screen.queryByTestId("register-model-trigger")).toBeNull();
     });
 
     it("does not offer registering models for archived applications", async () => {
-      await renderOpenApplicationDetail({ status: "archived" });
+      await renderOpenApplicationDetail({ status: "archived", section: "models" });
 
       expect(screen.queryByTestId("register-model-trigger")).toBeNull();
     });
 
     it("surfaces the applicationArchived rejection from the server when registering a model", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
       client.post.mockRejectedValueOnce({
         isAxiosError: true,
         response: {
@@ -2070,7 +2288,7 @@ describe("Dashboard", () => {
     });
 
     it("surfaces the permission rejection from the server when registering a model", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
       client.post.mockRejectedValueOnce({
         isAxiosError: true,
         response: {
@@ -2090,7 +2308,7 @@ describe("Dashboard", () => {
     });
 
     it("resets form and error when canceling dialog", async () => {
-      await renderOpenApplicationDetail();
+      await renderOpenApplicationDetail({ section: "models" });
 
       fireEvent.click(screen.getByTestId("register-model-trigger"));
       fireEvent.click(screen.getByTestId("register-model-submit"));
@@ -2304,7 +2522,7 @@ describe("Dashboard", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /cámara/i }));
-    await screen.findByText("ID de aplicación");
+    fireEvent.click(await screen.findByRole("button", { name: /^credenciales sdk$/i }));
     expect(await screen.findByTestId("credentials-empty")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("generate-credential-trigger"));

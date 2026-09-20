@@ -1,7 +1,9 @@
 .applications-page {
-  width: min(100% - 2rem, 60rem);
+  flex: 1;
+  width: 100%;
+  max-width: 80rem;
   margin: 0 auto;
-  padding: 3rem 0;
+  padding: 1.5rem 2rem 3rem;
 }
 .applications-header,
 .detail-heading,
