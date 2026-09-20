@@ -11,9 +11,7 @@ export const model = pgTable(
       .notNull()
       .references(() => application.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    runtime: text("runtime", { enum: ["tensorflow_lite"] })
-      .default("tensorflow_lite")
-      .notNull(),
+    runtime: text("runtime", { enum: ["tensorflow_lite"] }).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

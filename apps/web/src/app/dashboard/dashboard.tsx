@@ -759,7 +759,7 @@ function RegisterModelDialog({
             Registra un nuevo modelo TensorFlow Lite para esta aplicación.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <label htmlFor="model-name" className="font-semibold text-sm">
               Nombre del modelo
@@ -767,6 +767,8 @@ function RegisterModelDialog({
             <Input
               id="model-name"
               autoFocus
+              required
+              aria-required="true"
               value={modelName}
               onChange={(event) => {
                 setModelName(event.target.value);
@@ -1246,7 +1248,7 @@ export default function Dashboard({ userName }: { userName: string }) {
     }
     if (!selected) return;
 
-    const orgId = activeWorkspaceIdRef.current;
+    const workspaceId = activeWorkspaceIdRef.current;
     const switchGen = workspaceSwitchGenerationRef.current;
     setRegisteringModel(true);
     try {
@@ -1255,7 +1257,7 @@ export default function Dashboard({ userName }: { userName: string }) {
         runtime: "tensorflow_lite",
       });
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== workspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
         return;
@@ -1266,7 +1268,7 @@ export default function Dashboard({ userName }: { userName: string }) {
       setModelError("");
     } catch (err) {
       if (
-        activeWorkspaceIdRef.current !== orgId ||
+        activeWorkspaceIdRef.current !== workspaceId ||
         workspaceSwitchGenerationRef.current !== switchGen
       ) {
         return;

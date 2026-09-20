@@ -2,7 +2,7 @@ CREATE TABLE "model" (
 	"id" text PRIMARY KEY NOT NULL,
 	"application_id" text NOT NULL,
 	"name" text NOT NULL,
-	"runtime" text DEFAULT 'tensorflow_lite' NOT NULL,
+	"runtime" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "model_runtime_check" CHECK ("model"."runtime" in ('tensorflow_lite'))
