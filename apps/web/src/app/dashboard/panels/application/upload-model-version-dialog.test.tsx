@@ -9,6 +9,7 @@ const { uploadMock, toastMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("./upload-model-version", () => ({
+  MODEL_VERSION_UPLOAD_CANCELED: "canceled",
   MODEL_VERSION_UPLOAD_FALLBACK_MESSAGE:
     "No se pudo guardar la versión del modelo. Inténtalo de nuevo.",
   uploadModelVersion: uploadMock,
@@ -181,8 +182,12 @@ describe("UploadModelVersionDialog", () => {
     );
   });
 
-  it("blocks closing and editing while the upload is in flight", async () => {
-    uploadMock.mockReturnValue(new Promise(() => {}));
+  it("disables editing during upload and lets Cancelar abort the request", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    uploadMock.mockImplementation((input: { signal?: AbortSignal }) => {
+      capturedSignal = input.signal;
+      return new Promise(() => {});
+    });
 
     renderDialog();
     fillVersion("1.0.0");
@@ -190,9 +195,38 @@ describe("UploadModelVersionDialog", () => {
     submit();
 
     await waitFor(() => expect(screen.getByText(/Subiendo modelo…/)).toBeTruthy());
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect((screen.getByLabelText("Versión") as HTMLInputElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByText("Cancelar subida"));
+
+    expect(screen.queryByText(/Subiendo modelo…/)).toBeNull();
+    expect(capturedSignal?.aborted).toBe(true);
+    await waitFor(() =>
+      expect((screen.getByLabelText("Versión") as HTMLInputElement).disabled).toBe(false),
+    );
+  });
+
+  it("aborts the in-flight upload and closing resets the form", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const onOpenChange = vi.fn();
+    uploadMock.mockImplementation((input: { signal?: AbortSignal }) => {
+      capturedSignal = input.signal;
+      return new Promise(() => {});
+    });
+
+    renderDialog({ onOpenChange });
+    fillVersion("1.0.0");
+    attachFile(tfliteFile());
+    submit();
+
+    await waitFor(() => expect(screen.getByText(/Subiendo modelo…/)).toBeTruthy());
+
+    fireEvent.click(screen.getByText("Cancelar subida"));
+    expect(capturedSignal?.aborted).toBe(true);
 
     fireEvent.click(screen.getByText("Cancelar"));
-    expect(screen.getByText(/Subiendo modelo…/)).toBeTruthy();
-    expect((screen.getByLabelText("Versión") as HTMLInputElement).disabled).toBe(true);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect((screen.getByLabelText("Versión") as HTMLInputElement).value).toBe("");
   });
 });

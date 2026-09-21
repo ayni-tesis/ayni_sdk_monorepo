@@ -16,6 +16,8 @@ export type ModelVersionUploadResult =
   | { ok: true; modelVersion: ModelVersionDto }
   | { ok: false; code: string; message: string };
 
+export const MODEL_VERSION_UPLOAD_CANCELED = "canceled";
+
 export const MODEL_VERSION_UPLOAD_FALLBACK_MESSAGE =
   "No se pudo guardar la versión del modelo. Inténtalo de nuevo.";
 
@@ -25,6 +27,7 @@ export async function uploadModelVersion(input: {
   version: string;
   file: File;
   onProgress: (percent: number) => void;
+  signal?: AbortSignal;
 }): Promise<ModelVersionUploadResult> {
   const form = new FormData();
   form.append("version", input.version);
@@ -37,6 +40,7 @@ export async function uploadModelVersion(input: {
       {
         withCredentials: true,
         timeout: 0,
+        signal: input.signal,
         onUploadProgress: (event) => {
           const total = event.total ?? input.file.size;
           if (total > 0) {
@@ -47,6 +51,9 @@ export async function uploadModelVersion(input: {
     );
     return { ok: true, modelVersion: response.data.modelVersion };
   } catch (error) {
+    if (axios.isCancel(error)) {
+      return { ok: false, code: MODEL_VERSION_UPLOAD_CANCELED, message: "" };
+    }
     if (axios.isAxiosError<{ code?: string; message?: string }>(error) && error.response) {
       return {
         ok: false,

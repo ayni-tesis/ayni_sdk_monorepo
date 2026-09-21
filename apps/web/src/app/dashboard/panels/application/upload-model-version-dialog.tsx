@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
+  MODEL_VERSION_UPLOAD_CANCELED,
   MODEL_VERSION_UPLOAD_FALLBACK_MESSAGE,
   type ModelVersionDto,
   uploadModelVersion,
@@ -48,6 +49,13 @@ export function UploadModelVersionDialog({
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   function resetForm() {
     setVersion("");
@@ -56,8 +64,15 @@ export function UploadModelVersionDialog({
     setProgress(null);
   }
 
+  function cancelUpload() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setUploading(false);
+    setProgress(null);
+  }
+
   function handleOpenChange(nextOpen: boolean) {
-    if (uploading) return;
+    if (uploading) cancelUpload();
     if (!nextOpen) resetForm();
     onOpenChange(nextOpen);
   }
@@ -84,13 +99,26 @@ export function UploadModelVersionDialog({
     setError("");
     setProgress(0);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const result = await uploadModelVersion({
       applicationId,
       modelId,
       version: trimmed,
       file,
       onProgress: setProgress,
+      signal: controller.signal,
     });
+
+    if (!result.ok && result.code === MODEL_VERSION_UPLOAD_CANCELED) {
+      abortRef.current = null;
+      setUploading(false);
+      setProgress(null);
+      return;
+    }
+
+    abortRef.current = null;
 
     if (result.ok) {
       toast.success(`Versión ${trimmed} subida y verificada.`);
@@ -183,10 +211,12 @@ export function UploadModelVersionDialog({
             <Button
               type="button"
               variant="ghost"
-              disabled={uploading}
-              onClick={() => handleOpenChange(false)}
+              onClick={() => {
+                if (uploading) cancelUpload();
+                else handleOpenChange(false);
+              }}
             >
-              Cancelar
+              {uploading ? "Cancelar subida" : "Cancelar"}
             </Button>
             <Button type="submit" data-testid="upload-version-submit" disabled={uploading}>
               {uploading ? "Subiendo…" : "Subir versión"}

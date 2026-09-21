@@ -11,12 +11,7 @@ import {
   ModelVersionAlreadyStoredError,
   type ModelVersionStorage,
 } from "./model-version-storage";
-import {
-  computeSha256Hex,
-  DEFAULT_MAX_TFLITE_BYTES,
-  gateTfLiteHead,
-  TFLITE_HEAD_BYTES,
-} from "./tflite-validator";
+import { computeSha256Hex, DEFAULT_MAX_TFLITE_BYTES, gateTfLiteBuffer } from "./tflite-validator";
 
 export type { ModelVersionStorage };
 
@@ -76,6 +71,11 @@ type ModelVersionActionOutcome =
   | { kind: "modelNotFound" }
   | { kind: "created"; record: ModelVersionRecord };
 
+type PreflightOutcome =
+  | { kind: "authorized" }
+  | { kind: "modelNotFound" }
+  | { kind: "duplicate" };
+
 export async function createModelVersionWithArtifact(
   database: ApplicationDatabase,
   storage: ModelVersionStorage,
@@ -90,24 +90,44 @@ export async function createModelVersionWithArtifact(
 ): Promise<CreateModelVersionResult> {
   if (!SEMVER_STRICT.test(version)) return { ok: false, reason: "invalidVersion" };
 
-  const head = bytes.subarray(0, Math.min(TFLITE_HEAD_BYTES, bytes.length));
-  const gate = gateTfLiteHead(head, bytes.length, maxBytes);
+  const gate = gateTfLiteBuffer(bytes, maxBytes);
   if (!gate.ok) return { ok: false, reason: gate.reason };
 
+  let preflight: Awaited<ReturnType<typeof executeApplicationAction<PreflightOutcome>>>;
   try {
-    const duplicateRows = await database.transaction(async (rawTx) => {
-      const tx = rawTx as TransactionExecutor;
-      return (await tx
-        .select({ id: modelVersion.id })
-        .from(modelVersion)
-        .where(and(eq(modelVersion.modelId, modelId), eq(modelVersion.version, version)))
-        .limit(1)
-        .for("update")) as { id: string }[];
-    });
-    if (duplicateRows.length > 0) return { ok: false, reason: "versionExists" };
+    preflight = await executeApplicationAction<PreflightOutcome>(
+      database,
+      { applicationId, userId },
+      async (tx: TransactionExecutor, application) => {
+        const modelRows = (await tx
+          .select({ id: model.id })
+          .from(model)
+          .where(and(eq(model.id, modelId), eq(model.applicationId, application.id)))
+          .limit(1)
+          .for("update")) as { id: string }[];
+        const foundModel = modelRows[0];
+
+        if (!foundModel) return { kind: "modelNotFound" } as const;
+
+        const duplicateRows = (await tx
+          .select({ id: modelVersion.id })
+          .from(modelVersion)
+          .where(and(eq(modelVersion.modelId, foundModel.id), eq(modelVersion.version, version)))
+          .limit(1)
+          .for("update")) as { id: string }[];
+
+        if (duplicateRows.length > 0) return { kind: "duplicate" } as const;
+
+        return { kind: "authorized" } as const;
+      },
+    );
   } catch {
     return { ok: false, reason: "databaseFailed" };
   }
+
+  if (!preflight.ok) return { ok: false, reason: preflight.reason };
+  if (preflight.value.kind === "modelNotFound") return { ok: false, reason: "modelNotFound" };
+  if (preflight.value.kind === "duplicate") return { ok: false, reason: "versionExists" };
 
   const sha256 = await computeSha256Hex(bytes);
   const storageKey = buildModelVersionStorageKey({ applicationId, modelId, version });

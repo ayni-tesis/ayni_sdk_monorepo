@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { computeSha256Hex, gateTfLiteHead, MIN_TFLITE_BYTES } from "./tflite-validator";
+import { computeSha256Hex, gateTfLiteBuffer, MIN_TFLITE_BYTES } from "./tflite-validator";
 
-function tfliteHead(overrides?: {
+function tfliteBuffer(overrides?: {
   root?: number;
   soffset?: number;
   vsize?: number;
   inline?: number;
   identifier?: string;
+  size?: number;
 }): Uint8Array {
-  const bytes = new Uint8Array(20);
+  const bytes = new Uint8Array(overrides?.size ?? 20);
   const dv = new DataView(bytes.buffer);
   dv.setUint32(0, overrides?.root ?? 12, true);
   bytes.set(
@@ -22,44 +23,38 @@ function tfliteHead(overrides?: {
   return bytes;
 }
 
-describe("gateTfLiteHead", () => {
+describe("gateTfLiteBuffer", () => {
   it("accepts a minimal structurally plausible TFL3 buffer", () => {
-    const head = tfliteHead();
-    expect(gateTfLiteHead(head, head.length)).toEqual({ ok: true });
+    expect(gateTfLiteBuffer(tfliteBuffer())).toEqual({ ok: true });
   });
 
   it("rejects buffers below the FlatBuffers minimum", () => {
-    const head = new Uint8Array(MIN_TFLITE_BYTES - 1);
-    expect(gateTfLiteHead(head, head.length)).toEqual({ ok: false, reason: "size" });
-  });
-
-  it("rejects buffers over the policy maximum", () => {
-    const head = tfliteHead();
-    expect(gateTfLiteHead(head, head.length, head.length - 1)).toEqual({
+    expect(gateTfLiteBuffer(new Uint8Array(MIN_TFLITE_BYTES - 1))).toEqual({
       ok: false,
       reason: "size",
     });
   });
 
-  it("rejects an unreadably short head", () => {
-    expect(gateTfLiteHead(new Uint8Array(4), 100)).toEqual({ ok: false, reason: "size" });
+  it("rejects buffers over the policy maximum", () => {
+    const bytes = tfliteBuffer();
+    expect(gateTfLiteBuffer(bytes, bytes.length - 1)).toEqual({ ok: false, reason: "size" });
   });
 
   it("rejects gzip and zip containers with a dedicated reason", () => {
-    const gzip = tfliteHead();
+    const gzip = tfliteBuffer();
     gzip[0] = 0x1f;
     gzip[1] = 0x8b;
-    expect(gateTfLiteHead(gzip, gzip.length)).toEqual({ ok: false, reason: "compressed" });
+    expect(gateTfLiteBuffer(gzip)).toEqual({ ok: false, reason: "compressed" });
 
-    const zip = tfliteHead();
+    const zip = tfliteBuffer();
     zip[0] = 0x50;
     zip[1] = 0x4b;
-    expect(gateTfLiteHead(zip, zip.length)).toEqual({ ok: false, reason: "compressed" });
+    expect(gateTfLiteBuffer(zip)).toEqual({ ok: false, reason: "compressed" });
   });
 
   it("accepts only the TFL3 identifier", () => {
     for (const identifier of ["TFL2", "TFLA", "tfl3"]) {
-      expect(gateTfLiteHead(tfliteHead({ identifier }), 20)).toEqual({
+      expect(gateTfLiteBuffer(tfliteBuffer({ identifier }))).toEqual({
         ok: false,
         reason: "identifier",
       });
@@ -67,46 +62,40 @@ describe("gateTfLiteHead", () => {
   });
 
   it("rejects implausible root offsets", () => {
-    expect(gateTfLiteHead(tfliteHead({ root: 4 }), 20)).toEqual({
-      ok: false,
-      reason: "root-offset",
-    });
-    expect(gateTfLiteHead(tfliteHead({ root: 10 }), 20)).toEqual({
-      ok: false,
-      reason: "root-offset",
-    });
-    expect(gateTfLiteHead(tfliteHead({ root: 20 }), 20)).toEqual({
-      ok: false,
-      reason: "root-offset",
-    });
+    for (const root of [4, 10, 20]) {
+      expect(gateTfLiteBuffer(tfliteBuffer({ root }))).toEqual({
+        ok: false,
+        reason: "root-offset",
+      });
+    }
   });
 
   it("rejects implausible vtables", () => {
-    expect(gateTfLiteHead(tfliteHead({ soffset: 20 }), 20)).toEqual({
-      ok: false,
-      reason: "vtable",
-    });
-    expect(gateTfLiteHead(tfliteHead({ vsize: 13 }), 20)).toEqual({
-      ok: false,
-      reason: "vtable",
-    });
-    expect(gateTfLiteHead(tfliteHead({ vsize: 100 }), 20)).toEqual({
-      ok: false,
-      reason: "vtable",
-    });
-    expect(gateTfLiteHead(tfliteHead({ inline: 2 }), 20)).toEqual({
-      ok: false,
-      reason: "vtable",
-    });
-    expect(gateTfLiteHead(tfliteHead({ inline: 100 }), 20)).toEqual({
-      ok: false,
-      reason: "vtable",
-    });
+    for (const overrides of [
+      { soffset: 20 },
+      { vsize: 13 },
+      { vsize: 100 },
+      { inline: 2 },
+      { inline: 100 },
+    ]) {
+      expect(gateTfLiteBuffer(tfliteBuffer(overrides))).toEqual({ ok: false, reason: "vtable" });
+    }
   });
 
-  it("passes when the head is too short to reach the vtable checks", () => {
-    const head = tfliteHead().subarray(0, 8);
-    expect(gateTfLiteHead(head, 20)).toEqual({ ok: true });
+  it("rejects files whose root points beyond the old inspected prefix", () => {
+    const bytes = new Uint8Array(128);
+    const dv = new DataView(bytes.buffer);
+    dv.setUint32(0, 68, true);
+    bytes.set([0x54, 0x46, 0x4c, 0x33], 4);
+    // bytes 68..71 (soffset) are zero -> vtable at 68 with vsize 0
+    expect(gateTfLiteBuffer(bytes)).toEqual({ ok: false, reason: "vtable" });
+  });
+
+  it("rejects a root table that does not fit in the buffer", () => {
+    expect(gateTfLiteBuffer(tfliteBuffer({ root: 16, size: 20 }))).toEqual({
+      ok: false,
+      reason: "vtable",
+    });
   });
 });
 

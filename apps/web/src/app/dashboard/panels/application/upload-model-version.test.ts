@@ -8,6 +8,8 @@ const { postMock, axiosMock } = vi.hoisted(() => {
       post: postMock,
       isAxiosError: (error: unknown): boolean =>
         typeof error === "object" && error !== null && "isAxiosError" in error,
+      isCancel: (error: unknown): boolean =>
+        typeof error === "object" && error !== null && "__CANCEL__" in error,
     },
   };
 });
@@ -117,6 +119,16 @@ describe("uploadModelVersion", () => {
       expect(result.code).toBe("uploadFailed");
       expect(result.message).toBe("No se pudo guardar la versión del modelo. Inténtalo de nuevo.");
     }
+  });
+
+  it("maps canceled uploads to a dedicated code without a message", async () => {
+    postMock.mockRejectedValue(
+      Object.assign(new Error("canceled"), { __CANCEL__: true, response: {} }),
+    );
+
+    const result = await uploadModelVersion({ ...baseInput, onProgress: vi.fn() });
+
+    expect(result).toEqual({ ok: false, code: "canceled", message: "" });
   });
 
   it("treats network failures as retryable upload failures", async () => {

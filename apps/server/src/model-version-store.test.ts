@@ -273,7 +273,7 @@ describe("createModelVersionWithArtifact", () => {
     expect(artifacts.size).toBe(0);
   });
 
-  it("compensates when the model belongs to another application", async () => {
+  it("rejects a model outside the application before touching storage", async () => {
     const db = makeFakeDb(adminState({ modelRow: undefined }));
     const { storage, artifacts } = makeFakeStorage();
 
@@ -286,10 +286,11 @@ describe("createModelVersionWithArtifact", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "modelNotFound" });
+    expect(storage.putArtifact).not.toHaveBeenCalled();
     expect(artifacts.size).toBe(0);
   });
 
-  it("propagates authorization failures and compensates", async () => {
+  it("rejects unauthorized attempts before touching storage", async () => {
     const { storage, artifacts } = makeFakeStorage();
 
     const forbidden = await createModelVersionWithArtifact(
@@ -322,6 +323,7 @@ describe("createModelVersionWithArtifact", () => {
     );
     expect(archived).toEqual({ ok: false, reason: "archived" });
 
+    expect(storage.putArtifact).not.toHaveBeenCalled();
     expect(artifacts.size).toBe(0);
   });
 
