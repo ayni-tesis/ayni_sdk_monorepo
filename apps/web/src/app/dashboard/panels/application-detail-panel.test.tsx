@@ -688,4 +688,201 @@ describe("ApplicationDetailPanel", () => {
       expect(within(dialog).getByTestId("upload-version-from-versions")).toBeTruthy();
     });
   });
+
+  describe("US-024: Crear un workflow", () => {
+    function renderWorkflows({
+      application = activeApp,
+      canManage = true,
+    }: {
+      application?: Application;
+      canManage?: boolean;
+    } = {}) {
+      return render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+    }
+
+    it("lets an administrator create a draft workflow with a required name", async () => {
+      client.post.mockResolvedValueOnce({
+        data: {
+          workflow: {
+            id: "workflow-1",
+            applicationId: "app-1",
+            name: "Diagnóstico de hoja de café",
+            status: "draft",
+            createdAt: "2026-09-21T15:00:00.000Z",
+            updatedAt: "2026-09-21T15:00:00.000Z",
+          },
+        },
+      });
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+
+      const dialog = screen.getByRole("dialog", { name: "Crear workflow" });
+      expect(within(dialog).getByLabelText("Nombre del workflow")).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Crear borrador" })).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Cancelar" })).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+      expect(await screen.findByText("Ingresa un nombre para el workflow.")).toBeTruthy();
+      expect(client.post).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "  Diagnóstico de hoja de café  " },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      await waitFor(() => {
+        expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows", {
+          name: "Diagnóstico de hoja de café",
+        });
+        expect(toastMock.success).toHaveBeenCalledWith("Workflow creado. Ya puedes agregar nodos.");
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+    });
+
+    it("shows 'Creando borrador…' while the workflow request is in flight", async () => {
+      let resolveCreate: (value: unknown) => void = () => {};
+      client.post.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+      );
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico" },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      expect(
+        screen.getByRole("button", { name: "Creando borrador…" }).hasAttribute("disabled"),
+      ).toBe(true);
+
+      resolveCreate({ data: { workflow: { id: "workflow-1" } } });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+    });
+
+    it("does not offer creating workflows to non-administrators", () => {
+      renderWorkflows({ canManage: false });
+
+      expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
+    });
+
+    it("does not offer creating workflows for archived applications", () => {
+      renderWorkflows({ application: archivedApp });
+
+      expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
+    });
+
+    it("surfaces the applicationArchived rejection from the server and keeps the dialog open", async () => {
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: {
+            message: "No puedes crear workflows en una aplicación archivada.",
+            code: "applicationArchived",
+          },
+        },
+      });
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico" },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No puedes crear workflows en una aplicación archivada.",
+        );
+      });
+      expect(toastMock.success).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "Crear workflow" })).toBeTruthy();
+      expect((screen.getByLabelText("Nombre del workflow") as HTMLInputElement).value).toBe(
+        "Diagnóstico",
+      );
+      expect(screen.getByRole("button", { name: "Crear borrador" }).hasAttribute("disabled")).toBe(
+        false,
+      );
+    });
+
+    it("surfaces the permission rejection from the server", async () => {
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para crear workflows." },
+        },
+      });
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico" },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith("No tienes permiso para crear workflows.");
+      });
+    });
+
+    it("falls back to a generic error when the request fails without a server message", async () => {
+      client.post.mockRejectedValueOnce(new Error("Network Error"));
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico" },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No pudimos crear el workflow. Inténtalo nuevamente.",
+        );
+      });
+    });
+
+    it("resets the form and the validation error when the dialog is cancelled", async () => {
+      renderWorkflows();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+      expect(screen.getByText("Ingresa un nombre para el workflow.")).toBeTruthy();
+
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      expect(screen.queryByText("Ingresa un nombre para el workflow.")).toBeNull();
+      expect((screen.getByLabelText("Nombre del workflow") as HTMLInputElement).value).toBe("");
+      expect(client.post).not.toHaveBeenCalled();
+    });
+  });
 });
