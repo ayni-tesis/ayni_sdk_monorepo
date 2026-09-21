@@ -32,6 +32,10 @@ _Avoid_: ML file, weights, algorithm
 An immutable artifact representing a specific version of a Model, identified by a unique SemVer tag within that Model, backed by an on-device inference binary file (such as TensorFlow Lite `.tflite`), and verified for format integrity and cryptographic checksum (SHA-256) upon upload. A published version cannot be overwritten or replaced.
 _Avoid_: Checkpoint, build, snapshot, weights file, release
 
+**Workflow**:
+A directed acyclic graph (DAG) of inference steps owned by exactly one Application. A Workflow is created by a workspace administrator as an empty `draft` with no nodes and no published version; creating one in an archived Application is rejected with `applicationArchived`.
+_Avoid_: Pipeline, flow, chain
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

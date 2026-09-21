@@ -54,6 +54,8 @@ import {
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
+import { createWorkflow } from "./workflow-store";
+import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -133,6 +135,12 @@ const modelVersions = {
   },
   list(applicationId: string, modelId: string) {
     return listModelVersions(db, applicationId, modelId);
+  },
+};
+
+const workflows = {
+  create(input: { applicationId: string; userId: string; name: string }) {
+    return createWorkflow(db, input);
   },
 };
 
@@ -561,6 +569,14 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     modelVersions,
+  }),
+);
+app.route(
+  "/",
+  createWorkflowsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    workflows,
   }),
 );
 app.route(
