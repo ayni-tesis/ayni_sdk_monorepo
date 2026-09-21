@@ -108,6 +108,53 @@ dashboard.
   versions before execution. It must not evaluate arbitrary expressions or code
   received from a workflow.
 
+## Pending work and follow-ups
+
+Known gaps left open on purpose. Remove an entry when it is resolved and name its
+user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`.
+
+- **Workflow latest version (US-036, US-026)**: the `Última versión` column of the
+  workflow list shows the fixed placeholder `Sin publicar`
+  (`NO_PUBLISHED_VERSION_LABEL` in
+  `apps/web/src/app/dashboard/panels/application/workflows-view.tsx`) because no
+  workflow-version table exists yet. When US-036 publishes versions, expose
+  `latestVersion` from `Workflow`/`listWorkflows`
+  (`apps/server/src/workflow-store.ts`) and render it instead of the placeholder;
+  US-026 adds the `Versiones publicadas` tab.
+- **Overview counts (no story yet)**: the Overview cards in
+  `apps/web/src/app/dashboard/panels/application/overview-view.tsx` hard-code
+  `0 workflows configurados` and `0 modelos registrados`, and
+  `application-detail-panel.test.tsx` asserts those strings. They contradict the
+  real lists under Workflows and Models. No story requires them (US-003 lists the
+  sections but no counts), so amend US-003 or add a story before implementing.
+- **English 401 message (no story yet)**: `errorMessage()`
+  (`apps/web/src/lib/api-error.ts`) passes the server `message` through and the
+  routes answer 401 with `Authentication required`, so an expired session shows
+  that English text when loading the workflow and model lists and when
+  generating, revoking, or regenerating credentials.
+  `apps/web/src/lib/http-client.ts` has no global 401 handling and no story in
+  `docs/epicas` covers session expiry. Decide, app-wide, between translating the
+  server message and mapping 401 in the client.
+- **Workflow list order (US-025)**: `listWorkflows` orders oldest first
+  (`asc(createdAt)`), matching `listModels`; the spec is silent. If most recently
+  updated first is preferred, change the `orderBy` and the
+  `returns the oldest workflows first` test in `apps/server/src/workflows.test.ts`.
+- **Duplicated list plumbing (technical debt)**: `WorkflowsView` copies the
+  load/abort/error/retry logic of `ModelsView` (`loadModels`), and the server
+  repeats `ListWorkflowsExecutor`/`ListModelsExecutor` and the session →
+  application → membership → uniform 404 guard across `workflows.ts` and
+  `models.ts`. Extract a shared hook and a shared type/helper, keeping the guard
+  in one place because it carries the guarantee that non-members never learn
+  whether an application or its resources exist.
+- **Stale reload after switching application (technical debt; read from the code,
+  not tested)**: `WorkflowsView` is keyed by application id. If the user switches
+  application while `POST /applications/:applicationId/workflows` is in flight,
+  the unmounted instance still calls `loadWorkflows` for the old application (one
+  wasted GET, no effect on the new view).
+- **Root `CLAUDE.md` is stale**: it still omits workflow creation and listing and
+  model listing (last updated around US-012). `AGENTS.md` is the maintained copy;
+  decide whether to sync `CLAUDE.md`.
+
 ## Better Fullstack project context
 
 `bts.jsonc` is the authority for the current Stack Graph. Its `stackParts` array owns role selection and `ownerPartId` bindings. Top-level option fields are a compatibility projection and must not become a second mutation path.
