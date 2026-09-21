@@ -392,4 +392,218 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByTestId("generate-credential-trigger")).toBeNull();
     });
   });
+
+  describe("US-014: Listar los modelos de una aplicación", () => {
+    const listedModel = {
+      id: "model-1",
+      applicationId: "app-1",
+      name: "Detector de plagas",
+      runtime: "tensorflow_lite",
+      versionCount: 3,
+      createdAt: "2026-09-19T20:00:00.000Z",
+      updatedAt: "2026-09-19T20:00:00.000Z",
+    };
+
+    it("lets a plain member list models with Nombre, ID, Runtime and Versiones", async () => {
+      client.get.mockImplementation(async () => ({ data: { models: [listedModel] } }));
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const table = await screen.findByTestId("models-table");
+      expect(
+        within(table)
+          .getAllByRole("columnheader")
+          .map((header) => header.textContent),
+      ).toEqual(["Nombre", "ID", "Runtime", "Versiones"]);
+
+      const row = within(table).getByTestId("model-row-model-1");
+      expect(within(row).getByText("Detector de plagas")).toBeTruthy();
+      expect(within(row).getByText("model-1")).toBeTruthy();
+      expect(within(row).getByText("TensorFlow Lite")).toBeTruthy();
+      expect(within(row).getByText("3")).toBeTruthy();
+
+      expect(screen.queryByTestId("register-model-trigger")).toBeNull();
+      expect(screen.queryByTestId("upload-version-trigger-model-1")).toBeNull();
+    });
+
+    it("shows the admin registration trigger next to the listing with an Acciones column", async () => {
+      client.get.mockImplementation(async () => ({ data: { models: [listedModel] } }));
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={true}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const table = await screen.findByTestId("models-table");
+      expect(
+        within(table)
+          .getAllByRole("columnheader")
+          .map((header) => header.textContent),
+      ).toEqual(["Nombre", "ID", "Runtime", "Versiones", "Acciones"]);
+      expect(screen.getByTestId("register-model-trigger")).toBeTruthy();
+    });
+
+    it("shows a zero version count for a model without published versions", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { models: [{ ...listedModel, versionCount: 0 }] },
+      }));
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const row = await screen.findByTestId("model-row-model-1");
+      expect(within(row).getByText("0")).toBeTruthy();
+    });
+
+    it("shows the empty state when the application has no models", async () => {
+      client.get.mockImplementation(async () => ({ data: { models: [] } }));
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={true}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const empty = await screen.findByTestId("models-empty");
+      expect(empty.textContent).toBe("Aún no hay modelos registrados en esta aplicación.");
+      expect(screen.queryByTestId("models-table")).toBeNull();
+    });
+
+    it("shows the loading state while models are being fetched", async () => {
+      let resolveModels: (value: unknown) => void = () => {};
+
+      client.get.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveModels = resolve;
+          }),
+      );
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const loading = await screen.findByTestId("models-loading");
+      expect(loading.textContent).toBe("Cargando modelos…");
+
+      resolveModels({ data: { models: [listedModel] } });
+      expect(await screen.findByTestId("model-row-model-1")).toBeTruthy();
+      expect(screen.queryByTestId("models-loading")).toBeNull();
+    });
+
+    it("shows a retryable error state when loading fails", async () => {
+      let modelsCalls = 0;
+
+      client.get.mockImplementation(() => {
+        modelsCalls += 1;
+        if (modelsCalls === 1) {
+          throw { isAxiosError: true, response: { status: 500, data: {} } };
+        }
+        return { data: { models: [listedModel] } };
+      });
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      expect(
+        await screen.findByText("No pudimos cargar los modelos. Inténtalo nuevamente."),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("models-table")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("models-retry"));
+
+      expect(await screen.findByTestId("model-row-model-1")).toBeTruthy();
+      expect(modelsCalls).toBe(2);
+    });
+
+    it("surfaces the server message when a request for a foreign application is rejected", async () => {
+      client.get.mockImplementation(() => {
+        throw {
+          isAxiosError: true,
+          response: {
+            status: 404,
+            data: { message: "No encontramos esta aplicación." },
+          },
+        };
+      });
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      expect(await screen.findByText("No encontramos esta aplicación.")).toBeTruthy();
+      expect(screen.queryByTestId("models-table")).toBeNull();
+    });
+  });
 });

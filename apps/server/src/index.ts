@@ -11,7 +11,6 @@ import {
   application,
   invitationLink,
   member,
-  model,
   organization,
   sdkCredential,
   user,
@@ -37,7 +36,7 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
-import { createModel, type ModelRow, toModel } from "./model-store";
+import { createModel, listModels } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
 import { createModelVersionWithArtifact } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
@@ -110,13 +109,8 @@ const models = {
   }) {
     return createModel(db, input);
   },
-  async list(applicationId: string) {
-    const rows = (await db
-      .select()
-      .from(model)
-      .where(eq(model.applicationId, applicationId))
-      .orderBy(asc(model.createdAt))) as ModelRow[];
-    return rows.map(toModel);
+  list(applicationId: string) {
+    return listModels(db, applicationId);
   },
 };
 
