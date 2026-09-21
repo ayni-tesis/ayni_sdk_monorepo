@@ -29,7 +29,7 @@ export type ModelRow = {
   updatedAt: Date | string;
 };
 
-function toIsoString(value: Date | string): string {
+export function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 

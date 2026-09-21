@@ -6,6 +6,7 @@ import {
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
+import { toIsoString } from "./model-store";
 import {
   buildModelVersionStorageKey,
   ModelVersionAlreadyStoredError,
@@ -196,10 +197,7 @@ export async function createModelVersionWithArtifact(
             storageKey: created.storageKey,
             sha256: created.sha256,
             sizeBytes: Number(created.sizeBytes),
-            createdAt:
-              created.createdAt instanceof Date
-                ? created.createdAt.toISOString()
-                : String(created.createdAt),
+            createdAt: toIsoString(created.createdAt),
             uploadedById: created.uploadedById,
           },
         } as const;
@@ -294,8 +292,7 @@ export async function listModelVersions(
         version: row.version,
         sha256: row.sha256,
         sizeBytes: Number(row.sizeBytes),
-        createdAt:
-          row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+        createdAt: toIsoString(row.createdAt),
       })),
     };
   });

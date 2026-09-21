@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/api-error";
+import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import { UploadModelVersionDialog } from "./upload-model-version-dialog";
 
@@ -38,14 +39,6 @@ export function formatVersionSize(bytes: number): string {
   }
   const formatted = unit === 0 ? String(value) : value.toFixed(1).replace(/\.0$/, "");
   return `${formatted} ${SIZE_UNITS[unit]}`;
-}
-
-export function formatVersionDate(value: string): string {
-  return new Date(value).toLocaleDateString("es", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
 }
 
 export function abbreviateSha256(sha256: string): string {
@@ -207,7 +200,7 @@ export function ModelVersionsDialog({
                     {formatVersionSize(version.sizeBytes)}
                   </td>
                   <td className="py-2.5 text-muted-foreground">
-                    {formatVersionDate(version.createdAt)}
+                    {formatLongDateEs(version.createdAt)}
                   </td>
                   <td className="py-2.5 text-muted-foreground">—</td>
                 </tr>
