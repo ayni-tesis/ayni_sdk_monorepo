@@ -37,6 +37,9 @@ export {
   RenameApplicationDialog,
   SettingsView,
 } from "./application/settings-view";
+export type { ModelVersionDto } from "./application/upload-model-version";
+export type { UploadModelVersionDialogProps } from "./application/upload-model-version-dialog";
+export { UploadModelVersionDialog } from "./application/upload-model-version-dialog";
 export type { WorkflowsViewProps } from "./application/workflows-view";
 export { WorkflowsView } from "./application/workflows-view";
 
