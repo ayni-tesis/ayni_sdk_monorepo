@@ -28,6 +28,8 @@ const sampleModel: Model = {
 function makeApp({
   session = { user: { id: "admin" } },
   application = activeApplication,
+  membershipRole = "admin",
+  listedModels,
   create = async ({
     applicationId,
     name,
@@ -49,6 +51,8 @@ function makeApp({
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
+  membershipRole?: string | null;
+  listedModels?: Model[];
   create?: (input: {
     applicationId: string;
     userId: string;
@@ -57,17 +61,58 @@ function makeApp({
   }) => Promise<CreateModelResult>;
 } = {}) {
   const createMock = vi.fn(create);
+  const listMock = vi.fn(async () => listedModels ?? [sampleModel]);
   return {
     create: createMock,
+    list: listMock,
     request: createModelsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
+        getMembership: async () => membershipRole ?? undefined,
       },
-      models: { create: createMock },
+      models: { create: createMock, list: listMock },
     }),
   };
 }
+
+describe("GET /applications/:applicationId/models", () => {
+  it("lists models for any workspace member", async () => {
+    const { request, list } = makeApp({ membershipRole: "member" });
+
+    const response = await request.request("/applications/app-1/models");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ models: [sampleModel] });
+    expect(list).toHaveBeenCalledWith("app-1");
+  });
+
+  it("requires authentication", async () => {
+    const { request, list } = makeApp({ session: null });
+
+    const response = await request.request("/applications/app-1/models");
+
+    expect(response.status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("hides applications the user is not a member of", async () => {
+    const { request, list } = makeApp({ membershipRole: null });
+
+    const response = await request.request("/applications/app-1/models");
+
+    expect(response.status).toBe(404);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a missing application", async () => {
+    const { request } = makeApp({ application: null });
+
+    const response = await request.request("/applications/missing-app/models");
+
+    expect(response.status).toBe(404);
+  });
+});
 
 describe("POST /applications/:applicationId/models", () => {
   it("allows an administrator to register a model for an active application", async () => {

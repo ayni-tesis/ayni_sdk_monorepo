@@ -1,7 +1,7 @@
 "use client";
 
-import { IconCpu } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconCpu, IconRefresh } from "@tabler/icons-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { UploadModelVersionDialog } from "./upload-model-version-dialog";
 
 export type RegisterModelDialogProps = {
   open: boolean;
@@ -103,6 +104,20 @@ export function RegisterModelDialog({
   );
 }
 
+export type ModelItem = {
+  id: string;
+  applicationId: string;
+  name: string;
+  runtime: "tensorflow_lite";
+  createdAt: string;
+  updatedAt: string;
+};
+
+function formatModelDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+}
+
 export type ModelsViewProps = {
   application: Application;
   canManage?: boolean;
@@ -113,6 +128,44 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
   const [modelName, setModelName] = useState("");
   const [modelError, setModelError] = useState("");
   const [registeringModel, setRegisteringModel] = useState(false);
+
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState("");
+  const [modelToUpload, setModelToUpload] = useState<ModelItem | null>(null);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const loadModels = useCallback(async (applicationId: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setModelsLoading(true);
+    setModelsError("");
+    try {
+      const { data } = await httpClient.get<{ models?: ModelItem[] }>(
+        `/applications/${applicationId}/models`,
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      setModels(Array.isArray(data?.models) ? data.models : []);
+    } catch (loadError) {
+      if (controller.signal.aborted) return;
+      setModelsError(errorMessage(loadError, "No pudimos cargar los modelos. Inténtalo de nuevo."));
+    } finally {
+      if (!controller.signal.aborted) {
+        setModelsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadModels(application.id);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [application.id, loadModels]);
 
   function openRegisterModel() {
     setModelName("");
@@ -138,6 +191,7 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
       setRegisterModelDialogOpen(false);
       setModelName("");
       setModelError("");
+      void loadModels(application.id);
     } catch (err) {
       toast.error(errorMessage(err, "No pudimos registrar el modelo. Inténtalo nuevamente."));
     } finally {
@@ -164,7 +218,64 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
         )}
       </div>
 
-      <p className="text-muted-foreground text-sm">Aún no hay modelos configurados.</p>
+      {modelsLoading ? (
+        <p data-testid="models-loading" className="text-muted-foreground text-sm">
+          Cargando modelos…
+        </p>
+      ) : modelsError ? (
+        <div className="applications-error flex items-center gap-3" data-testid="models-error">
+          <p className="text-destructive text-sm">{modelsError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="models-retry"
+            onClick={() => void loadModels(application.id)}
+          >
+            <IconRefresh className="mr-1 size-4" />
+            Reintentar
+          </Button>
+        </div>
+      ) : models.length === 0 ? (
+        <p data-testid="models-empty" className="text-muted-foreground text-sm">
+          Aún no hay modelos configurados.
+        </p>
+      ) : (
+        <table className="models-table w-full text-sm" data-testid="models-table">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="pb-2 font-medium">Nombre</th>
+              <th className="pb-2 font-medium">Runtime</th>
+              <th className="pb-2 font-medium">Creado el</th>
+              {canManage && application.status === "active" && (
+                <th className="pb-2 font-medium">Acciones</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {models.map((modelItem) => (
+              <tr key={modelItem.id} data-testid={`model-row-${modelItem.id}`}>
+                <td className="py-2.5 font-medium">{modelItem.name}</td>
+                <td className="py-2.5 text-muted-foreground">TensorFlow Lite</td>
+                <td className="py-2.5 text-muted-foreground">
+                  {formatModelDate(modelItem.createdAt)}
+                </td>
+                {canManage && application.status === "active" && (
+                  <td className="py-2.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid={`upload-version-trigger-${modelItem.id}`}
+                      onClick={() => setModelToUpload(modelItem)}
+                    >
+                      Subir versión
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <RegisterModelDialog
         open={registerModelDialogOpen}
@@ -176,6 +287,21 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
         registering={registeringModel}
         onSubmit={handleRegisterModel}
       />
+
+      {modelToUpload && (
+        <UploadModelVersionDialog
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setModelToUpload(null);
+          }}
+          applicationId={application.id}
+          modelId={modelToUpload.id}
+          modelName={modelToUpload.name}
+          onUploaded={() => {
+            void loadModels(application.id);
+          }}
+        />
+      )}
     </section>
   );
 }
