@@ -1,10 +1,7 @@
 import { Hono } from "hono";
 
 import type { GetSdkModelVersionManifestResult } from "./model-version-store";
-import {
-  INVALID_CREDENTIAL_MESSAGE,
-  type VerifySdkCredentialResult,
-} from "./sdk-credential-store";
+import { INVALID_CREDENTIAL_MESSAGE, type VerifySdkCredentialResult } from "./sdk-credential-store";
 
 type Dependencies = {
   credentials: {
@@ -30,7 +27,11 @@ export function createSdkModelVersionsApp({ credentials, modelVersions }: Depend
 
   app.get("/sdk/model-versions/:modelVersionId/manifest", async (c) => {
     const authorization = c.req.header("Authorization") ?? "";
-    const secret = /^Bearer (ayni_sk_[A-Za-z0-9_-]+)$/.exec(authorization)?.[1];
+    // RFC 7235: the scheme token is case-insensitive and precedes the
+    // credential with one or more spaces; the credential format stays strict.
+    const bearer = /^bearer +(\S+)$/i.exec(authorization);
+    const candidate = bearer?.[1];
+    const secret = candidate && /^ayni_sk_[A-Za-z0-9_-]+$/.test(candidate) ? candidate : undefined;
     if (!secret) {
       return c.json({ message: INVALID_CREDENTIAL_MESSAGE, code: "invalidCredential" }, 401);
     }

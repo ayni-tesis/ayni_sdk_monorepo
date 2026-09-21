@@ -70,16 +70,36 @@ describe("GET /sdk/model-versions/:modelVersionId/manifest", () => {
     ["no Authorization header", undefined],
     ["a non-SDK bearer token", "some-other-token"],
     ["a malformed credential", "ayni_sk_not*valid*base64url!"],
-  ])("rejects %s with 401 without consulting credentials", async (_label, secret) => {
+    ["an uppercased credential", "BEARER AYNi_SK_ABCD1234rest-of-secret"],
+    ["a scheme without a space", "Bearerayni_sk_abcd1234rest-of-secret"],
+  ])("rejects %s with 401 without consulting credentials", async (_label, authorization) => {
     const { app, verifyMock, getManifestMock } = makeApp();
 
-    const response = await app.request(MANIFEST_URL, sdkRequest(secret));
+    const response = await app.request(MANIFEST_URL, {
+      method: "GET",
+      headers: authorization ? { Authorization: authorization } : {},
+    });
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ code: "invalidCredential" });
     expect(verifyMock).not.toHaveBeenCalled();
     expect(getManifestMock).not.toHaveBeenCalled();
   });
+
+  it.each(["bearer ayni_sk_abcd1234rest-of-secret", "BEARER  ayni_sk_abcd1234rest-of-secret"])(
+    "accepts the %s spelling of the scheme per the HTTP auth grammar",
+    async (authorization) => {
+      const { app, verifyMock } = makeApp();
+
+      const response = await app.request(MANIFEST_URL, {
+        method: "GET",
+        headers: { Authorization: authorization },
+      });
+
+      expect(response.status).toBe(200);
+      expect(verifyMock).toHaveBeenCalledWith(SECRET);
+    },
+  );
 
   it("rejects a revoked credential with the credentialRevoked state and no manifest", async () => {
     const { app, getManifestMock } = makeApp({
