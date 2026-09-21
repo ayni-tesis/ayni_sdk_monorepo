@@ -37,6 +37,9 @@ import {
   type UpdateMemberRoleResult,
 } from "./members";
 import { createModel } from "./model-store";
+import { r2ModelVersionStorage } from "./model-version-storage";
+import { createModelVersionWithArtifact } from "./model-version-store";
+import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
 import {
   createSdkCredential,
@@ -105,6 +108,19 @@ const models = {
     runtime: "tensorflow_lite";
   }) {
     return createModel(db, input);
+  },
+};
+
+const modelVersions = {
+  create(input: {
+    applicationId: string;
+    modelId: string;
+    userId: string;
+    version: string;
+    bytes: Uint8Array;
+    maxBytes: number;
+  }) {
+    return createModelVersionWithArtifact(db, r2ModelVersionStorage, input);
   },
 };
 
@@ -516,6 +532,14 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     models,
+  }),
+);
+app.route(
+  "/",
+  createModelVersionsApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    modelVersions,
   }),
 );
 
