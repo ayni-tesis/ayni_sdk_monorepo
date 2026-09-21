@@ -606,4 +606,86 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByTestId("models-table")).toBeNull();
     });
   });
+
+  describe("US-015: Listar las versiones de un modelo", () => {
+    const versionedModel = {
+      id: "model-1",
+      applicationId: "app-1",
+      name: "Detector de plagas",
+      runtime: "tensorflow_lite",
+      versionCount: 1,
+      createdAt: "2026-09-19T20:00:00.000Z",
+      updatedAt: "2026-09-19T20:00:00.000Z",
+    };
+
+    const versionItem = {
+      id: "mv-1",
+      version: "1.0.0",
+      sha256: "a".repeat(64),
+      sizeBytes: 2048,
+      createdAt: "2026-09-20T00:00:00.000Z",
+    };
+
+    beforeEach(() => {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === "/applications/app-1/models/model-1/versions") {
+          return { data: { versions: [versionItem] } };
+        }
+        return { data: { models: [versionedModel] } };
+      });
+    });
+
+    it("lets a plain member open the versions of a model from the listing", async () => {
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const row = await screen.findByTestId("model-row-model-1");
+      fireEvent.click(within(row).getByTestId("versions-trigger-model-1"));
+
+      const dialog = await screen.findByRole("dialog", {
+        name: "Versiones de Detector de plagas",
+      });
+      expect(client.get).toHaveBeenCalledWith(
+        "/applications/app-1/models/model-1/versions",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(within(dialog).getByTestId("model-version-row-mv-1")).toBeTruthy();
+      expect(within(dialog).queryByTestId("upload-version-from-versions")).toBeNull();
+    });
+
+    it("offers administrators the Subir versión action inside the versions dialog", async () => {
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={true}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const row = await screen.findByTestId("model-row-model-1");
+      fireEvent.click(within(row).getByTestId("versions-trigger-model-1"));
+
+      const dialog = await screen.findByRole("dialog", {
+        name: "Versiones de Detector de plagas",
+      });
+      expect(within(dialog).getByTestId("upload-version-from-versions")).toBeTruthy();
+    });
+  });
 });

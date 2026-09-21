@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
-import type { CreateModelVersionResult } from "./model-version-store";
+import type {
+  CreateModelVersionResult,
+  ListModelVersionsResult,
+  ModelVersionListItem,
+} from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 
 const activeApplication: Application = {
@@ -32,10 +36,13 @@ function validVersionResult(): CreateModelVersionResult {
 function makeApp({
   session = { user: { id: "admin" } },
   application = activeApplication,
+  membershipRole = "admin",
   create = async (): Promise<CreateModelVersionResult> => validVersionResult(),
+  list = async (): Promise<ListModelVersionsResult> => ({ ok: true, versions: [] }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
+  membershipRole?: string | null;
   create?: (input: {
     applicationId: string;
     modelId: string;
@@ -44,16 +51,19 @@ function makeApp({
     bytes: Uint8Array;
     maxBytes: number;
   }) => Promise<CreateModelVersionResult>;
+  list?: (applicationId: string, modelId: string) => Promise<ListModelVersionsResult>;
 } = {}) {
   const createMock = vi.fn(create);
+  const listMock = vi.fn(list);
   const app = createModelVersionsApp({
     getSession: async () => session,
     applications: {
       get: async () => application ?? undefined,
+      getMembership: async () => membershipRole ?? undefined,
     },
-    modelVersions: { create: createMock },
+    modelVersions: { create: createMock, list: listMock },
   });
-  return { app, createMock };
+  return { app, createMock, listMock };
 }
 
 function uploadRequest({
@@ -188,4 +198,92 @@ describe("POST /applications/:applicationId/models/:modelId/versions", () => {
       await expect(response.json()).resolves.toMatchObject({ code: "modelVersionSaveFailed" });
     },
   );
+});
+
+const listedVersion: ModelVersionListItem = {
+  id: "mv-1",
+  version: "1.0.0",
+  sha256: "a".repeat(64),
+  sizeBytes: 2048,
+  createdAt: "2026-09-20T00:00:00.000Z",
+};
+
+describe("GET /applications/:applicationId/models/:modelId/versions", () => {
+  it("lists versions for any workspace member", async () => {
+    const { app, listMock } = makeApp({
+      membershipRole: "member",
+      list: async () => ({ ok: true, versions: [listedVersion] }),
+    });
+
+    const response = await app.request(MODEL_URL);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ versions: [listedVersion] });
+    expect(listMock).toHaveBeenCalledWith("app-1", "model-1");
+  });
+
+  it("returns an empty list for a model without versions", async () => {
+    const { app } = makeApp({ list: async () => ({ ok: true, versions: [] }) });
+
+    const response = await app.request(MODEL_URL);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ versions: [] });
+  });
+
+  it("never exposes the storage key or an artifact reference", async () => {
+    const { app } = makeApp({ list: async () => ({ ok: true, versions: [listedVersion] }) });
+
+    const response = await app.request(MODEL_URL);
+    const body = await response.text();
+
+    expect(body).not.toContain("storageKey");
+    expect(body).not.toContain("tflite");
+  });
+
+  it("requires authentication", async () => {
+    const { app, listMock } = makeApp({ session: null });
+
+    const response = await app.request(MODEL_URL);
+
+    expect(response.status).toBe(401);
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("hides versions of models in applications the user is not a member of", async () => {
+    const { app, listMock } = makeApp({ membershipRole: null });
+
+    const response = await app.request(MODEL_URL);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ message: "No encontramos esta aplicación." });
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for a missing application without listing", async () => {
+    const { app, listMock } = makeApp({ application: null });
+
+    const response = await app.request("/applications/missing-app/models/model-1/versions");
+
+    expect(response.status).toBe(404);
+    expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the same 404 for a missing model and for a model from another application", async () => {
+    const { app } = makeApp({ list: async () => ({ ok: false, reason: "modelNotFound" }) });
+
+    const foreign = await app.request("/applications/app-1/models/other-model/versions");
+    const missing = await app.request(MODEL_URL);
+
+    expect(foreign.status).toBe(404);
+    expect(missing.status).toBe(404);
+    await expect(foreign.json()).resolves.toEqual({
+      message: "No encontramos este modelo.",
+      code: "notFound",
+    });
+    await expect(missing.json()).resolves.toEqual({
+      message: "No encontramos este modelo.",
+      code: "notFound",
+    });
+  });
 });
