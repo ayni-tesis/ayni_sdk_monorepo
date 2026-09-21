@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import type {
   CreateModelVersionResult,
+  DeleteModelVersionResult,
   ListModelVersionsResult,
   ModelVersionListItem,
 } from "./model-version-store";
@@ -39,6 +40,7 @@ function makeApp({
   membershipRole = "admin",
   create = async (): Promise<CreateModelVersionResult> => validVersionResult(),
   list = async (): Promise<ListModelVersionsResult> => ({ ok: true, versions: [] }),
+  remove = async (): Promise<DeleteModelVersionResult> => ({ ok: true }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -52,18 +54,25 @@ function makeApp({
     maxBytes: number;
   }) => Promise<CreateModelVersionResult>;
   list?: (applicationId: string, modelId: string) => Promise<ListModelVersionsResult>;
+  remove?: (input: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+  }) => Promise<DeleteModelVersionResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(list);
+  const removeMock = vi.fn(remove);
   const app = createModelVersionsApp({
     getSession: async () => session,
     applications: {
       get: async () => application ?? undefined,
       getMembership: async () => membershipRole ?? undefined,
     },
-    modelVersions: { create: createMock, list: listMock },
+    modelVersions: { create: createMock, list: listMock, remove: removeMock },
   });
-  return { app, createMock, listMock };
+  return { app, createMock, listMock, removeMock };
 }
 
 function uploadRequest({
@@ -198,6 +207,54 @@ describe("POST /applications/:applicationId/models/:modelId/versions", () => {
       await expect(response.json()).resolves.toMatchObject({ code: "modelVersionSaveFailed" });
     },
   );
+});
+
+describe("DELETE /applications/:applicationId/models/:modelId/versions/:modelVersionId", () => {
+  const VERSION_URL = `${MODEL_URL}/mv-1`;
+
+  it("deletes an unreferenced model version for an administrator", async () => {
+    const { app, removeMock } = makeApp();
+
+    const response = await app.request(VERSION_URL, { method: "DELETE" });
+
+    expect(response.status).toBe(204);
+    expect(removeMock).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      modelId: "model-1",
+      modelVersionId: "mv-1",
+      userId: "admin",
+    });
+  });
+
+  it("rejects deletion when a published workflow references the version", async () => {
+    const { app, removeMock } = makeApp({
+      remove: async () => ({ ok: false, reason: "inUse" }),
+    });
+
+    const response = await app.request(VERSION_URL, { method: "DELETE" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "No puedes eliminar esta versión porque un workflow publicado la usa.",
+      code: "modelVersionInUse",
+    });
+    expect(removeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects members without administration permissions", async () => {
+    const { app, removeMock } = makeApp({
+      remove: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await app.request(VERSION_URL, { method: "DELETE" });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para eliminar versiones de modelo.",
+      code: "forbidden",
+    });
+    expect(removeMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 const listedVersion: ModelVersionListItem = {

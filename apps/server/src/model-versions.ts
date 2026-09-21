@@ -3,7 +3,11 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
 import type { Application } from "./applications";
-import type { CreateModelVersionResult, ListModelVersionsResult } from "./model-version-store";
+import type {
+  CreateModelVersionResult,
+  DeleteModelVersionResult,
+  ListModelVersionsResult,
+} from "./model-version-store";
 
 export const MAX_MODEL_VERSION_BYTES = 128 * 1024 * 1024;
 
@@ -33,6 +37,12 @@ type Dependencies = {
       maxBytes: number;
     }) => Promise<CreateModelVersionResult>;
     list: (applicationId: string, modelId: string) => Promise<ListModelVersionsResult>;
+    remove: (input: {
+      applicationId: string;
+      modelId: string;
+      modelVersionId: string;
+      userId: string;
+    }) => Promise<DeleteModelVersionResult>;
   };
 };
 
@@ -57,6 +67,61 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
     }
 
     return c.json({ versions: result.versions });
+  });
+
+  app.delete("/applications/:applicationId/models/:modelId/versions/:modelVersionId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await applications.get(c.req.param("applicationId"));
+    if (!application) {
+      return c.json({ message: "No encontramos esta aplicación.", code: "notFound" }, 404);
+    }
+
+    const role = await applications.getMembership(session.user.id, application.organizationId);
+    if (role !== "admin" && role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para eliminar versiones de modelo.", code: "forbidden" },
+        403,
+      );
+    }
+
+    const result = await modelVersions.remove({
+      applicationId: application.id,
+      modelId: c.req.param("modelId"),
+      modelVersionId: c.req.param("modelVersionId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.body(null, 204);
+
+    switch (result.reason) {
+      case "forbidden":
+        return c.json(
+          { message: "No tienes permiso para eliminar versiones de modelo.", code: "forbidden" },
+          403,
+        );
+      case "inUse":
+        return c.json(
+          {
+            message: "No puedes eliminar esta versión porque un workflow publicado la usa.",
+            code: "modelVersionInUse",
+          },
+          409,
+        );
+      case "notFound":
+        return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
+      case "archived":
+        return c.json(
+          { message: "No puedes eliminar versiones de una aplicación archivada.", code: "applicationArchived" },
+          409,
+        );
+      case "storageFailed":
+      case "databaseFailed":
+        return c.json(
+          { message: "No se pudo eliminar la versión del modelo.", code: "modelVersionDeleteFailed" },
+          500,
+        );
+    }
   });
 
   app.post(

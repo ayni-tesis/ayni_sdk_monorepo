@@ -40,6 +40,7 @@ import { createModel, listModels } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
 import {
   createModelVersionWithArtifact,
+  deleteModelVersion,
   getSdkModelVersionManifest,
   listModelVersions,
 } from "./model-version-store";
@@ -135,6 +136,14 @@ const modelVersions = {
   },
   list(applicationId: string, modelId: string) {
     return listModelVersions(db, applicationId, modelId);
+  },
+  remove(input: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+  }) {
+    return deleteModelVersion(db, r2ModelVersionStorage, input);
   },
 };
 

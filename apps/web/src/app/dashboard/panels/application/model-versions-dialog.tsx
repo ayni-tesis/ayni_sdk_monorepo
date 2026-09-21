@@ -2,6 +2,7 @@
 
 import { IconRefresh } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
@@ -68,6 +69,9 @@ export function ModelVersionsDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [deleteVersion, setDeleteVersion] = useState<ModelVersionListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -95,6 +99,26 @@ export function ModelVersionsDialog({
     }
   }, [applicationId, modelId]);
 
+  const confirmDelete = useCallback(async () => {
+    if (!deleteVersion) return;
+    setDeleting(true);
+    setNotice("");
+    try {
+      await httpClient.delete(
+        `/applications/${applicationId}/models/${modelId}/versions/${deleteVersion.id}`,
+      );
+      setVersions((current) => current.filter((version) => version.id !== deleteVersion.id));
+      setDeleteVersion(null);
+      toast.success("Versión eliminada.");
+      await loadVersions();
+      onVersionUploaded?.();
+    } catch (deleteError) {
+      setNotice(errorMessage(deleteError, "No se pudo eliminar la versión del modelo."));
+    } finally {
+      setDeleting(false);
+    }
+  }, [applicationId, deleteVersion, modelId, onVersionUploaded]);
+
   useEffect(() => {
     if (open) {
       void loadVersions();
@@ -117,6 +141,8 @@ export function ModelVersionsDialog({
             aquí.
           </DialogDescription>
         </DialogHeader>
+
+        {notice && <p className="text-destructive text-sm" role="alert">{notice}</p>}
 
         {canManage && (
           <div className="flex justify-end">
@@ -164,6 +190,7 @@ export function ModelVersionsDialog({
                 <th className="pb-2 font-medium">Tamaño</th>
                 <th className="pb-2 font-medium">Subida el</th>
                 <th className="pb-2 font-medium">Contrato</th>
+                {canManage && <th className="pb-2 font-medium">Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -203,6 +230,18 @@ export function ModelVersionsDialog({
                     {formatLongDateEs(version.createdAt)}
                   </td>
                   <td className="py-2.5 text-muted-foreground">—</td>
+                  {canManage && <td className="py-2.5 text-right">
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        data-testid={`delete-version-trigger-${version.id}`}
+                        onClick={() => setDeleteVersion(version)}
+                      >
+                        Eliminar
+                      </Button>
+                    )}
+                  </td>}
                 </tr>
               ))}
             </tbody>
@@ -220,6 +259,25 @@ export function ModelVersionsDialog({
             onVersionUploaded?.();
           }}
         />
+
+        <Dialog open={Boolean(deleteVersion)} onOpenChange={(nextOpen) => !nextOpen && setDeleteVersion(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>¿Eliminar la versión {deleteVersion?.version}?</DialogTitle>
+              <DialogDescription>
+                Se eliminará el archivo del modelo. Esta acción no se puede deshacer.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteVersion(null)} disabled={deleting}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? "Eliminando…" : "Eliminar versión"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
