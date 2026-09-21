@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { formatLongDateEs } from "@/lib/format-date";
 import type { Application } from "../types";
 import { ApplicationDetailPanel } from "./application-detail-panel";
 
@@ -883,6 +885,239 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByText("Ingresa un nombre para el workflow.")).toBeNull();
       expect((screen.getByLabelText("Nombre del workflow") as HTMLInputElement).value).toBe("");
       expect(client.post).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("US-025: Listar los workflows de una aplicación", () => {
+    const listedWorkflow = {
+      id: "workflow-1",
+      applicationId: "app-1",
+      name: "Diagnóstico de hoja de café",
+      status: "draft",
+      createdAt: "2026-09-21T15:00:00.000Z",
+      updatedAt: "2026-09-21T16:00:00.000Z",
+    };
+
+    // Records the DOM of every commit. The parent's layout effect runs before the
+    // child's passive fetch effect, so it sees the frame the user could paint.
+    function FrameRecorder({ frames, children }: { frames: string[]; children: ReactNode }) {
+      const ref = useRef<HTMLDivElement>(null);
+      useLayoutEffect(() => {
+        frames.push(ref.current?.innerHTML ?? "");
+      });
+      return <div ref={ref}>{children}</div>;
+    }
+
+    function workflowPanel(application: Application, canManage: boolean, frames: string[] = []) {
+      return (
+        <FrameRecorder frames={frames}>
+          <TooltipProvider>
+            <ApplicationDetailPanel
+              application={application}
+              workspaceName="Laboratorio Andino"
+              canManage={canManage}
+              activeSection="workflows"
+              onBack={vi.fn()}
+              onApplicationUpdated={vi.fn()}
+              onApplicationArchived={vi.fn()}
+            />
+          </TooltipProvider>
+        </FrameRecorder>
+      );
+    }
+
+    function renderWorkflowList({
+      application = activeApp,
+      canManage = false,
+    }: {
+      application?: Application;
+      canManage?: boolean;
+    } = {}) {
+      return render(workflowPanel(application, canManage));
+    }
+
+    it("lets a plain member list workflows with Nombre, Estado, Última versión and Actualizado", async () => {
+      client.get.mockImplementation(async () => ({ data: { workflows: [listedWorkflow] } }));
+
+      renderWorkflowList({ canManage: false });
+
+      const table = await screen.findByTestId("workflows-table");
+      expect(
+        within(table)
+          .getAllByRole("columnheader")
+          .map((header) => header.textContent),
+      ).toEqual(["Nombre", "Estado", "Última versión", "Actualizado"]);
+
+      const row = within(table).getByTestId("workflow-row-workflow-1");
+      expect(within(row).getByText("Diagnóstico de hoja de café")).toBeTruthy();
+      expect(within(row).getByText("workflow-1")).toBeTruthy();
+      expect(within(row).getByText("Borrador")).toBeTruthy();
+      expect(within(row).getByText("Sin publicar")).toBeTruthy();
+      expect(within(row).getByText(formatLongDateEs("2026-09-21T16:00:00.000Z"))).toBeTruthy();
+
+      expect(client.get).toHaveBeenCalledWith("/applications/app-1/workflows", expect.anything());
+      expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
+    });
+
+    it("lists every workflow of the application", async () => {
+      client.get.mockImplementation(async () => ({
+        data: {
+          workflows: [
+            listedWorkflow,
+            { ...listedWorkflow, id: "workflow-2", name: "Detección de roya" },
+          ],
+        },
+      }));
+
+      renderWorkflowList();
+
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      expect(screen.getByTestId("workflow-row-workflow-2")).toBeTruthy();
+      expect(screen.getByText("Detección de roya")).toBeTruthy();
+    });
+
+    it("shows the create button next to the listing for administrators of an active application", async () => {
+      client.get.mockImplementation(async () => ({ data: { workflows: [listedWorkflow] } }));
+
+      renderWorkflowList({ canManage: true });
+
+      await screen.findByTestId("workflows-table");
+      expect(screen.getByTestId("create-workflow-trigger").textContent).toBe("Crear workflow");
+    });
+
+    it("shows the empty state when the application has no workflows", async () => {
+      client.get.mockImplementation(async () => ({ data: { workflows: [] } }));
+
+      renderWorkflowList({ canManage: true });
+
+      const empty = await screen.findByTestId("workflows-empty");
+      expect(empty.textContent).toBe("Aún no hay workflows en esta aplicación.");
+      expect(screen.queryByTestId("workflows-table")).toBeNull();
+    });
+
+    it("shows the loading state while workflows are being fetched", async () => {
+      let resolveWorkflows: (value: unknown) => void = () => {};
+      client.get.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveWorkflows = resolve;
+          }),
+      );
+
+      renderWorkflowList();
+
+      const loading = await screen.findByTestId("workflows-loading");
+      expect(loading.textContent).toBe("Cargando workflows…");
+
+      resolveWorkflows({ data: { workflows: [listedWorkflow] } });
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      expect(screen.queryByTestId("workflows-loading")).toBeNull();
+    });
+
+    it("shows a retryable error state when loading fails", async () => {
+      let workflowsCalls = 0;
+      client.get.mockImplementation(() => {
+        workflowsCalls += 1;
+        if (workflowsCalls === 1) {
+          throw { isAxiosError: true, response: { status: 500, data: {} } };
+        }
+        return { data: { workflows: [listedWorkflow] } };
+      });
+
+      renderWorkflowList();
+
+      expect(
+        await screen.findByText("No pudimos cargar los workflows. Inténtalo nuevamente."),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("workflows-table")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("workflows-retry"));
+
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      expect(workflowsCalls).toBe(2);
+    });
+
+    it("surfaces the server message without listing anything when the application is not accessible", async () => {
+      client.get.mockImplementation(() => {
+        throw {
+          isAxiosError: true,
+          response: { status: 404, data: { message: "No encontramos esta aplicación." } },
+        };
+      });
+
+      renderWorkflowList();
+
+      expect(await screen.findByText("No encontramos esta aplicación.")).toBeTruthy();
+      expect(screen.queryByTestId("workflows-table")).toBeNull();
+      expect(screen.queryByTestId("workflows-empty")).toBeNull();
+    });
+
+    it("paints the loading state on the first commit instead of the empty state", () => {
+      client.get.mockImplementation(() => new Promise(() => {}));
+      const frames: string[] = [];
+
+      render(workflowPanel(activeApp, false, frames));
+
+      expect(frames[0]).toContain("Cargando workflows…");
+      expect(frames[0]).not.toContain("Aún no hay workflows en esta aplicación.");
+    });
+
+    it("never paints the workflows of the previous application when switching applications", async () => {
+      const otherApp: Application = { ...activeApp, id: "app-3", name: "Invernadero" };
+      client.get.mockImplementation(async (url: string) =>
+        url === "/applications/app-1/workflows"
+          ? { data: { workflows: [listedWorkflow] } }
+          : new Promise(() => {}),
+      );
+      const frames: string[] = [];
+
+      const view = render(workflowPanel(activeApp, false, frames));
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      const framesBeforeSwitch = frames.length;
+
+      view.rerender(workflowPanel(otherApp, false, frames));
+
+      const switchFrame = frames[framesBeforeSwitch];
+      expect(switchFrame).toBeDefined();
+      expect(switchFrame).not.toContain("workflow-row-workflow-1");
+      expect(switchFrame).not.toContain("Diagnóstico de hoja de café");
+      expect(switchFrame).toContain("Cargando workflows…");
+      expect(client.get).toHaveBeenLastCalledWith(
+        "/applications/app-3/workflows",
+        expect.anything(),
+      );
+    });
+
+    it("lists the workflows of an archived application without offering to create one", async () => {
+      client.get.mockImplementation(async () => ({ data: { workflows: [listedWorkflow] } }));
+
+      renderWorkflowList({ application: archivedApp, canManage: true });
+
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
+    });
+
+    it("reloads the list after an administrator creates a workflow", async () => {
+      let workflowsCalls = 0;
+      client.get.mockImplementation(async () => {
+        workflowsCalls += 1;
+        return { data: { workflows: workflowsCalls === 1 ? [] : [listedWorkflow] } };
+      });
+      client.post.mockResolvedValueOnce({ data: { workflow: listedWorkflow } });
+
+      renderWorkflowList({ canManage: true });
+
+      expect(await screen.findByTestId("workflows-empty")).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId("create-workflow-trigger"));
+      fireEvent.change(screen.getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico de hoja de café" },
+      });
+      fireEvent.click(screen.getByTestId("create-workflow-submit"));
+
+      expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
+      expect(workflowsCalls).toBe(2);
+      expect(screen.queryByTestId("workflows-empty")).toBeNull();
     });
   });
 });

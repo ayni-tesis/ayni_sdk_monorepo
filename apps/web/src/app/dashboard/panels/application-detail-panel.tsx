@@ -90,7 +90,7 @@ export function ApplicationDetailPanel({
       )}
 
       {activeSection === "workflows" && (
-        <WorkflowsView application={application} canManage={canManage} />
+        <WorkflowsView key={application.id} application={application} canManage={canManage} />
       )}
 
       {activeSection === "models" && <ModelsView application={application} canManage={canManage} />}

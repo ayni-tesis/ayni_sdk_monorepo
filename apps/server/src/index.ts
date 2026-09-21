@@ -54,7 +54,7 @@ import {
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
-import { createWorkflow } from "./workflow-store";
+import { createWorkflow, listWorkflows } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -141,6 +141,9 @@ const modelVersions = {
 const workflows = {
   create(input: { applicationId: string; userId: string; name: string }) {
     return createWorkflow(db, input);
+  },
+  list(applicationId: string) {
+    return listWorkflows(db, applicationId);
   },
 };
 

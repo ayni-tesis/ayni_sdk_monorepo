@@ -1,10 +1,13 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
 import {
   type CreateWorkflowResult,
   createWorkflow,
+  listWorkflows,
   type TransactionExecutor,
+  type Workflow,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 
@@ -15,12 +18,22 @@ const activeApplication: Application = {
   status: "active",
 };
 
+const sampleWorkflow: Workflow = {
+  id: "workflow-1",
+  applicationId: "app-1",
+  name: "Diagnóstico de hoja de café",
+  status: "draft",
+  createdAt: "2026-09-21T15:00:00.000Z",
+  updatedAt: "2026-09-21T16:00:00.000Z",
+};
+
 type CreateInput = { applicationId: string; userId: string; name: string };
 
 function makeApp({
   session = { user: { id: "admin" } },
   application = activeApplication,
   membershipRole = "admin",
+  listedWorkflows,
   create = async ({ applicationId, name }: CreateInput): Promise<CreateWorkflowResult> => ({
     ok: true,
     workflow: {
@@ -36,18 +49,21 @@ function makeApp({
   session?: { user: { id: string } } | null;
   application?: Application | null;
   membershipRole?: string | null;
+  listedWorkflows?: Workflow[];
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
 } = {}) {
   const createMock = vi.fn(create);
+  const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
   return {
     create: createMock,
+    list: listMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
         getMembership: async () => membershipRole ?? undefined,
       },
-      workflows: { create: createMock },
+      workflows: { create: createMock, list: listMock },
     }),
   };
 }
@@ -59,6 +75,79 @@ function postWorkflow(request: ReturnType<typeof makeApp>["request"], body: unkn
     body: JSON.stringify(body),
   });
 }
+
+describe("GET /applications/:applicationId/workflows", () => {
+  it("lists the workflows of the application for any workspace member", async () => {
+    const { request, list } = makeApp({ membershipRole: "member" });
+
+    const response = await request.request("/applications/app-1/workflows");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ workflows: [sampleWorkflow] });
+    expect(list).toHaveBeenCalledWith("app-1");
+  });
+
+  it("returns every workflow with its id, name and status", async () => {
+    const listedWorkflows: Workflow[] = [
+      sampleWorkflow,
+      { ...sampleWorkflow, id: "workflow-2", name: "Detección de roya" },
+    ];
+    const { request } = makeApp({ membershipRole: "member", listedWorkflows });
+
+    const response = await request.request("/applications/app-1/workflows");
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { workflows: Workflow[] };
+    expect(body.workflows.map(({ id, name, status }) => ({ id, name, status }))).toEqual([
+      { id: "workflow-1", name: "Diagnóstico de hoja de café", status: "draft" },
+      { id: "workflow-2", name: "Detección de roya", status: "draft" },
+    ]);
+  });
+
+  it("returns an empty list for an application without workflows", async () => {
+    const { request } = makeApp({ listedWorkflows: [] });
+
+    const response = await request.request("/applications/app-1/workflows");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ workflows: [] });
+  });
+
+  it("still lists the workflows of an archived application", async () => {
+    const { request } = makeApp({ application: { ...activeApplication, status: "archived" } });
+
+    const response = await request.request("/applications/app-1/workflows");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ workflows: [sampleWorkflow] });
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, list } = makeApp({ session: null });
+
+    const response = await request.request("/applications/app-1/workflows");
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ message: "Authentication required" });
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-member exactly like a missing application, without listing", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    const nonMemberResponse = await nonMember.request.request("/applications/app-1/workflows");
+    const missingResponse = await missing.request.request("/applications/app-1/workflows");
+
+    expect(nonMemberResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    const nonMemberBody = await nonMemberResponse.json();
+    expect(nonMemberBody).toEqual({ message: "No encontramos esta aplicación." });
+    await expect(missingResponse.json()).resolves.toEqual(nonMemberBody);
+    expect(nonMember.list).not.toHaveBeenCalled();
+    expect(missing.list).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /applications/:applicationId/workflows", () => {
   it("lets an administrator create a draft workflow bound to the application", async () => {
@@ -419,5 +508,119 @@ describe("createWorkflow", () => {
 
     expect(result).toEqual({ ok: false, reason: "notFound" });
     expect(transaction.inserted).toHaveLength(0);
+  });
+});
+
+function makeListDb(rows: Record<string, unknown>[]) {
+  const selectedFields: Record<string, unknown>[] = [];
+  const filters: unknown[] = [];
+  const orderings: unknown[] = [];
+
+  const executor = {
+    select: (fields: Record<string, unknown>) => {
+      selectedFields.push(fields);
+      return {
+        from: (table: unknown) => {
+          void table;
+          return {
+            where: (condition: unknown) => {
+              filters.push(condition);
+              return {
+                orderBy: async (column: unknown) => {
+                  orderings.push(column);
+                  return rows;
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return {
+    selectedFields,
+    filters,
+    orderings,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
+    },
+  };
+}
+
+function toQuery(fragment: unknown) {
+  const { sql, params } = new PgDialect().sqlToQuery(
+    fragment as Parameters<PgDialect["sqlToQuery"]>[0],
+  );
+  return { sql, params };
+}
+
+describe("listWorkflows", () => {
+  it("maps rows to workflows with ISO dates and the draft status", async () => {
+    const transaction = makeListDb([
+      {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: new Date("2026-09-21T15:00:00.000Z"),
+        updatedAt: new Date("2026-09-21T16:00:00.000Z"),
+      },
+      {
+        id: "workflow-2",
+        applicationId: "app-1",
+        name: "Detección de roya",
+        status: "draft",
+        createdAt: "2026-09-21T15:30:00.000Z",
+        updatedAt: "2026-09-21T15:30:00.000Z",
+      },
+    ]);
+
+    const workflows = await listWorkflows(transaction.db, "app-1");
+
+    expect(workflows).toEqual([
+      {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      {
+        id: "workflow-2",
+        applicationId: "app-1",
+        name: "Detección de roya",
+        status: "draft",
+        createdAt: "2026-09-21T15:30:00.000Z",
+        updatedAt: "2026-09-21T15:30:00.000Z",
+      },
+    ]);
+  });
+
+  it("scopes the query to the requested application only", async () => {
+    const transaction = makeListDb([]);
+
+    const workflows = await listWorkflows(transaction.db, "app-1");
+
+    expect(workflows).toEqual([]);
+    expect(transaction.selectedFields[0]).not.toHaveProperty("organizationId");
+    expect(transaction.filters).toHaveLength(1);
+    expect(toQuery(transaction.filters[0])).toEqual({
+      sql: '"workflow"."application_id" = $1',
+      params: ["app-1"],
+    });
+  });
+
+  it("returns the oldest workflows first", async () => {
+    const transaction = makeListDb([]);
+
+    await listWorkflows(transaction.db, "app-1");
+
+    expect(transaction.orderings).toHaveLength(1);
+    expect(toQuery(transaction.orderings[0])).toEqual({
+      sql: '"workflow"."created_at" asc',
+      params: [],
+    });
   });
 });

@@ -45,7 +45,7 @@ This file provides context about the project for AI assistants.
 - SDK credentials: administrator- and owner-only generation, listing, revocation, and regeneration of credentials scoped to one application. The server stores only the SHA-256 hash of the secret and its display prefix, reveals the secret once at creation or regeneration, and rejects non-active credentials or archived applications. Listing exposes operational metadata only (prefix, status, creation date, last use) and never the secret; status reflects revocation ("active" or "revoked"). Revoking a credential marks it `revoked`: it can no longer authenticate or synchronize new resources (rejected with `credentialRevoked`), and revocation never deletes existing workflows, models, or versions nor removes resources already stored offline on devices. Regenerating an active credential immediately revokes the prior credential and issues a replacement without modifying the application or its resources.
 - Model management: workspace administrator- and owner-only registration of on-device models (such as TensorFlow Lite) scoped to an active application, rejecting archived applications with the `applicationArchived` state. Any workspace member can list an application's models (name, id, runtime, and version count — metadata only, never `.tflite` files); non-members receive the same 404 as a missing application so listing never reveals model existence. Any member can also list a model's versions (id, SemVer, SHA-256, size, upload date — metadata only, never the artifact, storage key, or a download URL); a model outside the application is indistinguishable from a missing one.
 - Model download manifest (SDK API): `GET /sdk/model-versions/:modelVersionId/manifest`, authenticated only with a `Bearer` SDK credential secret (never a dashboard session). The manifest carries version id, SemVer, SHA-256, size, and a short-lived presigned R2 download URL plus its expiry; the raw storage key never leaves the server. A valid authentication refreshes the credential's last-use record. The manifest is served only to active credentials whose application is active and owns the version; a missing version, a version of another application, and an archived application all answer the same 404 `modelVersionNotFound` ("La versión del modelo ya no está disponible.") and a revoked credential the `credentialRevoked` state, never revealing artifact information.
-- Workflow creation: `POST /applications/:applicationId/workflows`, restricted to workspace administrators and owners. A workflow is created as an empty `draft` (no nodes, no published version) bound to exactly one active application; a missing or whitespace-only name is rejected with 400 and nothing is created, an archived application is rejected with 409 `applicationArchived`, a plain member with 403, and a non-member gets the same 404 as a missing application. The dashboard offers `Crear workflow` under Application → `Workflows` only to administrators of active applications. Listing workflows is not implemented yet.
+- Workflow creation: `POST /applications/:applicationId/workflows`, restricted to workspace administrators and owners. A workflow is created as an empty `draft` (no nodes, no published version) bound to exactly one active application; a missing or whitespace-only name is rejected with 400 and nothing is created, an archived application is rejected with 409 `applicationArchived`, a plain member with 403, and a non-member gets the same 404 as a missing application. The dashboard offers `Crear workflow` under Application → `Workflows` only to administrators of active applications. Any workspace member can list an application's workflows with `GET /applications/:applicationId/workflows` (id, name, status, and dates; the dashboard shows Nombre, Estado, Última versión, and Actualizado, where the latest version stays a `Sin publicar` placeholder until versions are published), including for archived applications; the list only contains workflows of the requested application, and a non-member gets the same 404 as a missing application so listing never reveals workflow existence.
 - Dashboard URL routing: the browser URL is the source of truth for the active view. The dashboard shell lives in `apps/web/src/app/dashboard/layout.tsx` (so navigation never remounts it); each application section (`overview`, `workflows`, `models`, `credentials`, `settings`) and the members view is a route whose page renders nothing and the shell derives the view from `usePathname()`. Sidebar navigation only calls `router.push()` (never raw `history.pushState`). Workspace, application-list, and application-detail data live in a zustand store (`src/stores/dashboard-store.ts`) and are fetched once per workspace, so switching sections never re-renders a loading list.
 
 ## Project Structure
@@ -108,6 +108,53 @@ dashboard.
 - The SDK must validate graph structure, node inputs and outputs, and model
   versions before execution. It must not evaluate arbitrary expressions or code
   received from a workflow.
+
+## Pending work and follow-ups
+
+Known gaps left open on purpose. Remove an entry when it is resolved and name its
+user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`.
+
+- **Workflow latest version (US-036, US-026)**: the `Última versión` column of the
+  workflow list shows the fixed placeholder `Sin publicar`
+  (`NO_PUBLISHED_VERSION_LABEL` in
+  `apps/web/src/app/dashboard/panels/application/workflows-view.tsx`) because no
+  workflow-version table exists yet. When US-036 publishes versions, expose
+  `latestVersion` from `Workflow`/`listWorkflows`
+  (`apps/server/src/workflow-store.ts`) and render it instead of the placeholder;
+  US-026 adds the `Versiones publicadas` tab.
+- **Overview counts (no story yet)**: the Overview cards in
+  `apps/web/src/app/dashboard/panels/application/overview-view.tsx` hard-code
+  `0 workflows configurados` and `0 modelos registrados`, and
+  `application-detail-panel.test.tsx` asserts those strings. They contradict the
+  real lists under Workflows and Models. No story requires them (US-003 lists the
+  sections but no counts), so amend US-003 or add a story before implementing.
+- **English 401 message (no story yet)**: `errorMessage()`
+  (`apps/web/src/lib/api-error.ts`) passes the server `message` through and the
+  routes answer 401 with `Authentication required`, so an expired session shows
+  that English text when loading the workflow and model lists and when
+  generating, revoking, or regenerating credentials.
+  `apps/web/src/lib/http-client.ts` has no global 401 handling and no story in
+  `docs/epicas` covers session expiry. Decide, app-wide, between translating the
+  server message and mapping 401 in the client.
+- **Workflow list order (US-025)**: `listWorkflows` orders oldest first
+  (`asc(createdAt)`), matching `listModels`; the spec is silent. If most recently
+  updated first is preferred, change the `orderBy` and the
+  `returns the oldest workflows first` test in `apps/server/src/workflows.test.ts`.
+- **Duplicated list plumbing (technical debt)**: `WorkflowsView` copies the
+  load/abort/error/retry logic of `ModelsView` (`loadModels`), and the server
+  repeats `ListWorkflowsExecutor`/`ListModelsExecutor` and the session →
+  application → membership → uniform 404 guard across `workflows.ts` and
+  `models.ts`. Extract a shared hook and a shared type/helper, keeping the guard
+  in one place because it carries the guarantee that non-members never learn
+  whether an application or its resources exist.
+- **Stale reload after switching application (technical debt; read from the code,
+  not tested)**: `WorkflowsView` is keyed by application id. If the user switches
+  application while `POST /applications/:applicationId/workflows` is in flight,
+  the unmounted instance still calls `loadWorkflows` for the old application (one
+  wasted GET, no effect on the new view).
+- **Root `CLAUDE.md` is stale**: it still omits workflow creation and listing and
+  model listing (last updated around US-012). `AGENTS.md` is the maintained copy;
+  decide whether to sync `CLAUDE.md`.
 
 ## Better Fullstack project context
 
