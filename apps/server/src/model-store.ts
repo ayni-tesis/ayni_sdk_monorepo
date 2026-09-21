@@ -1,4 +1,5 @@
-import { model } from "@ayni/db/schema/index";
+import { model, modelVersion } from "@ayni/db/schema/index";
+import { asc, eq, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -13,6 +14,7 @@ export type Model = {
   applicationId: string;
   name: string;
   runtime: "tensorflow_lite";
+  versionCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -22,6 +24,7 @@ export type ModelRow = {
   applicationId: string;
   name: string;
   runtime: string;
+  versionCount?: number | string;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -36,6 +39,7 @@ export function toModel(row: ModelRow): Model {
     applicationId: row.applicationId,
     name: row.name,
     runtime: "tensorflow_lite",
+    versionCount: Number(row.versionCount ?? 0),
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
   };
@@ -86,4 +90,40 @@ export async function createModel(
 
   if (!result.ok) return result;
   return { ok: true, model: result.value };
+}
+
+type ListModelsExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        orderBy: (column: unknown) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+/**
+ * Lists the models registered in an application (metadata only, never model
+ * files) with the number of stored versions per model, oldest first.
+ */
+export async function listModels(database: ModelDatabase, applicationId: string): Promise<Model[]> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as ListModelsExecutor;
+
+    const rows = (await tx
+      .select({
+        id: model.id,
+        applicationId: model.applicationId,
+        name: model.name,
+        runtime: model.runtime,
+        versionCount: sql<number>`(select count(*)::int from ${modelVersion} where ${modelVersion.modelId} = ${model.id})`,
+        createdAt: model.createdAt,
+        updatedAt: model.updatedAt,
+      })
+      .from(model)
+      .where(eq(model.applicationId, applicationId))
+      .orderBy(asc(model.createdAt))) as ModelRow[];
+
+    return rows.map(toModel);
+  });
 }

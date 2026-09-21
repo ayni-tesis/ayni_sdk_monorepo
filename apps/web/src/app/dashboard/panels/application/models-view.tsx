@@ -109,14 +109,17 @@ export type ModelItem = {
   applicationId: string;
   name: string;
   runtime: "tensorflow_lite";
+  versionCount: number;
   createdAt: string;
   updatedAt: string;
 };
 
-function formatModelDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
-}
+const MODELS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
+const MODELS_EMPTY_MESSAGE = "Aún no hay modelos registrados en esta aplicación.";
+
+const RUNTIME_LABELS: Record<ModelItem["runtime"], string> = {
+  tensorflow_lite: "TensorFlow Lite",
+};
 
 export type ModelsViewProps = {
   application: Application;
@@ -152,7 +155,7 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
       setModels(Array.isArray(data?.models) ? data.models : []);
     } catch (loadError) {
       if (controller.signal.aborted) return;
-      setModelsError(errorMessage(loadError, "No pudimos cargar los modelos. Inténtalo de nuevo."));
+      setModelsError(errorMessage(loadError, MODELS_LOAD_ERROR));
     } finally {
       if (!controller.signal.aborted) {
         setModelsLoading(false);
@@ -237,15 +240,16 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
         </div>
       ) : models.length === 0 ? (
         <p data-testid="models-empty" className="text-muted-foreground text-sm">
-          Aún no hay modelos configurados.
+          {MODELS_EMPTY_MESSAGE}
         </p>
       ) : (
         <table className="models-table w-full text-sm" data-testid="models-table">
           <thead>
             <tr className="border-b text-left text-muted-foreground">
               <th className="pb-2 font-medium">Nombre</th>
+              <th className="pb-2 font-medium">ID</th>
               <th className="pb-2 font-medium">Runtime</th>
-              <th className="pb-2 font-medium">Creado el</th>
+              <th className="pb-2 font-medium">Versiones</th>
               {canManage && application.status === "active" && (
                 <th className="pb-2 font-medium">Acciones</th>
               )}
@@ -255,10 +259,15 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
             {models.map((modelItem) => (
               <tr key={modelItem.id} data-testid={`model-row-${modelItem.id}`}>
                 <td className="py-2.5 font-medium">{modelItem.name}</td>
-                <td className="py-2.5 text-muted-foreground">TensorFlow Lite</td>
                 <td className="py-2.5 text-muted-foreground">
-                  {formatModelDate(modelItem.createdAt)}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                    {modelItem.id}
+                  </code>
                 </td>
+                <td className="py-2.5 text-muted-foreground">
+                  {RUNTIME_LABELS[modelItem.runtime] ?? modelItem.runtime}
+                </td>
+                <td className="py-2.5 text-muted-foreground">{modelItem.versionCount ?? 0}</td>
                 {canManage && application.status === "active" && (
                   <td className="py-2.5">
                     <Button

@@ -4,6 +4,7 @@ import type { Application } from "./applications";
 import {
   type CreateModelResult,
   createModel,
+  listModels,
   type Model,
   type TransactionExecutor,
 } from "./model-store";
@@ -21,6 +22,7 @@ const sampleModel: Model = {
   applicationId: "app-1",
   name: "Detector de plagas",
   runtime: "tensorflow_lite",
+  versionCount: 2,
   createdAt: "2026-09-19T20:00:00.000Z",
   updatedAt: "2026-09-19T20:00:00.000Z",
 };
@@ -46,6 +48,7 @@ function makeApp({
       applicationId,
       name,
       runtime,
+      versionCount: 0,
     },
   }),
 }: {
@@ -85,6 +88,24 @@ describe("GET /applications/:applicationId/models", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ models: [sampleModel] });
     expect(list).toHaveBeenCalledWith("app-1");
+  });
+
+  it("exposes each model's version count without any file metadata", async () => {
+    const listedModels: Model[] = [
+      sampleModel,
+      { ...sampleModel, id: "model-2", name: "Clasificador de roya", versionCount: 0 },
+    ];
+    const { request, list } = makeApp({ membershipRole: "member", listedModels });
+
+    const response = await request.request("/applications/app-1/models");
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toEqual({ models: listedModels });
+    expect(list).toHaveBeenCalledWith("app-1");
+    const body = JSON.stringify(payload);
+    expect(body).not.toContain("storageKey");
+    expect(body).not.toContain("sha256");
   });
 
   it("requires authentication", async () => {
@@ -131,6 +152,7 @@ describe("POST /applications/:applicationId/models", () => {
         applicationId: "app-1",
         name: "Detector de plagas",
         runtime: "tensorflow_lite",
+        versionCount: 0,
         createdAt: "2026-09-19T20:00:00.000Z",
         updatedAt: "2026-09-19T20:00:00.000Z",
       },
@@ -480,5 +502,90 @@ describe("createModel", () => {
 
     expect(result).toEqual({ ok: false, reason: "notFound" });
     expect(transaction.inserted).toHaveLength(0);
+  });
+});
+
+function makeListDb(rows: Record<string, unknown>[]) {
+  const selectedFields: Record<string, unknown>[] = [];
+  const filters: unknown[] = [];
+
+  const executor = {
+    select: (fields: Record<string, unknown>) => {
+      selectedFields.push(fields);
+      return {
+        from: (table: unknown) => {
+          void table;
+          return {
+            where: (condition: unknown) => {
+              filters.push(condition);
+              return {
+                orderBy: async (column: unknown) => {
+                  void column;
+                  return rows;
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return {
+    selectedFields,
+    filters,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
+    },
+  };
+}
+
+describe("listModels", () => {
+  it("maps rows to models with a numeric version count and ISO dates", async () => {
+    const transaction = makeListDb([
+      {
+        id: "model-1",
+        applicationId: "app-1",
+        name: "Detector de plagas",
+        runtime: "tensorflow_lite",
+        versionCount: "3",
+        createdAt: new Date("2026-09-19T20:00:00.000Z"),
+        updatedAt: new Date("2026-09-19T21:00:00.000Z"),
+      },
+      {
+        id: "model-2",
+        applicationId: "app-1",
+        name: "Clasificador de roya",
+        runtime: "tensorflow_lite",
+        versionCount: 0,
+        createdAt: "2026-09-19T20:30:00.000Z",
+        updatedAt: "2026-09-19T20:30:00.000Z",
+      },
+    ]);
+
+    const models = await listModels(transaction.db, "app-1");
+
+    expect(models).toEqual([
+      {
+        id: "model-1",
+        applicationId: "app-1",
+        name: "Detector de plagas",
+        runtime: "tensorflow_lite",
+        versionCount: 3,
+        createdAt: "2026-09-19T20:00:00.000Z",
+        updatedAt: "2026-09-19T21:00:00.000Z",
+      },
+      {
+        id: "model-2",
+        applicationId: "app-1",
+        name: "Clasificador de roya",
+        runtime: "tensorflow_lite",
+        versionCount: 0,
+        createdAt: "2026-09-19T20:30:00.000Z",
+        updatedAt: "2026-09-19T20:30:00.000Z",
+      },
+    ]);
+    expect(transaction.selectedFields[0]).toHaveProperty("versionCount");
+    expect(transaction.filters).toHaveLength(1);
   });
 });
