@@ -5,8 +5,10 @@ import type { TransactionExecutor } from "./application-actions";
 import { ModelVersionAlreadyStoredError } from "./model-version-storage";
 import {
   createModelVersionWithArtifact,
+  getSdkModelVersionManifest,
   listModelVersions,
   type ModelVersionStorage,
+  SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS,
 } from "./model-version-store";
 import { computeSha256Hex } from "./tflite-validator";
 
@@ -77,6 +79,7 @@ function makeFakeStorage(putError?: unknown) {
   const storage: ModelVersionStorage & {
     putArtifact: ReturnType<typeof vi.fn>;
     removeArtifact: ReturnType<typeof vi.fn>;
+    createDownloadUrl: ReturnType<typeof vi.fn>;
   } = {
     putArtifact: vi.fn(async (key: string, bytes: Uint8Array) => {
       if (putError) throw putError;
@@ -85,6 +88,7 @@ function makeFakeStorage(putError?: unknown) {
     removeArtifact: vi.fn(async (key: string) => {
       artifacts.delete(key);
     }),
+    createDownloadUrl: vi.fn(async (key: string) => `https://signed.example/${key}?token=abc`),
   };
   return { storage, artifacts };
 }
@@ -469,5 +473,128 @@ describe("listModelVersions", () => {
 
     expect(result).toEqual({ ok: false, reason: "modelNotFound" });
     expect(transaction.queriedTables).not.toContain(modelVersion);
+  });
+});
+
+const OWN_VERSION_ROW = {
+  id: "mv-1",
+  modelId: "model-1",
+  version: "1.2.0",
+  storageKey: "applications/app-1/models/model-1/versions/1.2.0.tflite",
+  sha256: "c".repeat(64),
+  sizeBytes: "2048",
+};
+
+function makeManifestDb(state: {
+  versionRow?: Record<string, unknown>;
+  modelRow?: { id: string };
+  applicationRow?: { id: string; status: string };
+}) {
+  const queriedTables: unknown[] = [];
+
+  const db = {
+    select: () => ({
+      from: (table: unknown) => {
+        queriedTables.push(table);
+        return {
+          where: () => ({
+            limit: async () => {
+              if (table === modelVersion) {
+                return state.versionRow ? [{ ...state.versionRow }] : [];
+              }
+              if (table === model) return state.modelRow ? [{ ...state.modelRow }] : [];
+              if (table === application) {
+                return state.applicationRow ? [{ ...state.applicationRow }] : [];
+              }
+              return [];
+            },
+          }),
+        };
+      },
+    }),
+  };
+
+  return { db, queriedTables };
+}
+
+function ownApplicationManifestState() {
+  return {
+    versionRow: { ...OWN_VERSION_ROW },
+    modelRow: { id: "model-1" },
+    applicationRow: { id: "app-1", status: "active" },
+  };
+}
+
+describe("getSdkModelVersionManifest", () => {
+  it("returns the version metadata with a temporary signed download location", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-21T00:00:00.000Z"));
+    try {
+      const { db } = makeManifestDb(ownApplicationManifestState());
+      const { storage } = makeFakeStorage();
+
+      const result = await getSdkModelVersionManifest(db, storage, "app-1", "mv-1");
+
+      expect(result).toEqual({
+        ok: true,
+        manifest: {
+          modelVersionId: "mv-1",
+          version: "1.2.0",
+          sha256: "c".repeat(64),
+          sizeBytes: 2048,
+          downloadUrl: `https://signed.example/${OWN_VERSION_ROW.storageKey}?token=abc`,
+          downloadUrlExpiresAt: new Date(
+            Date.now() + SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS * 1000,
+          ).toISOString(),
+        },
+      });
+      expect(storage.createDownloadUrl).toHaveBeenCalledWith(
+        OWN_VERSION_ROW.storageKey,
+        SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not sign a download URL for a version of another application", async () => {
+    const { db } = makeManifestDb({
+      versionRow: { ...OWN_VERSION_ROW, modelId: "model-of-another-app" },
+      applicationRow: { id: "app-1", status: "active" },
+    });
+    const { storage } = makeFakeStorage();
+
+    const result = await getSdkModelVersionManifest(db, storage, "app-1", "mv-1");
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("reports notFound for a nonexistent version without querying scopes or signing", async () => {
+    const { db, queriedTables } = makeManifestDb({
+      applicationRow: { id: "app-1", status: "active" },
+      modelRow: { id: "model-1" },
+    });
+    const { storage } = makeFakeStorage();
+
+    const result = await getSdkModelVersionManifest(db, storage, "app-1", "mv-missing");
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(queriedTables).toEqual([modelVersion]);
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("reports notFound (never a manifest) when the owning application is archived", async () => {
+    const { db } = makeManifestDb({
+      versionRow: { ...OWN_VERSION_ROW },
+      modelRow: { id: "model-1" },
+      applicationRow: { id: "app-1", status: "archived" },
+    });
+    const { storage } = makeFakeStorage();
+
+    const result = await getSdkModelVersionManifest(db, storage, "app-1", "mv-1");
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
   });
 });

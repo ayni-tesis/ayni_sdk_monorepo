@@ -38,7 +38,11 @@ import {
 } from "./members";
 import { createModel, listModels } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
-import { createModelVersionWithArtifact, listModelVersions } from "./model-version-store";
+import {
+  createModelVersionWithArtifact,
+  getSdkModelVersionManifest,
+  listModelVersions,
+} from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
 import {
@@ -46,8 +50,10 @@ import {
   listSdkCredentials,
   regenerateSdkCredential,
   revokeSdkCredential,
+  useSdkCredential,
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
+import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
@@ -182,6 +188,15 @@ const sdkCredentials = {
         .returning({ id: sdkCredential.id });
       return Boolean(updated);
     });
+  },
+};
+
+const sdkModelVersions = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  getManifest(applicationId: string, modelVersionId: string) {
+    return getSdkModelVersionManifest(db, r2ModelVersionStorage, applicationId, modelVersionId);
   },
 };
 
@@ -546,6 +561,13 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     modelVersions,
+  }),
+);
+app.route(
+  "/",
+  createSdkModelVersionsApp({
+    credentials: sdkModelVersions,
+    modelVersions: sdkModelVersions,
   }),
 );
 

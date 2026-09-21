@@ -1,4 +1,4 @@
-import { model, modelVersion } from "@ayni/db/schema/index";
+import { application, model, modelVersion } from "@ayni/db/schema/index";
 import { and, desc, eq } from "drizzle-orm";
 
 import {
@@ -296,4 +296,102 @@ export async function listModelVersions(
       })),
     };
   });
+}
+
+/** Seconds a presigned SDK download URL stays valid. Long enough for a mobile
+ * connection to fetch a model artifact, short enough to be non-permanent. */
+export const SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS = 3600;
+
+export type SdkModelVersionManifest = {
+  modelVersionId: string;
+  version: string;
+  sha256: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  downloadUrlExpiresAt: string;
+};
+
+export type GetSdkModelVersionManifestResult =
+  | { ok: true; manifest: SdkModelVersionManifest }
+  | { ok: false; reason: "notFound" };
+
+type ManifestVersionRow = {
+  id: string;
+  modelId: string;
+  version: string;
+  storageKey: string;
+  sha256: string;
+  sizeBytes: number | string;
+};
+
+type ManifestQueryDatabase = {
+  select(fields: Record<string, unknown>): {
+    from(table: unknown): {
+      where(condition: unknown): {
+        limit(count: number): Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+/**
+ * Builds the download manifest of one model version for the SDK. The version
+ * is served only when its model belongs to the given application: a version
+ * of another application is indistinguishable from a missing one. Only then is
+ * a short-lived signed download location produced; the raw storage key never
+ * leaves the server.
+ */
+export async function getSdkModelVersionManifest(
+  database: ManifestQueryDatabase,
+  storage: ModelVersionStorage,
+  applicationId: string,
+  modelVersionId: string,
+): Promise<GetSdkModelVersionManifestResult> {
+  const versionRows = (await database
+    .select({
+      id: modelVersion.id,
+      modelId: modelVersion.modelId,
+      version: modelVersion.version,
+      storageKey: modelVersion.storageKey,
+      sha256: modelVersion.sha256,
+      sizeBytes: modelVersion.sizeBytes,
+    })
+    .from(modelVersion)
+    .where(eq(modelVersion.id, modelVersionId))
+    .limit(1)) as ManifestVersionRow[];
+  const found = versionRows[0];
+  if (!found) return { ok: false, reason: "notFound" };
+
+  const modelRows = await database
+    .select({ id: model.id })
+    .from(model)
+    .where(and(eq(model.id, found.modelId), eq(model.applicationId, applicationId)))
+    .limit(1);
+  if (!modelRows[0]) return { ok: false, reason: "notFound" };
+
+  const applicationRows = (await database
+    .select({ status: application.status })
+    .from(application)
+    .where(eq(application.id, applicationId))
+    .limit(1)) as { status: string }[];
+  if (applicationRows[0]?.status !== "active") return { ok: false, reason: "notFound" };
+
+  const downloadUrl = await storage.createDownloadUrl(
+    found.storageKey,
+    SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS,
+  );
+
+  return {
+    ok: true,
+    manifest: {
+      modelVersionId: found.id,
+      version: found.version,
+      sha256: found.sha256,
+      sizeBytes: Number(found.sizeBytes),
+      downloadUrl,
+      downloadUrlExpiresAt: new Date(
+        Date.now() + SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS * 1000,
+      ).toISOString(),
+    },
+  };
 }

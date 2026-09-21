@@ -1,8 +1,9 @@
-import { deleteFile, uploadFile } from "./lib/storage";
+import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 
 export type ModelVersionStorage = {
   putArtifact(key: string, bytes: Uint8Array): Promise<void>;
   removeArtifact(key: string): Promise<void>;
+  createDownloadUrl(key: string, expiresIn: number): Promise<string>;
 };
 
 /**
@@ -45,5 +46,8 @@ export const r2ModelVersionStorage: ModelVersionStorage = {
   },
   async removeArtifact(key) {
     await deleteFile(key);
+  },
+  async createDownloadUrl(key, expiresIn) {
+    return getDownloadUrl(key, { expiresIn });
   },
 };

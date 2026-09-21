@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { deleteFile, uploadFile } from "./lib/storage";
+import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 
 import {
   buildModelVersionStorageKey,
@@ -10,6 +10,7 @@ import {
 vi.mock("./lib/storage", () => ({
   uploadFile: vi.fn(async () => ({ key: "k" })),
   deleteFile: vi.fn(async () => undefined),
+  getDownloadUrl: vi.fn(async () => "https://signed.example/object"),
 }));
 
 describe("buildModelVersionStorageKey", () => {
@@ -62,5 +63,12 @@ describe("r2ModelVersionStorage", () => {
   it("deletes the object for compensation", async () => {
     await r2ModelVersionStorage.removeArtifact("some/key.tflite");
     expect(deleteFile).toHaveBeenCalledWith("some/key.tflite");
+  });
+
+  it("signs a temporary download URL with the requested expiry", async () => {
+    const url = await r2ModelVersionStorage.createDownloadUrl("some/key.tflite", 1200);
+
+    expect(url).toBe("https://signed.example/object");
+    expect(getDownloadUrl).toHaveBeenCalledWith("some/key.tflite", { expiresIn: 1200 });
   });
 });
