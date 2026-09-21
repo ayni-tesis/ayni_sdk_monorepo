@@ -40,6 +40,7 @@ export async function uploadFile(
   options?: {
     contentType?: string;
     metadata?: Record<string, string>;
+    onlyIfNotExists?: boolean;
   },
 ): Promise<{ key: string; etag?: string }> {
   const input: PutObjectCommandInput = {
@@ -49,6 +50,10 @@ export async function uploadFile(
     ContentType: options?.contentType,
     Metadata: options?.metadata,
   };
+
+  if (options?.onlyIfNotExists) {
+    input.IfNoneMatch = "*";
+  }
 
   const command = new PutObjectCommand(input);
   const response = await r2Client.send(command);

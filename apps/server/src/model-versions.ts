@@ -138,6 +138,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
         case "vtable":
           return c.json({ message: INVALID_MODEL_FILE_MESSAGE, code: "invalidModelFile" }, 400);
         case "storageFailed":
+        case "storageConflict":
         case "databaseFailed":
           return c.json(
             {

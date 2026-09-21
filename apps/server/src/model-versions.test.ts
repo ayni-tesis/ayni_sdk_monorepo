@@ -178,7 +178,7 @@ describe("POST /applications/:applicationId/models/:modelId/versions", () => {
     },
   );
 
-  it.each(["storageFailed", "databaseFailed"] as const)(
+  it.each(["storageFailed", "storageConflict", "databaseFailed"] as const)(
     "reports %s as a retryable 500",
     async (reason) => {
       const { app } = makeApp({ create: async () => ({ ok: false, reason }) });

@@ -5,6 +5,24 @@ export type ModelVersionStorage = {
   removeArtifact(key: string): Promise<void>;
 };
 
+/**
+ * La subida condicional (`If-None-Match: *`) fue rechazada porque ya existe
+ * un objeto en la clave: la versión publicada NUNCA se sobrescribe.
+ */
+export class ModelVersionAlreadyStoredError extends Error {
+  constructor(key: string) {
+    super(`Model version artifact already exists: ${key}`);
+    this.name = "ModelVersionAlreadyStoredError";
+  }
+}
+
+function isPreconditionFailed(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
+  if (candidate.name === "PreconditionFailed") return true;
+  return candidate.$metadata?.httpStatusCode === 412;
+}
+
 export function buildModelVersionStorageKey(input: {
   applicationId: string;
   modelId: string;
@@ -15,7 +33,15 @@ export function buildModelVersionStorageKey(input: {
 
 export const r2ModelVersionStorage: ModelVersionStorage = {
   async putArtifact(key, bytes) {
-    await uploadFile(key, bytes, { contentType: "application/octet-stream" });
+    try {
+      await uploadFile(key, bytes, {
+        contentType: "application/octet-stream",
+        onlyIfNotExists: true,
+      });
+    } catch (error) {
+      if (isPreconditionFailed(error)) throw new ModelVersionAlreadyStoredError(key);
+      throw error;
+    }
   },
   async removeArtifact(key) {
     await deleteFile(key);

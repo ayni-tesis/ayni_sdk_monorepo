@@ -6,7 +6,11 @@ import {
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
-import { buildModelVersionStorageKey, type ModelVersionStorage } from "./model-version-storage";
+import {
+  buildModelVersionStorageKey,
+  ModelVersionAlreadyStoredError,
+  type ModelVersionStorage,
+} from "./model-version-storage";
 import {
   computeSha256Hex,
   DEFAULT_MAX_TFLITE_BYTES,
@@ -48,6 +52,7 @@ export type CreateModelVersionFailureReason =
   | "modelNotFound"
   | "versionExists"
   | "storageFailed"
+  | "storageConflict"
   | "databaseFailed"
   | "forbidden"
   | "notFound"
@@ -89,12 +94,30 @@ export async function createModelVersionWithArtifact(
   const gate = gateTfLiteHead(head, bytes.length, maxBytes);
   if (!gate.ok) return { ok: false, reason: gate.reason };
 
+  try {
+    const duplicateRows = await database.transaction(async (rawTx) => {
+      const tx = rawTx as TransactionExecutor;
+      return (await tx
+        .select({ id: modelVersion.id })
+        .from(modelVersion)
+        .where(and(eq(modelVersion.modelId, modelId), eq(modelVersion.version, version)))
+        .limit(1)
+        .for("update")) as { id: string }[];
+    });
+    if (duplicateRows.length > 0) return { ok: false, reason: "versionExists" };
+  } catch {
+    return { ok: false, reason: "databaseFailed" };
+  }
+
   const sha256 = await computeSha256Hex(bytes);
   const storageKey = buildModelVersionStorageKey({ applicationId, modelId, version });
 
   try {
     await storage.putArtifact(storageKey, bytes);
-  } catch {
+  } catch (error) {
+    if (error instanceof ModelVersionAlreadyStoredError) {
+      return { ok: false, reason: "storageConflict" };
+    }
     return { ok: false, reason: "storageFailed" };
   }
 

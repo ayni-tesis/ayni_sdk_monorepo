@@ -1,7 +1,8 @@
-import { application, member, model } from "@ayni/db/schema/index";
+import { application, member, model, modelVersion } from "@ayni/db/schema/index";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TransactionExecutor } from "./application-actions";
+import { ModelVersionAlreadyStoredError } from "./model-version-storage";
 import { createModelVersionWithArtifact, type ModelVersionStorage } from "./model-version-store";
 import { computeSha256Hex } from "./tflite-validator";
 
@@ -20,6 +21,7 @@ type FakeState = {
   application?: Record<string, unknown>;
   membership?: { role: string };
   modelRow?: { id: string };
+  existingVersion?: { id: string };
   inserted: Record<string, unknown>[];
   insertError?: unknown;
   insertReturnsNothing?: boolean;
@@ -37,6 +39,8 @@ function makeFakeDb(state: FakeState) {
               }
               if (table === member) return state.membership ? [state.membership] : [];
               if (table === model) return state.modelRow ? [state.modelRow] : [];
+              if (table === modelVersion)
+                return state.existingVersion ? [state.existingVersion] : [];
               return [];
             },
           }),
@@ -64,19 +68,19 @@ function makeFakeDb(state: FakeState) {
   };
 }
 
-function makeFakeStorage(putError?: unknown): {
-  storage: ModelVersionStorage;
-  artifacts: Map<string, Uint8Array>;
-} {
+function makeFakeStorage(putError?: unknown) {
   const artifacts = new Map<string, Uint8Array>();
-  const storage: ModelVersionStorage = {
-    putArtifact: async (key, bytes) => {
+  const storage: ModelVersionStorage & {
+    putArtifact: ReturnType<typeof vi.fn>;
+    removeArtifact: ReturnType<typeof vi.fn>;
+  } = {
+    putArtifact: vi.fn(async (key: string, bytes: Uint8Array) => {
       if (putError) throw putError;
       artifacts.set(key, bytes);
-    },
-    removeArtifact: async (key) => {
+    }),
+    removeArtifact: vi.fn(async (key: string) => {
       artifacts.delete(key);
-    },
+    }),
   };
   return { storage, artifacts };
 }
@@ -193,6 +197,42 @@ describe("createModelVersionWithArtifact", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "versionExists" });
+    expect(artifacts.size).toBe(0);
+  });
+
+  it("reports versionExists from the duplicate pre-check without touching storage", async () => {
+    const db = makeFakeDb(adminState({ existingVersion: { id: "mv-existing" } }));
+    const { storage, artifacts } = makeFakeStorage();
+
+    const result = await createModelVersionWithArtifact(db, storage, {
+      applicationId: "app-1",
+      modelId: "model-1",
+      userId: "user-1",
+      version: "1.0.0",
+      bytes: validTfliteBytes(),
+    });
+
+    expect(result).toEqual({ ok: false, reason: "versionExists" });
+    expect(storage.putArtifact).not.toHaveBeenCalled();
+    expect(artifacts.size).toBe(0);
+  });
+
+  it("reports storageConflict without compensation when R2 refuses to overwrite", async () => {
+    const db = makeFakeDb(adminState());
+    const { storage, artifacts } = makeFakeStorage(
+      new ModelVersionAlreadyStoredError("applications/app-1/models/model-1/versions/1.0.0.tflite"),
+    );
+
+    const result = await createModelVersionWithArtifact(db, storage, {
+      applicationId: "app-1",
+      modelId: "model-1",
+      userId: "user-1",
+      version: "1.0.0",
+      bytes: validTfliteBytes(),
+    });
+
+    expect(result).toEqual({ ok: false, reason: "storageConflict" });
+    expect(storage.removeArtifact).not.toHaveBeenCalled();
     expect(artifacts.size).toBe(0);
   });
 
