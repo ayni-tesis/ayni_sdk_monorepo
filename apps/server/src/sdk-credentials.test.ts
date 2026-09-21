@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import {
   type CreateSdkCredentialResult,
-  type CredentialQueryDatabase,
   createSdkCredential,
   type ListSdkCredentialsResult,
   listSdkCredentials,
@@ -12,7 +11,7 @@ import {
   type RevokeSdkCredentialResult,
   regenerateSdkCredential,
   revokeSdkCredential,
-  verifySdkCredential,
+  useSdkCredential,
 } from "./sdk-credential-store";
 import {
   createSdkCredentialsApp,
@@ -1019,22 +1018,39 @@ describe("regenerateSdkCredential", () => {
   });
 });
 
-describe("verifySdkCredential", () => {
-  function makeQueryDb(rows: Record<string, unknown>[]): CredentialQueryDatabase {
-    return {
+describe("useSdkCredential", () => {
+  function makeUseDb(rows: Record<string, unknown>[]) {
+    const lastUses: Record<string, unknown>[] = [];
+    const tx = {
       select: () => ({
         from: () => ({
           where: () => ({
-            limit: async () => rows,
+            limit: () => ({
+              for: async () => rows,
+            }),
+          }),
+        }),
+      }),
+      update: () => ({
+        set: (value: Record<string, unknown>) => ({
+          where: () => ({
+            returning: async () => {
+              lastUses.push(value);
+              return rows.slice(0, 1);
+            },
           }),
         }),
       }),
     };
+    const database = {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(tx),
+    };
+    return { database, lastUses };
   }
 
-  it("accepts an active credential secret", async () => {
+  it("accepts an active credential secret and records its last use", async () => {
     const secret = generateSdkCredentialSecret();
-    const database = makeQueryDb([
+    const { database, lastUses } = makeUseDb([
       {
         id: "cred-1",
         applicationId: "app-1",
@@ -1043,17 +1059,19 @@ describe("verifySdkCredential", () => {
       },
     ]);
 
-    const result = await verifySdkCredential(database, secret);
+    const result = await useSdkCredential(database, secret);
 
     expect(result).toEqual({
       ok: true,
       credential: { credentialId: "cred-1", applicationId: "app-1" },
     });
+    expect(lastUses).toHaveLength(1);
+    expect(lastUses[0]?.lastUsedAt).toBeInstanceOf(Date);
   });
 
-  it("rejects a revoked credential with the credentialRevoked state", async () => {
+  it("rejects a revoked credential with the credentialRevoked state without recording use", async () => {
     const secret = generateSdkCredentialSecret();
-    const database = makeQueryDb([
+    const { database, lastUses } = makeUseDb([
       {
         id: "cred-1",
         applicationId: "app-1",
@@ -1062,7 +1080,7 @@ describe("verifySdkCredential", () => {
       },
     ]);
 
-    const result = await verifySdkCredential(database, secret);
+    const result = await useSdkCredential(database, secret);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -1071,15 +1089,17 @@ describe("verifySdkCredential", () => {
         "La credencial fue revocada. Genera una nueva credencial para continuar.",
       );
     }
+    expect(lastUses).toHaveLength(0);
   });
 
-  it("rejects an unknown secret", async () => {
-    const database = makeQueryDb([]);
+  it("rejects an unknown secret without recording use", async () => {
+    const { database, lastUses } = makeUseDb([]);
 
-    const result = await verifySdkCredential(database, generateSdkCredentialSecret());
+    const result = await useSdkCredential(database, generateSdkCredentialSecret());
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("invalidCredential");
+    expect(lastUses).toHaveLength(0);
   });
 });
 

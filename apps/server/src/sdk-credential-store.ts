@@ -1,5 +1,5 @@
 import { application, member, sdkCredential } from "@ayni/db/schema/index";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   deriveSdkCredentialPrefix,
   generateSdkCredentialSecret,
@@ -36,16 +36,6 @@ export type TransactionExecutor = {
 
 export type CredentialDatabase = {
   transaction: <T>(callback: (tx: unknown) => Promise<T>) => Promise<T>;
-};
-
-export type CredentialQueryDatabase = {
-  select: (fields: Record<string, unknown>) => {
-    from: (table: unknown) => {
-      where: (condition: unknown) => {
-        limit: (count: number) => Promise<Record<string, unknown>[]>;
-      };
-    };
-  };
 };
 
 export type CreatedSdkCredential = {
@@ -125,7 +115,7 @@ export type VerifySdkCredentialResult =
 export const SDK_CREDENTIAL_REVOKED_MESSAGE =
   "La credencial fue revocada. Genera una nueva credencial para continuar.";
 
-const INVALID_CREDENTIAL_MESSAGE = "La credencial no es válida.";
+export const INVALID_CREDENTIAL_MESSAGE = "La credencial no es válida.";
 
 type ApplicationRow = { id: string; organizationId: string; status: string };
 
@@ -413,33 +403,47 @@ export async function listSdkCredentials(
 }
 
 /**
- * Verifies an SDK credential secret for SDK synchronization requests.
- * Rejects nonexistent or revoked credentials.
+ * Verifies an SDK credential secret for SDK synchronization requests and
+ * registers the credential's last use atomically. Rejects nonexistent or
+ * revoked credentials without recording anything (the row lock held through
+ * the transaction prevents a concurrent revocation from slipping between
+ * verification and use).
  */
-export async function verifySdkCredential(
-  database: CredentialQueryDatabase,
+export async function useSdkCredential(
+  database: CredentialDatabase,
   secret: string,
 ): Promise<VerifySdkCredentialResult> {
-  const foundRows = (await database
-    .select({
-      id: sdkCredential.id,
-      applicationId: sdkCredential.applicationId,
-      revokedAt: sdkCredential.revokedAt,
-    })
-    .from(sdkCredential)
-    .where(eq(sdkCredential.secretHash, hashSdkCredentialSecret(secret)))
-    .limit(1)) as { id: string; applicationId: string; revokedAt: Date | null }[];
-  const found = foundRows[0];
+  return database.transaction(async (transaction) => {
+    const tx = transaction as TransactionExecutor;
 
-  if (!found) {
-    return { ok: false, code: "invalidCredential", message: INVALID_CREDENTIAL_MESSAGE };
-  }
-  if (found.revokedAt) {
-    return { ok: false, code: "credentialRevoked", message: SDK_CREDENTIAL_REVOKED_MESSAGE };
-  }
+    const foundRows = (await tx
+      .select({
+        id: sdkCredential.id,
+        applicationId: sdkCredential.applicationId,
+        revokedAt: sdkCredential.revokedAt,
+      })
+      .from(sdkCredential)
+      .where(eq(sdkCredential.secretHash, hashSdkCredentialSecret(secret)))
+      .limit(1)
+      .for("update")) as { id: string; applicationId: string; revokedAt: Date | null }[];
+    const found = foundRows[0];
 
-  return {
-    ok: true,
-    credential: { credentialId: found.id, applicationId: found.applicationId },
-  };
+    if (!found) {
+      return { ok: false, code: "invalidCredential", message: INVALID_CREDENTIAL_MESSAGE };
+    }
+    if (found.revokedAt) {
+      return { ok: false, code: "credentialRevoked", message: SDK_CREDENTIAL_REVOKED_MESSAGE };
+    }
+
+    await tx
+      .update(sdkCredential)
+      .set({ lastUsedAt: new Date() })
+      .where(and(eq(sdkCredential.id, found.id), isNull(sdkCredential.revokedAt)))
+      .returning();
+
+    return {
+      ok: true,
+      credential: { credentialId: found.id, applicationId: found.applicationId },
+    };
+  });
 }
