@@ -34,3 +34,33 @@ jobs:
 
       - name: Test
         run: bun run test
+
+  sdk:
+    name: Flutter SDK (Android scope)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Analyze SDK package
+        working-directory: packages/sdk_flutter
+        run: dart analyze
+
+      - name: Test SDK package
+        working-directory: packages/sdk_flutter
+        run: dart test
+
+      - name: Analyze Android demo app
+        working-directory: apps/native
+        run: flutter analyze
+
+      - name: Test Android demo app
+        working-directory: apps/native
+        run: flutter test
