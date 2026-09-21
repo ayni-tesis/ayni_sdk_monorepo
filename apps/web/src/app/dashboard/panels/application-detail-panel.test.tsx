@@ -6,7 +6,7 @@ import type { Application } from "../types";
 import { ApplicationDetailPanel } from "./application-detail-panel";
 
 const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
-  client: { post: vi.fn(), patch: vi.fn() },
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
   toastMock: { success: vi.fn(), error: vi.fn() },
   writeTextMock: vi.fn().mockResolvedValue(undefined),
 }));
@@ -49,8 +49,10 @@ Object.defineProperty(window, "matchMedia", {
 describe("ApplicationDetailPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    client.get.mockReset();
     client.post.mockReset();
     client.patch.mockReset();
+    client.get.mockImplementation(async () => ({ data: { models: [] } }));
     document.body.innerHTML = "";
     document.body.removeAttribute("data-scroll-locked");
     document.body.removeAttribute("style");
@@ -274,6 +276,50 @@ describe("ApplicationDetailPanel", () => {
       await waitFor(() => {
         expect(screen.queryByRole("dialog")).toBeNull();
       });
+    });
+
+    it("lists models and opens the upload dialog per model", async () => {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === "/applications/app-1/models") {
+          return {
+            data: {
+              models: [
+                {
+                  id: "model-1",
+                  applicationId: "app-1",
+                  name: "Detector de plagas",
+                  runtime: "tensorflow_lite",
+                  createdAt: "2026-09-19T20:00:00.000Z",
+                  updatedAt: "2026-09-19T20:00:00.000Z",
+                },
+              ],
+            },
+          };
+        }
+        return { data: { models: [] } };
+      });
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={true}
+            activeSection="models"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      expect(await screen.findByTestId("model-row-model-1")).toBeTruthy();
+      fireEvent.click(screen.getByTestId("upload-version-trigger-model-1"));
+
+      const dialog = await screen.findByRole("dialog", { name: "Subir versión de modelo" });
+      expect(within(dialog).getByText("Para Detector de plagas.")).toBeTruthy();
+      expect(within(dialog).getByLabelText("Versión")).toBeTruthy();
+      expect(within(dialog).getByLabelText("Archivo TensorFlow Lite (.tflite)")).toBeTruthy();
     });
 
     it("hides model registration for archived applications and non-admins", () => {

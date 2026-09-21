@@ -17,6 +17,30 @@ export type Model = {
   updatedAt: string;
 };
 
+export type ModelRow = {
+  id: string;
+  applicationId: string;
+  name: string;
+  runtime: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+export function toModel(row: ModelRow): Model {
+  return {
+    id: row.id,
+    applicationId: row.applicationId,
+    name: row.name,
+    runtime: "tensorflow_lite",
+    createdAt: toIsoString(row.createdAt),
+    updatedAt: toIsoString(row.updatedAt),
+  };
+}
+
 export type CreateModelResult =
   | { ok: true; model: Model }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" };
@@ -56,20 +80,7 @@ export async function createModel(
 
       if (!created) throw new Error("Model creation returned no record");
 
-      return {
-        id: created.id,
-        applicationId: created.applicationId,
-        name: created.name,
-        runtime: "tensorflow_lite" as const,
-        createdAt:
-          created.createdAt instanceof Date
-            ? created.createdAt.toISOString()
-            : String(created.createdAt),
-        updatedAt:
-          created.updatedAt instanceof Date
-            ? created.updatedAt.toISOString()
-            : String(created.updatedAt),
-      };
+      return toModel(created);
     },
   );
 
