@@ -28,6 +28,10 @@ _Avoid_: API key, token
 An on-device AI model registered within an Application that manages its supported runtime (such as TensorFlow Lite) and versions for use in workflows.
 _Avoid_: ML file, weights, algorithm
 
+**Model Version**:
+An immutable artifact representing a specific version of a Model, identified by a unique SemVer tag within that Model, backed by an on-device inference binary file (such as TensorFlow Lite `.tflite`), and verified for format integrity and cryptographic checksum (SHA-256) upon upload. A published version cannot be overwritten or replaced.
+_Avoid_: Checkpoint, build, snapshot, weights file, release
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code
