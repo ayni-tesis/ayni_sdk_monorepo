@@ -1,4 +1,5 @@
 import { workflow } from "@ayni/db/schema/index";
+import { asc, eq } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -80,4 +81,43 @@ export async function createWorkflow(
 
   if (!result.ok) return result;
   return { ok: true, workflow: result.value };
+}
+
+type ListWorkflowsExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        orderBy: (column: unknown) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+/**
+ * Lists the workflows owned by one application, oldest first. The query is
+ * filtered by application id only; callers must have already established that
+ * the requester belongs to the application's workspace.
+ */
+export async function listWorkflows(
+  database: WorkflowDatabase,
+  applicationId: string,
+): Promise<Workflow[]> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as ListWorkflowsExecutor;
+
+    const rows = (await tx
+      .select({
+        id: workflow.id,
+        applicationId: workflow.applicationId,
+        name: workflow.name,
+        status: workflow.status,
+        createdAt: workflow.createdAt,
+        updatedAt: workflow.updatedAt,
+      })
+      .from(workflow)
+      .where(eq(workflow.applicationId, applicationId))
+      .orderBy(asc(workflow.createdAt))) as WorkflowRow[];
+
+    return rows.map(toWorkflow);
+  });
 }

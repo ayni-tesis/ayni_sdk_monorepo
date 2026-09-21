@@ -1,7 +1,7 @@
 "use client";
 
-import { IconGitBranch } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconGitBranch, IconRefresh } from "@tabler/icons-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api-error";
+import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
 
@@ -97,6 +98,25 @@ export function CreateWorkflowDialog({
   );
 }
 
+export type WorkflowItem = {
+  id: string;
+  applicationId: string;
+  name: string;
+  status: "draft";
+  createdAt: string;
+  updatedAt: string;
+};
+
+const WORKFLOWS_LOAD_ERROR = "No pudimos cargar los workflows. Inténtalo nuevamente.";
+const WORKFLOWS_EMPTY_MESSAGE = "Aún no hay workflows en esta aplicación.";
+
+const STATUS_LABELS: Record<WorkflowItem["status"], string> = {
+  draft: "Borrador",
+};
+
+// Workflow versions are not published yet, so no workflow has a latest version.
+const NO_PUBLISHED_VERSION_LABEL = "Sin publicar";
+
 export type WorkflowsViewProps = {
   application: Application;
   canManage?: boolean;
@@ -107,6 +127,43 @@ export function WorkflowsView({ application, canManage = false }: WorkflowsViewP
   const [workflowName, setWorkflowName] = useState("");
   const [workflowError, setWorkflowError] = useState("");
   const [creatingWorkflow, setCreatingWorkflow] = useState(false);
+
+  const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
+  const [workflowsLoading, setWorkflowsLoading] = useState(true);
+  const [workflowsError, setWorkflowsError] = useState("");
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const loadWorkflows = useCallback(async (applicationId: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setWorkflowsLoading(true);
+    setWorkflowsError("");
+    try {
+      const { data } = await httpClient.get<{ workflows?: WorkflowItem[] }>(
+        `/applications/${applicationId}/workflows`,
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      setWorkflows(Array.isArray(data?.workflows) ? data.workflows : []);
+    } catch (loadError) {
+      if (controller.signal.aborted) return;
+      setWorkflowsError(errorMessage(loadError, WORKFLOWS_LOAD_ERROR));
+    } finally {
+      if (!controller.signal.aborted) {
+        setWorkflowsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWorkflows(application.id);
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [application.id, loadWorkflows]);
 
   function openCreateWorkflow() {
     setWorkflowName("");
@@ -129,6 +186,7 @@ export function WorkflowsView({ application, canManage = false }: WorkflowsViewP
       setCreateDialogOpen(false);
       setWorkflowName("");
       setWorkflowError("");
+      void loadWorkflows(application.id);
     } catch (error) {
       toast.error(errorMessage(error, "No pudimos crear el workflow. Inténtalo nuevamente."));
     } finally {
@@ -155,7 +213,58 @@ export function WorkflowsView({ application, canManage = false }: WorkflowsViewP
         )}
       </div>
 
-      <p className="text-muted-foreground text-sm">Aún no hay workflows configurados.</p>
+      {workflowsLoading ? (
+        <p data-testid="workflows-loading" className="text-muted-foreground text-sm">
+          Cargando workflows…
+        </p>
+      ) : workflowsError ? (
+        <div className="applications-error flex items-center gap-3" data-testid="workflows-error">
+          <p className="text-destructive text-sm">{workflowsError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="workflows-retry"
+            onClick={() => void loadWorkflows(application.id)}
+          >
+            <IconRefresh className="mr-1 size-4" />
+            Reintentar
+          </Button>
+        </div>
+      ) : workflows.length === 0 ? (
+        <p data-testid="workflows-empty" className="text-muted-foreground text-sm">
+          {WORKFLOWS_EMPTY_MESSAGE}
+        </p>
+      ) : (
+        <table className="workflows-table w-full text-sm" data-testid="workflows-table">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="pb-2 font-medium">Nombre</th>
+              <th className="pb-2 font-medium">Estado</th>
+              <th className="pb-2 font-medium">Última versión</th>
+              <th className="pb-2 font-medium">Actualizado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {workflows.map((workflowItem) => (
+              <tr key={workflowItem.id} data-testid={`workflow-row-${workflowItem.id}`}>
+                <td className="py-2.5">
+                  <div className="font-medium">{workflowItem.name}</div>
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
+                    {workflowItem.id}
+                  </code>
+                </td>
+                <td className="py-2.5 text-muted-foreground">
+                  {STATUS_LABELS[workflowItem.status] ?? workflowItem.status}
+                </td>
+                <td className="py-2.5 text-muted-foreground">{NO_PUBLISHED_VERSION_LABEL}</td>
+                <td className="py-2.5 text-muted-foreground">
+                  {formatLongDateEs(workflowItem.updatedAt)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <CreateWorkflowDialog
         open={createDialogOpen}
