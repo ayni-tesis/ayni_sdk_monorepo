@@ -57,7 +57,8 @@ ayni/
 ├── packages/
 │   ├── api/         # API layer
 │   ├── auth/        # Authentication
-│   └── db/          # Database schema
+│   ├── db/          # Database schema
+│   └── sdk_flutter/ # Reusable offline-first Flutter SDK primitives
 ```
 
 ## Common Commands
