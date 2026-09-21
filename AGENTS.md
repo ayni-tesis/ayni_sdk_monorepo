@@ -15,7 +15,8 @@ This file provides context about the project for AI assistants.
 
 - Framework: next
 - CSS: tailwind
-- UI Library: shadcn-ui
+- UI Library: shadcn-ui, animate-ui
+- Animation: motion
 - State: zustand
 
 ### Backend

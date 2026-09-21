@@ -97,7 +97,7 @@ export type ApplicationsPanelProps = {
 };
 
 export function ApplicationsPanel({
-  workspaceName,
+  workspaceName: _workspaceName,
   applications,
   loading = false,
   error = "",
@@ -112,10 +112,7 @@ export function ApplicationsPanel({
   return (
     <>
       <header className="applications-header">
-        <div>
-          <p>{workspaceName ?? "Cargando workspace…"}</p>
-          <h1>Aplicaciones</h1>
-        </div>
+        <h1>Aplicaciones</h1>
         {canManage && (
           <Button onClick={() => setDialogOpen(true)}>
             <IconCirclePlus />

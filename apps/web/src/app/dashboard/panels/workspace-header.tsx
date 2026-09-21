@@ -1,7 +1,6 @@
 "use client";
 
 import { IconChevronDown } from "@tabler/icons-react";
-import type { DashboardView } from "@/components/app-sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import type { Application } from "../types";
+import { type Application, DASHBOARD_VIEWS, type DashboardView } from "../types";
 
 export type WorkspaceHeaderProps = {
   userName: string;
@@ -32,21 +31,7 @@ export type WorkspaceHeaderProps = {
 };
 
 function activeViewLabel(view: DashboardView): string {
-  switch (view) {
-    case "workflows":
-      return "Workflows";
-    case "models":
-      return "Modelos";
-    case "credentials":
-      return "Credenciales SDK";
-    case "settings":
-      return "Configuración";
-    case "members":
-      return "Miembros";
-    case "applications":
-    case "overview":
-      return "Aplicaciones";
-  }
+  return DASHBOARD_VIEWS[view]?.label ?? "Aplicaciones";
 }
 
 export function WorkspaceHeader({

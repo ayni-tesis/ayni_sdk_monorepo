@@ -4,7 +4,7 @@ export const DEFAULT_POST_AUTH_PATH: Route = "/dashboard";
 
 export function getSafePostAuthRedirect(search: string): Route {
   const next = new URLSearchParams(search).get("next");
-  if (next?.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
+  if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
     return next as Route;
   }
   return DEFAULT_POST_AUTH_PATH;

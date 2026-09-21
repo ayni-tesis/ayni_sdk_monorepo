@@ -9,7 +9,7 @@ import {
   IconSettings,
   IconUsers,
 } from "@tabler/icons-react";
-import type { Application, WorkspaceItem } from "@/app/dashboard/types";
+import type { Application, DashboardView, WorkspaceItem } from "@/app/dashboard/types";
 import {
   Sidebar,
   SidebarContent,
@@ -21,16 +21,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { WorkspaceSwitcher, type WorkspaceSwitcherProps } from "@/components/workspace-switcher";
 
-export type DashboardView =
-  | "applications"
-  | "members"
-  | "overview"
-  | "workflows"
-  | "models"
-  | "credentials"
-  | "settings";
+export type { DashboardView } from "@/app/dashboard/types";
 
 export type AppSidebarProps = {
   workspaceName?: string;
@@ -39,6 +32,7 @@ export type AppSidebarProps = {
   onViewChange?: (view: DashboardView) => void;
   selectedApplication?: Application | null;
   onSelectApplication?: (app: Application | null) => void;
+  switcherProps?: WorkspaceSwitcherProps;
 
   workspaces?: WorkspaceItem[];
   activeWorkspaceId?: string;
@@ -61,6 +55,7 @@ export function AppSidebar({
   onViewChange,
   selectedApplication,
   onSelectApplication,
+  switcherProps,
   workspaces = [],
   activeWorkspaceId,
   role,
@@ -74,24 +69,26 @@ export function AppSidebar({
   onOpenCreateDialog,
   onCloseCreateDialog,
 }: AppSidebarProps) {
+  const effectiveSwitcherProps: WorkspaceSwitcherProps = switcherProps ?? {
+    workspaces,
+    activeWorkspaceId,
+    workspaceName,
+    role,
+    loadingWorkspaces,
+    workspacesError,
+    switchingWorkspace,
+    onSelectWorkspace,
+    onRetryWorkspaces,
+    onWorkspaceCreated,
+    createDialogOpen,
+    onOpenCreateDialog,
+    onCloseCreateDialog,
+  };
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-2">
-        <WorkspaceSwitcher
-          workspaces={workspaces}
-          activeWorkspaceId={activeWorkspaceId}
-          workspaceName={workspaceName}
-          role={role}
-          loadingWorkspaces={loadingWorkspaces}
-          workspacesError={workspacesError}
-          switchingWorkspace={switchingWorkspace}
-          onSelectWorkspace={onSelectWorkspace}
-          onRetryWorkspaces={onRetryWorkspaces}
-          onWorkspaceCreated={onWorkspaceCreated}
-          createDialogOpen={createDialogOpen}
-          onOpenCreateDialog={onOpenCreateDialog}
-          onCloseCreateDialog={onCloseCreateDialog}
-        />
+        <WorkspaceSwitcher {...effectiveSwitcherProps} />
       </SidebarHeader>
       <SidebarContent>
         {selectedApplication ? (

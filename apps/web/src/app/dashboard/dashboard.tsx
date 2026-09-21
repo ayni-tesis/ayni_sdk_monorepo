@@ -21,6 +21,7 @@ import type { Application, WorkspaceItem } from "./types";
 
 export type DashboardProps = {
   userName: string;
+  children?: React.ReactNode;
 };
 
 export type DashboardRoute =
@@ -39,7 +40,7 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
 export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (pathname === "/dashboard/members") return { kind: "members" };
   const match = pathname?.match(
-    /^\/dashboard\/applications\/([^/]+)(?:\/(workflows|models|credentials|settings))?\/?$/,
+    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|workflows|models|credentials|settings))?\/?$/,
   );
   if (match) {
     const section = (match[2] ?? "overview") as ApplicationSection;
@@ -56,7 +57,7 @@ function pathForView(view: DashboardView, appId?: string | null): Route {
   return (segment ? `${base}/${segment}` : base) as Route;
 }
 
-export default function Dashboard({ userName }: DashboardProps) {
+export default function Dashboard({ userName, children: _children }: DashboardProps) {
   const organization = authClient.useActiveOrganization();
   const memberRole = authClient.useActiveMemberRole();
   const router = useRouter();

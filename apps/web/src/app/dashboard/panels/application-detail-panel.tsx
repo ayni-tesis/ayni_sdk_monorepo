@@ -1,12 +1,13 @@
 "use client";
 
-import type { Application } from "../types";
+import type { Application, ApplicationSection } from "../types";
 import { CredentialsView } from "./application/credentials-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
 import { SettingsView } from "./application/settings-view";
 import { WorkflowsView } from "./application/workflows-view";
 
+export type { ApplicationSection } from "../types";
 export type {
   CredentialsViewProps,
   GenerateCredentialDialogProps,
@@ -39,8 +40,6 @@ export {
 export type { WorkflowsViewProps } from "./application/workflows-view";
 export { WorkflowsView } from "./application/workflows-view";
 
-export type ApplicationSection = "overview" | "workflows" | "models" | "credentials" | "settings";
-
 export type ApplicationDetailPanelProps = {
   application: Application;
   workspaceName?: string;
@@ -57,10 +56,8 @@ export type ApplicationDetailPanelProps = {
 
 export function ApplicationDetailPanel({
   application,
-  workspaceName: _workspaceName,
   canManage = false,
   activeSection = "overview",
-  onBack: _onBack,
   onApplicationUpdated,
   onApplicationArchived,
   onMutationStart,

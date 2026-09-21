@@ -42,7 +42,7 @@ export function DashboardShell({
           if (app) onSelectApplication?.(app.id);
           else onClearApplication?.();
         }}
-        {...switcherProps}
+        switcherProps={switcherProps}
       />
       <SidebarInset>
         <WorkspaceHeader

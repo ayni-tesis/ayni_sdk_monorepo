@@ -136,26 +136,6 @@ function Highlight<T extends React.ElementType = "div">({ ref, ...props }: Highl
 
   const propsBoundsOffset = (props as ParentModeHighlightProps)?.boundsOffset;
   const boundsOffset = propsBoundsOffset ?? DEFAULT_BOUNDS_OFFSET;
-  const boundsOffsetTop = boundsOffset.top ?? 0;
-  const boundsOffsetLeft = boundsOffset.left ?? 0;
-  const boundsOffsetWidth = boundsOffset.width ?? 0;
-  const boundsOffsetHeight = boundsOffset.height ?? 0;
-
-  const boundsOffsetRef = React.useRef({
-    top: boundsOffsetTop,
-    left: boundsOffsetLeft,
-    width: boundsOffsetWidth,
-    height: boundsOffsetHeight,
-  });
-
-  React.useEffect(() => {
-    boundsOffsetRef.current = {
-      top: boundsOffsetTop,
-      left: boundsOffsetLeft,
-      width: boundsOffsetWidth,
-      height: boundsOffsetHeight,
-    };
-  }, [boundsOffsetTop, boundsOffsetLeft, boundsOffsetWidth, boundsOffsetHeight]);
 
   const [activeValue, setActiveValue] = React.useState<string | null>(
     value ?? defaultValue ?? null,
@@ -173,19 +153,15 @@ function Highlight<T extends React.ElementType = "div">({ ref, ...props }: Highl
     });
   };
 
-  const safeSetBoundsRef = React.useRef<((bounds: DOMRect) => void) | undefined>(undefined);
-
-  React.useEffect(() => {
-    safeSetBoundsRef.current = (bounds: DOMRect) => {
+  const safeSetBounds = React.useCallback(
+    (bounds: DOMRect) => {
       if (!localRef.current) return;
-
       const containerRect = localRef.current.getBoundingClientRect();
-      const offset = boundsOffsetRef.current;
       const newBounds: Bounds = {
-        top: bounds.top - containerRect.top + offset.top,
-        left: bounds.left - containerRect.left + offset.left,
-        width: bounds.width + offset.width,
-        height: bounds.height + offset.height,
+        top: bounds.top - containerRect.top + (boundsOffset.top ?? 0),
+        left: bounds.left - containerRect.left + (boundsOffset.left ?? 0),
+        width: bounds.width + (boundsOffset.width ?? 0),
+        height: bounds.height + (boundsOffset.height ?? 0),
       };
 
       setBoundsState((prev) => {
@@ -200,12 +176,9 @@ function Highlight<T extends React.ElementType = "div">({ ref, ...props }: Highl
         }
         return newBounds;
       });
-    };
-  });
-
-  const safeSetBounds = (bounds: DOMRect) => {
-    safeSetBoundsRef.current?.(bounds);
-  };
+    },
+    [boundsOffset.top, boundsOffset.left, boundsOffset.width, boundsOffset.height],
+  );
 
   const clearBounds = React.useCallback(() => {
     setBoundsState((prev) => (prev === null ? prev : null));
@@ -228,12 +201,12 @@ function Highlight<T extends React.ElementType = "div">({ ref, ...props }: Highl
       const activeEl = container.querySelector<HTMLElement>(
         `[data-value="${activeValue}"][data-highlight="true"]`,
       );
-      if (activeEl) safeSetBoundsRef.current?.(activeEl.getBoundingClientRect());
+      if (activeEl) safeSetBounds(activeEl.getBoundingClientRect());
     };
 
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
-  }, [mode, activeValue]);
+  }, [mode, activeValue, safeSetBounds]);
 
   const render = (childrenNodes: React.ReactNode) => {
     if (mode === "parent") {
@@ -390,7 +363,6 @@ function HighlightItem<T extends React.ElementType = "div">({
     id: contextId,
     disabled: contextDisabled,
     exitDelay: contextExitDelay,
-    forceUpdateBounds: contextForceUpdateBounds,
     setActiveClassName,
   } = useHighlight();
 
@@ -414,51 +386,16 @@ function HighlightItem<T extends React.ElementType = "div">({
 
   React.useEffect(() => {
     if (mode !== "parent") return;
-    let rafId: number;
-    let previousBounds: Bounds | null = null;
-    const shouldUpdateBounds =
-      forceUpdateBounds === true || (contextForceUpdateBounds && forceUpdateBounds !== false);
-
-    const updateBounds = () => {
-      if (!localRef.current) return;
-
-      const bounds = localRef.current.getBoundingClientRect();
-
-      if (shouldUpdateBounds) {
-        if (
-          previousBounds &&
-          previousBounds.top === bounds.top &&
-          previousBounds.left === bounds.left &&
-          previousBounds.width === bounds.width &&
-          previousBounds.height === bounds.height
-        ) {
-          rafId = requestAnimationFrame(updateBounds);
-          return;
-        }
-        previousBounds = bounds;
-        rafId = requestAnimationFrame(updateBounds);
-      }
-
-      setBounds(bounds);
-    };
 
     if (isActive) {
-      updateBounds();
+      if (localRef.current) {
+        setBounds(localRef.current.getBoundingClientRect());
+      }
       setActiveClassName(activeClassName ?? "");
-    } else if (!activeValue) clearBounds();
-
-    if (shouldUpdateBounds) return () => cancelAnimationFrame(rafId);
-  }, [
-    mode,
-    isActive,
-    activeValue,
-    setBounds,
-    clearBounds,
-    activeClassName,
-    setActiveClassName,
-    forceUpdateBounds,
-    contextForceUpdateBounds,
-  ]);
+    } else if (!activeValue) {
+      clearBounds();
+    }
+  }, [mode, isActive, activeValue, setBounds, clearBounds, activeClassName, setActiveClassName]);
 
   if (!element) return children;
 

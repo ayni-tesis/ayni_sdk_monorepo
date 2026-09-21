@@ -35,7 +35,7 @@ describe("ApplicationsPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByText("Laboratorio Andino")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Aplicaciones" })).toBeTruthy();
     expect(screen.getByText("Cámara")).toBeTruthy();
     expect(screen.getByText("Activa")).toBeTruthy();
     expect(screen.getByText("Sensores")).toBeTruthy();

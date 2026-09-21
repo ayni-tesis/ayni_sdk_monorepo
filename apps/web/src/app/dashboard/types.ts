@@ -33,3 +33,30 @@ export type SdkCredentialItem = {
   createdAt: string;
   lastUsedAt: string | null;
 };
+
+export type DashboardView =
+  | "applications"
+  | "members"
+  | "overview"
+  | "workflows"
+  | "models"
+  | "credentials"
+  | "settings";
+
+export type ApplicationSection = "overview" | "workflows" | "models" | "credentials" | "settings";
+
+export type DashboardViewDescriptor = {
+  id: DashboardView;
+  label: string;
+  segment: string | null;
+};
+
+export const DASHBOARD_VIEWS: Record<DashboardView, DashboardViewDescriptor> = {
+  applications: { id: "applications", label: "Aplicaciones", segment: null },
+  members: { id: "members", label: "Miembros", segment: "members" },
+  overview: { id: "overview", label: "Resumen", segment: "overview" },
+  workflows: { id: "workflows", label: "Workflows", segment: "workflows" },
+  models: { id: "models", label: "Modelos", segment: "models" },
+  credentials: { id: "credentials", label: "Credenciales SDK", segment: "credentials" },
+  settings: { id: "settings", label: "Configuración", segment: "settings" },
+};
