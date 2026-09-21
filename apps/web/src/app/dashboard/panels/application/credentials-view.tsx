@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/api-error";
+import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import type { Application, GeneratedCredential, SdkCredentialItem } from "../../types";
 
@@ -30,11 +31,7 @@ export function credentialsErrorMessage(error: unknown) {
 }
 
 export function formatCredentialDate(value: string) {
-  return new Date(value).toLocaleDateString("es", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  return formatLongDateEs(value);
 }
 
 export type GenerateCredentialDialogProps = {

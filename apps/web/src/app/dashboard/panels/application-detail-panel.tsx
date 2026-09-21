@@ -23,6 +23,8 @@ export {
   RegenerateCredentialDialog,
   RevokeCredentialDialog,
 } from "./application/credentials-view";
+export type { ModelVersionsDialogProps } from "./application/model-versions-dialog";
+export { ModelVersionsDialog } from "./application/model-versions-dialog";
 export type { ModelsViewProps, RegisterModelDialogProps } from "./application/models-view";
 export { ModelsView, RegisterModelDialog } from "./application/models-view";
 export type { OverviewViewProps } from "./application/overview-view";

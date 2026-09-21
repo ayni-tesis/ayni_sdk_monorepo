@@ -1,11 +1,12 @@
 import { model, modelVersion } from "@ayni/db/schema/index";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import {
   type ApplicationDatabase,
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
+import { toIsoString } from "./model-store";
 import {
   buildModelVersionStorageKey,
   ModelVersionAlreadyStoredError,
@@ -196,10 +197,7 @@ export async function createModelVersionWithArtifact(
             storageKey: created.storageKey,
             sha256: created.sha256,
             sizeBytes: Number(created.sizeBytes),
-            createdAt:
-              created.createdAt instanceof Date
-                ? created.createdAt.toISOString()
-                : String(created.createdAt),
+            createdAt: toIsoString(created.createdAt),
             uploadedById: created.uploadedById,
           },
         } as const;
@@ -221,4 +219,81 @@ export async function createModelVersionWithArtifact(
   }
 
   return { ok: true, modelVersion: outcome.value.record };
+}
+
+export type ModelVersionListItem = {
+  id: string;
+  version: string;
+  sha256: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
+export type ListModelVersionsResult =
+  | { ok: true; versions: ModelVersionListItem[] }
+  | { ok: false; reason: "modelNotFound" };
+
+type ListVersionsRow = {
+  id: string;
+  version: string;
+  sha256: string;
+  sizeBytes: number | string;
+  createdAt: Date | string;
+};
+
+type ListVersionsExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        limit: (count: number) => Promise<Record<string, unknown>[]>;
+        orderBy: (column: unknown) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+/**
+ * Lists the stored versions of a model that belongs to the given application,
+ * newest upload first. Exposes operational metadata only (id, SemVer, SHA-256,
+ * size, upload date): never the artifact itself, a storage key, or a download
+ * URL. A model outside the application is indistinguishable from a missing one.
+ */
+export async function listModelVersions(
+  database: ApplicationDatabase,
+  applicationId: string,
+  modelId: string,
+): Promise<ListModelVersionsResult> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as ListVersionsExecutor;
+
+    const modelRows = await tx
+      .select({ id: model.id })
+      .from(model)
+      .where(and(eq(model.id, modelId), eq(model.applicationId, applicationId)))
+      .limit(1);
+    if (!modelRows[0]) return { ok: false, reason: "modelNotFound" };
+
+    const versionRows = (await tx
+      .select({
+        id: modelVersion.id,
+        version: modelVersion.version,
+        sha256: modelVersion.sha256,
+        sizeBytes: modelVersion.sizeBytes,
+        createdAt: modelVersion.createdAt,
+      })
+      .from(modelVersion)
+      .where(eq(modelVersion.modelId, modelId))
+      .orderBy(desc(modelVersion.createdAt))) as ListVersionsRow[];
+
+    return {
+      ok: true,
+      versions: versionRows.map((row) => ({
+        id: row.id,
+        version: row.version,
+        sha256: row.sha256,
+        sizeBytes: Number(row.sizeBytes),
+        createdAt: toIsoString(row.createdAt),
+      })),
+    };
+  });
 }

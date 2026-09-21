@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { ModelVersionsDialog } from "./model-versions-dialog";
 import { UploadModelVersionDialog } from "./upload-model-version-dialog";
 
 export type RegisterModelDialogProps = {
@@ -136,6 +137,7 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState("");
   const [modelToUpload, setModelToUpload] = useState<ModelItem | null>(null);
+  const [modelToView, setModelToView] = useState<ModelItem | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -267,7 +269,20 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
                 <td className="py-2.5 text-muted-foreground">
                   {RUNTIME_LABELS[modelItem.runtime] ?? modelItem.runtime}
                 </td>
-                <td className="py-2.5 text-muted-foreground">{modelItem.versionCount ?? 0}</td>
+                <td className="py-2.5 text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <span>{modelItem.versionCount ?? 0}</span>
+                    <Button
+                      size="sm"
+                      variant="link"
+                      className="h-auto p-0 text-xs"
+                      data-testid={`versions-trigger-${modelItem.id}`}
+                      onClick={() => setModelToView(modelItem)}
+                    >
+                      Versiones
+                    </Button>
+                  </div>
+                </td>
                 {canManage && application.status === "active" && (
                   <td className="py-2.5">
                     <Button
@@ -311,6 +326,20 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
           }}
         />
       )}
+
+      <ModelVersionsDialog
+        open={modelToView !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setModelToView(null);
+        }}
+        applicationId={application.id}
+        modelId={modelToView?.id ?? ""}
+        modelName={modelToView?.name ?? ""}
+        canManage={canManage && application.status === "active"}
+        onVersionUploaded={() => {
+          void loadModels(application.id);
+        }}
+      />
     </section>
   );
 }

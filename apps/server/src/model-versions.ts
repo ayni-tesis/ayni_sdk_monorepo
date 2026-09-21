@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
 import type { Application } from "./applications";
-import type { CreateModelVersionResult } from "./model-version-store";
+import type { CreateModelVersionResult, ListModelVersionsResult } from "./model-version-store";
 
 export const MAX_MODEL_VERSION_BYTES = 128 * 1024 * 1024;
 
@@ -21,6 +21,7 @@ type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   applications: {
     get: (id: string) => Promise<Application | undefined>;
+    getMembership: (userId: string, organizationId: string) => Promise<string | undefined>;
   };
   modelVersions: {
     create: (input: {
@@ -31,11 +32,32 @@ type Dependencies = {
       bytes: Uint8Array;
       maxBytes: number;
     }) => Promise<CreateModelVersionResult>;
+    list: (applicationId: string, modelId: string) => Promise<ListModelVersionsResult>;
   };
 };
 
 export function createModelVersionsApp({ getSession, applications, modelVersions }: Dependencies) {
   const app = new Hono();
+
+  app.get("/applications/:applicationId/models/:modelId/versions", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await applications.get(c.req.param("applicationId"));
+    if (
+      !application ||
+      !(await applications.getMembership(session.user.id, application.organizationId))
+    ) {
+      return c.json({ message: "No encontramos esta aplicación." }, 404);
+    }
+
+    const result = await modelVersions.list(application.id, c.req.param("modelId"));
+    if (!result.ok) {
+      return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
+    }
+
+    return c.json({ versions: result.versions });
+  });
 
   app.post(
     "/applications/:applicationId/models/:modelId/versions",

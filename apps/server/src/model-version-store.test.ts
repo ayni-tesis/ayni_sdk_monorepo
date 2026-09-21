@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TransactionExecutor } from "./application-actions";
 import { ModelVersionAlreadyStoredError } from "./model-version-storage";
-import { createModelVersionWithArtifact, type ModelVersionStorage } from "./model-version-store";
+import {
+  createModelVersionWithArtifact,
+  listModelVersions,
+  type ModelVersionStorage,
+} from "./model-version-store";
 import { computeSha256Hex } from "./tflite-validator";
 
 function validTfliteBytes(): Uint8Array {
@@ -357,5 +361,113 @@ describe("createModelVersionWithArtifact", () => {
 
     expect(result).toEqual({ ok: false, reason: "databaseFailed" });
     expect(artifacts.size).toBe(0);
+  });
+});
+
+function makeListVersionsDb(state: {
+  modelRow?: { id: string };
+  versionRows: Record<string, unknown>[];
+}) {
+  const queriedTables: unknown[] = [];
+
+  const executor = {
+    select: () => ({
+      from: (table: unknown) => {
+        queriedTables.push(table);
+        return {
+          where: () => ({
+            limit: () =>
+              Promise.resolve(table === model && state.modelRow ? [{ id: state.modelRow.id }] : []),
+            orderBy: () =>
+              Promise.resolve(
+                table === modelVersion ? state.versionRows.map((row) => ({ ...row })) : [],
+              ),
+          }),
+        };
+      },
+    }),
+  };
+
+  return {
+    queriedTables,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
+    },
+  };
+}
+
+describe("listModelVersions", () => {
+  it("lists a model's versions newest first with metadata only, never the artifact or storage key", async () => {
+    const transaction = makeListVersionsDb({
+      modelRow: { id: "model-1" },
+      versionRows: [
+        {
+          id: "mv-2",
+          version: "1.1.0",
+          storageKey: "applications/app-1/models/model-1/versions/1.1.0.tflite",
+          sha256: "b".repeat(64),
+          sizeBytes: "4096",
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "mv-1",
+          version: "1.0.0",
+          storageKey: "applications/app-1/models/model-1/versions/1.0.0.tflite",
+          sha256: "a".repeat(64),
+          sizeBytes: 2048,
+          createdAt: "2026-09-19T12:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await listModelVersions(transaction.db, "app-1", "model-1");
+
+    expect(result).toEqual({
+      ok: true,
+      versions: [
+        {
+          id: "mv-2",
+          version: "1.1.0",
+          sha256: "b".repeat(64),
+          sizeBytes: 4096,
+          createdAt: "2026-09-20T12:00:00.000Z",
+        },
+        {
+          id: "mv-1",
+          version: "1.0.0",
+          sha256: "a".repeat(64),
+          sizeBytes: 2048,
+          createdAt: "2026-09-19T12:00:00.000Z",
+        },
+      ],
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("storageKey");
+    expect(serialized).not.toContain("applications/app-1");
+    if (!result.ok) throw new Error("Expected the version list to load");
+    expect(Object.keys(result.versions[0] ?? {})).toEqual([
+      "id",
+      "version",
+      "sha256",
+      "sizeBytes",
+      "createdAt",
+    ]);
+  });
+
+  it("returns an empty list for a model without versions", async () => {
+    const transaction = makeListVersionsDb({ modelRow: { id: "model-1" }, versionRows: [] });
+
+    const result = await listModelVersions(transaction.db, "app-1", "model-1");
+
+    expect(result).toEqual({ ok: true, versions: [] });
+  });
+
+  it("does not reveal versions of a model outside the application", async () => {
+    const transaction = makeListVersionsDb({ versionRows: [{ id: "mv-1" }] });
+
+    const result = await listModelVersions(transaction.db, "app-1", "model-of-another-app");
+
+    expect(result).toEqual({ ok: false, reason: "modelNotFound" });
+    expect(transaction.queriedTables).not.toContain(modelVersion);
   });
 });

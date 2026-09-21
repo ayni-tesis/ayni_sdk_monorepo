@@ -38,7 +38,7 @@ import {
 } from "./members";
 import { createModel, listModels } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
-import { createModelVersionWithArtifact } from "./model-version-store";
+import { createModelVersionWithArtifact, listModelVersions } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
 import {
@@ -124,6 +124,9 @@ const modelVersions = {
     maxBytes: number;
   }) {
     return createModelVersionWithArtifact(db, r2ModelVersionStorage, input);
+  },
+  list(applicationId: string, modelId: string) {
+    return listModelVersions(db, applicationId, modelId);
   },
 };
 
