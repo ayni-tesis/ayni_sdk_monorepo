@@ -87,4 +87,30 @@ void main() {
       expect(await verified.readAsString(), 'previous valid model');
     },
   );
+
+  test(
+    'reuses a backup-only artifact before promoting a new valid download',
+    () async {
+      final downloaded = File('${temporaryDirectory.path}/download.part');
+      final verified = File('${temporaryDirectory.path}/models/model.tflite');
+      final backup = File('${verified.path}.backup');
+      await backup.parent.create(recursive: true);
+      await backup.writeAsString('previous valid model');
+      await downloaded.writeAsString('valid model');
+
+      final result = await ModelArtifactIntegrityVerifier().verify(
+        modelVersionId: 'version-4',
+        temporaryArtifact: downloaded,
+        verifiedArtifact: verified,
+        expectedSha256:
+            'fe8d07f0cc8f22537e1bad3404430bec54ad778abbe9a7f15eec0e2b932e5a58',
+        isDownloadComplete: true,
+      );
+
+      expect(result.status, ModelArtifactIntegrityStatus.verified);
+      expect(result.modelVersionId, 'version-4');
+      expect(await verified.readAsString(), 'valid model');
+      expect(await backup.exists(), isFalse);
+    },
+  );
 }

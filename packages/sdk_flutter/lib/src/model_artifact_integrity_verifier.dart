@@ -73,7 +73,11 @@ class ModelArtifactIntegrityVerifier {
     var priorArtifactMoved = false;
 
     if (await backup.exists()) {
-      await backup.delete();
+      if (await verifiedArtifact.exists()) {
+        await backup.delete();
+      } else {
+        await backup.rename(verifiedArtifact.path);
+      }
     }
 
     try {

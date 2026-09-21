@@ -49,6 +49,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Resolve SDK dependencies
+        working-directory: packages/sdk_flutter
+        run: dart pub get
+
       - name: Analyze SDK package
         working-directory: packages/sdk_flutter
         run: dart analyze
@@ -56,6 +60,10 @@ jobs:
       - name: Test SDK package
         working-directory: packages/sdk_flutter
         run: dart test
+
+      - name: Resolve demo app dependencies
+        working-directory: apps/native
+        run: flutter pub get
 
       - name: Analyze Android demo app
         working-directory: apps/native
