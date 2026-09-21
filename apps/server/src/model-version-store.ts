@@ -71,10 +71,7 @@ type ModelVersionActionOutcome =
   | { kind: "modelNotFound" }
   | { kind: "created"; record: ModelVersionRecord };
 
-type PreflightOutcome =
-  | { kind: "authorized" }
-  | { kind: "modelNotFound" }
-  | { kind: "duplicate" };
+type PreflightOutcome = { kind: "authorized" } | { kind: "modelNotFound" } | { kind: "duplicate" };
 
 export async function createModelVersionWithArtifact(
   database: ApplicationDatabase,
