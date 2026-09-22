@@ -37,7 +37,7 @@ export function createSdkModelVersionsApp({ credentials, modelVersions }: Depend
     }
 
     const verified = await credentials.verify(secret);
-    if (!verified.ok) {
+    if (verified.ok === false) {
       return c.json({ message: verified.message, code: verified.code }, 401);
     }
 
@@ -45,7 +45,7 @@ export function createSdkModelVersionsApp({ credentials, modelVersions }: Depend
       verified.credential.applicationId,
       c.req.param("modelVersionId"),
     );
-    if (!result.ok) {
+    if (result.ok === false) {
       return c.json(
         { message: MODEL_VERSION_NOT_FOUND_MESSAGE, code: "modelVersionNotFound" },
         404,

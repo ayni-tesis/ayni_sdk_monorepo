@@ -85,7 +85,7 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
       applicationId: application.id,
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ credentials: result.credentials });
+    if (result.ok === true) return c.json({ credentials: result.credentials });
     if (result.reason === "forbidden") {
       return c.json({ message: CREDENTIAL_LIST_FORBIDDEN_MESSAGE }, 403);
     }
@@ -104,7 +104,7 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
       applicationId: application.id,
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ credential: result.credential }, 201);
+    if (result.ok === true) return c.json({ credential: result.credential }, 201);
     if (result.reason === "forbidden") {
       return c.json({ message: CREDENTIAL_FORBIDDEN_MESSAGE }, 403);
     }
@@ -127,7 +127,7 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
       credentialId: c.req.param("credentialId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ credential: result.credential });
+    if (result.ok === true) return c.json({ credential: result.credential });
     if (result.reason === "forbidden") {
       return c.json({ message: CREDENTIAL_REVOKE_FORBIDDEN_MESSAGE }, 403);
     }
@@ -147,7 +147,7 @@ export function createSdkCredentialsApp({ getSession, applications, credentials 
       credentialId: c.req.param("credentialId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ credential: result.credential }, 200);
+    if (result.ok === true) return c.json({ credential: result.credential }, 200);
     if (result.reason === "forbidden") {
       return c.json({ message: REGENERATE_FORBIDDEN_MESSAGE }, 403);
     }

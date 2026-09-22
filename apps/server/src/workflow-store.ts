@@ -79,7 +79,7 @@ export async function createWorkflow(
     },
   );
 
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, workflow: result.value };
 }
 

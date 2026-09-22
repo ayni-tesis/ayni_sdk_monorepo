@@ -89,7 +89,7 @@ export async function createModelVersionWithArtifact(
   if (!SEMVER_STRICT.test(version)) return { ok: false, reason: "invalidVersion" };
 
   const gate = gateTfLiteBuffer(bytes, maxBytes);
-  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (gate.ok === false) return { ok: false, reason: gate.reason };
 
   let preflight: Awaited<ReturnType<typeof executeApplicationAction<PreflightOutcome>>>;
   try {
@@ -123,7 +123,7 @@ export async function createModelVersionWithArtifact(
     return { ok: false, reason: "databaseFailed" };
   }
 
-  if (!preflight.ok) return { ok: false, reason: preflight.reason };
+  if (preflight.ok === false) return { ok: false, reason: preflight.reason };
   if (preflight.value.kind === "modelNotFound") return { ok: false, reason: "modelNotFound" };
   if (preflight.value.kind === "duplicate") return { ok: false, reason: "versionExists" };
 
@@ -208,7 +208,7 @@ export async function createModelVersionWithArtifact(
     return { ok: false, reason: isUniqueViolation(error) ? "versionExists" : "databaseFailed" };
   }
 
-  if (!outcome.ok) {
+  if (outcome.ok === false) {
     await compensate();
     return { ok: false, reason: outcome.reason };
   }
@@ -232,6 +232,103 @@ export type ModelVersionListItem = {
 export type ListModelVersionsResult =
   | { ok: true; versions: ModelVersionListItem[] }
   | { ok: false; reason: "modelNotFound" };
+
+export type DeleteModelVersionFailureReason =
+  | "notFound"
+  | "forbidden"
+  | "archived"
+  | "inUse"
+  | "storageFailed"
+  | "databaseFailed";
+
+export type DeleteModelVersionResult =
+  | { ok: true }
+  | { ok: false; reason: DeleteModelVersionFailureReason };
+
+type DeleteModelVersionExecutor = TransactionExecutor & {
+  delete: (table: unknown) => {
+    where: (condition: unknown) => {
+      returning: () => Promise<Record<string, unknown>[]>;
+    };
+  };
+};
+
+/**
+ * Deletes a model version owned by an application and removes its artifact.
+ * The caller supplies the published-workflow reference check so this store
+ * remains independent of the workflow JSON representation.
+ */
+export async function deleteModelVersion(
+  database: ApplicationDatabase,
+  storage: ModelVersionStorage,
+  {
+    applicationId,
+    modelId,
+    modelVersionId,
+    userId,
+    isReferencedByPublishedWorkflow,
+  }: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+    isReferencedByPublishedWorkflow?: (modelVersionId: string) => Promise<boolean>;
+  },
+): Promise<DeleteModelVersionResult> {
+  if (await isReferencedByPublishedWorkflow?.(modelVersionId)) {
+    return { ok: false, reason: "inUse" };
+  }
+
+  let deleted: Awaited<
+    ReturnType<
+      typeof executeApplicationAction<
+        { kind: "notFound" } | { kind: "deleted"; storageKey: string }
+      >
+    >
+  >;
+  try {
+    deleted = await executeApplicationAction(
+      database,
+      { applicationId, userId },
+      async (transaction, application) => {
+        const tx = transaction as DeleteModelVersionExecutor;
+        const modelRows = (await tx
+          .select({ id: model.id })
+          .from(model)
+          .where(and(eq(model.id, modelId), eq(model.applicationId, application.id)))
+          .limit(1)
+          .for("update")) as { id: string }[];
+        if (!modelRows[0]) return { kind: "notFound" } as const;
+
+        const versionRows = (await tx
+          .select({ id: modelVersion.id, storageKey: modelVersion.storageKey })
+          .from(modelVersion)
+          .where(and(eq(modelVersion.id, modelVersionId), eq(modelVersion.modelId, modelId)))
+          .limit(1)
+          .for("update")) as { id: string; storageKey: string }[];
+        const found = versionRows[0];
+        if (!found) return { kind: "notFound" } as const;
+
+        const rows = await tx.delete(modelVersion).where(eq(modelVersion.id, found.id)).returning();
+        if (!rows[0]) throw new Error("Model version deletion returned no record");
+        return { kind: "deleted", storageKey: found.storageKey } as const;
+      },
+    );
+  } catch {
+    return { ok: false, reason: "databaseFailed" };
+  }
+
+  if (deleted.ok === false) return { ok: false, reason: deleted.reason };
+  if (deleted.value.kind === "notFound") return { ok: false, reason: "notFound" };
+
+  try {
+    await storage.removeArtifact(deleted.value.storageKey);
+  } catch {
+    return { ok: false, reason: "storageFailed" };
+  }
+
+  return { ok: true };
+}
 
 type ListVersionsRow = {
   id: string;

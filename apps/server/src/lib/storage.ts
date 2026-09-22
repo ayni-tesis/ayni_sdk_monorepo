@@ -16,16 +16,18 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
  * Cloudflare R2 client for file storage (S3-compatible)
  * @see https://developers.cloudflare.com/r2/api/s3/api/
  */
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "";
+
 export const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.R2_ACCOUNT_ID!}.r2.cloudflarestorage.com`,
+  endpoint: R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined,
   credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
   },
 });
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME!;
+const BUCKET_NAME = process.env.R2_BUCKET_NAME ?? "";
 
 /**
  * Storage utilities for common R2 operations
@@ -153,11 +155,13 @@ export async function listFiles(
   const response = await r2Client.send(command);
 
   return {
-    files: (response.Contents ?? []).map((item) => ({
-      key: item.Key!,
-      size: item.Size,
-      lastModified: item.LastModified,
-    })),
+    files: (response.Contents ?? [])
+      .filter((item): item is typeof item & { Key: string } => Boolean(item.Key))
+      .map((item) => ({
+        key: item.Key,
+        size: item.Size,
+        lastModified: item.LastModified,
+      })),
     isTruncated: response.IsTruncated ?? false,
     nextContinuationToken: response.NextContinuationToken,
   };

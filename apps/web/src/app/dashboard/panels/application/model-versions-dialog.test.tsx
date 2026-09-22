@@ -9,7 +9,7 @@ import {
 } from "./model-versions-dialog";
 
 const { client, uploadMock, toastMock, writeTextMock } = vi.hoisted(() => ({
-  client: { get: vi.fn() },
+  client: { get: vi.fn(), delete: vi.fn() },
   uploadMock: vi.fn(),
   toastMock: { success: vi.fn(), error: vi.fn() },
   writeTextMock: vi.fn().mockResolvedValue(undefined),
@@ -67,6 +67,7 @@ function renderDialog(overrides?: { canManage?: boolean }) {
 beforeEach(() => {
   vi.clearAllMocks();
   client.get.mockReset();
+  client.delete.mockReset();
   uploadMock.mockReset();
   client.get.mockResolvedValue({ data: { versions: [listedVersion] } });
 });
@@ -205,6 +206,49 @@ describe("ModelVersionsDialog", () => {
       expect(uploadMock).toHaveBeenCalledTimes(1);
       expect(client.get).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("confirms deletion, removes the version, and shows success", async () => {
+    renderDialog({ canManage: true });
+    await screen.findByTestId("model-version-row-mv-1");
+    client.delete.mockResolvedValue({ status: 204 });
+
+    fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));
+    const confirmation = await screen.findByRole("dialog", { name: "¿Eliminar la versión 1.0.0?" });
+    expect(
+      within(confirmation).getByText(
+        "Se eliminará el archivo del modelo. Esta acción no se puede deshacer.",
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Eliminar versión" }));
+
+    await waitFor(() => {
+      expect(client.delete).toHaveBeenCalledWith(
+        "/applications/app-1/models/model-1/versions/mv-1",
+      );
+      expect(toastMock.success).toHaveBeenCalledWith("Versión eliminada.");
+      expect(client.get).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("shows the in-use error without removing the version", async () => {
+    renderDialog({ canManage: true });
+    await screen.findByTestId("model-version-row-mv-1");
+    client.delete.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        data: { message: "No puedes eliminar esta versión porque un workflow publicado la usa." },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));
+    fireEvent.click(await screen.findByRole("button", { name: "Eliminar versión" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "No puedes eliminar esta versión porque un workflow publicado la usa.",
+    );
+    expect(screen.getByTestId("model-version-row-mv-1")).toBeTruthy();
   });
 });
 

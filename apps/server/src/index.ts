@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  createOpenApiDocument,
-  HealthResponseSchema,
-  PrivateDataResponseSchema,
-  UnauthorizedResponseSchema,
-} from "@ayni/api";
+import { createOpenApiDocument } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
 import {
@@ -16,7 +11,7 @@ import {
   user,
 } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
-import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { and, asc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
@@ -40,6 +35,7 @@ import { createModel, listModels } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
 import {
   createModelVersionWithArtifact,
+  deleteModelVersion,
   getSdkModelVersionManifest,
   listModelVersions,
 } from "./model-version-store";
@@ -135,6 +131,14 @@ const modelVersions = {
   },
   list(applicationId: string, modelId: string) {
     return listModelVersions(db, applicationId, modelId);
+  },
+  remove(input: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+  }) {
+    return deleteModelVersion(db, r2ModelVersionStorage, input);
   },
 };
 
@@ -598,63 +602,8 @@ app.route(
 
 const openApiApp = new OpenAPIHono();
 
-const healthRoute = createRoute({
-  method: "get",
-  path: "/health",
-  tags: ["System"],
-  responses: {
-    200: {
-      description: "Service health",
-      content: {
-        "application/json": {
-          schema: HealthResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-openApiApp.openapi(healthRoute, (c) => {
+openApiApp.get("/health", (c) => {
   return c.json({ status: "ok" as const });
-});
-
-const privateRoute = createRoute({
-  method: "get",
-  path: "/private",
-  tags: ["Example"],
-  security: [{ bearerAuth: [] }],
-  responses: {
-    200: {
-      description: "Private user data",
-      content: {
-        "application/json": {
-          schema: PrivateDataResponseSchema,
-        },
-      },
-    },
-    401: {
-      description: "Authentication required",
-      content: {
-        "application/json": {
-          schema: UnauthorizedResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-openApiApp.openapi(privateRoute, async (c) => {
-  const session = await auth.api.getSession({
-    headers: c.req.raw.headers,
-  });
-  if (!session) {
-    return c.json({ message: "Authentication required" }, 401);
-  }
-
-  return c.json({
-    message: "This is private",
-    user: session.user,
-  });
 });
 
 openApiApp.doc("/openapi.json", createOpenApiDocument());
