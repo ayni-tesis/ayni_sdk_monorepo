@@ -5,9 +5,11 @@ import type { Application } from "./applications";
 import {
   type CreateWorkflowResult,
   createWorkflow,
+  getWorkflow,
   listWorkflows,
   type TransactionExecutor,
   type Workflow,
+  type WorkflowDetail,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 
@@ -27,6 +29,12 @@ const sampleWorkflow: Workflow = {
   updatedAt: "2026-09-21T16:00:00.000Z",
 };
 
+const sampleDetail: WorkflowDetail = {
+  workflow: sampleWorkflow,
+  draft: { nodes: [] },
+  versions: [],
+};
+
 type CreateInput = { applicationId: string; userId: string; name: string };
 
 function makeApp({
@@ -34,6 +42,7 @@ function makeApp({
   application = activeApplication,
   membershipRole = "admin",
   listedWorkflows,
+  workflowDetail = sampleDetail,
   create = async ({ applicationId, name }: CreateInput): Promise<CreateWorkflowResult> => ({
     ok: true,
     workflow: {
@@ -50,20 +59,25 @@ function makeApp({
   application?: Application | null;
   membershipRole?: string | null;
   listedWorkflows?: Workflow[];
+  workflowDetail?: WorkflowDetail | null;
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
+  const getMock = vi.fn(
+    async (_applicationId: string, _workflowId: string) => workflowDetail ?? undefined,
+  );
   return {
     create: createMock,
     list: listMock,
+    get: getMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
         getMembership: async () => membershipRole ?? undefined,
       },
-      workflows: { create: createMock, list: listMock },
+      workflows: { create: createMock, list: listMock, get: getMock },
     }),
   };
 }
@@ -146,6 +160,74 @@ describe("GET /applications/:applicationId/workflows", () => {
     await expect(missingResponse.json()).resolves.toEqual(nonMemberBody);
     expect(nonMember.list).not.toHaveBeenCalled();
     expect(missing.list).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /applications/:applicationId/workflows/:workflowId", () => {
+  it("returns the workflow with its draft and published versions to any workspace member", async () => {
+    const { request, get } = makeApp({ membershipRole: "member" });
+
+    const response = await request.request("/applications/app-1/workflows/workflow-1");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      workflow: sampleWorkflow,
+      draft: { nodes: [] },
+      versions: [],
+    });
+    expect(get).toHaveBeenCalledWith("app-1", "workflow-1");
+  });
+
+  it("still returns the detail of a workflow in an archived application", async () => {
+    const { request } = makeApp({ application: { ...activeApplication, status: "archived" } });
+
+    const response = await request.request("/applications/app-1/workflows/workflow-1");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(sampleDetail);
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, get } = makeApp({ session: null });
+
+    const response = await request.request("/applications/app-1/workflows/workflow-1");
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ message: "Authentication required" });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-member exactly like a missing application, without reading the workflow", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    const nonMemberResponse = await nonMember.request.request(
+      "/applications/app-1/workflows/workflow-1",
+    );
+    const missingResponse = await missing.request.request(
+      "/applications/app-1/workflows/workflow-1",
+    );
+
+    expect(nonMemberResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    const nonMemberBody = await nonMemberResponse.json();
+    expect(nonMemberBody).toEqual({ message: "No encontramos esta aplicación." });
+    await expect(missingResponse.json()).resolves.toEqual(nonMemberBody);
+    expect(nonMember.get).not.toHaveBeenCalled();
+    expect(missing.get).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the workflow does not exist in the application", async () => {
+    const { request, get } = makeApp({ workflowDetail: null });
+
+    const response = await request.request("/applications/app-1/workflows/workflow-9");
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+    expect(get).toHaveBeenCalledWith("app-1", "workflow-9");
   });
 });
 
@@ -622,5 +704,76 @@ describe("listWorkflows", () => {
       sql: '"workflow"."created_at" asc',
       params: [],
     });
+  });
+});
+
+function makeGetDb(rows: Record<string, unknown>[]) {
+  const filters: unknown[] = [];
+  const limits: number[] = [];
+
+  const executor = {
+    select: (_fields: Record<string, unknown>) => ({
+      from: (_table: unknown) => ({
+        where: (condition: unknown) => {
+          filters.push(condition);
+          return {
+            limit: async (count: number) => {
+              limits.push(count);
+              return rows;
+            },
+          };
+        },
+      }),
+    }),
+  };
+
+  return {
+    filters,
+    limits,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
+    },
+  };
+}
+
+describe("getWorkflow", () => {
+  it("returns the workflow with an empty draft and no published versions", async () => {
+    const transaction = makeGetDb([
+      {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: new Date("2026-09-21T15:00:00.000Z"),
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+    ]);
+
+    const detail = await getWorkflow(transaction.db, "app-1", "workflow-1");
+
+    expect(detail).toEqual({
+      workflow: sampleWorkflow,
+      draft: { nodes: [] },
+      versions: [],
+    });
+  });
+
+  it("scopes the query to the workflow and its owning application", async () => {
+    const transaction = makeGetDb([]);
+
+    await getWorkflow(transaction.db, "app-1", "workflow-1");
+
+    expect(transaction.filters).toHaveLength(1);
+    expect(toQuery(transaction.filters[0])).toEqual({
+      sql: '("workflow"."id" = $1 and "workflow"."application_id" = $2)',
+      params: ["workflow-1", "app-1"],
+    });
+    expect(transaction.limits).toEqual([1]);
+  });
+
+  it("returns undefined when no workflow of that application matches", async () => {
+    const transaction = makeGetDb([]);
+
+    await expect(getWorkflow(transaction.db, "app-1", "workflow-9")).resolves.toBeUndefined();
   });
 });

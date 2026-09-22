@@ -110,7 +110,7 @@ export type WorkflowItem = {
 const WORKFLOWS_LOAD_ERROR = "No pudimos cargar los workflows. Inténtalo nuevamente.";
 const WORKFLOWS_EMPTY_MESSAGE = "Aún no hay workflows en esta aplicación.";
 
-const STATUS_LABELS: Record<WorkflowItem["status"], string> = {
+export const WORKFLOW_STATUS_LABELS: Record<WorkflowItem["status"], string> = {
   draft: "Borrador",
 };
 
@@ -120,9 +120,14 @@ const NO_PUBLISHED_VERSION_LABEL = "Sin publicar";
 export type WorkflowsViewProps = {
   application: Application;
   canManage?: boolean;
+  onOpenWorkflow?: (workflowId: string) => void;
 };
 
-export function WorkflowsView({ application, canManage = false }: WorkflowsViewProps) {
+export function WorkflowsView({
+  application,
+  canManage = false,
+  onOpenWorkflow,
+}: WorkflowsViewProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [workflowName, setWorkflowName] = useState("");
   const [workflowError, setWorkflowError] = useState("");
@@ -248,13 +253,19 @@ export function WorkflowsView({ application, canManage = false }: WorkflowsViewP
             {workflows.map((workflowItem) => (
               <tr key={workflowItem.id} data-testid={`workflow-row-${workflowItem.id}`}>
                 <td className="py-2.5">
-                  <div className="font-medium">{workflowItem.name}</div>
+                  <button
+                    type="button"
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    onClick={() => onOpenWorkflow?.(workflowItem.id)}
+                  >
+                    {workflowItem.name}
+                  </button>
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
                     {workflowItem.id}
                   </code>
                 </td>
                 <td className="py-2.5 text-muted-foreground">
-                  {STATUS_LABELS[workflowItem.status] ?? workflowItem.status}
+                  {WORKFLOW_STATUS_LABELS[workflowItem.status] ?? workflowItem.status}
                 </td>
                 <td className="py-2.5 text-muted-foreground">{NO_PUBLISHED_VERSION_LABEL}</td>
                 <td className="py-2.5 text-muted-foreground">

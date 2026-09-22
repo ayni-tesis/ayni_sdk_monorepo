@@ -1,5 +1,5 @@
 import { workflow } from "@ayni/db/schema/index";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -81,6 +81,62 @@ export async function createWorkflow(
 
   if (!result.ok) return result;
   return { ok: true, workflow: result.value };
+}
+
+/**
+ * Workflow detail: the workflow plus its draft and its published versions. No
+ * node or version storage exists yet, so both are empty by construction; the
+ * `never[]` element types force this to be revisited when nodes (US-028) and
+ * published versions (US-036) land.
+ */
+export type WorkflowDetail = {
+  workflow: Workflow;
+  draft: { nodes: never[] };
+  versions: never[];
+};
+
+type GetWorkflowExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        limit: (count: number) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+/**
+ * Reads one workflow with its draft and published versions. The query is
+ * filtered by application id as well, so a workflow of another application is
+ * indistinguishable from a missing one; callers must have already established
+ * that the requester belongs to the application's workspace.
+ */
+export async function getWorkflow(
+  database: WorkflowDatabase,
+  applicationId: string,
+  workflowId: string,
+): Promise<WorkflowDetail | undefined> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as GetWorkflowExecutor;
+
+    const rows = (await tx
+      .select({
+        id: workflow.id,
+        applicationId: workflow.applicationId,
+        name: workflow.name,
+        status: workflow.status,
+        createdAt: workflow.createdAt,
+        updatedAt: workflow.updatedAt,
+      })
+      .from(workflow)
+      .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, applicationId)))
+      .limit(1)) as WorkflowRow[];
+
+    const row = rows[0];
+    if (!row) return undefined;
+
+    return { workflow: toWorkflow(row), draft: { nodes: [] }, versions: [] };
+  });
 }
 
 type ListWorkflowsExecutor = {

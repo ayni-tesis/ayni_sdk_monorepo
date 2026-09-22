@@ -111,7 +111,44 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
-import Dashboard from "./dashboard";
+import Dashboard, { parseDashboardRoute } from "./dashboard";
+
+describe("parseDashboardRoute", () => {
+  it("reads the workflow id from a workflow detail route", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/workflows/workflow-1")).toEqual({
+      kind: "app",
+      id: "app-1",
+      section: "workflows",
+      workflowId: "workflow-1",
+    });
+  });
+
+  it("keeps the workflows list route free of a workflow id", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/workflows")).toEqual({
+      kind: "app",
+      id: "app-1",
+      section: "workflows",
+    });
+  });
+
+  it("does not read a workflow id under any other section", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/models/model-1")).toEqual({
+      kind: "list",
+    });
+  });
+
+  it("falls back to the list route instead of throwing on a malformed workflow id", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/workflows/wf%zz")).toEqual({
+      kind: "list",
+    });
+  });
+
+  it("falls back to the list route instead of throwing on a malformed application id", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app%1/workflows")).toEqual({
+      kind: "list",
+    });
+  });
+});
 
 describe("Dashboard", () => {
   beforeEach(() => {
