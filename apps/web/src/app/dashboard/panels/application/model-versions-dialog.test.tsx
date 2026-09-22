@@ -215,7 +215,11 @@ describe("ModelVersionsDialog", () => {
 
     fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));
     const confirmation = await screen.findByRole("dialog", { name: "¿Eliminar la versión 1.0.0?" });
-    expect(within(confirmation).getByText("Se eliminará el archivo del modelo. Esta acción no se puede deshacer.")).toBeTruthy();
+    expect(
+      within(confirmation).getByText(
+        "Se eliminará el archivo del modelo. Esta acción no se puede deshacer.",
+      ),
+    ).toBeTruthy();
 
     fireEvent.click(within(confirmation).getByRole("button", { name: "Eliminar versión" }));
 
@@ -233,7 +237,9 @@ describe("ModelVersionsDialog", () => {
     await screen.findByTestId("model-version-row-mv-1");
     client.delete.mockRejectedValue({
       isAxiosError: true,
-      response: { data: { message: "No puedes eliminar esta versión porque un workflow publicado la usa." } },
+      response: {
+        data: { message: "No puedes eliminar esta versión porque un workflow publicado la usa." },
+      },
     });
 
     fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));

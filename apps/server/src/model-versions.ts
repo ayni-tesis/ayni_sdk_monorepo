@@ -112,13 +112,19 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
         return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
       case "archived":
         return c.json(
-          { message: "No puedes eliminar versiones de una aplicación archivada.", code: "applicationArchived" },
+          {
+            message: "No puedes eliminar versiones de una aplicación archivada.",
+            code: "applicationArchived",
+          },
           409,
         );
       case "storageFailed":
       case "databaseFailed":
         return c.json(
-          { message: "No se pudo eliminar la versión del modelo.", code: "modelVersionDeleteFailed" },
+          {
+            message: "No se pudo eliminar la versión del modelo.",
+            code: "modelVersionDeleteFailed",
+          },
           500,
         );
     }

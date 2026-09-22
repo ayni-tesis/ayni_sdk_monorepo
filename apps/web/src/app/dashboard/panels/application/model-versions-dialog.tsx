@@ -142,7 +142,11 @@ export function ModelVersionsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {notice && <p className="text-destructive text-sm" role="alert">{notice}</p>}
+        {notice && (
+          <p className="text-destructive text-sm" role="alert">
+            {notice}
+          </p>
+        )}
 
         {canManage && (
           <div className="flex justify-end">
@@ -230,18 +234,20 @@ export function ModelVersionsDialog({
                     {formatLongDateEs(version.createdAt)}
                   </td>
                   <td className="py-2.5 text-muted-foreground">—</td>
-                  {canManage && <td className="py-2.5 text-right">
-                    {canManage && (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        data-testid={`delete-version-trigger-${version.id}`}
-                        onClick={() => setDeleteVersion(version)}
-                      >
-                        Eliminar
-                      </Button>
-                    )}
-                  </td>}
+                  {canManage && (
+                    <td className="py-2.5 text-right">
+                      {canManage && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          data-testid={`delete-version-trigger-${version.id}`}
+                          onClick={() => setDeleteVersion(version)}
+                        >
+                          Eliminar
+                        </Button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -260,7 +266,10 @@ export function ModelVersionsDialog({
           }}
         />
 
-        <Dialog open={Boolean(deleteVersion)} onOpenChange={(nextOpen) => !nextOpen && setDeleteVersion(null)}>
+        <Dialog
+          open={Boolean(deleteVersion)}
+          onOpenChange={(nextOpen) => !nextOpen && setDeleteVersion(null)}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>¿Eliminar la versión {deleteVersion?.version}?</DialogTitle>
@@ -272,7 +281,11 @@ export function ModelVersionsDialog({
               <Button variant="outline" onClick={() => setDeleteVersion(null)} disabled={deleting}>
                 Cancelar
               </Button>
-              <Button variant="destructive" onClick={() => void confirmDelete()} disabled={deleting}>
+              <Button
+                variant="destructive"
+                onClick={() => void confirmDelete()}
+                disabled={deleting}
+              >
                 {deleting ? "Eliminando…" : "Eliminar versión"}
               </Button>
             </div>

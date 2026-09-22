@@ -163,8 +163,8 @@ export async function listFiles(
       .filter((item): item is typeof item & { Key: string } => Boolean(item.Key))
       .map((item) => ({
         key: item.Key,
-      size: item.Size,
-      lastModified: item.LastModified,
+        size: item.Size,
+        lastModified: item.LastModified,
       })),
     isTruncated: response.IsTruncated ?? false,
     nextContinuationToken: response.NextContinuationToken,

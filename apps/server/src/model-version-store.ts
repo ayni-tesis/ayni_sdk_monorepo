@@ -309,10 +309,7 @@ export async function deleteModelVersion(
         const found = versionRows[0];
         if (!found) return { kind: "notFound" } as const;
 
-        const rows = await tx
-          .delete(modelVersion)
-          .where(eq(modelVersion.id, found.id))
-          .returning();
+        const rows = await tx.delete(modelVersion).where(eq(modelVersion.id, found.id)).returning();
         if (!rows[0]) throw new Error("Model version deletion returned no record");
         return { kind: "deleted", storageKey: found.storageKey } as const;
       },

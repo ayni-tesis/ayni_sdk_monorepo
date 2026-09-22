@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  createOpenApiDocument,
-  HealthResponseSchema,
-} from "@ayni/api";
+import { createOpenApiDocument, HealthResponseSchema } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
 import {
