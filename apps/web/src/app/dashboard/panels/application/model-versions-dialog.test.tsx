@@ -231,7 +231,10 @@ describe("ModelVersionsDialog", () => {
   it("shows the in-use error without removing the version", async () => {
     renderDialog({ canManage: true });
     await screen.findByTestId("model-version-row-mv-1");
-    client.delete.mockRejectedValue({ response: { data: { message: "No puedes eliminar esta versión porque un workflow publicado la usa." } } });
+    client.delete.mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { message: "No puedes eliminar esta versión porque un workflow publicado la usa." } },
+    });
 
     fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));
     fireEvent.click(await screen.findByRole("button", { name: "Eliminar versión" }));

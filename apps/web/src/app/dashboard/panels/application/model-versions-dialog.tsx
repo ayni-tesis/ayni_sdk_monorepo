@@ -117,7 +117,7 @@ export function ModelVersionsDialog({
     } finally {
       setDeleting(false);
     }
-  }, [applicationId, deleteVersion, modelId, onVersionUploaded]);
+  }, [applicationId, deleteVersion, loadVersions, modelId, onVersionUploaded]);
 
   useEffect(() => {
     if (open) {
