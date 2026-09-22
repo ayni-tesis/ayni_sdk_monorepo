@@ -72,7 +72,7 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
 
     const memberId = c.req.param("memberId");
     const result = await members.remove(session.user.id, organizationId, memberId);
-    if (!result.ok) {
+    if (result.ok === false) {
       if (result.reason === "not-found") {
         return c.json({ message: "No encontramos a este miembro en el workspace." }, 404);
       }
@@ -120,7 +120,7 @@ export function createMembersApp({ getSession, members }: MembersDependencies) {
       body.role as "admin" | "member",
     );
 
-    if (!result.success) {
+    if (result.success === false) {
       switch (result.error) {
         case "FORBIDDEN":
           return c.json(
