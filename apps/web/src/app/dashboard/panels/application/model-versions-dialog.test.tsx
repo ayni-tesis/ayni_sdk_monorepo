@@ -245,7 +245,7 @@ describe("ModelVersionsDialog", () => {
     fireEvent.click(screen.getByTestId("delete-version-trigger-mv-1"));
     fireEvent.click(await screen.findByRole("button", { name: "Eliminar versión" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect((await screen.findByRole("alert")).textContent).toContain(
       "No puedes eliminar esta versión porque un workflow publicado la usa.",
     );
     expect(screen.getByTestId("model-version-row-mv-1")).toBeTruthy();
