@@ -13,9 +13,7 @@
   "paths": {
     "/health": {
       "get": {
-        "tags": [
-          "System"
-        ],
+        "tags": ["System"],
         "responses": {
           "200": {
             "description": "Service health",
@@ -35,15 +33,11 @@
     "schemas": {
       "HealthResponse": {
         "type": "object",
-        "required": [
-          "status"
-        ],
+        "required": ["status"],
         "properties": {
           "status": {
             "type": "string",
-            "enum": [
-              "ok"
-            ]
+            "enum": ["ok"]
           }
         }
       }
