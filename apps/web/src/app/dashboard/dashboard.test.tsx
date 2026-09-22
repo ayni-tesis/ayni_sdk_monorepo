@@ -136,6 +136,18 @@ describe("parseDashboardRoute", () => {
       kind: "list",
     });
   });
+
+  it("falls back to the list route instead of throwing on a malformed workflow id", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/workflows/wf%zz")).toEqual({
+      kind: "list",
+    });
+  });
+
+  it("falls back to the list route instead of throwing on a malformed application id", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app%1/workflows")).toEqual({
+      kind: "list",
+    });
+  });
 });
 
 describe("Dashboard", () => {

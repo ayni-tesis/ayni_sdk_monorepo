@@ -45,12 +45,18 @@ export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (match) {
     const section = (match[2] ?? match[3] ?? "overview") as ApplicationSection;
     const workflowId = match[4];
-    return {
-      kind: "app",
-      id: decodeURIComponent(match[1]),
-      section,
-      ...(workflowId ? { workflowId: decodeURIComponent(workflowId) } : {}),
-    };
+    try {
+      return {
+        kind: "app",
+        id: decodeURIComponent(match[1]),
+        section,
+        ...(workflowId ? { workflowId: decodeURIComponent(workflowId) } : {}),
+      };
+    } catch {
+      // A malformed percent-encoding (e.g. a stray "%") makes decodeURIComponent
+      // throw URIError. Fall back to the list route instead of crashing the render.
+      return { kind: "list" };
+    }
   }
   return { kind: "list" };
 }
