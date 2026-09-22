@@ -89,7 +89,7 @@ export async function createModelVersionWithArtifact(
   if (!SEMVER_STRICT.test(version)) return { ok: false, reason: "invalidVersion" };
 
   const gate = gateTfLiteBuffer(bytes, maxBytes);
-  if (!gate.ok) return { ok: false, reason: gate.reason };
+  if (gate.ok === false) return { ok: false, reason: gate.reason };
 
   let preflight: Awaited<ReturnType<typeof executeApplicationAction<PreflightOutcome>>>;
   try {
@@ -123,7 +123,7 @@ export async function createModelVersionWithArtifact(
     return { ok: false, reason: "databaseFailed" };
   }
 
-  if (!preflight.ok) return { ok: false, reason: preflight.reason };
+  if (preflight.ok === false) return { ok: false, reason: preflight.reason };
   if (preflight.value.kind === "modelNotFound") return { ok: false, reason: "modelNotFound" };
   if (preflight.value.kind === "duplicate") return { ok: false, reason: "versionExists" };
 
@@ -318,7 +318,7 @@ export async function deleteModelVersion(
     return { ok: false, reason: "databaseFailed" };
   }
 
-  if (!deleted.ok) return { ok: false, reason: deleted.reason };
+  if (deleted.ok === false) return { ok: false, reason: deleted.reason };
   if (deleted.value.kind === "notFound") return { ok: false, reason: "notFound" };
 
   try {
