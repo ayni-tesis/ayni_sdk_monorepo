@@ -83,6 +83,55 @@ export async function createWorkflow(
   return { ok: true, workflow: result.value };
 }
 
+type WorkflowUpdateExecutor = TransactionExecutor & {
+  update: (table: unknown) => {
+    set: (value: Record<string, unknown>) => {
+      where: (condition: unknown) => { returning: () => Promise<Record<string, unknown>[]> };
+    };
+  };
+};
+
+export type RenameWorkflowInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+  name: string;
+};
+
+export type RenameWorkflowResult =
+  | { ok: true; workflow: Workflow }
+  | { ok: false; reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" };
+
+/**
+ * Renames a workflow without touching its id, its application, or any of its
+ * draft or published versions. Only workspace administrators and owners of
+ * an active application may rename it.
+ */
+export async function renameWorkflow(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, userId, name }: RenameWorkflowInput,
+): Promise<RenameWorkflowResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const updater = tx as WorkflowUpdateExecutor;
+
+      const workflowRows = (await updater
+        .update(workflow)
+        .set({ name })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+
+      return workflowRows[0];
+    },
+  );
+
+  if (!result.ok) return result;
+  if (!result.value) return { ok: false, reason: "workflowNotFound" };
+  return { ok: true, workflow: toWorkflow(result.value) };
+}
+
 /**
  * Workflow detail: the workflow plus its draft and its published versions. No
  * node or version storage exists yet, so both are empty by construction; the

@@ -1359,4 +1359,259 @@ describe("ApplicationDetailPanel", () => {
       expect(onOpenWorkflow).toHaveBeenCalledWith("workflow-1");
     });
   });
+
+  describe("US-027: Editar el nombre de un workflow", () => {
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [],
+    };
+
+    function workflowDetailPanel({
+      application = activeApp,
+      workflowId = "workflow-1",
+      canManage = true,
+    }: {
+      application?: Application;
+      workflowId?: string;
+      canManage?: boolean;
+    } = {}) {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId={workflowId}
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    async function openRenameDialog() {
+      fireEvent.click(await screen.findByTestId("workflow-detail-actions"));
+      fireEvent.click(await screen.findByTestId("workflow-detail-rename-trigger"));
+      return screen.findByRole("dialog", { name: "Editar nombre del workflow" });
+    }
+
+    it("shows the Acciones trigger only for an administrator of an active application", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel({ canManage: true }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.getByTestId("workflow-detail-actions")).toBeTruthy();
+      cleanup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByTestId("workflow-detail-actions")).toBeNull();
+      cleanup();
+
+      render(workflowDetailPanel({ application: archivedApp, canManage: true }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByTestId("workflow-detail-actions")).toBeNull();
+    });
+
+    it("opens a dialog prefilled with the current name from Acciones > Editar nombre", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      const input = within(dialog).getByLabelText("Nombre del workflow") as HTMLInputElement;
+      expect(input.value).toBe("Diagnóstico de hoja de café");
+    });
+
+    it("saves a valid name, closes the dialog, shows a success toast and updates the header without reloading", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.patch.mockResolvedValueOnce({
+        data: { workflow: { ...workflowDetail.workflow, name: "Diagnóstico de café" } },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      const getCallsBeforeSave = client.get.mock.calls.length;
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico de café" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      await waitFor(() => {
+        expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1", {
+          name: "Diagnóstico de café",
+        });
+        expect(toastMock.success).toHaveBeenCalledWith("Nombre del workflow actualizado.");
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(
+        within(screen.getByTestId("workflow-detail-header")).getByRole("heading", {
+          name: "Diagnóstico de café",
+        }),
+      ).toBeTruthy();
+      expect(client.get.mock.calls.length).toBe(getCallsBeforeSave);
+    });
+
+    it("trims the name before sending it to the server", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.patch.mockResolvedValueOnce({
+        data: { workflow: { ...workflowDetail.workflow, name: "Diagnóstico" } },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "  Diagnóstico  " },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      await waitFor(() => {
+        expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1", {
+          name: "Diagnóstico",
+        });
+      });
+    });
+
+    it("rejects an empty or whitespace-only name without calling the server and keeps the displayed name", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "   " },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      expect(await within(dialog).findByText("Ingresa un nombre para el workflow.")).toBeTruthy();
+      expect(client.patch).not.toHaveBeenCalled();
+      expect(
+        within(screen.getByTestId("workflow-detail-header")).getByRole("heading", {
+          name: "Diagnóstico de hoja de café",
+        }),
+      ).toBeTruthy();
+    });
+
+    it("shows 'Guardando cambios…' while the rename request is in flight", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      let resolvePatch: (value: unknown) => void = () => {};
+      client.patch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+      );
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico de café" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      expect(
+        (await within(dialog).findByRole("button", { name: "Guardando cambios…" })).hasAttribute(
+          "disabled",
+        ),
+      ).toBe(true);
+
+      resolvePatch({
+        data: { workflow: { ...workflowDetail.workflow, name: "Diagnóstico de café" } },
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+    });
+
+    it("closes the dialog via Cancelar without calling the server", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(client.patch).not.toHaveBeenCalled();
+    });
+
+    it("shows an error toast and keeps the displayed name when the server rejects the rename", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.patch.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para editar este workflow." },
+        },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico de café" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No tienes permiso para editar este workflow.",
+        );
+      });
+      expect(
+        within(screen.getByTestId("workflow-detail-header")).getByRole("heading", {
+          name: "Diagnóstico de hoja de café",
+        }),
+      ).toBeTruthy();
+    });
+
+    it("encodes the workflow id with encodeURIComponent when building the PATCH url", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { ...workflowDetail, workflow: { ...workflowDetail.workflow, id: "../private" } },
+      }));
+      client.patch.mockResolvedValueOnce({
+        data: {
+          workflow: { ...workflowDetail.workflow, id: "../private", name: "Diagnóstico de café" },
+        },
+      });
+
+      render(workflowDetailPanel({ workflowId: "../private" }));
+      await screen.findByTestId("workflow-detail-header");
+
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del workflow"), {
+        target: { value: "Diagnóstico de café" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      await waitFor(() => {
+        expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/..%2Fprivate", {
+          name: "Diagnóstico de café",
+        });
+      });
+    });
+  });
 });
