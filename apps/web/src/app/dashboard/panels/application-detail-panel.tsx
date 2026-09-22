@@ -104,6 +104,7 @@ export function ApplicationDetailPanel({
             key={`${application.id}:${workflowId}`}
             application={application}
             workflowId={workflowId}
+            canManage={canManage}
             onBackToWorkflows={onBackToWorkflows}
           />
         ) : (
