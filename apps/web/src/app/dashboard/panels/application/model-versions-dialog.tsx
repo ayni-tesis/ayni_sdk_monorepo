@@ -142,12 +142,6 @@ export function ModelVersionsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {notice && (
-          <p className="text-destructive text-sm" role="alert">
-            {notice}
-          </p>
-        )}
-
         {canManage && (
           <div className="flex justify-end">
             <Button
@@ -277,6 +271,11 @@ export function ModelVersionsDialog({
                 Se eliminará el archivo del modelo. Esta acción no se puede deshacer.
               </DialogDescription>
             </DialogHeader>
+            {notice && (
+              <p className="text-destructive text-sm" role="alert">
+                {notice}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setDeleteVersion(null)} disabled={deleting}>
                 Cancelar
