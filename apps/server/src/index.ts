@@ -612,7 +612,7 @@ const healthRoute = createRoute({
   },
 });
 
-openApiApp.openapi(healthRoute, (c) => {
+openApiApp.openapi(healthRoute, async (c) => {
   return c.json({ status: "ok" as const });
 });
 
