@@ -2,9 +2,15 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { Application } from "./applications";
-import type { CreateWorkflowInput, CreateWorkflowResult, Workflow } from "./workflow-store";
+import type {
+  CreateWorkflowInput,
+  CreateWorkflowResult,
+  Workflow,
+  WorkflowDetail,
+} from "./workflow-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
+const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const FORBIDDEN_MESSAGE = "No tienes permiso para crear workflows.";
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes crear workflows en una aplicación archivada.";
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
@@ -22,6 +28,7 @@ type Dependencies = {
   workflows: {
     create: (input: CreateWorkflowInput) => Promise<CreateWorkflowResult>;
     list: (applicationId: string) => Promise<Workflow[]>;
+    get: (applicationId: string, workflowId: string) => Promise<WorkflowDetail | undefined>;
   };
 };
 
@@ -41,6 +48,24 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     }
 
     return c.json({ workflows: await workflows.list(application.id) });
+  });
+
+  app.get("/applications/:applicationId/workflows/:workflowId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await applications.get(c.req.param("applicationId"));
+    if (
+      !application ||
+      !(await applications.getMembership(session.user.id, application.organizationId))
+    ) {
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    }
+
+    const detail = await workflows.get(application.id, c.req.param("workflowId"));
+    if (!detail) return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+
+    return c.json(detail);
   });
 
   app.post("/applications/:applicationId/workflows", async (c) => {

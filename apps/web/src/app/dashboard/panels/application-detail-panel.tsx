@@ -5,6 +5,7 @@ import { CredentialsView } from "./application/credentials-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
 import { SettingsView } from "./application/settings-view";
+import { WorkflowDetailView } from "./application/workflow-detail-view";
 import { WorkflowsView } from "./application/workflows-view";
 
 export type { ApplicationSection } from "../types";
@@ -42,6 +43,8 @@ export {
 export type { ModelVersionDto } from "./application/upload-model-version";
 export type { UploadModelVersionDialogProps } from "./application/upload-model-version-dialog";
 export { UploadModelVersionDialog } from "./application/upload-model-version-dialog";
+export type { WorkflowDetailViewProps } from "./application/workflow-detail-view";
+export { WorkflowDetailView } from "./application/workflow-detail-view";
 export type { WorkflowsViewProps } from "./application/workflows-view";
 export { WorkflowsView } from "./application/workflows-view";
 
@@ -50,7 +53,10 @@ export type ApplicationDetailPanelProps = {
   workspaceName?: string;
   canManage?: boolean;
   activeSection?: ApplicationSection;
+  workflowId?: string;
   onBack?: () => void;
+  onOpenWorkflow?: (workflowId: string) => void;
+  onBackToWorkflows?: () => void;
   onApplicationUpdated: (updated: Application) => void;
   onApplicationArchived: (archived: Application) => void;
   onMutationStart?: () => void;
@@ -63,6 +69,9 @@ export function ApplicationDetailPanel({
   application,
   canManage = false,
   activeSection = "overview",
+  workflowId,
+  onOpenWorkflow,
+  onBackToWorkflows,
   onApplicationUpdated,
   onApplicationArchived,
   onMutationStart,
@@ -89,9 +98,22 @@ export function ApplicationDetailPanel({
         />
       )}
 
-      {activeSection === "workflows" && (
-        <WorkflowsView key={application.id} application={application} canManage={canManage} />
-      )}
+      {activeSection === "workflows" &&
+        (workflowId ? (
+          <WorkflowDetailView
+            key={`${application.id}:${workflowId}`}
+            application={application}
+            workflowId={workflowId}
+            onBackToWorkflows={onBackToWorkflows}
+          />
+        ) : (
+          <WorkflowsView
+            key={application.id}
+            application={application}
+            canManage={canManage}
+            onOpenWorkflow={onOpenWorkflow}
+          />
+        ))}
 
       {activeSection === "models" && <ModelsView application={application} canManage={canManage} />}
 

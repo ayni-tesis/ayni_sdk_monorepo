@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -1118,6 +1119,244 @@ describe("ApplicationDetailPanel", () => {
       expect(await screen.findByTestId("workflow-row-workflow-1")).toBeTruthy();
       expect(workflowsCalls).toBe(2);
       expect(screen.queryByTestId("workflows-empty")).toBeNull();
+    });
+  });
+
+  describe("US-026: Ver el detalle de un workflow", () => {
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [],
+    };
+
+    function workflowDetailPanel({
+      application = activeApp,
+      workflowId = "workflow-1",
+      onBackToWorkflows = vi.fn(),
+    }: {
+      application?: Application;
+      workflowId?: string;
+      onBackToWorkflows?: () => void;
+    } = {}) {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="workflows"
+            workflowId={workflowId}
+            onBackToWorkflows={onBackToWorkflows}
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    it("shows 'Cargando workflow…' while the detail is being fetched", async () => {
+      let resolveDetail: (value: unknown) => void = () => {};
+      client.get.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveDetail = resolve;
+          }),
+      );
+
+      render(workflowDetailPanel());
+
+      const loading = await screen.findByTestId("workflow-detail-loading");
+      expect(loading.textContent).toBe("Cargando workflow…");
+
+      resolveDetail({ data: workflowDetail });
+      expect(
+        await screen.findByRole("heading", { name: "Diagnóstico de hoja de café" }),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("workflow-detail-loading")).toBeNull();
+    });
+
+    it("shows the name, ID and status of a workflow of the application", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel());
+
+      const header = await screen.findByTestId("workflow-detail-header");
+      expect(
+        within(header).getByRole("heading", { name: "Diagnóstico de hoja de café" }),
+      ).toBeTruthy();
+      expect(within(header).getByText("workflow-1")).toBeTruthy();
+      expect(within(header).getByText("Borrador")).toBeTruthy();
+      expect(client.get).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1",
+        expect.anything(),
+      );
+    });
+
+    it("shows the route Workflows / <nombre> and returns to the list from Workflows", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      const onBackToWorkflows = vi.fn();
+
+      render(workflowDetailPanel({ onBackToWorkflows }));
+
+      const route = await screen.findByRole("navigation", { name: "breadcrumb" });
+      expect(within(route).getByText("Diagnóstico de hoja de café")).toBeTruthy();
+      fireEvent.click(within(route).getByRole("link", { name: "Workflows" }));
+      expect(onBackToWorkflows).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the Workflows link to the browser when no navigation handler is given", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const route = await screen.findByRole("navigation", { name: "breadcrumb" });
+      const link = within(route).getByRole("link", { name: "Workflows" });
+      expect(link.getAttribute("href")).toBe("/dashboard/applications/app-1/workflows");
+
+      // The document listener runs after React's handler, so it sees whether the
+      // component cancelled the browser navigation, and then cancels it itself.
+      let defaultPrevented: boolean | undefined;
+      const observeClick = (event: MouseEvent) => {
+        defaultPrevented = event.defaultPrevented;
+        event.preventDefault();
+      };
+      document.addEventListener("click", observeClick);
+      fireEvent.click(link);
+      document.removeEventListener("click", observeClick);
+
+      expect(defaultPrevented).toBe(false);
+    });
+
+    it("encodes the workflow id in the request path", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel({ workflowId: "../private" }));
+
+      await screen.findByTestId("workflow-detail-header");
+      expect(client.get).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/..%2Fprivate",
+        expect.anything(),
+      );
+    });
+
+    it("distinguishes the draft from the published versions with two tabs", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      const user = userEvent.setup();
+
+      render(workflowDetailPanel());
+
+      const draftTab = await screen.findByRole("tab", { name: "Borrador" });
+      const versionsTab = screen.getByRole("tab", { name: "Versiones publicadas" });
+      expect(draftTab.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByText("Este borrador aún no tiene nodos.")).toBeTruthy();
+      expect(screen.queryByText("Aún no hay versiones publicadas.")).toBeNull();
+
+      await user.click(versionsTab);
+
+      expect(versionsTab.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByText("Aún no hay versiones publicadas.")).toBeTruthy();
+      expect(screen.queryByText("Este borrador aún no tiene nodos.")).toBeNull();
+    });
+
+    it.each([
+      ["the workflow does not exist", "No encontramos este workflow."],
+      ["the requester cannot access the application", "No encontramos esta aplicación."],
+    ])("shows 'No encontramos este workflow.' when %s", async (_case, serverMessage) => {
+      client.get.mockImplementation(() => {
+        throw {
+          isAxiosError: true,
+          response: { status: 404, data: { message: serverMessage } },
+        };
+      });
+
+      render(workflowDetailPanel());
+
+      const notFound = await screen.findByTestId("workflow-detail-not-found");
+      expect(notFound.textContent).toBe("No encontramos este workflow.");
+      expect(screen.queryByTestId("workflow-detail-header")).toBeNull();
+      expect(screen.queryByRole("tab")).toBeNull();
+      expect(screen.queryByTestId("workflow-detail-loading")).toBeNull();
+    });
+
+    it("shows a retryable error state when the detail fails to load", async () => {
+      let detailCalls = 0;
+      client.get.mockImplementation(() => {
+        detailCalls += 1;
+        if (detailCalls === 1) {
+          throw { isAxiosError: true, response: { status: 500, data: {} } };
+        }
+        return { data: workflowDetail };
+      });
+
+      render(workflowDetailPanel());
+
+      expect(
+        await screen.findByText("No pudimos cargar el workflow. Inténtalo nuevamente."),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("workflow-detail-not-found")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("workflow-detail-retry"));
+
+      expect(await screen.findByTestId("workflow-detail-header")).toBeTruthy();
+      expect(detailCalls).toBe(2);
+    });
+
+    it("never paints the previous workflow while another one is loading", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflow-2") ? new Promise(() => {}) : { data: workflowDetail },
+      );
+
+      const { rerender } = render(workflowDetailPanel());
+      expect(await screen.findByTestId("workflow-detail-header")).toBeTruthy();
+
+      rerender(workflowDetailPanel({ workflowId: "workflow-2" }));
+
+      expect(await screen.findByTestId("workflow-detail-loading")).toBeTruthy();
+      expect(screen.queryByText("Diagnóstico de hoja de café")).toBeNull();
+    });
+
+    it("opens the detail of a workflow from the list", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { workflows: [workflowDetail.workflow] },
+      }));
+      const onOpenWorkflow = vi.fn();
+
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={false}
+            activeSection="workflows"
+            onOpenWorkflow={onOpenWorkflow}
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "Diagnóstico de hoja de café" }));
+
+      expect(onOpenWorkflow).toHaveBeenCalledWith("workflow-1");
     });
   });
 });
