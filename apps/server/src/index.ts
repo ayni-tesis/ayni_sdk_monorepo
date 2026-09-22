@@ -2,8 +2,6 @@ import { createHash } from "node:crypto";
 import {
   createOpenApiDocument,
   HealthResponseSchema,
-  PrivateDataResponseSchema,
-  UnauthorizedResponseSchema,
 } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
@@ -619,45 +617,6 @@ const healthRoute = createRoute({
 
 openApiApp.openapi(healthRoute, (c) => {
   return c.json({ status: "ok" as const });
-});
-
-const privateRoute = createRoute({
-  method: "get",
-  path: "/private",
-  tags: ["Example"],
-  security: [{ bearerAuth: [] }],
-  responses: {
-    200: {
-      description: "Private user data",
-      content: {
-        "application/json": {
-          schema: PrivateDataResponseSchema,
-        },
-      },
-    },
-    401: {
-      description: "Authentication required",
-      content: {
-        "application/json": {
-          schema: UnauthorizedResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-openApiApp.openapi(privateRoute, async (c) => {
-  const session = await auth.api.getSession({
-    headers: c.req.raw.headers,
-  });
-  if (!session) {
-    return c.json({ message: "Authentication required" }, 401);
-  }
-
-  return c.json({
-    message: "This is private",
-    user: session.user,
-  });
 });
 
 openApiApp.doc("/openapi.json", createOpenApiDocument());
