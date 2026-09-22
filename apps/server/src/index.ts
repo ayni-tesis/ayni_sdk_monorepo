@@ -11,7 +11,7 @@ import {
   user,
 } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { and, asc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
@@ -596,30 +596,8 @@ app.route(
 
 const openApiApp = new OpenAPIHono();
 
-const healthResponseSchema = z
-  .object({
-    status: z.literal("ok"),
-  })
-  .openapi("HealthResponse");
-
-const healthRoute = createRoute({
-  method: "get",
-  path: "/health",
-  tags: ["System"],
-  responses: {
-    200: {
-      description: "Service health",
-      content: {
-        "application/json": {
-          schema: healthResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-openApiApp.openapi(healthRoute, async (c) => {
-  return c.json({ status: "ok" as const }, 200);
+openApiApp.get("/health", (c) => {
+  return c.json({ status: "ok" as const });
 });
 
 openApiApp.doc("/openapi.json", createOpenApiDocument());
