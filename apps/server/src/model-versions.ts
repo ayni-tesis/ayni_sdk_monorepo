@@ -62,7 +62,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
     }
 
     const result = await modelVersions.list(application.id, c.req.param("modelId"));
-    if (!result.ok) {
+    if (result.ok === false) {
       return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
     }
 

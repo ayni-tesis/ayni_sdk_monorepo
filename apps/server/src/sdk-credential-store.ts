@@ -171,7 +171,7 @@ export async function createSdkCredential(
     const tx = transaction as TransactionExecutor;
 
     const authorized = await findManagedApplication(tx, applicationId, userId);
-    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.ok === false) return { ok: false, reason: authorized.reason };
     if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
 
     const foundApplication = authorized.application;
@@ -213,7 +213,7 @@ export async function revokeSdkCredential(
     const tx = transaction as TransactionExecutor;
 
     const authorized = await findManagedApplication(tx, applicationId, userId);
-    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.ok === false) return { ok: false, reason: authorized.reason };
 
     const credentialRows = (await tx
       .select({
@@ -267,7 +267,7 @@ export async function regenerateSdkCredential(
     const tx = transaction as TransactionExecutor;
 
     const authorized = await findManagedApplication(tx, applicationId, userId);
-    if (!authorized.ok) return { ok: false, reason: authorized.reason };
+    if (authorized.ok === false) return { ok: false, reason: authorized.reason };
     if (authorized.application.status !== "active") return { ok: false, reason: "archived" };
 
     const foundApplication = authorized.application;

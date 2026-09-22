@@ -88,7 +88,7 @@ export async function createModel(
     },
   );
 
-  if (!result.ok) return result;
+  if (result.ok === false) return result;
   return { ok: true, model: result.value };
 }
 

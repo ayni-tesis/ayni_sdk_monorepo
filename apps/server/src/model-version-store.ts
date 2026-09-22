@@ -208,7 +208,7 @@ export async function createModelVersionWithArtifact(
     return { ok: false, reason: isUniqueViolation(error) ? "versionExists" : "databaseFailed" };
   }
 
-  if (!outcome.ok) {
+  if (outcome.ok === false) {
     await compensate();
     return { ok: false, reason: outcome.reason };
   }
