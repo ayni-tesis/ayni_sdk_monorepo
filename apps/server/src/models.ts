@@ -81,7 +81,7 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
       runtime: parsed.data.runtime,
     });
 
-    if (result.ok) return c.json({ model: result.model }, 201);
+    if (result.ok === true) return c.json({ model: result.model }, 201);
     if (result.reason === "forbidden") {
       return c.json({ message: "No tienes permiso para registrar modelos." }, 403);
     }

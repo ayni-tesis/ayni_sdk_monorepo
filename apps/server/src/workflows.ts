@@ -71,7 +71,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       name: parsed.data.name,
     });
 
-    if (result.ok) return c.json({ workflow: result.workflow }, 201);
+    if (result.ok === true) return c.json({ workflow: result.workflow }, 201);
     if (result.reason === "forbidden") {
       return c.json({ message: FORBIDDEN_MESSAGE }, 403);
     }

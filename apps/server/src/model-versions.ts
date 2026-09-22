@@ -92,7 +92,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
       modelVersionId: c.req.param("modelVersionId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.body(null, 204);
+    if (result.ok === true) return c.body(null, 204);
 
     switch (result.reason) {
       case "forbidden":
@@ -180,7 +180,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
         maxBytes: MAX_MODEL_VERSION_BYTES,
       });
 
-      if (result.ok) return c.json({ modelVersion: result.modelVersion }, 201);
+      if (result.ok === true) return c.json({ modelVersion: result.modelVersion }, 201);
 
       switch (result.reason) {
         case "forbidden":
