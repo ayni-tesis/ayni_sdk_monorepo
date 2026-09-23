@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 class ModelDownloadManifest {
   const ModelDownloadManifest({
@@ -17,8 +18,9 @@ class ModelDownloadManifest {
         sha256: json['sha256'] as String,
         sizeBytes: json['sizeBytes'] as int,
         downloadUrl: Uri.parse(json['downloadUrl'] as String),
-        downloadUrlExpiresAt:
-            DateTime.parse(json['downloadUrlExpiresAt'] as String),
+        downloadUrlExpiresAt: DateTime.parse(
+          json['downloadUrlExpiresAt'] as String,
+        ),
       );
 
   final String modelVersionId;
@@ -36,18 +38,24 @@ class ModelArtifactDownloadResult {
     required this.modelVersionId,
     required this.status,
     required this.message,
+    this.temporaryArtifact,
   });
 
   final String modelVersionId;
   final ModelArtifactDownloadStatus status;
   final String message;
+
+  /// The attempt-owned artifact to pass to integrity verification after a
+  /// successful download. It is absent when no complete artifact was created.
+  final String? temporaryArtifact;
 }
 
 class ModelArtifactDownloader {
   Future<ModelArtifactDownloadResult> download({
     required ModelDownloadManifest manifest,
     required File temporaryArtifact,
-    void Function(String message, int receivedBytes, int totalBytes)? onProgress,
+    void Function(String message, int receivedBytes, int totalBytes)?
+    onProgress,
     HttpClient? httpClient,
   }) async {
     const expiredMessage =
@@ -75,17 +83,20 @@ class ModelArtifactDownloader {
 
     final client = httpClient ?? HttpClient();
     final ownsClient = httpClient == null;
+    final attemptArtifact = File(
+      '${temporaryArtifact.path}.${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}.part',
+    );
     IOSink? sink;
-    var ownsTemporaryArtifact = false;
+    var ownsAttemptArtifact = false;
     var receivedBytes = 0;
     Future<void> cleanup() async {
       try {
         await sink?.close();
         sink = null;
       } catch (_) {}
-      if (ownsTemporaryArtifact) {
+      if (ownsAttemptArtifact) {
         try {
-          await temporaryArtifact.delete();
+          await attemptArtifact.delete();
         } on IOException {
           // Preserve the original download or callback failure.
         }
@@ -93,15 +104,7 @@ class ModelArtifactDownloader {
     }
 
     try {
-      await temporaryArtifact.parent.create(recursive: true);
-      if (await temporaryArtifact.exists()) {
-        return ModelArtifactDownloadResult(
-          modelVersionId: id,
-          status: ModelArtifactDownloadStatus.downloadFailed,
-          message: interruptedMessage,
-        );
-      }
-
+      await attemptArtifact.parent.create(recursive: true);
       final request = await client.getUrl(manifest.downloadUrl);
       request.followRedirects = false;
       final response = await request.close();
@@ -110,16 +113,17 @@ class ModelArtifactDownloader {
         return ModelArtifactDownloadResult(
           modelVersionId: id,
           status: ModelArtifactDownloadStatus.downloadFailed,
-          message: response.statusCode == HttpStatus.forbidden ||
+          message:
+              response.statusCode == HttpStatus.forbidden ||
                   response.statusCode == HttpStatus.notFound
               ? expiredMessage
               : interruptedMessage,
         );
       }
 
-      await temporaryArtifact.create(exclusive: true);
-      ownsTemporaryArtifact = true;
-      sink = temporaryArtifact.openWrite();
+      await attemptArtifact.create(exclusive: true);
+      ownsAttemptArtifact = true;
+      sink = attemptArtifact.openWrite();
       await for (final chunk in response) {
         if (receivedBytes + chunk.length > manifest.sizeBytes) {
           await cleanup();
@@ -153,7 +157,9 @@ class ModelArtifactDownloader {
       return ModelArtifactDownloadResult(
         modelVersionId: id,
         status: ModelArtifactDownloadStatus.downloaded,
-        message: 'Modelo ${manifest.version} descargado. Verificando integridad…',
+        message:
+            'Modelo ${manifest.version} descargado. Verificando integridad…',
+        temporaryArtifact: attemptArtifact.path,
       );
     } on IOException {
       await cleanup();

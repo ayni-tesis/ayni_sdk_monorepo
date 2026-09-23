@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-// The generated bundle has no stable declaration in all build environments.
-// @ts-expect-error
+// The generated bundle may be unavailable or undeclared during type checking.
+// biome-ignore lint/suspicious/noTsIgnore: the generated module has environment-dependent declarations
+// @ts-ignore
 import app from "./dist/hono-app.mjs";
 
 if (!(app instanceof Hono)) {
