@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-// tsdown generates this bundle without declarations.
-// @ts-expect-error generated JavaScript bundle has no declaration file
+// The generated bundle has no stable declaration in all build environments.
+// @ts-ignore
 import app from "./dist/hono-app.mjs";
 
 if (!(app instanceof Hono)) {
