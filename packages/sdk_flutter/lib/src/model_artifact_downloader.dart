@@ -157,10 +157,13 @@ class ModelArtifactDownloader {
       );
     } on IOException {
       await cleanup();
+      final urlExpired = !manifest.downloadUrlExpiresAt.isAfter(DateTime.now());
       return ModelArtifactDownloadResult(
         modelVersionId: id,
-        status: ModelArtifactDownloadStatus.pending,
-        message: interruptedMessage,
+        status: urlExpired
+            ? ModelArtifactDownloadStatus.downloadFailed
+            : ModelArtifactDownloadStatus.pending,
+        message: urlExpired ? expiredMessage : interruptedMessage,
       );
     } catch (error, stackTrace) {
       await cleanup();
