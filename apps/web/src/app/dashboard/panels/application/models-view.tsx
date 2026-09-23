@@ -125,9 +125,10 @@ const RUNTIME_LABELS: Record<ModelItem["runtime"], string> = {
 export type ModelsViewProps = {
   application: Application;
   canManage?: boolean;
+  onOpenModel?: (modelId: string) => void;
 };
 
-export function ModelsView({ application, canManage = false }: ModelsViewProps) {
+export function ModelsView({ application, canManage = false, onOpenModel }: ModelsViewProps) {
   const [registerModelDialogOpen, setRegisterModelDialogOpen] = useState(false);
   const [modelName, setModelName] = useState("");
   const [modelError, setModelError] = useState("");
@@ -260,7 +261,15 @@ export function ModelsView({ application, canManage = false }: ModelsViewProps) 
           <tbody>
             {models.map((modelItem) => (
               <tr key={modelItem.id} data-testid={`model-row-${modelItem.id}`}>
-                <td className="py-2.5 font-medium">{modelItem.name}</td>
+                <td className="py-2.5 font-medium">
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => onOpenModel?.(modelItem.id)}
+                  >
+                    {modelItem.name}
+                  </button>
+                </td>
                 <td className="py-2.5 text-muted-foreground">
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                     {modelItem.id}

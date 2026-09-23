@@ -610,6 +610,90 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-019: Ver el detalle de un modelo", () => {
+    const listedModel = {
+      id: "model-1",
+      applicationId: "app-1",
+      name: "Detector de plagas",
+      runtime: "tensorflow_lite",
+      versionCount: 1,
+      createdAt: "2026-09-19T20:00:00.000Z",
+      updatedAt: "2026-09-20T20:00:00.000Z",
+    };
+
+    function modelDetailPanel(modelId = "model-1") {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            canManage={false}
+            activeSection="models"
+            modelId={modelId}
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    it("shows the specified loading state while resolving the model", async () => {
+      let resolveModels: (value: unknown) => void = () => {};
+      let calls = 0;
+      client.get.mockImplementation(() => {
+        calls += 1;
+        if (calls === 1)
+          return new Promise((resolve) => {
+            resolveModels = resolve;
+          });
+        return Promise.resolve({ data: { versions: [] } });
+      });
+
+      render(modelDetailPanel());
+
+      expect((await screen.findByTestId("model-detail-loading")).textContent).toBe(
+        "Cargando modelo…",
+      );
+      resolveModels({ data: { models: [listedModel] } });
+      expect(await screen.findByTestId("model-detail-header")).toBeTruthy();
+    });
+
+    it("uses the same not-found state when the model is not in the member-visible list", async () => {
+      client.get.mockResolvedValue({ data: { models: [] } });
+
+      render(modelDetailPanel("missing-model"));
+
+      expect((await screen.findByTestId("model-detail-not-found")).textContent).toBe(
+        "No encontramos este modelo.",
+      );
+      expect(client.get).not.toHaveBeenCalledWith(
+        "/applications/app-1/models/missing-model/versions",
+        expect.anything(),
+      );
+    });
+
+    it("shows a retryable error and loads the model after retry", async () => {
+      let versionCalls = 0;
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/models")) return { data: { models: [listedModel] } };
+        versionCalls += 1;
+        if (versionCalls === 1) {
+          throw { isAxiosError: true, response: { status: 500, data: {} } };
+        }
+        return { data: { versions: [] } };
+      });
+
+      render(modelDetailPanel());
+
+      expect(
+        await screen.findByText("No pudimos cargar el modelo. Inténtalo nuevamente."),
+      ).toBeTruthy();
+      fireEvent.click(screen.getByTestId("model-detail-retry"));
+      expect(await screen.findByTestId("model-detail-header")).toBeTruthy();
+      expect(versionCalls).toBe(2);
+    });
+  });
+
   describe("US-015: Listar las versiones de un modelo", () => {
     const versionedModel = {
       id: "model-1",
