@@ -31,7 +31,7 @@ import {
   type RemoveMemberResult,
   type UpdateMemberRoleResult,
 } from "./members";
-import { createModel, listModels } from "./model-store";
+import { createModel, listModels, renameModel } from "./model-store";
 import { r2ModelVersionStorage } from "./model-version-storage";
 import {
   createModelVersionWithArtifact,
@@ -115,6 +115,9 @@ const models = {
   },
   list(applicationId: string) {
     return listModels(db, applicationId);
+  },
+  rename(input: { applicationId: string; modelId: string; userId: string; name: string }) {
+    return renameModel(db, input);
   },
 };
 

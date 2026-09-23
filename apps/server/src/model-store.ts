@@ -1,5 +1,5 @@
 import { model, modelVersion } from "@ayni/db/schema/index";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -56,6 +56,19 @@ export type CreateModelInput = {
   runtime: "tensorflow_lite";
 };
 
+export type RenameModelInput = {
+  applicationId: string;
+  modelId: string;
+  userId: string;
+  name: string;
+};
+
+export type RenamedModel = Omit<Model, "versionCount">;
+
+export type RenameModelResult =
+  | { ok: true; model: RenamedModel }
+  | { ok: false; reason: "forbidden" | "notFound" | "archived" | "modelNotFound" };
+
 export async function createModel(
   database: ModelDatabase,
   { applicationId, userId, name, runtime }: CreateModelInput,
@@ -90,6 +103,49 @@ export async function createModel(
 
   if (result.ok === false) return result;
   return { ok: true, model: result.value };
+}
+
+type ModelUpdateExecutor = TransactionExecutor & {
+  update: (table: unknown) => {
+    set: (value: Record<string, unknown>) => {
+      where: (condition: unknown) => { returning: () => Promise<Record<string, unknown>[]> };
+    };
+  };
+};
+
+/** Renames a model without touching its identity, runtime, or stored versions. */
+export async function renameModel(
+  database: ModelDatabase,
+  { applicationId, modelId, userId, name }: RenameModelInput,
+): Promise<RenameModelResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, authorizedApplication) => {
+      const updater = tx as ModelUpdateExecutor;
+      const rows = await updater
+        .update(model)
+        .set({ name })
+        .where(and(eq(model.id, modelId), eq(model.applicationId, authorizedApplication.id)))
+        .returning();
+      return rows[0] as ModelRow | undefined;
+    },
+  );
+
+  if (result.ok === false) return result;
+  if (!result.value) return { ok: false, reason: "modelNotFound" };
+
+  return {
+    ok: true,
+    model: {
+      id: result.value.id,
+      applicationId: result.value.applicationId,
+      name: result.value.name,
+      runtime: "tensorflow_lite",
+      createdAt: toIsoString(result.value.createdAt),
+      updatedAt: toIsoString(result.value.updatedAt),
+    },
+  };
 }
 
 type ListModelsExecutor = {

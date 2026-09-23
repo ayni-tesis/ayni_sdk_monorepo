@@ -621,12 +621,12 @@ describe("ApplicationDetailPanel", () => {
       updatedAt: "2026-09-20T20:00:00.000Z",
     };
 
-    function modelDetailPanel(modelId = "model-1") {
+    function modelDetailPanel(modelId = "model-1", canManage = false) {
       return (
         <TooltipProvider>
           <ApplicationDetailPanel
             application={activeApp}
-            canManage={false}
+            canManage={canManage}
             activeSection="models"
             modelId={modelId}
             onBack={vi.fn()}
@@ -691,6 +691,89 @@ describe("ApplicationDetailPanel", () => {
       fireEvent.click(screen.getByTestId("model-detail-retry"));
       expect(await screen.findByTestId("model-detail-header")).toBeTruthy();
       expect(versionCalls).toBe(2);
+    });
+
+    async function openRenameDialog() {
+      fireEvent.click(await screen.findByTestId("model-detail-actions"));
+      fireEvent.click(await screen.findByTestId("model-detail-rename-trigger"));
+      return screen.findByRole("dialog", { name: "Editar nombre del modelo" });
+    }
+
+    it("lets an administrator edit the model name from Acciones", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/models") ? { data: { models: [listedModel] } } : { data: { versions: [] } },
+      );
+      client.patch.mockResolvedValueOnce({
+        data: {
+          model: {
+            id: "model-1",
+            applicationId: "app-1",
+            name: "Detector actualizado",
+            runtime: "tensorflow_lite",
+            createdAt: listedModel.createdAt,
+            updatedAt: "2026-09-22T09:00:00.000Z",
+          },
+        },
+      });
+
+      render(modelDetailPanel("model-1", true));
+      await screen.findByTestId("model-detail-header");
+      const getCallsBeforeRename = client.get.mock.calls.length;
+      const dialog = await openRenameDialog();
+      expect((within(dialog).getByLabelText("Nombre del modelo") as HTMLInputElement).value).toBe(
+        listedModel.name,
+      );
+      fireEvent.change(within(dialog).getByLabelText("Nombre del modelo"), {
+        target: { value: "  Detector actualizado  " },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      await waitFor(() => {
+        expect(client.patch).toHaveBeenCalledWith("/applications/app-1/models/model-1", {
+          name: "Detector actualizado",
+        });
+        expect(toastMock.success).toHaveBeenCalledWith("Nombre del modelo actualizado.");
+      });
+      expect(
+        within(screen.getByTestId("model-detail-header")).getByRole("heading", {
+          name: "Detector actualizado",
+        }),
+      ).toBeTruthy();
+      expect(screen.getByText("1")).toBeTruthy();
+      expect(client.get.mock.calls.length).toBe(getCallsBeforeRename);
+    });
+
+    it("rejects an empty name and keeps the old name", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/models") ? { data: { models: [listedModel] } } : { data: { versions: [] } },
+      );
+
+      render(modelDetailPanel("model-1", true));
+      await screen.findByTestId("model-detail-header");
+      const dialog = await openRenameDialog();
+      fireEvent.change(within(dialog).getByLabelText("Nombre del modelo"), {
+        target: { value: "   " },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Guardar cambios" }));
+
+      expect(await within(dialog).findByText("Ingresa un nombre para el modelo.")).toBeTruthy();
+      expect(client.patch).not.toHaveBeenCalled();
+      expect(
+        within(screen.getByTestId("model-detail-header")).getByRole("heading", {
+          name: listedModel.name,
+        }),
+      ).toBeTruthy();
+    });
+
+    it("does not show rename actions to a regular workspace member", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/models") ? { data: { models: [listedModel] } } : { data: { versions: [] } },
+      );
+
+      render(modelDetailPanel());
+
+      await screen.findByTestId("model-detail-header");
+      expect(screen.queryByTestId("model-detail-actions")).toBeNull();
     });
   });
 

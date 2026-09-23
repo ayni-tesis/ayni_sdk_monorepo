@@ -131,6 +131,7 @@ export function ApplicationDetailPanel({
             key={`${application.id}:${modelId}`}
             application={application}
             modelId={modelId}
+            canManage={canManage}
             onBackToModels={onBackToModels}
           />
         ) : (

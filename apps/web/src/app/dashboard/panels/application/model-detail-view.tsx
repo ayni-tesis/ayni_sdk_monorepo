@@ -3,6 +3,7 @@
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,6 +13,21 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api-error";
 import { formatLongDateEs } from "@/lib/format-date";
@@ -30,15 +46,25 @@ const LOAD_ERROR = "No pudimos cargar el modelo. Inténtalo nuevamente.";
 export type ModelDetailViewProps = {
   application: Application;
   modelId: string;
+  canManage?: boolean;
   onBackToModels?: () => void;
 };
 
-export function ModelDetailView({ application, modelId, onBackToModels }: ModelDetailViewProps) {
+export function ModelDetailView({
+  application,
+  modelId,
+  canManage = false,
+  onBackToModels,
+}: ModelDetailViewProps) {
   const [model, setModel] = useState<ModelItem | null>(null);
   const [versions, setVersions] = useState<ModelVersionListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const loadDetail = useCallback(async () => {
@@ -80,6 +106,29 @@ export function ModelDetailView({ application, modelId, onBackToModels }: ModelD
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [application.id, modelId]);
+
+  async function saveModelName(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = renameName.trim();
+    if (!name) {
+      setRenameError("Ingresa un nombre para el modelo.");
+      return;
+    }
+
+    setSavingRename(true);
+    try {
+      const { data } = await httpClient.patch<{
+        model: Omit<ModelItem, "versionCount">;
+      }>(`/applications/${application.id}/models/${encodeURIComponent(modelId)}`, { name });
+      setModel((current) => (current ? { ...current, ...data.model } : current));
+      setRenameDialogOpen(false);
+      toast.success("Nombre del modelo actualizado.");
+    } catch (renameError) {
+      toast.error(errorMessage(renameError, "No pudimos editar el nombre del modelo."));
+    } finally {
+      setSavingRename(false);
+    }
+  }
 
   useEffect(() => {
     void loadDetail();
@@ -145,6 +194,29 @@ export function ModelDetailView({ application, modelId, onBackToModels }: ModelD
             TensorFlow Lite
           </span>
         </div>
+        {canManage && application.status === "active" && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="outline" size="sm" data-testid="model-detail-actions">
+                  Acciones
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                data-testid="model-detail-rename-trigger"
+                onClick={() => {
+                  setRenameName(model.name);
+                  setRenameError("");
+                  setRenameDialogOpen(true);
+                }}
+              >
+                Editar nombre
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
           <div>
             <dt className="text-muted-foreground">ID del modelo</dt>
@@ -206,6 +278,53 @@ export function ModelDetailView({ application, modelId, onBackToModels }: ModelD
           )}
         </TabsContent>
       </Tabs>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar nombre del modelo</DialogTitle>
+            <DialogDescription className="sr-only">
+              Cambia el nombre visible del modelo sin afectar sus versiones.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveModelName} noValidate className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label htmlFor="rename-model-name" className="font-semibold text-sm">
+                Nombre del modelo
+              </label>
+              <Input
+                id="rename-model-name"
+                autoFocus
+                required
+                aria-required="true"
+                value={renameName}
+                onChange={(event) => {
+                  setRenameName(event.target.value);
+                  if (renameError) setRenameError("");
+                }}
+              />
+              {renameError && (
+                <p className="text-destructive text-sm" role="alert">
+                  {renameError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={savingRename}
+                onClick={() => setRenameDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={savingRename}>
+                {savingRename ? "Guardando cambios…" : "Guardar cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { Application } from "./applications";
-import type { CreateModelResult, Model } from "./model-store";
+import type { CreateModelResult, Model, RenameModelResult } from "./model-store";
 
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes registrar modelos en una aplicación archivada.";
 
@@ -16,6 +16,12 @@ const registerModelSchema = z.object({
       error: "El primer runtime admitido es TensorFlow Lite.",
     })
     .transform(() => "tensorflow_lite" as const),
+});
+const renameModelSchema = z.object({
+  name: z
+    .string({ error: "Ingresa un nombre para el modelo." })
+    .trim()
+    .min(1, { message: "Ingresa un nombre para el modelo." }),
 });
 
 type Dependencies = {
@@ -32,6 +38,12 @@ type Dependencies = {
       runtime: "tensorflow_lite";
     }) => Promise<CreateModelResult>;
     list: (applicationId: string) => Promise<Model[]>;
+    rename: (input: {
+      applicationId: string;
+      modelId: string;
+      userId: string;
+      name: string;
+    }) => Promise<RenameModelResult>;
   };
 };
 
@@ -90,6 +102,54 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
     }
 
     return c.json({ message: "No encontramos esta aplicación." }, 404);
+  });
+
+  app.patch("/applications/:applicationId/models/:modelId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await applications.get(c.req.param("applicationId"));
+    if (
+      !application ||
+      !(await applications.getMembership(session.user.id, application.organizationId))
+    ) {
+      return c.json({ message: "No encontramos esta aplicaciÃ³n." }, 404);
+    }
+
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json({ message: "Ingresa un nombre para el modelo." }, 400);
+    }
+
+    const parsed = renameModelSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return c.json(
+        { message: parsed.error.issues[0]?.message ?? "Ingresa un nombre para el modelo." },
+        400,
+      );
+    }
+
+    const result = await models.rename({
+      applicationId: application.id,
+      modelId: c.req.param("modelId"),
+      userId: session.user.id,
+      name: parsed.data.name,
+    });
+
+    if (result.ok) return c.json({ model: result.model });
+    if (result.reason === "forbidden") {
+      return c.json({ message: "No tienes permiso para editar este modelo." }, 403);
+    }
+    if (result.reason === "archived") {
+      return c.json({ message: "No puedes editar modelos en una aplicaciÃ³n archivada." }, 409);
+    }
+    if (result.reason === "modelNotFound") {
+      return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
+    }
+
+    return c.json({ message: "No encontramos esta aplicaciÃ³n." }, 404);
   });
 
   return app;
