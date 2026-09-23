@@ -43,6 +43,7 @@ const listedVersion: ModelVersionListItem = {
   sha256: fullSha,
   sizeBytes: 2048,
   createdAt: "2026-09-20T00:00:00.000Z",
+  contract: null,
 };
 
 const expectedDate = new Date("2026-09-20T00:00:00.000Z").toLocaleDateString("es", {
@@ -97,7 +98,7 @@ describe("ModelVersionsDialog", () => {
     expect(within(row).getByText(`${"a".repeat(8)}…`)).toBeTruthy();
     expect(within(row).getByText("2 KB")).toBeTruthy();
     expect(within(row).getByText(expectedDate)).toBeTruthy();
-    expect(within(row).getByText("—")).toBeTruthy();
+    expect(within(row).getByText("Sin definir")).toBeTruthy();
   });
 
   it("shows the title Versiones de <modelo>", async () => {

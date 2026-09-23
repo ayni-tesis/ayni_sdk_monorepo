@@ -85,6 +85,7 @@ function makeFakeStorage(putError?: unknown) {
       if (putError) throw putError;
       artifacts.set(key, bytes);
     }),
+    getArtifact: vi.fn(async (key: string) => artifacts.get(key) ?? new Uint8Array()),
     removeArtifact: vi.fn(async (key: string) => {
       artifacts.delete(key);
     }),
@@ -435,6 +436,7 @@ describe("listModelVersions", () => {
           sha256: "b".repeat(64),
           sizeBytes: 4096,
           createdAt: "2026-09-20T12:00:00.000Z",
+          contract: null,
         },
         {
           id: "mv-1",
@@ -442,6 +444,7 @@ describe("listModelVersions", () => {
           sha256: "a".repeat(64),
           sizeBytes: 2048,
           createdAt: "2026-09-19T12:00:00.000Z",
+          contract: null,
         },
       ],
     });
@@ -455,6 +458,7 @@ describe("listModelVersions", () => {
       "sha256",
       "sizeBytes",
       "createdAt",
+      "contract",
     ]);
   });
 
@@ -483,6 +487,7 @@ const OWN_VERSION_ROW = {
   storageKey: "applications/app-1/models/model-1/versions/1.2.0.tflite",
   sha256: "c".repeat(64),
   sizeBytes: "2048",
+  contract: null,
 };
 
 function makeManifestDb(state: {
@@ -546,6 +551,7 @@ describe("getSdkModelVersionManifest", () => {
           downloadUrlExpiresAt: new Date(
             Date.now() + SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS * 1000,
           ).toISOString(),
+          contract: null,
         },
       });
       expect(storage.createDownloadUrl).toHaveBeenCalledWith(

@@ -19,6 +19,7 @@ const ownManifest: SdkModelVersionManifest = {
   sizeBytes: 2048,
   downloadUrl: "https://signed.example/applications/app-1/models/model-1/versions/1.2.0.tflite",
   downloadUrlExpiresAt: "2026-09-21T01:00:00.000Z",
+  contract: null,
 };
 
 function makeApp({

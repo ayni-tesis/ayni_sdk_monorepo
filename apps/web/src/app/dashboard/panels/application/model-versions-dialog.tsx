@@ -15,6 +15,10 @@ import {
 import { errorMessage } from "@/lib/api-error";
 import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
+import {
+  type ModelVersionContract,
+  ModelVersionContractDialog,
+} from "./model-version-contract-dialog";
 import { UploadModelVersionDialog } from "./upload-model-version-dialog";
 
 export type ModelVersionListItem = {
@@ -23,6 +27,7 @@ export type ModelVersionListItem = {
   sha256: string;
   sizeBytes: number;
   createdAt: string;
+  contract: ModelVersionContract | null;
 };
 
 const VERSIONS_LOAD_ERROR = "No pudimos cargar las versiones. Inténtalo nuevamente.";
@@ -72,6 +77,7 @@ export function ModelVersionsDialog({
   const [deleteVersion, setDeleteVersion] = useState<ModelVersionListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
+  const [editingContract, setEditingContract] = useState<ModelVersionListItem | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -227,10 +233,23 @@ export function ModelVersionsDialog({
                   <td className="py-2.5 text-muted-foreground">
                     {formatLongDateEs(version.createdAt)}
                   </td>
-                  <td className="py-2.5 text-muted-foreground">—</td>
+                  <td className="py-2.5 text-muted-foreground">
+                    {version.contract
+                      ? version.contract.output.type === "classification"
+                        ? "Clasificación"
+                        : "Detección"
+                      : "Sin definir"}
+                  </td>
                   {canManage && (
                     <td className="py-2.5 text-right">
-                      {canManage && (
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setEditingContract(version)}
+                        >
+                          {version.contract ? "Editar contrato" : "Definir contrato"}
+                        </Button>
                         <Button
                           size="sm"
                           variant="destructive"
@@ -239,7 +258,7 @@ export function ModelVersionsDialog({
                         >
                           Eliminar
                         </Button>
-                      )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -259,6 +278,27 @@ export function ModelVersionsDialog({
             onVersionUploaded?.();
           }}
         />
+
+        {editingContract && (
+          <ModelVersionContractDialog
+            open
+            onOpenChange={(nextOpen) => !nextOpen && setEditingContract(null)}
+            applicationId={applicationId}
+            modelId={modelId}
+            modelVersionId={editingContract.id}
+            version={editingContract.version}
+            contract={editingContract.contract}
+            onSaved={(contract) => {
+              setVersions((current) =>
+                current.map((item) =>
+                  item.id === editingContract.id ? { ...item, contract } : item,
+                ),
+              );
+              setEditingContract(null);
+              toast.success("Contrato guardado.");
+            }}
+          />
+        )}
 
         <Dialog
           open={Boolean(deleteVersion)}

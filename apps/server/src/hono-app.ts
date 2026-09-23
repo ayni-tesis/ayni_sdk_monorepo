@@ -38,6 +38,7 @@ import {
   deleteModelVersion,
   getSdkModelVersionManifest,
   listModelVersions,
+  setModelVersionContract,
 } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
@@ -139,6 +140,9 @@ const modelVersions = {
     userId: string;
   }) {
     return deleteModelVersion(db, r2ModelVersionStorage, input);
+  },
+  setContract(input: Parameters<typeof setModelVersionContract>[2]) {
+    return setModelVersionContract(db, r2ModelVersionStorage, input);
   },
 };
 

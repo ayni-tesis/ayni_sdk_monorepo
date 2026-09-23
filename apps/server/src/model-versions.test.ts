@@ -41,6 +41,9 @@ function makeApp({
   create = async (): Promise<CreateModelVersionResult> => validVersionResult(),
   list = async (): Promise<ListModelVersionsResult> => ({ ok: true, versions: [] }),
   remove = async (): Promise<DeleteModelVersionResult> => ({ ok: true }),
+  setContract = async (input: {
+    contract: import("./model-version-store").ModelVersionContract;
+  }) => ({ ok: true as const, contract: input.contract }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -60,17 +63,35 @@ function makeApp({
     modelVersionId: string;
     userId: string;
   }) => Promise<DeleteModelVersionResult>;
+  setContract?: (input: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+    contract: import("./model-version-store").ModelVersionContract;
+  }) => Promise<
+    | { ok: true; contract: import("./model-version-store").ModelVersionContract }
+    | { ok: false; reason: "notFound" | "forbidden" | "archived" | "databaseFailed" }
+  >;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(list);
   const removeMock = vi.fn(remove);
+  const setContractMock = vi.fn(
+    setContract ?? (async (input) => ({ ok: true as const, contract: input.contract })),
+  );
   const app = createModelVersionsApp({
     getSession: async () => session,
     applications: {
       get: async () => application ?? undefined,
       getMembership: async () => membershipRole ?? undefined,
     },
-    modelVersions: { create: createMock, list: listMock, remove: removeMock },
+    modelVersions: {
+      create: createMock,
+      list: listMock,
+      remove: removeMock,
+      setContract: setContractMock,
+    },
   });
   return { app, createMock, listMock, removeMock };
 }
@@ -263,6 +284,7 @@ const listedVersion: ModelVersionListItem = {
   sha256: "a".repeat(64),
   sizeBytes: 2048,
   createdAt: "2026-09-20T00:00:00.000Z",
+  contract: null,
 };
 
 describe("GET /applications/:applicationId/models/:modelId/versions", () => {
