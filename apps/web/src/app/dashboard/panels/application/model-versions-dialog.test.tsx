@@ -98,7 +98,7 @@ describe("ModelVersionsDialog", () => {
     expect(within(row).getByText(`${"a".repeat(8)}…`)).toBeTruthy();
     expect(within(row).getByText("2 KB")).toBeTruthy();
     expect(within(row).getByText(expectedDate)).toBeTruthy();
-    expect(within(row).getByText("—")).toBeTruthy();
+    expect(within(row).getByText("Sin definir")).toBeTruthy();
   });
 
   it("shows the title Versiones de <modelo>", async () => {
