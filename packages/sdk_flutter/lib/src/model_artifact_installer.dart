@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +21,8 @@ class ModelArtifactInstallResult {
 
 class ModelArtifactInstaller {
   ModelArtifactInstaller({required this.storageDirectory});
+
+  static final Map<String, Future<void>> _installQueues = {};
 
   final Directory storageDirectory;
 
@@ -50,9 +53,16 @@ class ModelArtifactInstaller {
         'El modelo no superó la verificación de integridad.',
       );
     }
-    final artifactHash =
-        (await crypto.sha256.bind(verifiedArtifact.openRead()).first)
-            .toString();
+    late final String artifactHash;
+    try {
+      artifactHash =
+          (await crypto.sha256.bind(verifiedArtifact.openRead()).first)
+              .toString();
+    } on FileSystemException {
+      return _notAvailable(
+        'El modelo no superó la verificación de integridad.',
+      );
+    }
     if (artifactHash != expectedHash) {
       return _notAvailable(
         'El modelo no superó la verificación de integridad.',
@@ -62,53 +72,76 @@ class ModelArtifactInstaller {
     final modelDirectory = Directory('${storageDirectory.path}/$modelId');
     final artifact = File('${modelDirectory.path}/$versionId.tflite');
     final metadata = File('${modelDirectory.path}/$versionId.json');
-    if (await artifact.exists() || await metadata.exists()) {
-      final available = await isVersionAvailable(
-        modelId: modelId,
-        modelVersionId: versionId,
-      );
-      if (!available) return _notAvailable('No disponible');
-      final existing = jsonDecode(await metadata.readAsString()) as Map;
-      return existing['sha256'] == expectedHash
-          ? _available(version)
-          : _notAvailable('No disponible');
-    }
-
-    onStateChanged?.call(
-      const ModelArtifactInstallResult(
-        status: ModelArtifactInstallStatus.installing,
-        message: 'Instalando',
-      ),
-    );
-    final artifactTemporary = File('${artifact.path}.part');
-    final metadataTemporary = File('${metadata.path}.part');
-    var createdArtifact = false;
+    await modelDirectory.create(recursive: true);
+    final lockPath = '${modelDirectory.path}/$versionId.lock';
+    final releaseQueue = await _acquireInstallQueue(lockPath);
+    RandomAccessFile? lock;
     try {
-      await modelDirectory.create(recursive: true);
-      await verifiedArtifact.copy(artifactTemporary.path);
-      final copiedHash =
-          (await crypto.sha256.bind(artifactTemporary.openRead()).first)
-              .toString();
-      if (copiedHash != artifactHash) return _notAvailable('No disponible');
+      lock = await File(lockPath).open(mode: FileMode.append);
+      await lock.lock(FileLock.exclusive);
+      if (await artifact.exists() || await metadata.exists()) {
+        final available = await isVersionAvailable(
+          modelId: modelId,
+          modelVersionId: versionId,
+        );
+        if (available) {
+          final existing = jsonDecode(await metadata.readAsString()) as Map;
+          return existing['sha256'] == expectedHash
+              ? _available(version)
+              : _notAvailable('No disponible');
+        }
 
-      await metadataTemporary.writeAsString(
-        _metadata(modelId, versionId, copiedHash),
-        flush: true,
+        // Incomplete/corrupt pairs are not available offline. Remove them so
+        // a verified download can repair the version; valid conflicting
+        // versions are preserved by the branch above.
+        if (await artifact.exists()) await artifact.delete();
+        if (await metadata.exists()) await metadata.delete();
+      }
+
+      onStateChanged?.call(
+        const ModelArtifactInstallResult(
+          status: ModelArtifactInstallStatus.installing,
+          message: 'Instalando',
+        ),
       );
-      await artifactTemporary.rename(artifact.path);
-      createdArtifact = true;
-      await metadataTemporary.rename(metadata.path);
-      return _available(version);
-    } on FileSystemException catch (error) {
-      if (createdArtifact && await artifact.exists()) await artifact.delete();
-      return _notAvailable(
-        _isNoSpace(error)
-            ? 'No hay espacio suficiente para instalar el modelo.'
-            : 'No disponible',
-      );
+      final nonce =
+          '${pid}_${DateTime.now().microsecondsSinceEpoch}_'
+          '${identityHashCode(this)}';
+      final artifactTemporary = File('${artifact.path}.$nonce.part');
+      final metadataTemporary = File('${metadata.path}.$nonce.part');
+      var createdArtifact = false;
+      try {
+        await verifiedArtifact.copy(artifactTemporary.path);
+        final copiedHash =
+            (await crypto.sha256.bind(artifactTemporary.openRead()).first)
+                .toString();
+        if (copiedHash != artifactHash) return _notAvailable('No disponible');
+
+        await metadataTemporary.writeAsString(
+          _metadata(modelId, versionId, copiedHash),
+          flush: true,
+        );
+        await artifactTemporary.rename(artifact.path);
+        createdArtifact = true;
+        await metadataTemporary.rename(metadata.path);
+        return _available(version);
+      } on FileSystemException catch (error) {
+        if (createdArtifact && await artifact.exists()) await artifact.delete();
+        return _notAvailable(
+          _isNoSpace(error)
+              ? 'No hay espacio suficiente para instalar el modelo.'
+              : 'No disponible',
+        );
+      } finally {
+        if (await artifactTemporary.exists()) await artifactTemporary.delete();
+        if (await metadataTemporary.exists()) await metadataTemporary.delete();
+      }
+    } on FileSystemException {
+      return _notAvailable('No disponible');
     } finally {
-      if (await artifactTemporary.exists()) await artifactTemporary.delete();
-      if (await metadataTemporary.exists()) await metadataTemporary.delete();
+      // Closing the handle releases its exclusive file lock on every platform.
+      await lock?.close();
+      releaseQueue();
     }
   }
 
@@ -163,4 +196,17 @@ class ModelArtifactInstaller {
   String _metadata(String modelId, String versionId, String hash) => jsonEncode(
     {'modelId': modelId, 'modelVersionId': versionId, 'sha256': hash},
   );
+
+  Future<void Function()> _acquireInstallQueue(String key) async {
+    final previous = _installQueues[key] ?? Future<void>.value();
+    final turn = Completer<void>();
+    _installQueues[key] = turn.future;
+    await previous;
+    return () {
+      if (identical(_installQueues[key], turn.future)) {
+        _installQueues.remove(key);
+      }
+      turn.complete();
+    };
+  }
 }

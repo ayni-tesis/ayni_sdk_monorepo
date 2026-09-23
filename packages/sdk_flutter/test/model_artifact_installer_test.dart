@@ -16,6 +16,124 @@ void main() {
   tearDown(() async => temporaryDirectory.delete(recursive: true));
 
   test(
+    'returns unavailable when the verified artifact is missing before hashing',
+    () async {
+      final source = File('${temporaryDirectory.path}/source.part');
+      final verified = File('${temporaryDirectory.path}/verified.tflite');
+      await source.writeAsString('valid model');
+      final integrity = await ModelArtifactIntegrityVerifier().verify(
+        modelVersionId: 'version-race',
+        temporaryArtifact: source,
+        verifiedArtifact: verified,
+        expectedSha256: sha256.convert('valid model'.codeUnits).toString(),
+        isDownloadComplete: true,
+      );
+      await verified.delete();
+      await verified.parent.create();
+
+      final result =
+          await ModelArtifactInstaller(
+            storageDirectory: Directory('${temporaryDirectory.path}/offline'),
+          ).install(
+            modelId: 'model-race',
+            version: '1.0.0',
+            verifiedArtifact: verified,
+            integrity: integrity,
+          );
+
+      expect(result.status, ModelArtifactInstallStatus.notAvailable);
+      expect(
+        result.message,
+        'El modelo no superó la verificación de integridad.',
+      );
+    },
+  );
+
+  test('reinstalls a version when orphaned metadata is present', () async {
+    final source = File('${temporaryDirectory.path}/source.part');
+    final verified = File('${temporaryDirectory.path}/verified.tflite');
+    final destination = Directory('${temporaryDirectory.path}/offline');
+    await source.writeAsString('valid model');
+    final integrity = await ModelArtifactIntegrityVerifier().verify(
+      modelVersionId: 'version-orphan',
+      temporaryArtifact: source,
+      verifiedArtifact: verified,
+      expectedSha256: sha256.convert('valid model'.codeUnits).toString(),
+      isDownloadComplete: true,
+    );
+    final modelDirectory = Directory('${destination.path}/model-orphan');
+    await modelDirectory.create(recursive: true);
+    await File(
+      '${modelDirectory.path}/version-orphan.json',
+    ).writeAsString('{}');
+
+    final result = await ModelArtifactInstaller(storageDirectory: destination)
+        .install(
+          modelId: 'model-orphan',
+          version: '1.0.0',
+          verifiedArtifact: verified,
+          integrity: integrity,
+        );
+
+    expect(result.status, ModelArtifactInstallStatus.availableOffline);
+    expect(
+      await ModelArtifactInstaller(
+        storageDirectory: destination,
+      ).isVersionAvailable(
+        modelId: 'model-orphan',
+        modelVersionId: 'version-orphan',
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'serializes installs from separate installer instances sharing storage',
+    () async {
+      final source = File('${temporaryDirectory.path}/source.part');
+      final verified = File('${temporaryDirectory.path}/verified.tflite');
+      final destination = Directory('${temporaryDirectory.path}/offline');
+      await source.writeAsString('valid model');
+      final integrity = await ModelArtifactIntegrityVerifier().verify(
+        modelVersionId: 'version-concurrent',
+        temporaryArtifact: source,
+        verifiedArtifact: verified,
+        expectedSha256: sha256.convert('valid model'.codeUnits).toString(),
+        isDownloadComplete: true,
+      );
+
+      final results = await Future.wait([
+        ModelArtifactInstaller(storageDirectory: destination).install(
+          modelId: 'model-concurrent',
+          version: '1.0.0',
+          verifiedArtifact: verified,
+          integrity: integrity,
+        ),
+        ModelArtifactInstaller(storageDirectory: destination).install(
+          modelId: 'model-concurrent',
+          version: '1.0.0',
+          verifiedArtifact: verified,
+          integrity: integrity,
+        ),
+      ]);
+
+      expect(
+        results.map((result) => result.status),
+        everyElement(ModelArtifactInstallStatus.availableOffline),
+      );
+      expect(
+        await ModelArtifactInstaller(
+          storageDirectory: destination,
+        ).isVersionAvailable(
+          modelId: 'model-concurrent',
+          modelVersionId: 'version-concurrent',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'returns localized states and preserves an installed version on failure',
     () async {
       final source = File('${temporaryDirectory.path}/verified.part');
