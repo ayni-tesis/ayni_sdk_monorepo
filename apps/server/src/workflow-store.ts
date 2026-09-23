@@ -127,7 +127,7 @@ export async function renameWorkflow(
     },
   );
 
-  if (!result.ok) {
+  if (result.ok === false) {
     if (result.reason === "forbidden") return { ok: false, reason: "forbidden" };
     if (result.reason === "archived") return { ok: false, reason: "archived" };
     return { ok: false, reason: "notFound" };
