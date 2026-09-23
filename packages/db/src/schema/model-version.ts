@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  check,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 import { user } from "./auth";
 import { model } from "./model";
@@ -12,6 +21,7 @@ export const modelVersion = pgTable(
       .notNull()
       .references(() => model.id, { onDelete: "cascade" }),
     version: text("version").notNull(),
+    contract: jsonb("contract").$type<ModelVersionContract>(),
     storageKey: text("storage_key").notNull(),
     sha256: text("sha256").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
@@ -30,3 +40,16 @@ export const modelVersion = pgTable(
     check("model_version_size_bytes_check", sql`${table.sizeBytes} >= 12`),
   ],
 );
+
+export type ModelVersionContract = {
+  input: {
+    type: "image";
+    width: number;
+    height: number;
+    channels: 1 | 3 | 4;
+    normalization: "none" | "zero_to_one" | "minus_one_to_one";
+  };
+  output:
+    | { type: "classification"; labels: string[] }
+    | { type: "detection"; labels: string[]; scoreThreshold: number };
+};

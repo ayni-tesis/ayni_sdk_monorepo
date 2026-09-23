@@ -1,4 +1,4 @@
-import { application, model, modelVersion } from "@ayni/db/schema/index";
+import { application, type ModelVersionContract, model, modelVersion } from "@ayni/db/schema/index";
 import { and, desc, eq } from "drizzle-orm";
 
 import {
@@ -14,7 +14,7 @@ import {
 } from "./model-version-storage";
 import { computeSha256Hex, DEFAULT_MAX_TFLITE_BYTES, gateTfLiteBuffer } from "./tflite-validator";
 
-export type { ModelVersionStorage };
+export type { ModelVersionContract, ModelVersionStorage };
 
 const SEMVER_STRICT = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
@@ -227,6 +227,7 @@ export type ModelVersionListItem = {
   sha256: string;
   sizeBytes: number;
   createdAt: string;
+  contract: ModelVersionContract | null;
 };
 
 export type ListModelVersionsResult =
@@ -336,6 +337,7 @@ type ListVersionsRow = {
   sha256: string;
   sizeBytes: number | string;
   createdAt: Date | string;
+  contract: ModelVersionContract | null;
 };
 
 type ListVersionsExecutor = {
@@ -377,6 +379,7 @@ export async function listModelVersions(
         sha256: modelVersion.sha256,
         sizeBytes: modelVersion.sizeBytes,
         createdAt: modelVersion.createdAt,
+        contract: modelVersion.contract,
       })
       .from(modelVersion)
       .where(eq(modelVersion.modelId, modelId))
@@ -390,6 +393,7 @@ export async function listModelVersions(
         sha256: row.sha256,
         sizeBytes: Number(row.sizeBytes),
         createdAt: toIsoString(row.createdAt),
+        contract: (row.contract as ModelVersionContract | null) ?? null,
       })),
     };
   });
@@ -406,6 +410,7 @@ export type SdkModelVersionManifest = {
   sizeBytes: number;
   downloadUrl: string;
   downloadUrlExpiresAt: string;
+  contract: ModelVersionContract | null;
 };
 
 export type GetSdkModelVersionManifestResult =
@@ -419,6 +424,7 @@ type ManifestVersionRow = {
   storageKey: string;
   sha256: string;
   sizeBytes: number | string;
+  contract: ModelVersionContract | null;
 };
 
 type ManifestQueryDatabase = {
@@ -452,6 +458,7 @@ export async function getSdkModelVersionManifest(
       storageKey: modelVersion.storageKey,
       sha256: modelVersion.sha256,
       sizeBytes: modelVersion.sizeBytes,
+      contract: modelVersion.contract,
     })
     .from(modelVersion)
     .where(eq(modelVersion.id, modelVersionId))
@@ -489,6 +496,64 @@ export async function getSdkModelVersionManifest(
       downloadUrlExpiresAt: new Date(
         Date.now() + SDK_MODEL_DOWNLOAD_URL_TTL_SECONDS * 1000,
       ).toISOString(),
+      contract: found.contract ?? null,
     },
   };
+}
+
+export type SetModelVersionContractResult =
+  | { ok: true; contract: ModelVersionContract }
+  | { ok: false; reason: "notFound" | "forbidden" | "archived" | "databaseFailed" };
+
+type ContractUpdateExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        limit: (count: number) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+  update: (table: unknown) => {
+    set: (values: Record<string, unknown>) => {
+      where: (condition: unknown) => {
+        returning: () => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
+};
+
+export async function setModelVersionContract(
+  database: ApplicationDatabase,
+  input: {
+    applicationId: string;
+    modelId: string;
+    modelVersionId: string;
+    userId: string;
+    contract: ModelVersionContract;
+  },
+): Promise<SetModelVersionContractResult> {
+  try {
+    const result = await executeApplicationAction(database, input, async (transaction) => {
+      const tx = transaction as unknown as ContractUpdateExecutor;
+      const models = await tx
+        .select({ id: model.id })
+        .from(model)
+        .where(and(eq(model.id, input.modelId), eq(model.applicationId, input.applicationId)))
+        .limit(1);
+      if (!models[0]) return { kind: "notFound" } as const;
+      const rows = await tx
+        .update(modelVersion)
+        .set({ contract: input.contract })
+        .where(
+          and(eq(modelVersion.id, input.modelVersionId), eq(modelVersion.modelId, input.modelId)),
+        )
+        .returning();
+      return rows[0] ? ({ kind: "saved" } as const) : ({ kind: "notFound" } as const);
+    });
+    if (result.ok === false) return result;
+    if (result.value.kind === "notFound") return { ok: false, reason: "notFound" };
+    return { ok: true, contract: input.contract };
+  } catch {
+    return { ok: false, reason: "databaseFailed" };
+  }
 }

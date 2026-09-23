@@ -1,0 +1,1 @@
+ALTER TABLE "model_version" ADD COLUMN "contract" jsonb;

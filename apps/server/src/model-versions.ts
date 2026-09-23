@@ -7,6 +7,7 @@ import type {
   CreateModelVersionResult,
   DeleteModelVersionResult,
   ListModelVersionsResult,
+  ModelVersionContract,
 } from "./model-version-store";
 
 export const MAX_MODEL_VERSION_BYTES = 128 * 1024 * 1024;
@@ -20,6 +21,36 @@ const versionFieldSchema = z
   .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/, {
     message: INVALID_VERSION_MESSAGE,
   });
+
+const contractSchema = z
+  .object({
+    input: z
+      .object({
+        type: z.literal("image"),
+        width: z.number().int().positive().max(8192),
+        height: z.number().int().positive().max(8192),
+        channels: z.union([z.literal(1), z.literal(3), z.literal(4)]),
+        normalization: z.enum(["none", "zero_to_one", "minus_one_to_one"]),
+      })
+      .strict(),
+    output: z.discriminatedUnion("type", [
+      z
+        .object({
+          type: z.literal("classification"),
+          labels: z.array(z.string().trim().min(1)).min(1).max(1000),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("detection"),
+          labels: z.array(z.string().trim().min(1)).min(1).max(1000),
+          scoreThreshold: z.number().min(0).max(1),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+const INCOMPATIBLE_CONTRACT_MESSAGE = "El contrato no es compatible con TensorFlow Lite.";
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -43,6 +74,16 @@ type Dependencies = {
       modelVersionId: string;
       userId: string;
     }) => Promise<DeleteModelVersionResult>;
+    setContract: (input: {
+      applicationId: string;
+      modelId: string;
+      modelVersionId: string;
+      userId: string;
+      contract: ModelVersionContract;
+    }) => Promise<
+      | { ok: true; contract: ModelVersionContract }
+      | { ok: false; reason: "notFound" | "forbidden" | "archived" | "databaseFailed" }
+    >;
   };
 };
 
@@ -68,6 +109,82 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
 
     return c.json({ versions: result.versions });
   });
+
+  app.patch(
+    "/applications/:applicationId/models/:modelId/versions/:modelVersionId/contract",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await applications.get(c.req.param("applicationId"));
+      if (!application)
+        return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
+      const role = await applications.getMembership(session.user.id, application.organizationId);
+      if (role !== "admin" && role !== "owner") {
+        return c.json(
+          {
+            message: "No tienes permiso para editar el contrato de esta versión.",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json(
+          { message: INCOMPATIBLE_CONTRACT_MESSAGE, code: "incompatibleContract" },
+          400,
+        );
+      }
+      const parsed = contractSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { message: INCOMPATIBLE_CONTRACT_MESSAGE, code: "incompatibleContract" },
+          400,
+        );
+      }
+
+      const result = await modelVersions.setContract({
+        applicationId: application.id,
+        modelId: c.req.param("modelId"),
+        modelVersionId: c.req.param("modelVersionId"),
+        userId: session.user.id,
+        contract: parsed.data,
+      });
+      if (result.ok) return c.json({ contract: result.contract });
+      if (result.reason === "forbidden") {
+        return c.json(
+          {
+            message: "No tienes permiso para editar el contrato de esta versión.",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      if (result.reason === "archived") {
+        return c.json(
+          {
+            message: "No puedes editar contratos de una aplicación archivada.",
+            code: "applicationArchived",
+          },
+          409,
+        );
+      }
+      if (result.reason === "databaseFailed") {
+        return c.json(
+          {
+            message: "No se pudo guardar el contrato de esta versión.",
+            code: "contractSaveFailed",
+          },
+          500,
+        );
+      }
+      return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
+    },
+  );
 
   app.delete("/applications/:applicationId/models/:modelId/versions/:modelVersionId", async (c) => {
     const session = await getSession(c.req.raw.headers);
