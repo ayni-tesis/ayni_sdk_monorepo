@@ -141,21 +141,24 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       name: parsed.data.name,
     });
 
-    if (result.ok) return c.json({ workflow: result.workflow });
-    if (result.reason === "forbidden") {
-      return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
-    }
-    if (result.reason === "archived") {
-      return c.json(
-        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
-        409,
-      );
-    }
-    if (result.reason === "workflowNotFound") {
-      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    if (result.ok === false) {
+      if (result.reason === "forbidden") {
+        return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+      }
+      if (result.reason === "archived") {
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      }
+      if (result.reason === "workflowNotFound") {
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      }
+
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     }
 
-    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    return c.json({ workflow: result.workflow });
   });
 
   return app;
