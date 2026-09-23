@@ -2,6 +2,7 @@
 
 import type { Application, ApplicationSection } from "../types";
 import { CredentialsView } from "./application/credentials-view";
+import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
 import { SettingsView } from "./application/settings-view";
@@ -24,6 +25,8 @@ export {
   RegenerateCredentialDialog,
   RevokeCredentialDialog,
 } from "./application/credentials-view";
+export type { ModelDetailViewProps } from "./application/model-detail-view";
+export { ModelDetailView } from "./application/model-detail-view";
 export type { ModelVersionsDialogProps } from "./application/model-versions-dialog";
 export { ModelVersionsDialog } from "./application/model-versions-dialog";
 export type { ModelsViewProps, RegisterModelDialogProps } from "./application/models-view";
@@ -54,9 +57,12 @@ export type ApplicationDetailPanelProps = {
   canManage?: boolean;
   activeSection?: ApplicationSection;
   workflowId?: string;
+  modelId?: string;
   onBack?: () => void;
   onOpenWorkflow?: (workflowId: string) => void;
   onBackToWorkflows?: () => void;
+  onOpenModel?: (modelId: string) => void;
+  onBackToModels?: () => void;
   onApplicationUpdated: (updated: Application) => void;
   onApplicationArchived: (archived: Application) => void;
   onMutationStart?: () => void;
@@ -70,8 +76,11 @@ export function ApplicationDetailPanel({
   canManage = false,
   activeSection = "overview",
   workflowId,
+  modelId,
   onOpenWorkflow,
   onBackToWorkflows,
+  onOpenModel,
+  onBackToModels,
   onApplicationUpdated,
   onApplicationArchived,
   onMutationStart,
@@ -116,7 +125,17 @@ export function ApplicationDetailPanel({
           />
         ))}
 
-      {activeSection === "models" && <ModelsView application={application} canManage={canManage} />}
+      {activeSection === "models" &&
+        (modelId ? (
+          <ModelDetailView
+            key={`${application.id}:${modelId}`}
+            application={application}
+            modelId={modelId}
+            onBackToModels={onBackToModels}
+          />
+        ) : (
+          <ModelsView application={application} canManage={canManage} onOpenModel={onOpenModel} />
+        ))}
 
       {activeSection === "credentials" && (
         <CredentialsView application={application} canManage={canManage} />

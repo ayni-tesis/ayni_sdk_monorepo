@@ -131,9 +131,12 @@ describe("parseDashboardRoute", () => {
     });
   });
 
-  it("does not read a workflow id under any other section", () => {
+  it("reads the model id from a model detail route", () => {
     expect(parseDashboardRoute("/dashboard/applications/app-1/models/model-1")).toEqual({
-      kind: "list",
+      kind: "app",
+      id: "app-1",
+      section: "models",
+      modelId: "model-1",
     });
   });
 
@@ -254,6 +257,67 @@ describe("Dashboard", () => {
     expect(client.get).toHaveBeenCalledWith("/applications/app-1");
     expect(routerRef.pathname).toBe("/dashboard/applications/app-1");
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a model detail from the model list route", async () => {
+    client.get.mockImplementation(async (url: string) => {
+      if (url === "/workspaces") {
+        return { data: [{ id: "org-1", name: "Laboratorio Andino", slug: "lab", role: "admin" }] };
+      }
+      if (url === "/applications/app-1") {
+        return { data: { id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" } };
+      }
+      if (url === "/applications/app-1/models") {
+        return {
+          data: {
+            models: [
+              {
+                id: "model-1",
+                applicationId: "app-1",
+                name: "Detector",
+                runtime: "tensorflow_lite",
+                versionCount: 1,
+                createdAt: "2026-09-19T20:00:00.000Z",
+                updatedAt: "2026-09-20T20:00:00.000Z",
+              },
+            ],
+          },
+        };
+      }
+      if (url === "/applications/app-1/models/model-1/versions") {
+        return {
+          data: {
+            versions: [
+              {
+                id: "mv-1",
+                version: "1.0.0",
+                sha256: "a".repeat(64),
+                sizeBytes: 2048,
+                createdAt: "2026-09-20T00:00:00.000Z",
+              },
+            ],
+          },
+        };
+      }
+      return { data: [] };
+    });
+    routerRef.pathname = "/dashboard/applications/app-1/models";
+
+    render(
+      <TooltipProvider>
+        <Dashboard userName="Diego" />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Detector" }));
+    expect(await screen.findByTestId("model-detail-header")).toBeTruthy();
+    expect(screen.getByText("ID del modelo")).toBeTruthy();
+    expect(screen.getByTestId("model-version-row-mv-1")).toBeTruthy();
+    expect(routerRef.pathname).toBe("/dashboard/applications/app-1/models/model-1");
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/applications/app-1/models/model-1", {
+      scroll: false,
+    });
+    expect(document.querySelector("a[href*='tflite']")).toBeNull();
   });
 
   it("keeps the deep-linked application open when effects run twice", async () => {

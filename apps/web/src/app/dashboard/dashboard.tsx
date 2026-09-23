@@ -27,7 +27,7 @@ export type DashboardProps = {
 export type DashboardRoute =
   | { kind: "list" }
   | { kind: "members" }
-  | { kind: "app"; id: string; section: ApplicationSection; workflowId?: string };
+  | { kind: "app"; id: string; section: ApplicationSection; workflowId?: string; modelId?: string };
 
 const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
   overview: null,
@@ -40,16 +40,19 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
 export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (pathname === "/dashboard/members") return { kind: "members" };
   const match = pathname?.match(
-    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|credentials|settings)|\/(workflows)(?:\/([^/]+))?)?\/?$/,
+    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|credentials|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
   );
   if (match) {
-    const section = (match[2] ?? match[3] ?? "overview") as ApplicationSection;
-    const workflowId = match[4];
+    const section = (match[2] ?? match[4] ?? "overview") as ApplicationSection;
+    if (match[3] && section !== "models") return { kind: "list" };
+    const modelId = section === "models" ? match[3] : undefined;
+    const workflowId = match[5];
     try {
       return {
         kind: "app",
         id: decodeURIComponent(match[1]),
         section,
+        ...(section === "models" && modelId ? { modelId: decodeURIComponent(modelId) } : {}),
         ...(workflowId ? { workflowId: decodeURIComponent(workflowId) } : {}),
       };
     } catch {
@@ -61,13 +64,16 @@ export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   return { kind: "list" };
 }
 
-function pathForView(view: DashboardView, appId?: string | null, workflowId?: string): Route {
+function pathForView(view: DashboardView, appId?: string | null, resourceId?: string): Route {
   if (view === "members") return "/dashboard/members" as Route;
   if (view === "applications" || !appId) return "/dashboard" as Route;
   const segment = SECTION_SEGMENT[view as ApplicationSection];
   const base = `/dashboard/applications/${appId}`;
-  if (segment === "workflows" && workflowId) {
-    return `${base}/workflows/${encodeURIComponent(workflowId)}` as Route;
+  if (segment === "workflows" && resourceId) {
+    return `${base}/workflows/${encodeURIComponent(resourceId)}` as Route;
+  }
+  if (segment === "models" && resourceId) {
+    return `${base}/models/${encodeURIComponent(resourceId)}` as Route;
   }
   return (segment ? `${base}/${segment}` : base) as Route;
 }
@@ -121,8 +127,8 @@ export default function Dashboard({ userName, children: _children }: DashboardPr
   const detailInFlightRef = useRef<Record<string, boolean>>({});
 
   const go = useCallback(
-    (view: DashboardView, appId?: string | null, workflowId?: string) => {
-      const target = pathForView(view, appId, workflowId);
+    (view: DashboardView, appId?: string | null, resourceId?: string) => {
+      const target = pathForView(view, appId, resourceId);
       if (pathname && pathname !== target) {
         router.push(target, { scroll: false });
       }
@@ -439,9 +445,12 @@ export default function Dashboard({ userName, children: _children }: DashboardPr
             canManage={canManage}
             activeSection={route.kind === "app" ? route.section : "overview"}
             workflowId={route.kind === "app" ? route.workflowId : undefined}
+            modelId={route.kind === "app" ? route.modelId : undefined}
             onBack={() => go("applications")}
             onOpenWorkflow={(workflowId) => go("workflows", selected.id, workflowId)}
             onBackToWorkflows={() => go("workflows", selected.id)}
+            onOpenModel={(modelId) => go("models", selected.id, modelId)}
+            onBackToModels={() => go("models", selected.id)}
             onApplicationUpdated={updateApplication}
             onApplicationArchived={(archived) => {
               removeApplication(archived.id);
