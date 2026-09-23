@@ -1,1 +1,1 @@
-export { default } from "./dist/app.mjs";
+export { default } from "./dist/hono-app.mjs";
