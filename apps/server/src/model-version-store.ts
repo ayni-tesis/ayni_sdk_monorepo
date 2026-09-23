@@ -12,6 +12,7 @@ import {
   ModelVersionAlreadyStoredError,
   type ModelVersionStorage,
 } from "./model-version-storage";
+import { isTfliteContractCompatible } from "./tflite-contract-validator";
 import { computeSha256Hex, DEFAULT_MAX_TFLITE_BYTES, gateTfLiteBuffer } from "./tflite-validator";
 
 export type { ModelVersionContract, ModelVersionStorage };
@@ -503,7 +504,10 @@ export async function getSdkModelVersionManifest(
 
 export type SetModelVersionContractResult =
   | { ok: true; contract: ModelVersionContract }
-  | { ok: false; reason: "notFound" | "forbidden" | "archived" | "databaseFailed" };
+  | {
+      ok: false;
+      reason: "notFound" | "forbidden" | "archived" | "incompatibleContract" | "databaseFailed";
+    };
 
 type ContractUpdateExecutor = {
   select: (fields: Record<string, unknown>) => {
@@ -524,6 +528,7 @@ type ContractUpdateExecutor = {
 
 export async function setModelVersionContract(
   database: ApplicationDatabase,
+  storage: ModelVersionStorage,
   input: {
     applicationId: string;
     modelId: string;
@@ -541,6 +546,19 @@ export async function setModelVersionContract(
         .where(and(eq(model.id, input.modelId), eq(model.applicationId, input.applicationId)))
         .limit(1);
       if (!models[0]) return { kind: "notFound" } as const;
+      const versions = await tx
+        .select({ storageKey: modelVersion.storageKey })
+        .from(modelVersion)
+        .where(
+          and(eq(modelVersion.id, input.modelVersionId), eq(modelVersion.modelId, input.modelId)),
+        )
+        .limit(1);
+      const version = versions[0] as { storageKey?: string } | undefined;
+      if (!version?.storageKey) return { kind: "notFound" } as const;
+      const artifact = await storage.getArtifact(version.storageKey);
+      if (!isTfliteContractCompatible(artifact, input.contract)) {
+        return { kind: "incompatibleContract" } as const;
+      }
       const rows = await tx
         .update(modelVersion)
         .set({ contract: input.contract })
@@ -552,6 +570,9 @@ export async function setModelVersionContract(
     });
     if (result.ok === false) return result;
     if (result.value.kind === "notFound") return { ok: false, reason: "notFound" };
+    if (result.value.kind === "incompatibleContract") {
+      return { ok: false, reason: "incompatibleContract" };
+    }
     return { ok: true, contract: input.contract };
   } catch {
     return { ok: false, reason: "databaseFailed" };

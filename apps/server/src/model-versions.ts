@@ -82,7 +82,10 @@ type Dependencies = {
       contract: ModelVersionContract;
     }) => Promise<
       | { ok: true; contract: ModelVersionContract }
-      | { ok: false; reason: "notFound" | "forbidden" | "archived" | "databaseFailed" }
+      | {
+          ok: false;
+          reason: "notFound" | "forbidden" | "archived" | "incompatibleContract" | "databaseFailed";
+        }
     >;
   };
 };
@@ -171,6 +174,12 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
             code: "applicationArchived",
           },
           409,
+        );
+      }
+      if (result.reason === "incompatibleContract") {
+        return c.json(
+          { message: INCOMPATIBLE_CONTRACT_MESSAGE, code: "incompatibleContract" },
+          400,
         );
       }
       if (result.reason === "databaseFailed") {
