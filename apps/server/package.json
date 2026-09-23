@@ -1,14 +1,14 @@
 {
   "name": "server",
   "type": "module",
-  "main": "./index.mjs",
+  "main": "./index.ts",
   "scripts": {
     "build": "tsdown",
     "check-types": "tsc -b",
-    "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
+    "compile": "bun build --compile --minify --sourcemap --bytecode ./src/app.ts --outfile server",
     "test": "vitest run --passWithNoTests",
-    "dev": "bun run --hot src/index.ts",
-    "start": "bun run dist/index.js"
+    "dev": "bun run --hot src/app.ts",
+    "start": "bun run dist/app.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
