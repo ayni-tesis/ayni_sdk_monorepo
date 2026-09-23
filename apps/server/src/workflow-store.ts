@@ -127,7 +127,11 @@ export async function renameWorkflow(
     },
   );
 
-  if (!result.ok) return result;
+  if (!result.ok) {
+    if (result.reason === "forbidden") return { ok: false, reason: "forbidden" };
+    if (result.reason === "archived") return { ok: false, reason: "archived" };
+    return { ok: false, reason: "notFound" };
+  }
   if (!result.value) return { ok: false, reason: "workflowNotFound" };
   return { ok: true, workflow: toWorkflow(result.value) };
 }
@@ -184,7 +188,9 @@ export async function getWorkflow(
     const row = rows[0];
     if (!row) return undefined;
 
-    return { workflow: toWorkflow(row), draft: { nodes: [] }, versions: [] };
+    const emptyNodes: never[] = [];
+    const emptyVersions: never[] = [];
+    return { workflow: toWorkflow(row), draft: { nodes: emptyNodes }, versions: emptyVersions };
   });
 }
 
