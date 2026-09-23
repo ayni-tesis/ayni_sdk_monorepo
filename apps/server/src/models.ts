@@ -113,7 +113,7 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
       !application ||
       !(await applications.getMembership(session.user.id, application.organizationId))
     ) {
-      return c.json({ message: "No encontramos esta aplicaciÃ³n." }, 404);
+      return c.json({ message: "No encontramos esta aplicación." }, 404);
     }
 
     let rawBody: unknown;
@@ -143,13 +143,13 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
       return c.json({ message: "No tienes permiso para editar este modelo." }, 403);
     }
     if (result.reason === "archived") {
-      return c.json({ message: "No puedes editar modelos en una aplicaciÃ³n archivada." }, 409);
+      return c.json({ message: "No puedes editar modelos en una aplicación archivada." }, 409);
     }
     if (result.reason === "modelNotFound") {
       return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
     }
 
-    return c.json({ message: "No encontramos esta aplicaciÃ³n." }, 404);
+    return c.json({ message: "No encontramos esta aplicación." }, 404);
   });
 
   return app;
