@@ -125,7 +125,29 @@ export function isTfliteContractCompatible(
       );
     }
 
-    return outputs.length === 4 && outputs.some((tensor) => tensor.shape.at(-1) === 4);
+    // ponytail: four-output SSD signature only; add formats when a supported model requires them.
+    const boxes = outputs.find(
+      (tensor) =>
+        tensor.shape.length === 3 &&
+        tensor.shape[0] === 1 &&
+        tensor.shape[1] !== undefined &&
+        tensor.shape[1] > 0 &&
+        tensor.shape[2] === 4,
+    );
+    if (!boxes) return false;
+    const perDetection = outputs.filter(
+      (tensor) =>
+        tensor !== boxes &&
+        tensor.shape.length === 2 &&
+        tensor.shape[0] === 1 &&
+        tensor.shape[1] === boxes.shape[1],
+    );
+    return (
+      perDetection.length === 2 &&
+      outputs.some(
+        (tensor) => tensor !== boxes && tensor.shape.length === 1 && tensor.shape[0] === 1,
+      )
+    );
   } catch {
     return false;
   }
