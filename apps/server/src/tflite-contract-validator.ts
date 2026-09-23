@@ -143,6 +143,7 @@ export function isTfliteContractCompatible(
         tensor.shape[1] === boxes.shape[1],
     );
     return (
+      outputs.length === 4 &&
       perDetection.length === 2 &&
       outputs.some(
         (tensor) => tensor !== boxes && tensor.shape.length === 1 && tensor.shape[0] === 1,
