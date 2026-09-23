@@ -1,8 +1,21 @@
-import { getDashboardUserName } from "@/lib/session-user";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+import Loader from "@/components/loader";
+import { authClient } from "@/lib/auth-client";
 import Dashboard from "./dashboard";
 
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const userName = await getDashboardUserName();
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { data: session, isPending } = authClient.useSession();
 
-  return <Dashboard userName={userName}>{children}</Dashboard>;
+  useEffect(() => {
+    if (!isPending && !session) router.replace("/login");
+  }, [isPending, router, session]);
+
+  if (isPending || !session) return <Loader />;
+
+  return <Dashboard userName={session.user.name}>{children}</Dashboard>;
 }
