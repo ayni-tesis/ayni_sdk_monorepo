@@ -5,13 +5,15 @@ import 'package:crypto/crypto.dart';
 enum ModelArtifactIntegrityStatus { verified, integrityFailed }
 
 class ModelArtifactIntegrityResult {
-  const ModelArtifactIntegrityResult({
+  const ModelArtifactIntegrityResult._({
     required this.modelVersionId,
     required this.status,
+    required this.sha256,
   });
 
   final String modelVersionId;
   final ModelArtifactIntegrityStatus status;
+  final String? sha256;
 
   String get message => switch (status) {
     ModelArtifactIntegrityStatus.verified => 'verified',
@@ -44,9 +46,10 @@ class ModelArtifactIntegrityVerifier {
       }
 
       await _promote(temporaryArtifact, verifiedArtifact);
-      return ModelArtifactIntegrityResult(
+      return ModelArtifactIntegrityResult._(
         modelVersionId: modelVersionId,
         status: ModelArtifactIntegrityStatus.verified,
+        sha256: computedSha256,
       );
     } on FileSystemException {
       await _invalidate(temporaryArtifact);
@@ -55,9 +58,10 @@ class ModelArtifactIntegrityVerifier {
   }
 
   ModelArtifactIntegrityResult _integrityFailed(String modelVersionId) {
-    return ModelArtifactIntegrityResult(
+    return ModelArtifactIntegrityResult._(
       modelVersionId: modelVersionId,
       status: ModelArtifactIntegrityStatus.integrityFailed,
+      sha256: null,
     );
   }
 
