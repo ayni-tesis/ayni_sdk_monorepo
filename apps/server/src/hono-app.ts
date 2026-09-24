@@ -59,6 +59,7 @@ import {
   addWorkflowConnection,
   archiveWorkflow,
   createWorkflow,
+  deleteWorkflowNode,
   getWorkflow,
   listWorkflows,
   removeWorkflowConnection,
@@ -214,6 +215,9 @@ const workflows = {
   },
   updateNodePosition(input: Parameters<typeof updateWorkflowNodePosition>[1]) {
     return updateWorkflowNodePosition(db, input);
+  },
+  deleteNode(input: Parameters<typeof deleteWorkflowNode>[1]) {
+    return deleteWorkflowNode(db, input);
   },
   publishVersion(input: Parameters<typeof publishWorkflowVersion>[1]) {
     return publishWorkflowVersion(db, input);

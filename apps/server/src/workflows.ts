@@ -17,6 +17,7 @@ import type {
   ChangeWorkflowConnectionResult,
   CreateWorkflowInput,
   CreateWorkflowResult,
+  DeleteWorkflowNodeResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
   UpdateWorkflowNodePositionInput,
@@ -108,6 +109,12 @@ type Dependencies = {
     updateNodePosition: (
       input: UpdateWorkflowNodePositionInput,
     ) => Promise<UpdateWorkflowNodePositionResult>;
+    deleteNode: (input: {
+      applicationId: string;
+      workflowId: string;
+      nodeId: string;
+      userId: string;
+    }) => Promise<DeleteWorkflowNodeResult>;
     publishVersion: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   };
 };
@@ -490,6 +497,29 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     },
   );
+
+  app.delete("/applications/:applicationId/workflows/:workflowId/nodes/:nodeId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const result = await workflows.deleteNode({
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      nodeId: c.req.param("nodeId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ draft: result.draft });
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+  });
 
   app.delete("/applications/:applicationId/workflows/:workflowId/connections", async (c) => {
     const session = await getSession(c.req.raw.headers);

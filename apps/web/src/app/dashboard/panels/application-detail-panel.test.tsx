@@ -40,7 +40,7 @@ describe("findWorkflowCycleNodeIds", () => {
 });
 
 const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   toastMock: { success: vi.fn(), error: vi.fn() },
   writeTextMock: vi.fn().mockResolvedValue(undefined),
 }));
@@ -86,6 +86,7 @@ describe("ApplicationDetailPanel", () => {
     client.get.mockReset();
     client.post.mockReset();
     client.patch.mockReset();
+    client.delete.mockReset();
     client.get.mockImplementation(async () => ({ data: { models: [] } }));
     document.body.innerHTML = "";
     document.body.removeAttribute("data-scroll-locked");
@@ -1891,6 +1892,243 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-034: Eliminar un nodo del borrador", () => {
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [imageNode] },
+      versions: [],
+    };
+
+    function workflowDetailPanel() {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    it("lets an administrator cancel or confirm node deletion and updates the draft", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      client.delete.mockResolvedValueOnce({ data: { draft: { nodes: [] } } });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      expect(within(dialog).getByText("También se eliminarán sus conexiones.")).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+      expect(client.delete).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const confirmation = await screen.findByRole("dialog", {
+        name: '¿Eliminar "Imagen de entrada"?',
+      });
+      fireEvent.click(within(confirmation).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(client.delete).toHaveBeenCalledWith(
+          "/applications/app-1/workflows/workflow-1/nodes/image-node",
+        );
+        expect(toastMock.success).toHaveBeenCalledWith("Nodo eliminado.");
+      });
+      await waitFor(() => expect(screen.queryByTestId("workflow-node-image-node")).toBeNull());
+    });
+
+    it("shows the forbidden server message when node deletion is rejected", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      client.delete.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para editar este workflow." },
+        },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No tienes permiso para editar este workflow.",
+        );
+      });
+      await screen.findByTestId("workflow-node-image-node");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        within(screen.getByTestId("workflow-node-image-node"))
+          .getByRole("button", { name: "Imagen de entrada" })
+          .getAttribute("aria-pressed"),
+      ).toBe("false");
+    });
+
+    it("keeps a surviving connection selected after reloading the returned draft", async () => {
+      const otherNode = {
+        id: "other-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
+      const survivingNode = {
+        id: "surviving-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
+      const connection = {
+        sourceNodeId: "other-node",
+        sourcePort: "imagen",
+        targetNodeId: "surviving-node",
+        targetPort: "imagen",
+      };
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1")
+          ? {
+              data: {
+                ...workflowDetail,
+                draft: { nodes: [imageNode, otherNode, survivingNode], connections: [connection] },
+              },
+            }
+          : { data: { models: [] } },
+      );
+      client.delete.mockResolvedValueOnce({
+        data: { draft: { nodes: [otherNode, survivingNode], connections: [{ ...connection }] } },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+      fireEvent.click(screen.getByRole("button", { name: "imagen → imagen" }));
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-image-node")).getByRole("button", {
+          name: "Imagen de entrada",
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "imagen → imagen" }).getAttribute("aria-pressed"),
+        ).toBe("true");
+      });
+      expect(screen.getByRole("button", { name: "Eliminar conexión" })).toBeTruthy();
+    });
+
+    it("clears deleted condition sources and cycle highlights", async () => {
+      const modelNode = {
+        id: "model-node",
+        type: "model.tflite" as const,
+        modelVersionId: "model-version-1",
+        modelName: "Clasificador",
+        version: "1.0.0",
+        inputs: {
+          image: {
+            type: "image" as const,
+            width: 224,
+            height: 224,
+            channels: 3,
+            normalization: "zero_to_one" as const,
+          },
+        },
+        outputs: { result: { type: "classification" as const, labels: ["hoja"] } },
+      };
+      const unrelatedNode = {
+        id: "unrelated-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
+      const detail = {
+        ...workflowDetail,
+        draft: { nodes: [imageNode, modelNode, unrelatedNode], connections: [] },
+      };
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: detail } : { data: { models: [] } },
+      );
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { code: "workflowCycle", nodeIds: ["image-node", "model-node"] },
+        },
+      });
+      client.delete.mockResolvedValueOnce({
+        data: { draft: { nodes: [unrelatedNode], connections: [] } },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-model-node");
+      fireEvent.change(screen.getByLabelText("Resultado de origen"), {
+        target: { value: "model-node" },
+      });
+      fireEvent.change(screen.getByLabelText("Etiqueta"), { target: { value: "hoja" } });
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-image-node")).getByRole("button", {
+          name: "Salida imagen",
+        }),
+      );
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-model-node")).getByRole("button", {
+          name: "Conectar entrada de imagen de Clasificador · 1.0.0",
+        }),
+      );
+      expect(
+        await screen.findByText(
+          "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.",
+        ),
+      ).toBeTruthy();
+
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-model-node")).getByRole("button", {
+          name: "Clasificador · 1.0.0",
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: '¿Eliminar "Clasificador · 1.0.0"?',
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => expect(screen.queryByTestId("workflow-node-model-node")).toBeNull());
+      expect(screen.queryByTestId("workflow-node-image-node")).toBeNull();
+      expect((screen.getByLabelText("Resultado de origen") as HTMLSelectElement).value).toBe("");
+      expect((screen.getByLabelText("Etiqueta") as HTMLSelectElement).value).toBe("");
+      expect(
+        screen.queryByText("Esta conexión crearía un ciclo. Los workflows deben ser acíclicos."),
+      ).toBeNull();
+    });
+  });
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {

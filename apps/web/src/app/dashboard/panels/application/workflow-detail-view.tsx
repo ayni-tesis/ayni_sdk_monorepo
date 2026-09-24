@@ -341,6 +341,9 @@ export function WorkflowDetailView({
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [savingPosition, setSavingPosition] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [deleteNodeDialogOpen, setDeleteNodeDialogOpen] = useState(false);
+  const [deletingNode, setDeletingNode] = useState(false);
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
@@ -867,6 +870,49 @@ export function WorkflowDetailView({
     }
   }
 
+  async function deleteSelectedNode() {
+    if (!selectedNodeId || deletingNode) return;
+    setDeletingNode(true);
+    try {
+      const { data } = await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(selectedNodeId)}`,
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setSelectedNodeId(null);
+      setSelectedConnection((current) =>
+        current
+          ? (data.draft.connections?.find(
+              (edge) =>
+                edge.sourceNodeId === current.sourceNodeId &&
+                edge.sourcePort === current.sourcePort &&
+                edge.targetNodeId === current.targetNodeId &&
+                edge.targetPort === current.targetPort,
+            ) ?? null)
+          : null,
+      );
+      setConnectionSource((current) =>
+        current && data.draft.nodes.some((node) => node.id === current.sourceNodeId)
+          ? current
+          : null,
+      );
+      const remainingNodeIds = new Set(data.draft.nodes.map((node) => node.id));
+      setCycleNodeIds((current) => current.filter((nodeId) => remainingNodeIds.has(nodeId)));
+      if (conditionSourceId && !remainingNodeIds.has(conditionSourceId)) {
+        setConditionSourceId("");
+        setConditionLabel("");
+      }
+      setDeleteNodeDialogOpen(false);
+      toast.success("Nodo eliminado.");
+    } catch (deleteError) {
+      setDeleteNodeDialogOpen(false);
+      setSelectedNodeId(null);
+      toast.error(errorMessage(deleteError, "No pudimos eliminar el nodo."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      setDeletingNode(false);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <Breadcrumb>
@@ -1010,6 +1056,12 @@ export function WorkflowDetailView({
             cycleNodeIds={cycleNodeIds}
             savingPosition={savingPosition}
             onSelectSource={setConnectionSource}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+            onRequestDeleteNode={(nodeId) => {
+              setSelectedNodeId(nodeId);
+              setDeleteNodeDialogOpen(true);
+            }}
             onSelectConnection={setSelectedConnection}
             onConnect={(connection) => void changeConnection(connection)}
             onMoveNode={(nodeId, position) => void moveWorkflowNode(nodeId, position)}
@@ -1258,6 +1310,46 @@ export function WorkflowDetailView({
               ) : null
             }
           />
+          <Dialog open={deleteNodeDialogOpen} onOpenChange={setDeleteNodeDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  ¿Eliminar &quot;
+                  {(() => {
+                    const node = draft.nodes.find((item) => item.id === selectedNodeId);
+                    if (!node) return "";
+                    return node.type === "input.image"
+                      ? "Imagen de entrada"
+                      : node.type === "model.tflite"
+                        ? `${node.modelName} · ${node.version}`
+                        : node.type === "condition"
+                          ? `Condición: ${node.label}`
+                          : `Salida: ${node.name}`;
+                  })()}
+                  &quot;?
+                </DialogTitle>
+                <DialogDescription>También se eliminarán sus conexiones.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={deletingNode}
+                  onClick={() => setDeleteNodeDialogOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={deletingNode}
+                  onClick={() => void deleteSelectedNode()}
+                >
+                  Eliminar nodo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
         <TabsContent value="versions">
           {versions.length === 0 ? (
