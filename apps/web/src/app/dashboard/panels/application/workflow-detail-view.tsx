@@ -57,6 +57,15 @@ type WorkflowNodeItem =
       version: string;
       inputs: { image: ModelVersionContract["input"] };
       outputs: { result: ModelVersionContract["output"] };
+    }
+  | {
+      id: string;
+      type: "condition";
+      sourceNodeId: string;
+      label: string;
+      operator: "gte" | "gt" | "lte" | "lt";
+      threshold: number;
+      branches: { true: "Verdadero"; false: "Falso" };
     };
 type WorkflowModelOption = {
   id: string;
@@ -168,6 +177,11 @@ export function WorkflowDetailView({
   const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
   const [selectedModelVersionId, setSelectedModelVersionId] = useState("");
   const [addingModel, setAddingModel] = useState(false);
+  const [conditionSourceId, setConditionSourceId] = useState("");
+  const [conditionLabel, setConditionLabel] = useState("");
+  const [conditionOperator, setConditionOperator] = useState<"gte" | "gt" | "lte" | "lt">("gte");
+  const [conditionThreshold, setConditionThreshold] = useState("0.5");
+  const [addingCondition, setAddingCondition] = useState(false);
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -319,6 +333,42 @@ export function WorkflowDetailView({
     }
   }
 
+  async function addConditionNode() {
+    if (!conditionThreshold.trim()) return;
+    const threshold = Number(conditionThreshold);
+    if (
+      !detail ||
+      !conditionSourceId ||
+      !conditionLabel.trim() ||
+      !Number.isFinite(threshold) ||
+      threshold < 0 ||
+      threshold > 1 ||
+      addingCondition
+    )
+      return;
+    setAddingCondition(true);
+    try {
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
+        {
+          type: "condition",
+          sourceNodeId: conditionSourceId,
+          label: conditionLabel.trim(),
+          operator: conditionOperator,
+          threshold,
+        },
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setConditionLabel("");
+      toast.success("Condición agregada.");
+    } catch (addError) {
+      toast.error(errorMessage(addError, "No pudimos agregar la condición."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      setAddingCondition(false);
+    }
+  }
+
   if (loading) {
     return (
       <p data-testid="workflow-detail-loading" className="text-muted-foreground text-sm">
@@ -356,6 +406,10 @@ export function WorkflowDetailView({
   }
 
   const { workflow, draft, versions } = detail;
+  const classificationNodes = draft.nodes.filter(
+    (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
+      node.type === "model.tflite" && node.outputs.result.type === "classification",
+  );
 
   return (
     <section className="space-y-6">
@@ -482,6 +536,82 @@ export function WorkflowDetailView({
                 >
                   {addingModel ? "Agregando…" : "Agregar modelo"}
                 </Button>
+                <div className="space-y-2 border-t pt-3">
+                  <h4 className="font-medium text-sm">Condición</h4>
+                  <label htmlFor="condition-source" className="block text-sm">
+                    Resultado de origen
+                  </label>
+                  <select
+                    id="condition-source"
+                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    value={conditionSourceId}
+                    onChange={(event) => {
+                      setConditionSourceId(event.target.value);
+                      setConditionLabel("");
+                    }}
+                  >
+                    <option value="">Selecciona una clasificación</option>
+                    {classificationNodes.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {node.modelName} · {node.version}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="condition-label" className="block text-sm">
+                    Etiqueta
+                  </label>
+                  <select
+                    id="condition-label"
+                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    value={conditionLabel}
+                    onChange={(event) => setConditionLabel(event.target.value)}
+                  >
+                    <option value="">Selecciona una etiqueta</option>
+                    {classificationNodes
+                      .find((node) => node.id === conditionSourceId)
+                      ?.outputs.result.labels.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                  </select>
+                  <label htmlFor="condition-operator" className="block text-sm">
+                    Operador
+                  </label>
+                  <select
+                    id="condition-operator"
+                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    value={conditionOperator}
+                    onChange={(event) =>
+                      setConditionOperator(event.target.value as typeof conditionOperator)
+                    }
+                  >
+                    <option value="gte">≥</option>
+                    <option value="gt">&gt;</option>
+                    <option value="lte">≤</option>
+                    <option value="lt">&lt;</option>
+                  </select>
+                  <label htmlFor="condition-threshold" className="block text-sm">
+                    Umbral
+                  </label>
+                  <Input
+                    id="condition-threshold"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={conditionThreshold}
+                    onChange={(event) => setConditionThreshold(event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!conditionSourceId || !conditionLabel || addingCondition}
+                    onClick={() => void addConditionNode()}
+                  >
+                    {addingCondition ? "Guardando…" : "Guardar condición"}
+                  </Button>
+                </div>
                 {draft.nodes.some((node) => node.type === "input.image") && (
                   <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
                 )}
@@ -506,7 +636,7 @@ export function WorkflowDetailView({
                         imagen: image
                       </span>
                     </>
-                  ) : (
+                  ) : node.type === "model.tflite" ? (
                     <>
                       <h4 className="font-medium text-sm">
                         {node.modelName} · {node.version}
@@ -518,6 +648,16 @@ export function WorkflowDetailView({
                         <span className="rounded bg-muted px-2 py-1">
                           result: {node.outputs.result.type}
                         </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h4 className="font-medium text-sm">
+                        Condición: {node.label} {node.operator} {node.threshold}
+                      </h4>
+                      <div className="mt-2 flex gap-2 text-xs">
+                        <span className="rounded bg-muted px-2 py-1">{node.branches.true}</span>
+                        <span className="rounded bg-muted px-2 py-1">{node.branches.false}</span>
                       </div>
                     </>
                   )}

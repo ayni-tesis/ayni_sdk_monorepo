@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import type { Application } from "./applications";
 import type {
+  AddConditionNodeInput,
+  AddConditionNodeResult,
   AddImageInputInput,
   AddImageInputResult,
   AddModelNodeInput,
@@ -27,6 +29,13 @@ const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
 });
+const conditionNodeSchema = z.object({
+  type: z.literal("condition"),
+  sourceNodeId: z.string().min(1),
+  label: z.string().trim().min(1),
+  operator: z.enum(["gte", "gt", "lte", "lt"]),
+  threshold: z.number().finite().min(0).max(1),
+});
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -41,6 +50,7 @@ type Dependencies = {
     rename: (input: RenameWorkflowInput) => Promise<RenameWorkflowResult>;
     addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
     addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
+    addConditionNode: (input: AddConditionNodeInput) => Promise<AddConditionNodeResult>;
   };
 };
 
@@ -186,7 +196,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (
       typeof body !== "object" ||
       body === null ||
-      !["input.image", "model.tflite"].includes((body as { type?: string }).type ?? "")
+      !["input.image", "model.tflite", "condition"].includes((body as { type?: string }).type ?? "")
     ) {
       return c.json({ message: "Tipo de nodo no válido." }, 400);
     }
@@ -195,8 +205,31 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
     };
+    const nodeType = (body as { type: string }).type;
+    if (nodeType === "condition") {
+      const parsed = conditionNodeSchema.safeParse(body);
+      if (!parsed.success) return c.json({ message: "Ingresa una condición válida." }, 400);
+      const { type: _type, ...condition } = parsed.data;
+      const result = await workflows.addConditionNode({ ...workflowInput, ...condition });
+      if (result.ok) return c.json({ draft: result.draft });
+      if (result.reason === "forbidden")
+        return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
+      if (result.reason === "archived")
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      if (result.reason === "incompatibleSource")
+        return c.json(
+          { message: "Esta condición no es compatible con la salida seleccionada." },
+          409,
+        );
+      if (result.reason === "workflowNotFound")
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    }
     const result =
-      (body as { type: string }).type === "model.tflite"
+      nodeType === "model.tflite"
         ? await workflows.addModelNode({
             ...workflowInput,
             modelVersionId:

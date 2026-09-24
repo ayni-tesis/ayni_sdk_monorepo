@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import {
   type AddImageInputResult,
+  addConditionNode,
   addImageInputNode,
   type CreateWorkflowResult,
   createWorkflow,
@@ -16,6 +17,7 @@ import {
   type Workflow,
   type WorkflowDatabase,
   type WorkflowDetail,
+  type WorkflowNode,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 
@@ -81,6 +83,7 @@ function makeApp({
     ok: true,
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
   }),
+  addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
 }: {
   session?: { user: { id: string } } | null;
@@ -97,6 +100,9 @@ function makeApp({
     userId: string;
     modelVersionId: string;
   }) => Promise<import("./workflow-store").AddModelNodeResult>;
+  addConditionNode?: (
+    input: import("./workflow-store").AddConditionNodeInput,
+  ) => Promise<import("./workflow-store").AddConditionNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -106,6 +112,7 @@ function makeApp({
   const renameMock = vi.fn(rename);
   const addImageInputMock = vi.fn(addImageInput);
   const addModelNodeMock = vi.fn(addModelNode);
+  const addConditionNodeMock = vi.fn(addConditionNode);
   return {
     create: createMock,
     list: listMock,
@@ -113,6 +120,7 @@ function makeApp({
     rename: renameMock,
     addImageInput: addImageInputMock,
     addModelNode: addModelNodeMock,
+    addConditionNode: addConditionNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -126,6 +134,7 @@ function makeApp({
         rename: renameMock,
         addImageInput: addImageInputMock,
         addModelNode: addModelNodeMock,
+        addConditionNode: addConditionNodeMock,
       },
     }),
   };
@@ -160,6 +169,76 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("validates and dispatches a typed classification condition", async () => {
+    const addConditionNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const { request } = makeApp({ addConditionNode });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(200);
+    expect(addConditionNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+  });
+
+  it("rejects arbitrary operators and out of range thresholds", async () => {
+    const { request, addConditionNode } = makeApp();
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "eval",
+      threshold: 1.2,
+    });
+    expect(response.status).toBe(400);
+    expect(addConditionNode).not.toHaveBeenCalled();
+  });
+
+  it("reports incompatible classification sources without mutating the draft", async () => {
+    const { request } = makeApp({
+      addConditionNode: async () => ({ ok: false, reason: "incompatibleSource" }),
+    });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "detection-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Esta condición no es compatible con la salida seleccionada.",
+    });
+  });
+
+  it("preserves the workflow not-found response", async () => {
+    const { request } = makeApp({
+      addConditionNode: async () => ({ ok: false, reason: "workflowNotFound" }),
+    });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+  });
+
   it("dispatches model nodes with the selected version id", async () => {
     const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
     const { request } = makeApp({ addModelNode });
@@ -1259,7 +1338,7 @@ function toQuery(fragment: unknown) {
   return { sql, params };
 }
 
-function makeImageInputStoreDb() {
+function makeImageInputStoreDb(nodes: WorkflowNode[] = []) {
   const storedWorkflow = {
     id: "workflow-1",
     applicationId: "app-1",
@@ -1267,7 +1346,7 @@ function makeImageInputStoreDb() {
     status: "draft",
     createdAt: new Date("2026-09-21T15:00:00.000Z"),
     updatedAt: new Date("2026-09-21T16:00:00.000Z"),
-    draft: { nodes: [] as { id: string; type: "input.image"; outputs: { imagen: "image" } }[] },
+    draft: { nodes: structuredClone(nodes) },
   };
   const writes: unknown[] = [];
   const cloneWorkflow = () => structuredClone(storedWorkflow);
@@ -1297,18 +1376,19 @@ function makeImageInputStoreDb() {
           returning: async () => {
             expect(table).toBe(workflow);
             const whereQuery = toQuery(condition);
-            expect(whereQuery.sql).toContain("jsonb_path_exists");
             expect(whereQuery.params).toEqual(["workflow-1", "app-1"]);
-
-            if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
 
             const draftQuery = toQuery(values.draft);
             const serializedNode = draftQuery.params.find(
               (value): value is string =>
-                typeof value === "string" && value.includes('"type":"input.image"'),
+                typeof value === "string" &&
+                (value.includes('"type":"input.image"') || value.includes('"type":"condition"')),
             );
-            if (!serializedNode)
-              throw new Error("Image input node was not added to the SQL update");
+            if (!serializedNode) throw new Error("Workflow node was not added to the SQL update");
+            if (serializedNode.includes('"type":"input.image"')) {
+              expect(whereQuery.sql).toContain("jsonb_path_exists");
+              if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
+            }
             const node = JSON.parse(serializedNode) as (typeof storedWorkflow.draft.nodes)[number];
             storedWorkflow.draft.nodes.push(node);
             writes.push(values);
@@ -1324,6 +1404,96 @@ function makeImageInputStoreDb() {
   };
   return { db, writes, reload: () => cloneWorkflow().draft };
 }
+
+describe("addConditionNode source validation", () => {
+  const input = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.7,
+  };
+  const modelNode = {
+    id: "classification-1",
+    type: "model.tflite" as const,
+    modelVersionId: "version-1",
+    modelName: "Hoja",
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 32,
+        height: 32,
+        channels: 3 as const,
+        normalization: "none" as const,
+      },
+    },
+    outputs: { result: { type: "classification" as const, labels: ["roya"] } },
+  };
+
+  it.each([
+    ["missing source", [modelNode], "missing"],
+    [
+      "non-classification source",
+      [
+        {
+          ...modelNode,
+          outputs: {
+            result: { type: "detection" as const, labels: ["roya"], scoreThreshold: 0.5 },
+          },
+        },
+      ],
+      modelNode.id,
+    ],
+    [
+      "undeclared label",
+      [
+        {
+          ...modelNode,
+          outputs: { result: { type: "classification" as const, labels: ["sana"] } },
+        },
+      ],
+      modelNode.id,
+    ],
+  ])("rejects a %s without persisting a node", async (_caseName, nodes, sourceNodeId) => {
+    const store = makeImageInputStoreDb(nodes);
+    const originalDraft = store.reload();
+    const result = await addConditionNode(store.db, { ...input, sourceNodeId });
+    expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+    expect(store.reload()).toEqual(originalDraft);
+    expect(store.writes).toHaveLength(0);
+  });
+
+  it("persists and reloads a condition with its typed source and branches", async () => {
+    const store = makeImageInputStoreDb([modelNode]);
+    const result = await addConditionNode(store.db, {
+      ...input,
+      sourceNodeId: modelNode.id,
+    });
+    expect(result).toEqual({
+      ok: true,
+      draft: {
+        nodes: [
+          modelNode,
+          {
+            id: expect.any(String),
+            type: "condition",
+            sourceNodeId: modelNode.id,
+            label: input.label,
+            operator: input.operator,
+            threshold: input.threshold,
+            branches: { true: "Verdadero", false: "Falso" },
+          },
+        ],
+      },
+    });
+    const savedCondition = result.ok ? result.draft.nodes[1] : undefined;
+    const reloadedCondition = store.reload().nodes[1];
+    expect(reloadedCondition).toEqual(savedCondition);
+    expect(store.writes).toHaveLength(1);
+  });
+});
 
 describe("addImageInputNode", () => {
   it("persists one image input, rejects a duplicate, and reloads the unchanged draft", async () => {
