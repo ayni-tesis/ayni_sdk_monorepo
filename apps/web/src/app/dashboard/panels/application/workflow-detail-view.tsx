@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api-error";
+import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
 import {
@@ -45,10 +46,17 @@ import {
 } from "./workflow-canvas";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
+export type WorkflowVersionItem = {
+  id: string;
+  workflowId: string;
+  version: string;
+  createdAt: string;
+};
+
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
   draft: WorkflowCanvasDraft;
-  versions: unknown[];
+  versions: WorkflowVersionItem[];
 };
 
 export function findWorkflowCycleNodeIds(
@@ -127,6 +135,78 @@ const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
 const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
 const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
+const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
+const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+
+export type PublishWorkflowVersionDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  version: string;
+  setVersion: (version: string) => void;
+  versionError: string;
+  setVersionError: (error: string) => void;
+  publishing: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+};
+
+export function PublishWorkflowVersionDialog({
+  open,
+  onOpenChange,
+  version,
+  setVersion,
+  versionError,
+  setVersionError,
+  publishing,
+  onSubmit,
+}: PublishWorkflowVersionDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Publicar versión</DialogTitle>
+          <DialogDescription>Se publicará una versión inmutable del workflow.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="publish-workflow-version" className="font-semibold text-sm">
+              Versión
+            </label>
+            <Input
+              id="publish-workflow-version"
+              autoFocus
+              required
+              aria-required="true"
+              placeholder="1.0.0"
+              value={version}
+              onChange={(event) => {
+                setVersion(event.target.value);
+                if (versionError) setVersionError("");
+              }}
+            />
+            {versionError && (
+              <p className="text-destructive text-sm" role="alert">
+                {versionError}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={publishing}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={publishing}>
+              {publishing ? "Publicando versión…" : "Publicar versión"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export type RenameWorkflowDialogProps = {
   open: boolean;
@@ -222,6 +302,10 @@ export function WorkflowDetailView({
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishVersion, setPublishVersion] = useState("");
+  const [publishError, setPublishError] = useState("");
+  const [publishing, setPublishing] = useState(false);
   const [addingImageInput, setAddingImageInput] = useState(false);
   const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
@@ -478,6 +562,59 @@ export function WorkflowDetailView({
     }
   }
 
+  function openPublishWorkflowVersion() {
+    setPublishVersion("");
+    setPublishError("");
+    setPublishDialogOpen(true);
+  }
+
+  async function handlePublishWorkflowVersion(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!detail || publishing) return;
+    const version = publishVersion.trim();
+    if (!SEMVER_PATTERN.test(version)) {
+      setPublishError(INVALID_VERSION_MESSAGE);
+      return;
+    }
+    const publishedDraft = detail.draft;
+    setPublishing(true);
+    try {
+      const { data } = await httpClient.post<{ version: WorkflowVersionItem }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/versions`,
+        { version },
+      );
+      setDetail((current) =>
+        current ? { ...current, versions: [data.version, ...current.versions] } : current,
+      );
+      setPublishDialogOpen(false);
+      toast.success(`Versión ${data.version.version} publicada.`);
+    } catch (publishRequestError) {
+      const response = axios.isAxiosError(publishRequestError)
+        ? publishRequestError.response
+        : undefined;
+      if (response?.data?.code === "workflowInvalid") {
+        // Show why the server refused: the errors belong to the draft on screen.
+        setValidation({
+          draft: publishedDraft,
+          result: { publishable: false, errors: response.data.errors ?? [] },
+        });
+        setPublishDialogOpen(false);
+        toast.error(errorMessage(publishRequestError, "No pudimos publicar la versión."));
+      } else if (response?.status === 400 || response?.data?.code === "versionExists") {
+        setPublishError(errorMessage(publishRequestError, INVALID_VERSION_MESSAGE));
+      } else {
+        toast.error(
+          errorMessage(
+            publishRequestError,
+            "No pudimos publicar la versión. Inténtalo nuevamente.",
+          ),
+        );
+      }
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   if (loading) {
     return (
       <p data-testid="workflow-detail-loading" className="text-muted-foreground text-sm">
@@ -731,15 +868,20 @@ export function WorkflowDetailView({
         <TabsContent value="draft" className="space-y-4">
           {canManage && application.status === "active" && (
             <div className="space-y-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={validating}
-                onClick={() => void validateWorkflow()}
-              >
-                {validating ? "Validando workflow…" : "Validar workflow"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={validating}
+                  onClick={() => void validateWorkflow()}
+                >
+                  {validating ? "Validando workflow…" : "Validar workflow"}
+                </Button>
+                <Button type="button" size="sm" onClick={openPublishWorkflowVersion}>
+                  Publicar versión
+                </Button>
+              </div>
               {validationResult?.publishable && (
                 <p role="status" className="text-sm">
                   El workflow está listo para publicarse.
@@ -1043,11 +1185,41 @@ export function WorkflowDetailView({
           />
         </TabsContent>
         <TabsContent value="versions">
-          {versions.length === 0 && (
+          {versions.length === 0 ? (
             <p className="text-muted-foreground text-sm">{NO_VERSIONS_MESSAGE}</p>
+          ) : (
+            <table aria-label="Versiones publicadas" className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="pb-2 font-medium">Versión</th>
+                  <th className="pb-2 font-medium">Publicada</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.map((version) => (
+                  <tr key={version.id} className="border-b last:border-0">
+                    <td className="py-2.5 font-mono">{version.version}</td>
+                    <td className="py-2.5 text-muted-foreground">
+                      {formatLongDateEs(version.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </TabsContent>
       </Tabs>
+
+      <PublishWorkflowVersionDialog
+        open={publishDialogOpen}
+        onOpenChange={setPublishDialogOpen}
+        version={publishVersion}
+        setVersion={setPublishVersion}
+        versionError={publishError}
+        setVersionError={setPublishError}
+        publishing={publishing}
+        onSubmit={handlePublishWorkflowVersion}
+      />
 
       <RenameWorkflowDialog
         open={renameDialogOpen}

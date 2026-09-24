@@ -107,6 +107,9 @@ export type WorkflowItem = {
   updatedAt: string;
 };
 
+/** A listed workflow with the identifier of its most recently published version. */
+export type WorkflowListItem = WorkflowItem & { latestVersion: string | null };
+
 const WORKFLOWS_LOAD_ERROR = "No pudimos cargar los workflows. Inténtalo nuevamente.";
 const WORKFLOWS_EMPTY_MESSAGE = "Aún no hay workflows en esta aplicación.";
 
@@ -114,7 +117,6 @@ export const WORKFLOW_STATUS_LABELS: Record<WorkflowItem["status"], string> = {
   draft: "Borrador",
 };
 
-// Workflow versions are not published yet, so no workflow has a latest version.
 const NO_PUBLISHED_VERSION_LABEL = "Sin publicar";
 
 export type WorkflowsViewProps = {
@@ -133,7 +135,7 @@ export function WorkflowsView({
   const [workflowError, setWorkflowError] = useState("");
   const [creatingWorkflow, setCreatingWorkflow] = useState(false);
 
-  const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowListItem[]>([]);
   const [workflowsLoading, setWorkflowsLoading] = useState(true);
   const [workflowsError, setWorkflowsError] = useState("");
 
@@ -147,7 +149,7 @@ export function WorkflowsView({
     setWorkflowsLoading(true);
     setWorkflowsError("");
     try {
-      const { data } = await httpClient.get<{ workflows?: WorkflowItem[] }>(
+      const { data } = await httpClient.get<{ workflows?: WorkflowListItem[] }>(
         `/applications/${applicationId}/workflows`,
         { signal: controller.signal },
       );
@@ -267,7 +269,9 @@ export function WorkflowsView({
                 <td className="py-2.5 text-muted-foreground">
                   {WORKFLOW_STATUS_LABELS[workflowItem.status] ?? workflowItem.status}
                 </td>
-                <td className="py-2.5 text-muted-foreground">{NO_PUBLISHED_VERSION_LABEL}</td>
+                <td className="py-2.5 text-muted-foreground">
+                  {workflowItem.latestVersion ?? NO_PUBLISHED_VERSION_LABEL}
+                </td>
                 <td className="py-2.5 text-muted-foreground">
                   {formatLongDateEs(workflowItem.updatedAt)}
                 </td>
