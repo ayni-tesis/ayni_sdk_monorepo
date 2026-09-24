@@ -2087,7 +2087,7 @@ describe("ApplicationDetailPanel", () => {
         data: { draft: { nodes: [unrelatedNode], connections: [] } },
       });
 
-      render(workflowDetailPanel({ canManage: true }));
+      render(workflowDetailPanel());
       await screen.findByTestId("workflow-node-model-node");
       fireEvent.change(screen.getByLabelText("Resultado de origen"), {
         target: { value: "model-node" },

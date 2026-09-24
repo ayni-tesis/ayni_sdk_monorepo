@@ -2559,6 +2559,12 @@ describe("deleteWorkflowNode", () => {
           targetNodeId: "model-2",
           targetPort: "image",
         },
+        {
+          sourceNodeId: "other",
+          sourcePort: "imagen",
+          targetNodeId: "condition-2",
+          targetPort: "source",
+        },
       ],
       layout: {
         model: { x: 80, y: 90 },
