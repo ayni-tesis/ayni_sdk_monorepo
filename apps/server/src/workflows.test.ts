@@ -81,6 +81,7 @@ function makeApp({
     ok: true,
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
   }),
+  addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -90,6 +91,12 @@ function makeApp({
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
   rename?: (input: RenameInput) => Promise<RenameWorkflowResult>;
   addImageInput?: (input: AddImageInputInput) => Promise<AddImageInputResult>;
+  addModelNode?: (input: {
+    applicationId: string;
+    workflowId: string;
+    userId: string;
+    modelVersionId: string;
+  }) => Promise<import("./workflow-store").AddModelNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -98,12 +105,14 @@ function makeApp({
   );
   const renameMock = vi.fn(rename);
   const addImageInputMock = vi.fn(addImageInput);
+  const addModelNodeMock = vi.fn(addModelNode);
   return {
     create: createMock,
     list: listMock,
     get: getMock,
     rename: renameMock,
     addImageInput: addImageInputMock,
+    addModelNode: addModelNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -116,6 +125,7 @@ function makeApp({
         get: getMock,
         rename: renameMock,
         addImageInput: addImageInputMock,
+        addModelNode: addModelNodeMock,
       },
     }),
   };
