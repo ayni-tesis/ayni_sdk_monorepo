@@ -1076,6 +1076,18 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
     });
 
+    it("labels an archived workflow as Archivado (US-037)", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { workflows: [{ ...listedWorkflow, status: "archived", latestVersion: "1.0.0" }] },
+      }));
+
+      renderWorkflowList();
+
+      const row = await screen.findByTestId("workflow-row-workflow-1");
+      expect(within(row).getByText("Archivado")).toBeTruthy();
+      expect(within(row).getByText("1.0.0")).toBeTruthy();
+    });
+
     it("shows the latest published version of each workflow under Última versión", async () => {
       client.get.mockImplementation(async () => ({
         data: {
@@ -1989,10 +2001,15 @@ describe("ApplicationDetailPanel", () => {
         type: "input.image" as const,
         outputs: { imagen: "image" as const },
       };
+      const survivingNode = {
+        id: "surviving-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
       const connection = {
         sourceNodeId: "other-node",
         sourcePort: "imagen",
-        targetNodeId: "image-node",
+        targetNodeId: "surviving-node",
         targetPort: "imagen",
       };
       client.get.mockImplementation(async (url: string) =>
@@ -2000,13 +2017,13 @@ describe("ApplicationDetailPanel", () => {
           ? {
               data: {
                 ...workflowDetail,
-                draft: { nodes: [imageNode, otherNode], connections: [connection] },
+                draft: { nodes: [imageNode, otherNode, survivingNode], connections: [connection] },
               },
             }
           : { data: { models: [] } },
       );
       client.delete.mockResolvedValueOnce({
-        data: { draft: { nodes: [otherNode], connections: [{ ...connection }] } },
+        data: { draft: { nodes: [otherNode, survivingNode], connections: [{ ...connection }] } },
       });
 
       render(workflowDetailPanel());
