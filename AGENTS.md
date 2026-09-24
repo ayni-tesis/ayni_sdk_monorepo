@@ -72,6 +72,10 @@ ayni/
 - `bun db:push` - Push database schema
 - `bun db:studio` - Open database UI
 
+## Required pre-PR checks
+
+Before opening or updating a PR, run `bun run check` and `bun run check-types` from the repository root and fix any failures before pushing. When a change touches Flutter/Dart files, also run `dart format .` from `packages/sdk_flutter` and `flutter analyze` there; fix formatting and analyzer failures before pushing.
+
 ## Thesis SDK direction
 
 The thesis product is an offline-first Flutter SDK for integrating on-device
