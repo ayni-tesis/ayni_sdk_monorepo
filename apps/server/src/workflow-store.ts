@@ -186,6 +186,99 @@ export type UpdateWorkflowNodePositionResult =
       reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "nodeNotFound";
     };
 
+export type DeleteWorkflowNodeInput = {
+  applicationId: string;
+  workflowId: string;
+  nodeId: string;
+  userId: string;
+};
+export type DeleteWorkflowNodeResult =
+  | { ok: true; draft: WorkflowDraft }
+  | {
+      ok: false;
+      reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "nodeNotFound";
+    };
+
+export async function deleteWorkflowNode(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, nodeId, userId }: DeleteWorkflowNodeInput,
+): Promise<DeleteWorkflowNodeResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const reader = tx as unknown as {
+        select: (fields: Record<string, unknown>) => {
+          from: (table: unknown) => {
+            where: (condition: unknown) => {
+              limit: (count: number) => {
+                for: (lock: "update") => Promise<{ draft: WorkflowDraft }[]>;
+              };
+            };
+          };
+        };
+      };
+      const rows = await reader
+        .select({ draft: workflow.draft })
+        .from(workflow)
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .limit(1)
+        .for("update");
+      const current = rows[0]?.draft;
+      if (!rows[0]) return { kind: "workflowNotFound" as const };
+      const draft = current ?? { nodes: [] };
+      if (!draft.nodes.some((node) => node.id === nodeId)) return { kind: "nodeNotFound" as const };
+      const removedNodeIds = new Set([nodeId]);
+      let addedDependency = true;
+      while (addedDependency) {
+        addedDependency = false;
+        for (const node of draft.nodes) {
+          if (
+            (node.type === "condition" || node.type === "output") &&
+            removedNodeIds.has(node.sourceNodeId) &&
+            !removedNodeIds.has(node.id)
+          ) {
+            removedNodeIds.add(node.id);
+            addedDependency = true;
+          }
+        }
+      }
+      const updatedDraft: WorkflowDraft = {
+        ...draft,
+        nodes: draft.nodes.filter((node) => !removedNodeIds.has(node.id)),
+        ...(draft.connections
+          ? {
+              connections: draft.connections.filter(
+                (edge) =>
+                  !removedNodeIds.has(edge.sourceNodeId) && !removedNodeIds.has(edge.targetNodeId),
+              ),
+            }
+          : {}),
+        ...(draft.layout
+          ? {
+              layout: Object.fromEntries(
+                Object.entries(draft.layout).filter(([id]) => !removedNodeIds.has(id)),
+              ),
+            }
+          : {}),
+      };
+      const updater = tx as WorkflowUpdateExecutor;
+      const updated = (await updater
+        .update(workflow)
+        .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return updated[0]
+        ? { kind: "deleted" as const, draft: updated[0].draft ?? updatedDraft }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  return result.value.kind === "deleted"
+    ? { ok: true, draft: result.value.draft }
+    : { ok: false, reason: result.value.kind };
+}
+
 export async function updateWorkflowNodePosition(
   database: WorkflowDatabase,
   { applicationId, workflowId, nodeId, userId, x, y }: UpdateWorkflowNodePositionInput,

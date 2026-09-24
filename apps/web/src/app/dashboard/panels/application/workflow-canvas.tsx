@@ -171,6 +171,8 @@ function WorkflowNodeCard({
   cycle,
   connectionSource,
   onSelectSource,
+  selected,
+  onSelectNode,
   onConnect,
 }: {
   node: WorkflowCanvasNode;
@@ -179,6 +181,8 @@ function WorkflowNodeCard({
   cycle: boolean;
   connectionSource: ConnectionSource;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
+  selected: boolean;
+  onSelectNode: (nodeId: string) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
 }) {
   const draggable = useDraggable({
@@ -225,7 +229,15 @@ function WorkflowNodeCard({
         >
           <IconGripVertical className="size-4" aria-hidden="true" />
         </button>
-        <h3 className="min-w-0 flex-1 truncate font-medium text-sm">{nodeTitle}</h3>
+        <button
+          type="button"
+          className={`min-w-0 flex-1 truncate text-left font-medium text-sm ${selected ? "text-primary" : ""}`}
+          aria-pressed={selected}
+          disabled={!canManage}
+          onClick={() => onSelectNode(node.id)}
+        >
+          {nodeTitle}
+        </button>
         <span className="rounded bg-muted px-2 py-1 text-muted-foreground text-xs uppercase tracking-wide">
           {node.type.replace(".", " · ")}
         </span>
@@ -335,6 +347,9 @@ export function WorkflowCanvas({
   savingPosition,
   palette,
   onSelectSource,
+  selectedNodeId,
+  onSelectNode,
+  onRequestDeleteNode,
   onSelectConnection,
   onConnect,
   onMoveNode,
@@ -349,6 +364,9 @@ export function WorkflowCanvas({
   savingPosition: boolean;
   palette: ReactNode;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
+  selectedNodeId: string | null;
+  onSelectNode: (nodeId: string) => void;
+  onRequestDeleteNode: (nodeId: string) => void;
   onSelectConnection: (connection: WorkflowCanvasConnection) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
   onMoveNode: (nodeId: string, position: WorkflowCanvasPosition) => void;
@@ -414,8 +432,11 @@ export function WorkflowCanvas({
           cycleNodeIds={cycleNodeIds}
           selectedConnection={selectedConnection}
           connectionSource={connectionSource}
+          selectedNodeId={selectedNodeId}
           boardRef={boardRef}
           onSelectSource={onSelectSource}
+          onSelectNode={onSelectNode}
+          onRequestDeleteNode={onRequestDeleteNode}
           onSelectConnection={onSelectConnection}
           onConnect={onConnect}
           onRemoveConnection={onRemoveConnection}
@@ -431,8 +452,11 @@ function CanvasBoard({
   cycleNodeIds,
   selectedConnection,
   connectionSource,
+  selectedNodeId,
   boardRef,
   onSelectSource,
+  onSelectNode,
+  onRequestDeleteNode,
   onSelectConnection,
   onConnect,
   onRemoveConnection,
@@ -442,8 +466,11 @@ function CanvasBoard({
   cycleNodeIds: string[];
   selectedConnection: WorkflowCanvasConnection | null;
   connectionSource: ConnectionSource;
+  selectedNodeId: string | null;
   boardRef: React.RefObject<HTMLElement | null>;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
+  onSelectNode: (nodeId: string) => void;
+  onRequestDeleteNode: (nodeId: string) => void;
   onSelectConnection: (connection: WorkflowCanvasConnection) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
   onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
@@ -547,7 +574,9 @@ function CanvasBoard({
               canManage={canManage}
               cycle={cycleNodeIds.includes(node.id)}
               connectionSource={connectionSource}
+              selected={selectedNodeId === node.id}
               onSelectSource={onSelectSource}
+              onSelectNode={onSelectNode}
               onConnect={onConnect}
             />
           ))}
@@ -591,6 +620,16 @@ function CanvasBoard({
           onClick={() => onRemoveConnection(selectedConnection)}
         >
           Eliminar conexión
+        </Button>
+      )}
+      {selectedNodeId && canManage && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onRequestDeleteNode(selectedNodeId)}
+        >
+          Eliminar nodo
         </Button>
       )}
     </div>

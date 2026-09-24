@@ -40,7 +40,7 @@ describe("findWorkflowCycleNodeIds", () => {
 });
 
 const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   toastMock: { success: vi.fn(), error: vi.fn() },
   writeTextMock: vi.fn().mockResolvedValue(undefined),
 }));
@@ -86,6 +86,7 @@ describe("ApplicationDetailPanel", () => {
     client.get.mockReset();
     client.post.mockReset();
     client.patch.mockReset();
+    client.delete.mockReset();
     client.get.mockImplementation(async () => ({ data: { models: [] } }));
     document.body.innerHTML = "";
     document.body.removeAttribute("data-scroll-locked");
@@ -1855,6 +1856,103 @@ describe("ApplicationDetailPanel", () => {
         expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/..%2Fprivate", {
           name: "Diagnóstico de café",
         });
+      });
+    });
+  });
+
+  describe("US-034: Eliminar un nodo del borrador", () => {
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [imageNode] },
+      versions: [],
+    };
+
+    function workflowDetailPanel() {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    it("lets an administrator cancel or confirm node deletion and updates the draft", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      client.delete.mockResolvedValueOnce({ data: { draft: { nodes: [] } } });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      expect(within(dialog).getByText("También se eliminarán sus conexiones.")).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+      expect(client.delete).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const confirmation = await screen.findByRole("dialog", {
+        name: '¿Eliminar "Imagen de entrada"?',
+      });
+      fireEvent.click(within(confirmation).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(client.delete).toHaveBeenCalledWith(
+          "/applications/app-1/workflows/workflow-1/nodes/image-node",
+        );
+        expect(toastMock.success).toHaveBeenCalledWith("Nodo eliminado.");
+      });
+      await waitFor(() => expect(screen.queryByTestId("workflow-node-image-node")).toBeNull());
+    });
+
+    it("shows the forbidden server message when node deletion is rejected", async () => {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      client.delete.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para editar este workflow." },
+        },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No tienes permiso para editar este workflow.",
+        );
       });
     });
   });

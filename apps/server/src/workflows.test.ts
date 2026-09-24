@@ -9,6 +9,8 @@ import {
   addImageInputNode,
   type CreateWorkflowResult,
   createWorkflow,
+  type DeleteWorkflowNodeResult,
+  deleteWorkflowNode,
   findWorkflowCycle,
   getWorkflow,
   listWorkflows,
@@ -120,6 +122,10 @@ function makeApp({
     ok: true as const,
     position: { x, y },
   }),
+  deleteNode = async (): Promise<DeleteWorkflowNodeResult> => ({
+    ok: true,
+    draft: { nodes: [] },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -145,6 +151,9 @@ function makeApp({
   updateNodePosition?: (
     input: import("./workflow-store").UpdateWorkflowNodePositionInput,
   ) => Promise<import("./workflow-store").UpdateWorkflowNodePositionResult>;
+  deleteNode?: (
+    input: import("./workflow-store").DeleteWorkflowNodeInput,
+  ) => Promise<DeleteWorkflowNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -165,6 +174,7 @@ function makeApp({
     reason: "connectionNotFound" as const,
   }));
   const updateNodePositionMock = vi.fn(updateNodePosition);
+  const deleteNodeMock = vi.fn(deleteNode);
   return {
     create: createMock,
     list: listMock,
@@ -177,6 +187,7 @@ function makeApp({
     addConnection: addConnectionMock,
     removeConnection: removeConnectionMock,
     updateNodePosition: updateNodePositionMock,
+    deleteNode: deleteNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -195,6 +206,7 @@ function makeApp({
         addConnection: addConnectionMock,
         removeConnection: removeConnectionMock,
         updateNodePosition: updateNodePositionMock,
+        deleteNode: deleteNodeMock,
       },
     }),
   };
@@ -270,6 +282,44 @@ describe("PATCH /applications/:applicationId/workflows/:workflowId/nodes/:nodeId
 
     expect(response.status).toBe(403);
     expect(app.updateNodePosition).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes/:nodeId", () => {
+  it("deletes a draft node and returns the updated draft", async () => {
+    const draft = { nodes: [] };
+    const deleteNode = vi.fn(async () => ({ ok: true as const, draft }));
+    const { request } = makeApp({ deleteNode });
+    const response = await request.request(
+      "/applications/app-1/workflows/workflow-1/nodes/node-1",
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft });
+    expect(deleteNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "node-1",
+      userId: "admin",
+    });
+  });
+
+  it("keeps node deletion administrator-only", async () => {
+    const { request, deleteNode } = makeApp({
+      membershipRole: "member",
+      deleteNode: async () => ({ ok: false as const, reason: "forbidden" as const }),
+    });
+    const response = await request.request(
+      "/applications/app-1/workflows/workflow-1/nodes/node-1",
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para editar este workflow.",
+    });
+    expect(deleteNode).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1849,6 +1899,96 @@ describe("updateWorkflowNodePosition", () => {
 
     expect(result).toEqual({ ok: false, reason: "nodeNotFound" });
     expect(store.writes).toBe(0);
+  });
+});
+
+describe("deleteWorkflowNode", () => {
+  it("removes the selected node, incident connections, and saved layout", async () => {
+    const draft = {
+      nodes: [
+        { id: "image", type: "input.image" as const, outputs: { imagen: "image" as const } },
+        {
+          id: "model",
+          type: "model.tflite" as const,
+          modelVersionId: "version-1",
+          modelName: "Classifier",
+          version: "1.0.0",
+          inputs: {
+            image: {
+              type: "image" as const,
+              width: 224,
+              height: 224,
+              channels: 3 as const,
+              normalization: "none" as const,
+            },
+          },
+          outputs: { result: { type: "classification" as const, labels: ["ok", "bad"] } },
+        },
+        {
+          id: "condition-1",
+          type: "condition" as const,
+          sourceNodeId: "model",
+          label: "bad",
+          operator: "gte" as const,
+          threshold: 0.5,
+          branches: { true: "Verdadero" as const, false: "Falso" as const },
+        },
+        {
+          id: "condition-2",
+          type: "condition" as const,
+          sourceNodeId: "condition-1",
+          label: "follow-up",
+          operator: "gt" as const,
+          threshold: 0.2,
+          branches: { true: "Verdadero" as const, false: "Falso" as const },
+        },
+        {
+          id: "output-dependent",
+          type: "output" as const,
+          name: "Dependent",
+          sourceNodeId: "condition-2",
+          sourcePort: "true",
+          resultType: "boolean" as const,
+        },
+        { id: "other", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      ],
+      connections: [
+        { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
+        { sourceNodeId: "other", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
+      ],
+      layout: {
+        model: { x: 80, y: 90 },
+        "condition-1": { x: 100, y: 100 },
+        "condition-2": { x: 120, y: 120 },
+        "output-dependent": { x: 140, y: 140 },
+        other: { x: 180, y: 190 },
+      },
+    };
+    const store = makeWorkflowPositionStoreDb(draft);
+    const result = await deleteWorkflowNode(store.db, {
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "model",
+      userId: "admin",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(store.reload()).toEqual({
+      nodes: [draft.nodes[0], draft.nodes[5]],
+      connections: [],
+      layout: { other: { x: 180, y: 190 } },
+    });
+    const remainingNodeIds = new Set(store.reload().nodes.map((node) => node.id));
+    const danglingDerivedEdges = store
+      .reload()
+      .nodes.flatMap((node) =>
+        node.type === "condition" || node.type === "output"
+          ? remainingNodeIds.has(node.sourceNodeId)
+            ? []
+            : [node.id]
+          : [],
+      );
+    expect(danglingDerivedEdges).toEqual([]);
   });
 });
 
