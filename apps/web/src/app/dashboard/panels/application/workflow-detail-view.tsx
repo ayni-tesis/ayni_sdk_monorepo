@@ -211,6 +211,12 @@ export function WorkflowDetailView({
 
   useEffect(() => {
     let active = true;
+    if (!canManage || application.status !== "active") {
+      setModelOptions([]);
+      return () => {
+        active = false;
+      };
+    }
     async function loadModelOptions() {
       try {
         const { data } = await httpClient.get<{ models: { id: string; name: string }[] }>(
@@ -218,13 +224,18 @@ export function WorkflowDetailView({
         );
         const models = await Promise.all(
           data.models.map(async (item) => {
-            const response = await httpClient.get<{
-              versions: { id: string; version: string; contract: ModelVersionContract | null }[];
-            }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
-            return { ...item, versions: response.data.versions };
+            try {
+              const response = await httpClient.get<{
+                versions: { id: string; version: string; contract: ModelVersionContract | null }[];
+              }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
+              return { ...item, versions: response.data.versions };
+            } catch {
+              return null;
+            }
           }),
         );
-        if (active) setModelOptions(models);
+        if (active)
+          setModelOptions(models.filter((item): item is WorkflowModelOption => item !== null));
       } catch {
         if (active) setModelOptions([]);
       }
@@ -233,7 +244,7 @@ export function WorkflowDetailView({
     return () => {
       active = false;
     };
-  }, [application.id]);
+  }, [application.id, application.status, canManage]);
 
   function openRenameWorkflow(currentName: string) {
     setRenameName(currentName);

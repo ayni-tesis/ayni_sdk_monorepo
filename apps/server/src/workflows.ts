@@ -221,7 +221,10 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         409,
       );
     if (result.reason === "modelVersionNotFound")
-      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json(
+        { message: "No encontramos esta versión de modelo.", code: "modelVersionNotFound" },
+        404,
+      );
     if (result.reason === "workflowNotFound")
       return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);

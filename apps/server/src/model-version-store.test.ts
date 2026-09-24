@@ -1,10 +1,11 @@
-import { application, member, model, modelVersion } from "@ayni/db/schema/index";
+import { application, member, model, modelVersion, workflow } from "@ayni/db/schema/index";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TransactionExecutor } from "./application-actions";
 import { ModelVersionAlreadyStoredError } from "./model-version-storage";
 import {
   createModelVersionWithArtifact,
+  deleteModelVersion,
   getSdkModelVersionManifest,
   listModelVersions,
   type ModelVersionStorage,
@@ -529,6 +530,56 @@ function ownApplicationManifestState() {
     applicationRow: { id: "app-1", status: "active" },
   };
 }
+
+describe("deleteModelVersion", () => {
+  it("keeps a model version referenced by a workflow draft", async () => {
+    let deleted = false;
+    const rows = new Map<unknown, Record<string, unknown>[]>([
+      [application, [{ id: "app-1", organizationId: "org-1", name: "App", status: "active" }]],
+      [member, [{ role: "admin" }]],
+      [model, [{ id: "model-1" }]],
+      [modelVersion, [{ id: "mv-1", storageKey: "app-1/model-1/mv-1.tflite" }]],
+      [workflow, [{ id: "workflow-1" }]],
+    ]);
+    const tx = {
+      select: () => ({
+        from: (table: unknown) => ({
+          where: () => ({
+            limit: () => {
+              const result = rows.get(table) ?? [];
+              return {
+                for: async () => result,
+              };
+            },
+          }),
+        }),
+      }),
+      delete: () => ({
+        where: () => ({
+          returning: async () => {
+            deleted = true;
+            return [{}];
+          },
+        }),
+      }),
+    };
+    const db = {
+      transaction: (callback: (transaction: unknown) => Promise<unknown>) => callback(tx),
+    } as unknown as import("./application-actions").ApplicationDatabase;
+    const storage = { removeArtifact: vi.fn() } as unknown as ModelVersionStorage;
+
+    const result = await deleteModelVersion(db, storage, {
+      applicationId: "app-1",
+      modelId: "model-1",
+      modelVersionId: "mv-1",
+      userId: "admin",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "inUse" });
+    expect(deleted).toBe(false);
+    expect(storage.removeArtifact).not.toHaveBeenCalled();
+  });
+});
 
 describe("getSdkModelVersionManifest", () => {
   it("returns the version metadata with a temporary signed download location", async () => {

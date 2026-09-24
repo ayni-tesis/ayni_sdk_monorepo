@@ -160,6 +160,57 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("dispatches model nodes with the selected version id", async () => {
+    const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const { request } = makeApp({ addModelNode });
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-1",
+    });
+
+    expect(response.status).toBe(200);
+    expect(addModelNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      modelVersionId: "mv-1",
+    });
+  });
+
+  it("maps a missing contract to HTTP 409", async () => {
+    const { request } = makeApp({
+      addModelNode: async () => ({ ok: false, reason: "contractRequired" }),
+    });
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-1",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Esta versión necesita un contrato antes de usarse en un workflow.",
+    });
+  });
+
+  it("maps a missing model version to a non-disclosing HTTP 404", async () => {
+    const { request } = makeApp({
+      addModelNode: async () => ({ ok: false, reason: "modelVersionNotFound" }),
+    });
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-foreign",
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos esta versión de modelo.",
+      code: "modelVersionNotFound",
+    });
+  });
+
   it("maps a duplicate image-input result to HTTP 409", async () => {
     const addImageInput = vi
       .fn(
