@@ -57,7 +57,132 @@ export type WorkflowNode =
       sourcePort: string;
       resultType: "classification" | "detection" | "boolean";
     };
-export type WorkflowDraft = { nodes: WorkflowNode[] };
+export type WorkflowConnection = {
+  sourceNodeId: string;
+  sourcePort: string;
+  targetNodeId: string;
+  targetPort: string;
+};
+export type WorkflowDraft = { nodes: WorkflowNode[]; connections?: WorkflowConnection[] };
+
+export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: WorkflowConnection) {
+  const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
+  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
+  const outputType =
+    source?.type === "input.image" && connection.sourcePort === "imagen"
+      ? "image"
+      : source?.type === "model.tflite" && connection.sourcePort === "result"
+        ? source.outputs.result.type
+        : source?.type === "condition" &&
+            (connection.sourcePort === "true" || connection.sourcePort === "false")
+          ? "boolean"
+          : undefined;
+  const inputType =
+    target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
+  return Boolean(outputType && inputType && outputType === inputType);
+}
+
+export type ChangeWorkflowConnectionInput = WorkflowConnection & {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+};
+export type ChangeWorkflowConnectionResult =
+  | { ok: true; draft: WorkflowDraft }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "notFound"
+        | "archived"
+        | "workflowNotFound"
+        | "incompatible"
+        | "duplicate"
+        | "connectionNotFound";
+    };
+
+export async function addWorkflowConnection(
+  database: WorkflowDatabase,
+  input: ChangeWorkflowConnectionInput,
+): Promise<ChangeWorkflowConnectionResult> {
+  return changeWorkflowConnection(database, input, true);
+}
+
+export async function removeWorkflowConnection(
+  database: WorkflowDatabase,
+  input: ChangeWorkflowConnectionInput,
+): Promise<ChangeWorkflowConnectionResult> {
+  return changeWorkflowConnection(database, input, false);
+}
+
+async function changeWorkflowConnection(
+  database: WorkflowDatabase,
+  input: ChangeWorkflowConnectionInput,
+  add: boolean,
+): Promise<ChangeWorkflowConnectionResult> {
+  const { applicationId, workflowId, userId, ...connection } = input;
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const reader = tx as unknown as {
+        select: (fields: Record<string, unknown>) => {
+          from: (table: unknown) => {
+            where: (condition: unknown) => {
+              limit: (n: number) => Promise<{ draft: WorkflowDraft }[]>;
+            };
+          };
+        };
+      };
+      const rows = await reader
+        .select({ draft: workflow.draft })
+        .from(workflow)
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .limit(1);
+      const draft = rows[0]?.draft ?? { nodes: [] };
+      if (!rows[0]) return { kind: "workflowNotFound" as const };
+      const connections = draft.connections ?? [];
+      const exists = connections.some(
+        (item) =>
+          item.sourceNodeId === connection.sourceNodeId &&
+          item.sourcePort === connection.sourcePort &&
+          item.targetNodeId === connection.targetNodeId &&
+          item.targetPort === connection.targetPort,
+      );
+      if (add && exists) return { kind: "duplicate" as const };
+      if (!add && !exists) return { kind: "connectionNotFound" as const };
+      if (add && !areWorkflowPortsCompatible(draft, connection))
+        return { kind: "incompatible" as const };
+      const updatedDraft = {
+        ...draft,
+        connections: add
+          ? [...connections, connection]
+          : connections.filter(
+              (item) =>
+                !(
+                  item.sourceNodeId === connection.sourceNodeId &&
+                  item.sourcePort === connection.sourcePort &&
+                  item.targetNodeId === connection.targetNodeId &&
+                  item.targetPort === connection.targetPort
+                ),
+            ),
+      };
+      const updater = tx as WorkflowUpdateExecutor;
+      const updated = (await updater
+        .update(workflow)
+        .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return updated[0]
+        ? { kind: "changed" as const, draft: updated[0].draft ?? updatedDraft }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  return result.value.kind === "changed"
+    ? { ok: true, draft: result.value.draft }
+    : { ok: false, reason: result.value.kind };
+}
 
 export function toWorkflow(row: WorkflowRow): Workflow {
   return {
