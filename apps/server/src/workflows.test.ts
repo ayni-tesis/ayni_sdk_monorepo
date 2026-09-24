@@ -150,19 +150,30 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
-  it("adds a typed image input and rejects a duplicate without changing the draft", async () => {
-    const addImageInput = vi.fn(
-      async (_input: AddImageInputInput): Promise<AddImageInputResult> => ({
+  it("maps a duplicate image-input result to HTTP 409", async () => {
+    const addImageInput = vi
+      .fn(
+        async (_input: AddImageInputInput): Promise<AddImageInputResult> => ({
+          ok: true,
+          draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+        }),
+      )
+      .mockResolvedValueOnce({
         ok: true,
         draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
-      }),
-    );
+      })
+      .mockResolvedValueOnce({ ok: false, reason: "duplicate" });
     const { request } = makeApp({ addImageInput });
 
     const created = await postWorkflowNode(request, { type: "input.image" });
     expect(created.status).toBe(200);
     await expect(created.json()).resolves.toEqual({
       draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+    });
+    const duplicate = await postWorkflowNode(request, { type: "input.image" });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toEqual({
+      message: "Este workflow ya tiene una entrada de imagen.",
     });
   });
 

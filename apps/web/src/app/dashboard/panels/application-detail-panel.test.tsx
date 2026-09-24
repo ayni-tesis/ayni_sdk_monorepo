@@ -1362,17 +1362,29 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByText("Este borrador aún no tiene nodos.")).toBeNull();
     });
 
-    it("blocks another image-input request while saving and allows retry after failure", async () => {
-      client.get.mockImplementation(async () => ({ data: workflowDetail }));
-      client.post
-        .mockRejectedValueOnce({ isAxiosError: true, response: { status: 409, data: {} } })
-        .mockResolvedValueOnce({
-          data: {
-            draft: {
-              nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }],
-            },
-          },
-        });
+    it("keeps image input disabled after a conflict reloads the persisted node", async () => {
+      let detailCalls = 0;
+      client.get.mockImplementation(async () => {
+        detailCalls += 1;
+        return {
+          data:
+            detailCalls === 1
+              ? workflowDetail
+              : {
+                  ...workflowDetail,
+                  draft: {
+                    nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }],
+                  },
+                },
+        };
+      });
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { message: "Este workflow ya tiene una entrada de imagen." },
+        },
+      });
 
       render(workflowDetailPanel({ canManage: true }));
 
@@ -1386,6 +1398,31 @@ describe("ApplicationDetailPanel", () => {
       });
       expect(client.post).toHaveBeenCalledTimes(1);
 
+      expect(await screen.findByText("Imagen de entrada")).toBeTruthy();
+      expect(
+        (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(client.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows retry after a non-conflict request failure", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.post
+        .mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {} } })
+        .mockResolvedValueOnce({
+          data: {
+            draft: {
+              nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }],
+            },
+          },
+        });
+
+      render(workflowDetailPanel({ canManage: true }));
+      const button = (await screen.findByRole("button", {
+        name: "Entrada de imagen",
+      })) as HTMLButtonElement;
+      fireEvent.click(button);
+      expect(button.disabled).toBe(true);
       await waitFor(() =>
         expect(
           (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
