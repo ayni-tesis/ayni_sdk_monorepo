@@ -228,6 +228,35 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     });
   });
 
+  it("maps an incompatible output result to HTTP 409", async () => {
+    const addOutputNode = vi.fn(async () => ({
+      ok: false as const,
+      reason: "incompatibleSource" as const,
+    }));
+    const { request } = makeApp({ addOutputNode });
+    const response = await postWorkflowNode(request, {
+      type: "output",
+      name: "resultado",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "classification",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "El resultado seleccionado no es compatible con la salida.",
+    });
+    expect(addOutputNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      name: "resultado",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "classification",
+    });
+  });
+
   it("preserves the workflow not-found response", async () => {
     const { request } = makeApp({
       addConditionNode: async () => ({ ok: false, reason: "workflowNotFound" }),
