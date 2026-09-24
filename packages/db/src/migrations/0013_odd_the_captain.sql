@@ -1,0 +1,2 @@
+ALTER TABLE "workflow" DROP CONSTRAINT "workflow_status_check";--> statement-breakpoint
+ALTER TABLE "workflow" ADD CONSTRAINT "workflow_status_check" CHECK ("workflow"."status" in ('draft', 'archived'));

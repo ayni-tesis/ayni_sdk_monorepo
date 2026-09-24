@@ -57,6 +57,7 @@ import {
   addModelNode,
   addOutputNode,
   addWorkflowConnection,
+  archiveWorkflow,
   createWorkflow,
   getWorkflow,
   listWorkflows,
@@ -183,6 +184,9 @@ const workflows = {
   },
   rename(input: { applicationId: string; workflowId: string; userId: string; name: string }) {
     return renameWorkflow(db, input);
+  },
+  archive(input: Parameters<typeof archiveWorkflow>[1]) {
+    return archiveWorkflow(db, input);
   },
   addImageInput(input: Parameters<typeof addImageInputNode>[1]) {
     return addImageInputNode(db, input);
