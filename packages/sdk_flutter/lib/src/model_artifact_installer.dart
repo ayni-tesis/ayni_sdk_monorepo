@@ -80,7 +80,7 @@ class ModelArtifactInstaller {
       lock = await File(lockPath).open(mode: FileMode.append);
       await lock.lock(FileLock.exclusive);
       if (await artifact.exists() || await metadata.exists()) {
-        final available = await isVersionAvailable(
+        final available = await _isVersionAvailable(
           modelId: modelId,
           modelVersionId: versionId,
         );
@@ -167,6 +167,20 @@ class ModelArtifactInstaller {
     required String modelId,
     required String modelVersionId,
   }) async {
+    try {
+      return await _isVersionAvailable(
+        modelId: modelId,
+        modelVersionId: modelVersionId,
+      );
+    } on FileSystemException {
+      return false;
+    }
+  }
+
+  Future<bool> _isVersionAvailable({
+    required String modelId,
+    required String modelVersionId,
+  }) async {
     if (!_isSafeId(modelId) || !_isSafeId(modelVersionId)) return false;
     final modelDirectory = Directory('${storageDirectory.path}/$modelId');
     final artifact = File('${modelDirectory.path}/$modelVersionId.tflite');
@@ -185,7 +199,7 @@ class ModelArtifactInstaller {
       final actualHash = (await crypto.sha256.bind(artifact.openRead()).first)
           .toString();
       return storedHash == actualHash;
-    } on (FormatException, FileSystemException) {
+    } on FormatException {
       return false;
     }
   }
