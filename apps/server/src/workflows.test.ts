@@ -118,6 +118,14 @@ function makeApp({
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
   const addOutputNodeMock = vi.fn(addOutputNode);
+  const addConnectionMock = vi.fn(async () => ({
+    ok: false as const,
+    reason: "incompatible" as const,
+  }));
+  const removeConnectionMock = vi.fn(async () => ({
+    ok: false as const,
+    reason: "connectionNotFound" as const,
+  }));
   return {
     create: createMock,
     list: listMock,
@@ -127,6 +135,8 @@ function makeApp({
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
     addOutputNode: addOutputNodeMock,
+    addConnection: addConnectionMock,
+    removeConnection: removeConnectionMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -142,6 +152,8 @@ function makeApp({
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
         addOutputNode: addOutputNodeMock,
+        addConnection: addConnectionMock,
+        removeConnection: removeConnectionMock,
       },
     }),
   };

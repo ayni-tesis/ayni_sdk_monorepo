@@ -36,8 +36,14 @@ import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
-  draft: { nodes: WorkflowNodeItem[] };
+  draft: { nodes: WorkflowNodeItem[]; connections?: WorkflowConnectionItem[] };
   versions: unknown[];
+};
+type WorkflowConnectionItem = {
+  sourceNodeId: string;
+  sourcePort: string;
+  targetNodeId: string;
+  targetPort: string;
 };
 
 type ModelVersionContract = {
@@ -200,6 +206,12 @@ export function WorkflowDetailView({
   const [outputSource, setOutputSource] = useState("");
   const [outputTypeError, setOutputTypeError] = useState("");
   const [addingOutput, setAddingOutput] = useState(false);
+  const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
+  const [connectionSource, setConnectionSource] = useState<{
+    sourceNodeId: string;
+    sourcePort: string;
+  } | null>(null);
+  const [compatibleTargetId, setCompatibleTargetId] = useState("");
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -491,6 +503,27 @@ export function WorkflowDetailView({
     }
   }
 
+  async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
+    try {
+      const url = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
+      const { data } = remove
+        ? await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(url, { data: connection })
+        : await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(url, connection);
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setSelectedConnection(null);
+      setConnectionSource(null);
+      toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
+    } catch (connectionError) {
+      toast.error(
+        errorMessage(
+          connectionError,
+          remove ? "No pudimos eliminar la conexión." : "No pudimos crear la conexión.",
+        ),
+      );
+      void loadDetail(application.id, workflowId);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <Breadcrumb>
@@ -767,6 +800,27 @@ export function WorkflowDetailView({
                       <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
                         imagen: image
                       </span>
+                      {canManage && application.status === "active" && (
+                        <button
+                          type="button"
+                          draggable
+                          aria-pressed={connectionSource?.sourceNodeId === node.id}
+                          className="ml-2 inline-flex cursor-grab rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
+                          onClick={() =>
+                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" })
+                          }
+                          onDragStart={(event) => {
+                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" });
+                            setCompatibleTargetId("");
+                            event.dataTransfer.setData(
+                              "application/x-ayni-port",
+                              JSON.stringify({ sourceNodeId: node.id, sourcePort: "imagen" }),
+                            );
+                          }}
+                        >
+                          Salida imagen · seleccionar o arrastrar
+                        </button>
+                      )}
                     </>
                   ) : node.type === "model.tflite" ? (
                     <>
@@ -777,6 +831,51 @@ export function WorkflowDetailView({
                         <span className="rounded bg-muted px-2 py-1">
                           image: image ({node.inputs.image.width}×{node.inputs.image.height})
                         </span>
+                        {canManage && application.status === "active" && (
+                          <button
+                            type="button"
+                            aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
+                            aria-disabled={!connectionSource}
+                            className={`rounded border px-2 py-1 text-xs ${compatibleTargetId === node.id ? "border-primary bg-primary/10" : ""}`}
+                            onDragOver={(event) => {
+                              const sourceNode = draft.nodes.find(
+                                (item) => item.id === connectionSource?.sourceNodeId,
+                              );
+                              if (
+                                event.dataTransfer.types.includes("application/x-ayni-port") &&
+                                sourceNode?.type === "input.image" &&
+                                connectionSource?.sourcePort === "imagen"
+                              ) {
+                                event.preventDefault();
+                                setCompatibleTargetId(node.id);
+                              }
+                            }}
+                            onDragLeave={() => setCompatibleTargetId("")}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              setCompatibleTargetId("");
+                              if (connectionSource)
+                                void changeConnection({
+                                  ...connectionSource,
+                                  targetNodeId: node.id,
+                                  targetPort: "image",
+                                });
+                            }}
+                            onClick={() => {
+                              const sourceNode = draft.nodes.find(
+                                (item) => item.id === connectionSource?.sourceNodeId,
+                              );
+                              if (connectionSource && sourceNode?.type === "input.image")
+                                void changeConnection({
+                                  ...connectionSource,
+                                  targetNodeId: node.id,
+                                  targetPort: "image",
+                                });
+                            }}
+                          >
+                            Entrada image · soltar o activar para conectar
+                          </button>
+                        )}
                         <span className="rounded bg-muted px-2 py-1">
                           result: {node.outputs.result.type}
                         </span>
@@ -802,6 +901,33 @@ export function WorkflowDetailView({
                   )}
                 </article>
               ))}
+              {(draft.connections ?? []).map((connection) => (
+                <button
+                  key={`${connection.sourceNodeId}:${connection.sourcePort}:${connection.targetNodeId}:${connection.targetPort}`}
+                  type="button"
+                  aria-pressed={
+                    selectedConnection?.sourceNodeId === connection.sourceNodeId &&
+                    selectedConnection.sourcePort === connection.sourcePort &&
+                    selectedConnection.targetNodeId === connection.targetNodeId &&
+                    selectedConnection.targetPort === connection.targetPort
+                  }
+                  className="block rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
+                  onClick={() => setSelectedConnection(connection)}
+                >
+                  ↳ {connection.sourceNodeId}:{connection.sourcePort} → {connection.targetNodeId}:
+                  {connection.targetPort}
+                </button>
+              ))}
+              {selectedConnection && canManage && application.status === "active" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void changeConnection(selectedConnection, true)}
+                >
+                  Eliminar conexión
+                </Button>
+              )}
               {draft.nodes.length === 0 && (
                 <p className="text-muted-foreground text-sm">{EMPTY_DRAFT_MESSAGE}</p>
               )}
