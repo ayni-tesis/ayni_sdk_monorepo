@@ -334,6 +334,7 @@ export function WorkflowDetailView({
   }
 
   async function addConditionNode() {
+    if (!conditionThreshold.trim()) return;
     const threshold = Number(conditionThreshold);
     if (
       !detail ||

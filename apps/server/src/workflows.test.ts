@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import {
   type AddImageInputResult,
+  addConditionNode,
   addImageInputNode,
   type CreateWorkflowResult,
   createWorkflow,
@@ -16,6 +17,7 @@ import {
   type Workflow,
   type WorkflowDatabase,
   type WorkflowDetail,
+  type WorkflowNode,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 
@@ -1336,7 +1338,7 @@ function toQuery(fragment: unknown) {
   return { sql, params };
 }
 
-function makeImageInputStoreDb() {
+function makeImageInputStoreDb(nodes: WorkflowNode[] = []) {
   const storedWorkflow = {
     id: "workflow-1",
     applicationId: "app-1",
@@ -1344,7 +1346,7 @@ function makeImageInputStoreDb() {
     status: "draft",
     createdAt: new Date("2026-09-21T15:00:00.000Z"),
     updatedAt: new Date("2026-09-21T16:00:00.000Z"),
-    draft: { nodes: [] as { id: string; type: "input.image"; outputs: { imagen: "image" } }[] },
+    draft: { nodes: structuredClone(nodes) },
   };
   const writes: unknown[] = [];
   const cloneWorkflow = () => structuredClone(storedWorkflow);
@@ -1401,6 +1403,67 @@ function makeImageInputStoreDb() {
   };
   return { db, writes, reload: () => cloneWorkflow().draft };
 }
+
+describe("addConditionNode source validation", () => {
+  const input = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.7,
+  };
+  const modelNode = {
+    id: "classification-1",
+    type: "model.tflite" as const,
+    modelVersionId: "version-1",
+    modelName: "Hoja",
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 32,
+        height: 32,
+        channels: 3 as const,
+        normalization: "none" as const,
+      },
+    },
+    outputs: { result: { type: "classification" as const, labels: ["roya"] } },
+  };
+
+  it.each([
+    ["missing source", [modelNode], "missing"],
+    [
+      "non-classification source",
+      [
+        {
+          ...modelNode,
+          outputs: {
+            result: { type: "detection" as const, labels: ["roya"], scoreThreshold: 0.5 },
+          },
+        },
+      ],
+      modelNode.id,
+    ],
+    [
+      "undeclared label",
+      [
+        {
+          ...modelNode,
+          outputs: { result: { type: "classification" as const, labels: ["sana"] } },
+        },
+      ],
+      modelNode.id,
+    ],
+  ])("rejects a %s without persisting a node", async (_caseName, nodes, sourceNodeId) => {
+    const store = makeImageInputStoreDb(nodes);
+    const originalDraft = store.reload();
+    const result = await addConditionNode(store.db, { ...input, sourceNodeId });
+    expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+    expect(store.reload()).toEqual(originalDraft);
+    expect(store.writes).toHaveLength(0);
+  });
+});
 
 describe("addImageInputNode", () => {
   it("persists one image input, rejects a duplicate, and reloads the unchanged draft", async () => {
