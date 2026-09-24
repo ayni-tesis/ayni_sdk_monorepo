@@ -302,6 +302,27 @@ describe("validateWorkflowDraft", () => {
     ]);
   });
 
+  it("lists a connection between two missing nodes once, however many there are", () => {
+    const draft: WorkflowDraft = {
+      nodes: [input, classifier, diagnosis],
+      connections: [
+        inputToClassifier,
+        { ...inputToClassifier, sourceNodeId: "gone-1", targetNodeId: "gone-2" },
+        { ...inputToClassifier, sourceNodeId: "gone-3", targetNodeId: "gone-4" },
+      ],
+    };
+
+    expect(validateWorkflowDraft(draft).errors).toEqual([
+      {
+        code: "missingTarget",
+        nodeId: null,
+        nodeName: null,
+        port: null,
+        message: "El workflow tiene una conexión entre nodos que ya no existen.",
+      },
+    ]);
+  });
+
   it("does not modify the draft", () => {
     const draft: WorkflowDraft = {
       nodes: [input, classifier, diagnosis],

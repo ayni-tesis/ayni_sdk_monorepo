@@ -92,73 +92,62 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
   const errors: WorkflowValidationError[] = [];
   const nodesById = new Map(draft.nodes.map((node) => [node.id, node]));
   const connections = draft.connections ?? [];
-  const addNodeError = (
+  // A null node marks a workflow-level error.
+  const addError = (
     code: WorkflowValidationError["code"],
-    node: WorkflowNode,
+    node: WorkflowNode | null,
     port: string | null,
     message: string,
   ) => {
-    // Two broken connections into one port would repeat the same error; list it once.
+    const nodeId = node?.id ?? null;
+    // Several broken connections can repeat the same error; list it once.
     const duplicate = errors.some(
       (error) =>
         error.code === code &&
-        error.nodeId === node.id &&
+        error.nodeId === nodeId &&
         error.port === port &&
         error.message === message,
     );
     if (!duplicate)
-      errors.push({ code, nodeId: node.id, nodeName: workflowNodeName(node), port, message });
+      errors.push({ code, nodeId, nodeName: node ? workflowNodeName(node) : null, port, message });
   };
 
   const inputNodes = draft.nodes.filter((node) => node.type === "input.image");
   if (inputNodes.length === 0)
-    errors.push({
-      code: "missingInput",
-      nodeId: null,
-      nodeName: null,
-      port: null,
-      message: "El workflow necesita un nodo de entrada de imagen.",
-    });
+    addError("missingInput", null, null, "El workflow necesita un nodo de entrada de imagen.");
   if (!draft.nodes.some((node) => node.type === "output"))
-    errors.push({
-      code: "missingOutput",
-      nodeId: null,
-      nodeName: null,
-      port: null,
-      message: "El workflow necesita al menos un nodo de salida.",
-    });
+    addError("missingOutput", null, null, "El workflow necesita al menos un nodo de salida.");
 
   for (const connection of connections) {
     const target = nodesById.get(connection.targetNodeId);
     if (!target) {
       const source = nodesById.get(connection.sourceNodeId);
       if (source)
-        addNodeError(
+        addError(
           "missingTarget",
           source,
           connection.sourcePort,
           `El nodo "${workflowNodeName(source)}" tiene una conexión hacia un nodo que ya no existe.`,
         );
       else
-        errors.push({
-          code: "missingTarget",
-          nodeId: null,
-          nodeName: null,
-          port: null,
-          message: "El workflow tiene una conexión entre nodos que ya no existen.",
-        });
+        addError(
+          "missingTarget",
+          null,
+          null,
+          "El workflow tiene una conexión entre nodos que ya no existen.",
+        );
       continue;
     }
     const name = workflowNodeName(target);
     if (!nodesById.has(connection.sourceNodeId))
-      addNodeError(
+      addError(
         "missingSource",
         target,
         connection.targetPort,
         `El nodo "${name}" recibe una conexión desde un nodo que ya no existe.`,
       );
     else if (!areWorkflowPortsCompatible(draft, connection))
-      addNodeError(
+      addError(
         "incompatibleType",
         target,
         connection.targetPort,
@@ -173,7 +162,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
         (connection) => connection.targetNodeId === node.id && connection.targetPort === "image",
       );
       if (!connected)
-        addNodeError(
+        addError(
           "requiredInput",
           node,
           "image",
@@ -184,7 +173,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
     if (node.type !== "condition" && node.type !== "output") continue;
     const source = nodesById.get(node.sourceNodeId);
     if (!source) {
-      addNodeError(
+      addError(
         "missingSource",
         node,
         "source",
@@ -197,7 +186,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
         ? isConditionSourceCompatible(source, node.label)
         : isOutputSourceCompatible(source, node.sourcePort, node.resultType);
     if (!compatible)
-      addNodeError(
+      addError(
         "incompatibleType",
         node,
         "source",
@@ -211,12 +200,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
   // ponytail: one traversal per node; switch to Tarjan's SCC if drafts grow materially.
   for (const node of draft.nodes) {
     if (reachableFrom([node.id], edges).has(node.id))
-      addNodeError(
-        "cycle",
-        node,
-        null,
-        `El nodo "${workflowNodeName(node)}" forma parte de un ciclo.`,
-      );
+      addError("cycle", node, null, `El nodo "${workflowNodeName(node)}" forma parte de un ciclo.`);
   }
 
   if (inputNodes.length > 0) {
@@ -230,7 +214,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
         !reached.has(node.id) &&
         !errors.some((error) => error.nodeId === node.id)
       )
-        addNodeError(
+        addError(
           "unreachableOutput",
           node,
           "source",
