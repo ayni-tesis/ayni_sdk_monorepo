@@ -220,8 +220,15 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     const nodeType = (body as { type: string }).type;
     if (nodeType === "output") {
       const parsed = outputNodeSchema.safeParse(body);
-      if (!parsed.success)
-        return c.json({ message: "Selecciona un tipo de resultado para la salida." }, 400);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map((issue) => issue.path[0]);
+        const message = paths.includes("name")
+          ? "Ingresa un nombre para la salida."
+          : paths.some((path) => path === "resultType" || path === "sourcePort")
+            ? "Selecciona un tipo de resultado para la salida."
+            : "Selecciona un resultado compatible para la salida.";
+        return c.json({ message }, 400);
+      }
       const { type: _type, ...output } = parsed.data;
       const result = await workflows.addOutputNode({ ...workflowInput, ...output });
       if (result.ok) return c.json({ draft: result.draft });

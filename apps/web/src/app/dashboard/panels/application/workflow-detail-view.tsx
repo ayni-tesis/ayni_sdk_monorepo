@@ -709,6 +709,8 @@ export function WorkflowDetailView({
                     id="workflow-output-type"
                     className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
                     value={outputSource}
+                    aria-invalid={Boolean(outputTypeError)}
+                    aria-describedby={outputTypeError ? "workflow-output-type-error" : undefined}
                     onChange={(event) => {
                       setOutputSource(event.target.value);
                       if (outputTypeError) setOutputTypeError("");
@@ -725,7 +727,11 @@ export function WorkflowDetailView({
                     ))}
                   </select>
                   {outputTypeError && (
-                    <p className="text-destructive text-sm" role="alert">
+                    <p
+                      id="workflow-output-type-error"
+                      className="text-destructive text-sm"
+                      role="alert"
+                    >
                       {outputTypeError}
                     </p>
                   )}
