@@ -21,6 +21,7 @@ import {
   type WorkflowDetail,
   type WorkflowNode,
 } from "./workflow-store";
+import type { WorkflowValidationResult } from "./workflow-validation";
 import { createWorkflowsApp } from "./workflows";
 
 describe("findWorkflowCycle", () => {
@@ -612,6 +613,138 @@ describe("GET /applications/:applicationId/workflows/:workflowId", () => {
       code: "notFound",
     });
     expect(get).toHaveBeenCalledWith("app-1", "workflow-9");
+  });
+});
+
+describe("GET /applications/:applicationId/workflows/:workflowId/validation", () => {
+  const validationPath = "/applications/app-1/workflows/workflow-1/validation";
+  const completeDraft: WorkflowDetail["draft"] = {
+    nodes: [
+      { id: "input", type: "input.image", outputs: { imagen: "image" } },
+      {
+        id: "classifier",
+        type: "model.tflite",
+        modelVersionId: "version-1",
+        modelName: "Clasificador",
+        version: "1.0.0",
+        inputs: {
+          image: {
+            type: "image",
+            width: 224,
+            height: 224,
+            channels: 3,
+            normalization: "zero_to_one",
+          },
+        },
+        outputs: { result: { type: "classification", labels: ["sana"] } },
+      },
+      {
+        id: "diagnosis",
+        type: "output",
+        name: "Diagnóstico",
+        sourceNodeId: "classifier",
+        sourcePort: "result",
+        resultType: "classification",
+      },
+    ],
+    connections: [
+      {
+        sourceNodeId: "input",
+        sourcePort: "imagen",
+        targetNodeId: "classifier",
+        targetPort: "image",
+      },
+    ],
+  };
+
+  it("confirms that a complete draft is publishable", async () => {
+    const { request, get } = makeApp({
+      workflowDetail: { ...sampleDetail, draft: completeDraft },
+    });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ publishable: true, errors: [] });
+    expect(get).toHaveBeenCalledWith("app-1", "workflow-1");
+  });
+
+  it("reports the node and port of a disconnected required input without modifying the draft", async () => {
+    const app = makeApp({
+      membershipRole: "owner",
+      workflowDetail: { ...sampleDetail, draft: { ...completeDraft, connections: [] } },
+    });
+
+    const response = await app.request.request(validationPath);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as WorkflowValidationResult;
+    expect(body.publishable).toBe(false);
+    expect(body.errors).toContainEqual({
+      code: "requiredInput",
+      nodeId: "classifier",
+      nodeName: "Clasificador",
+      port: "image",
+      message: 'El nodo "Clasificador" necesita una imagen de entrada.',
+    });
+    for (const write of [
+      app.create,
+      app.rename,
+      app.addImageInput,
+      app.addModelNode,
+      app.addConditionNode,
+      app.addOutputNode,
+      app.addConnection,
+      app.removeConnection,
+      app.updateNodePosition,
+    ])
+      expect(write).not.toHaveBeenCalled();
+  });
+
+  it("allows only administrators and owners to validate", async () => {
+    const { request, get } = makeApp({ membershipRole: "member" });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para validar este workflow.",
+    });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, get } = makeApp({ session: null });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(401);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-member exactly like a missing application", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    const nonMemberResponse = await nonMember.request.request(validationPath);
+    const missingResponse = await missing.request.request(validationPath);
+
+    expect(nonMemberResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    await expect(nonMemberResponse.json()).resolves.toEqual(await missingResponse.json());
+    expect(nonMember.get).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the workflow does not exist in the application", async () => {
+    const { request } = makeApp({ workflowDetail: null });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
   });
 });
 
