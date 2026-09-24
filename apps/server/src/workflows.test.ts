@@ -85,6 +85,7 @@ function makeApp({
   }),
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
+  addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -103,6 +104,9 @@ function makeApp({
   addConditionNode?: (
     input: import("./workflow-store").AddConditionNodeInput,
   ) => Promise<import("./workflow-store").AddConditionNodeResult>;
+  addOutputNode?: (
+    input: import("./workflow-store").AddOutputNodeInput,
+  ) => Promise<import("./workflow-store").AddOutputNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -113,6 +117,7 @@ function makeApp({
   const addImageInputMock = vi.fn(addImageInput);
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
+  const addOutputNodeMock = vi.fn(addOutputNode);
   return {
     create: createMock,
     list: listMock,
@@ -121,6 +126,7 @@ function makeApp({
     addImageInput: addImageInputMock,
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
+    addOutputNode: addOutputNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -135,6 +141,7 @@ function makeApp({
         addImageInput: addImageInputMock,
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
+        addOutputNode: addOutputNodeMock,
       },
     }),
   };
@@ -218,6 +225,35 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
       message: "Esta condición no es compatible con la salida seleccionada.",
+    });
+  });
+
+  it("maps an incompatible output result to HTTP 409", async () => {
+    const addOutputNode = vi.fn(async () => ({
+      ok: false as const,
+      reason: "incompatibleSource" as const,
+    }));
+    const { request } = makeApp({ addOutputNode });
+    const response = await postWorkflowNode(request, {
+      type: "output",
+      name: "resultado",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "classification",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "El resultado seleccionado no es compatible con la salida.",
+    });
+    expect(addOutputNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      name: "resultado",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "classification",
     });
   });
 

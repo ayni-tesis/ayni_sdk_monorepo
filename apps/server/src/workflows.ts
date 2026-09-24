@@ -9,6 +9,8 @@ import type {
   AddImageInputResult,
   AddModelNodeInput,
   AddModelNodeResult,
+  AddOutputNodeInput,
+  AddOutputNodeResult,
   CreateWorkflowInput,
   CreateWorkflowResult,
   RenameWorkflowInput,
@@ -36,6 +38,13 @@ const conditionNodeSchema = z.object({
   operator: z.enum(["gte", "gt", "lte", "lt"]),
   threshold: z.number().finite().min(0).max(1),
 });
+const outputNodeSchema = z.object({
+  type: z.literal("output"),
+  name: z.string().trim().min(1),
+  sourceNodeId: z.string().min(1),
+  sourcePort: z.enum(["result", "true", "false"]),
+  resultType: z.enum(["classification", "detection", "boolean"]),
+});
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -51,6 +60,7 @@ type Dependencies = {
     addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
     addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
     addConditionNode: (input: AddConditionNodeInput) => Promise<AddConditionNodeResult>;
+    addOutputNode: (input: AddOutputNodeInput) => Promise<AddOutputNodeResult>;
   };
 };
 
@@ -196,7 +206,9 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (
       typeof body !== "object" ||
       body === null ||
-      !["input.image", "model.tflite", "condition"].includes((body as { type?: string }).type ?? "")
+      !["input.image", "model.tflite", "condition", "output"].includes(
+        (body as { type?: string }).type ?? "",
+      )
     ) {
       return c.json({ message: "Tipo de nodo no válido." }, 400);
     }
@@ -206,6 +218,36 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       userId: session.user.id,
     };
     const nodeType = (body as { type: string }).type;
+    if (nodeType === "output") {
+      const parsed = outputNodeSchema.safeParse(body);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map((issue) => issue.path[0]);
+        const message = paths.includes("name")
+          ? "Ingresa un nombre para la salida."
+          : paths.some((path) => path === "resultType" || path === "sourcePort")
+            ? "Selecciona un tipo de resultado para la salida."
+            : "Selecciona un resultado compatible para la salida.";
+        return c.json({ message }, 400);
+      }
+      const { type: _type, ...output } = parsed.data;
+      const result = await workflows.addOutputNode({ ...workflowInput, ...output });
+      if (result.ok) return c.json({ draft: result.draft });
+      if (result.reason === "forbidden")
+        return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
+      if (result.reason === "archived")
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      if (result.reason === "incompatibleSource")
+        return c.json(
+          { message: "El resultado seleccionado no es compatible con la salida." },
+          409,
+        );
+      if (result.reason === "workflowNotFound")
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    }
     if (nodeType === "condition") {
       const parsed = conditionNodeSchema.safeParse(body);
       if (!parsed.success) return c.json({ message: "Ingresa una condición válida." }, 400);

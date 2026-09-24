@@ -55,6 +55,7 @@ import {
   addConditionNode,
   addImageInputNode,
   addModelNode,
+  addOutputNode,
   createWorkflow,
   getWorkflow,
   listWorkflows,
@@ -180,6 +181,9 @@ const workflows = {
   },
   addConditionNode(input: Parameters<typeof addConditionNode>[1]) {
     return addConditionNode(db, input);
+  },
+  addOutputNode(input: Parameters<typeof addOutputNode>[1]) {
+    return addOutputNode(db, input);
   },
 };
 

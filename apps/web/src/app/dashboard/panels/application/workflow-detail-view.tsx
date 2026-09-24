@@ -66,11 +66,25 @@ type WorkflowNodeItem =
       operator: "gte" | "gt" | "lte" | "lt";
       threshold: number;
       branches: { true: "Verdadero"; false: "Falso" };
+    }
+  | {
+      id: string;
+      type: "output";
+      name: string;
+      sourceNodeId: string;
+      sourcePort: string;
+      resultType: "classification" | "detection" | "boolean";
     };
 type WorkflowModelOption = {
   id: string;
   name: string;
   versions: { id: string; version: string; contract: ModelVersionContract | null }[];
+};
+type WorkflowOutputOption = {
+  id: string;
+  port: "result" | "true" | "false";
+  type: "classification" | "detection" | "boolean";
+  label: string;
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
@@ -182,6 +196,10 @@ export function WorkflowDetailView({
   const [conditionOperator, setConditionOperator] = useState<"gte" | "gt" | "lte" | "lt">("gte");
   const [conditionThreshold, setConditionThreshold] = useState("0.5");
   const [addingCondition, setAddingCondition] = useState(false);
+  const [outputName, setOutputName] = useState("");
+  const [outputSource, setOutputSource] = useState("");
+  const [outputTypeError, setOutputTypeError] = useState("");
+  const [addingOutput, setAddingOutput] = useState(false);
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -410,6 +428,68 @@ export function WorkflowDetailView({
     (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
       node.type === "model.tflite" && node.outputs.result.type === "classification",
   );
+  const outputOptions: WorkflowOutputOption[] = draft.nodes.flatMap(
+    (node): WorkflowOutputOption[] => {
+      if (node.type === "model.tflite")
+        return [
+          {
+            id: node.id,
+            port: "result",
+            type: node.outputs.result.type,
+            label: `${node.modelName} · ${node.version} · ${node.outputs.result.type}`,
+          },
+        ];
+      if (node.type === "condition")
+        return [
+          {
+            id: node.id,
+            port: "true",
+            type: "boolean" as const,
+            label: `Condición: ${node.label} · Verdadero`,
+          },
+          {
+            id: node.id,
+            port: "false",
+            type: "boolean" as const,
+            label: `Condición: ${node.label} · Falso`,
+          },
+        ];
+      return [];
+    },
+  );
+
+  async function addOutputNode() {
+    const name = outputName.trim();
+    const selected = outputOptions.find(
+      (option) => `${option.id}:${option.port ?? "result"}` === outputSource,
+    );
+    if (!name || addingOutput) return;
+    if (!selected) {
+      setOutputTypeError("Selecciona un tipo de resultado para la salida.");
+      return;
+    }
+    setAddingOutput(true);
+    try {
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
+        {
+          type: "output",
+          name,
+          sourceNodeId: selected.id,
+          sourcePort: selected.port ?? "result",
+          resultType: selected.type,
+        },
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setOutputName("");
+      toast.success("Nodo de salida agregado.");
+    } catch (addError) {
+      toast.error(errorMessage(addError, "No pudimos agregar la salida."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      setAddingOutput(false);
+    }
+  }
 
   return (
     <section className="space-y-6">
@@ -612,6 +692,58 @@ export function WorkflowDetailView({
                     {addingCondition ? "Guardando…" : "Guardar condición"}
                   </Button>
                 </div>
+                <div className="space-y-2 border-t pt-3">
+                  <h4 className="font-medium text-sm">Salida</h4>
+                  <label htmlFor="workflow-output-name" className="block text-sm">
+                    Nombre de salida
+                  </label>
+                  <Input
+                    id="workflow-output-name"
+                    value={outputName}
+                    onChange={(event) => setOutputName(event.target.value)}
+                  />
+                  <label htmlFor="workflow-output-type" className="block text-sm">
+                    Tipo de resultado
+                  </label>
+                  <select
+                    id="workflow-output-type"
+                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    value={outputSource}
+                    aria-invalid={Boolean(outputTypeError)}
+                    aria-describedby={outputTypeError ? "workflow-output-type-error" : undefined}
+                    onChange={(event) => {
+                      setOutputSource(event.target.value);
+                      if (outputTypeError) setOutputTypeError("");
+                    }}
+                  >
+                    <option value="">Selecciona un tipo de resultado</option>
+                    {outputOptions.map((option) => (
+                      <option
+                        key={`${option.id}:${option.port ?? "result"}`}
+                        value={`${option.id}:${option.port ?? "result"}`}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {outputTypeError && (
+                    <p
+                      id="workflow-output-type-error"
+                      className="text-destructive text-sm"
+                      role="alert"
+                    >
+                      {outputTypeError}
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!outputName.trim() || addingOutput}
+                    onClick={() => void addOutputNode()}
+                  >
+                    {addingOutput ? "Agregando…" : "Agregar salida"}
+                  </Button>
+                </div>
                 {draft.nodes.some((node) => node.type === "input.image") && (
                   <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
                 )}
@@ -650,7 +782,7 @@ export function WorkflowDetailView({
                         </span>
                       </div>
                     </>
-                  ) : (
+                  ) : node.type === "condition" ? (
                     <>
                       <h4 className="font-medium text-sm">
                         Condición: {node.label} {node.operator} {node.threshold}
@@ -659,6 +791,13 @@ export function WorkflowDetailView({
                         <span className="rounded bg-muted px-2 py-1">{node.branches.true}</span>
                         <span className="rounded bg-muted px-2 py-1">{node.branches.false}</span>
                       </div>
+                    </>
+                  ) : (
+                    <>
+                      <h4 className="font-medium text-sm">Salida: {node.name}</h4>
+                      <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
+                        {node.resultType}
+                      </span>
                     </>
                   )}
                 </article>

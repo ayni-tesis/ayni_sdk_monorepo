@@ -48,6 +48,14 @@ export type WorkflowNode =
       operator: "gte" | "gt" | "lte" | "lt";
       threshold: number;
       branches: { true: "Verdadero"; false: "Falso" };
+    }
+  | {
+      id: string;
+      type: "output";
+      name: string;
+      sourceNodeId: string;
+      sourcePort: string;
+      resultType: "classification" | "detection" | "boolean";
     };
 export type WorkflowDraft = { nodes: WorkflowNode[] };
 
@@ -315,6 +323,89 @@ export async function addConditionNode(
         operator,
         threshold,
         branches: { true: "Verdadero", false: "Falso" },
+      };
+      const updater = tx as WorkflowUpdateExecutor;
+      const updated = (await updater
+        .update(workflow)
+        .set({
+          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+        })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return updated[0]
+        ? { kind: "added" as const, draft: updated[0].draft ?? { nodes: [...draft.nodes, node] } }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  return result.value.kind === "added"
+    ? { ok: true, draft: result.value.draft }
+    : { ok: false, reason: result.value.kind };
+}
+
+export type AddOutputNodeInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+  name: string;
+  sourceNodeId: string;
+  sourcePort: string;
+  resultType: "classification" | "detection" | "boolean";
+};
+export type AddOutputNodeResult =
+  | { ok: true; draft: WorkflowDraft }
+  | {
+      ok: false;
+      reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "incompatibleSource";
+    };
+
+export async function addOutputNode(
+  database: WorkflowDatabase,
+  {
+    applicationId,
+    workflowId,
+    userId,
+    name,
+    sourceNodeId,
+    sourcePort,
+    resultType,
+  }: AddOutputNodeInput,
+): Promise<AddOutputNodeResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const reader = tx as unknown as {
+        select: (fields: Record<string, unknown>) => {
+          from: (table: unknown) => {
+            where: (condition: unknown) => {
+              limit: (count: number) => Promise<{ draft: WorkflowDraft }[]>;
+            };
+          };
+        };
+      };
+      const rows = await reader
+        .select({ draft: workflow.draft })
+        .from(workflow)
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .limit(1);
+      const draft = rows[0]?.draft;
+      if (!rows[0]) return { kind: "workflowNotFound" as const };
+      const source = draft?.nodes.find((node) => node.id === sourceNodeId);
+      const compatible =
+        resultType === "boolean"
+          ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
+          : source?.type === "model.tflite" &&
+            sourcePort === "result" &&
+            source.outputs.result.type === resultType;
+      if (!draft || !compatible) return { kind: "incompatibleSource" as const };
+      const node: WorkflowNode = {
+        id: crypto.randomUUID(),
+        type: "output",
+        name,
+        sourceNodeId,
+        sourcePort,
+        resultType,
       };
       const updater = tx as WorkflowUpdateExecutor;
       const updated = (await updater
