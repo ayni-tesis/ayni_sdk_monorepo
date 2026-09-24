@@ -95,14 +95,6 @@ type WorkflowUpdateExecutor = TransactionExecutor & {
   };
 };
 
-type AddImageInputExecutor = TransactionExecutor & {
-  update: (table: unknown) => {
-    set: (value: Record<string, unknown>) => {
-      where: (condition: unknown) => { returning: () => Promise<Record<string, unknown>[]> };
-    };
-  };
-};
-
 export type AddImageInputResult =
   | { ok: true; draft: WorkflowDraft }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "duplicate" };
@@ -122,7 +114,7 @@ export async function addImageInputNode(
     database,
     { applicationId, userId },
     async (tx, application) => {
-      const updater = tx as AddImageInputExecutor;
+      const updater = tx as WorkflowUpdateExecutor;
       const rows = (await updater
         .update(workflow)
         .set({
@@ -194,10 +186,8 @@ export async function renameWorkflow(
 }
 
 /**
- * Workflow detail: the workflow plus its draft and its published versions. No
- * node or version storage exists yet, so both are empty by construction; the
- * `never[]` element types force this to be revisited when nodes (US-028) and
- * published versions (US-036) land.
+ * Workflow detail: the workflow, its persisted draft nodes, and published
+ * versions. Published versions remain empty until US-036 adds version storage.
  */
 export type WorkflowDetail = {
   workflow: Workflow;
