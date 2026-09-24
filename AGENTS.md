@@ -69,12 +69,14 @@ ayni/
 - `bun dev` - Start development server
 - `bun build` - Build for production
 - `bun test` - Run tests
-- `bun db:push` - Push database schema
+- `bun db:migrate` - Apply versioned database migrations
 - `bun db:studio` - Open database UI
 
 ## Required pre-PR checks
 
 Before opening or updating a PR, run `bun run check` and `bun run check-types` from the repository root and fix any failures before pushing. When a change touches Flutter/Dart files, also run `dart format .` from `packages/sdk_flutter` and `flutter analyze` there; fix formatting and analyzer failures before pushing.
+
+For database schema changes, generate and commit a versioned migration, then apply it with `bun db:migrate`. Do not use `bun db:push`.
 
 ## Thesis SDK direction
 
