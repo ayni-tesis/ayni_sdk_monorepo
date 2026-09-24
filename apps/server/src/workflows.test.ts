@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
 import {
+  type AddImageInputResult,
   type CreateWorkflowResult,
   createWorkflow,
   getWorkflow,
@@ -39,6 +40,7 @@ const sampleDetail: WorkflowDetail = {
 
 type CreateInput = { applicationId: string; userId: string; name: string };
 type RenameInput = { applicationId: string; workflowId: string; userId: string; name: string };
+type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -72,6 +74,10 @@ function makeApp({
       updatedAt: "2026-09-22T09:00:00.000Z",
     },
   }),
+  addImageInput = async (): Promise<AddImageInputResult> => ({
+    ok: true,
+    draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -80,6 +86,7 @@ function makeApp({
   workflowDetail?: WorkflowDetail | null;
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
   rename?: (input: RenameInput) => Promise<RenameWorkflowResult>;
+  addImageInput?: (input: AddImageInputInput) => Promise<AddImageInputResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -87,18 +94,26 @@ function makeApp({
     async (_applicationId: string, _workflowId: string) => workflowDetail ?? undefined,
   );
   const renameMock = vi.fn(rename);
+  const addImageInputMock = vi.fn(addImageInput);
   return {
     create: createMock,
     list: listMock,
     get: getMock,
     rename: renameMock,
+    addImageInput: addImageInputMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
         getMembership: async () => membershipRole ?? undefined,
       },
-      workflows: { create: createMock, list: listMock, get: getMock, rename: renameMock },
+      workflows: {
+        create: createMock,
+        list: listMock,
+        get: getMock,
+        rename: renameMock,
+        addImageInput: addImageInputMock,
+      },
     }),
   };
 }
@@ -122,6 +137,57 @@ function patchWorkflow(
     body: JSON.stringify(body),
   });
 }
+
+function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: unknown) {
+  return request.request("/applications/app-1/workflows/workflow-1/nodes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("adds a typed image input and rejects a duplicate without changing the draft", async () => {
+    const addImageInput = vi
+      .fn(
+        async (_input: AddImageInputInput): Promise<AddImageInputResult> => ({
+          ok: true,
+          draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+      })
+      .mockResolvedValueOnce({ ok: false, reason: "duplicate" });
+    const { request } = makeApp({ addImageInput });
+
+    const created = await postWorkflowNode(request, { type: "input.image" });
+    expect(created.status).toBe(200);
+    await expect(created.json()).resolves.toEqual({
+      draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+    });
+    const duplicate = await postWorkflowNode(request, { type: "input.image" });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toEqual({
+      message: "Este workflow ya tiene una entrada de imagen.",
+    });
+  });
+
+  it("allows only administrators to add a node", async () => {
+    const { request, addImageInput } = makeApp({
+      membershipRole: "member",
+      addImageInput: async () => ({ ok: false, reason: "forbidden" }),
+    });
+    const response = await postWorkflowNode(request, { type: "input.image" });
+    expect(response.status).toBe(403);
+    expect(addImageInput).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+    });
+  });
+});
 
 describe("GET /applications/:applicationId/workflows", () => {
   it("lists the workflows of the application for any workspace member", async () => {

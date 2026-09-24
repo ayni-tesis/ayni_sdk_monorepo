@@ -51,7 +51,13 @@ import {
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
-import { createWorkflow, getWorkflow, listWorkflows, renameWorkflow } from "./workflow-store";
+import {
+  addImageInputNode,
+  createWorkflow,
+  getWorkflow,
+  listWorkflows,
+  renameWorkflow,
+} from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -158,6 +164,9 @@ const workflows = {
   },
   rename(input: { applicationId: string; workflowId: string; userId: string; name: string }) {
     return renameWorkflow(db, input);
+  },
+  addImageInput(input: { applicationId: string; workflowId: string; userId: string }) {
+    return addImageInputNode(db, input);
   },
 };
 
