@@ -53,6 +53,7 @@ import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import {
   addImageInputNode,
+  addModelNode,
   createWorkflow,
   getWorkflow,
   listWorkflows,
@@ -167,6 +168,14 @@ const workflows = {
   },
   addImageInput(input: { applicationId: string; workflowId: string; userId: string }) {
     return addImageInputNode(db, input);
+  },
+  addModelNode(input: {
+    applicationId: string;
+    workflowId: string;
+    userId: string;
+    modelVersionId: string;
+  }) {
+    return addModelNode(db, input);
   },
 };
 

@@ -229,7 +229,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
       case "inUse":
         return c.json(
           {
-            message: "No puedes eliminar esta versión porque un workflow publicado la usa.",
+            message: "No puedes eliminar esta versión porque un workflow la usa.",
             code: "modelVersionInUse",
           },
           409,

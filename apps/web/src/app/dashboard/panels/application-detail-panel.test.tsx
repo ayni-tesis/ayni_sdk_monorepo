@@ -1286,6 +1286,47 @@ describe("ApplicationDetailPanel", () => {
       );
     });
 
+    it("keeps contracted versions when another model's versions fail to load", async () => {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === "/applications/app-1/workflows/workflow-1") return { data: workflowDetail };
+        if (url === "/applications/app-1/models")
+          return {
+            data: {
+              models: [
+                { id: "model-good", name: "Clasificador" },
+                { id: "model-unavailable", name: "Sin respuesta" },
+              ],
+            },
+          };
+        if (url.endsWith("/model-good/versions"))
+          return {
+            data: {
+              versions: [
+                {
+                  id: "mv-good",
+                  version: "1.0.0",
+                  contract: {
+                    input: {
+                      type: "image",
+                      width: 224,
+                      height: 224,
+                      channels: 3,
+                      normalization: "zero_to_one",
+                    },
+                    output: { type: "classification", labels: ["hoja"] },
+                  },
+                },
+              ],
+            },
+          };
+        throw new Error("Model versions unavailable");
+      });
+
+      render(workflowDetailPanel({ canManage: true }));
+
+      expect(await screen.findByRole("option", { name: "Clasificador · 1.0.0" })).toBeTruthy();
+    });
+
     it("shows the route Workflows / <nombre> and returns to the list from Workflows", async () => {
       client.get.mockImplementation(async () => ({ data: workflowDetail }));
       const onBackToWorkflows = vi.fn();

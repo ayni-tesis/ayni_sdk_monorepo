@@ -1,4 +1,4 @@
-import { workflow } from "@ayni/db/schema/index";
+import { type ModelVersionContract, model, modelVersion, workflow } from "@ayni/db/schema/index";
 import { and, asc, eq, not, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
@@ -29,7 +29,17 @@ export type WorkflowRow = {
   draft?: WorkflowDraft;
 };
 
-export type WorkflowNode = { id: string; type: "input.image"; outputs: { imagen: "image" } };
+export type WorkflowNode =
+  | { id: string; type: "input.image"; outputs: { imagen: "image" } }
+  | {
+      id: string;
+      type: "model.tflite";
+      modelVersionId: string;
+      modelName: string;
+      version: string;
+      inputs: { image: ModelVersionContract["input"] };
+      outputs: { result: ModelVersionContract["output"] };
+    };
 export type WorkflowDraft = { nodes: WorkflowNode[] };
 
 export function toWorkflow(row: WorkflowRow): Workflow {
@@ -138,6 +148,97 @@ export async function addImageInputNode(
 
   const existing = await getWorkflow(database, applicationId, workflowId);
   return existing ? { ok: false, reason: "duplicate" } : { ok: false, reason: "workflowNotFound" };
+}
+
+export type AddModelNodeInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+  modelVersionId: string;
+};
+
+export type AddModelNodeResult =
+  | { ok: true; draft: WorkflowDraft }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "notFound"
+        | "archived"
+        | "workflowNotFound"
+        | "modelVersionNotFound"
+        | "contractRequired";
+    };
+
+type ModelVersionLookupExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      innerJoin: (
+        table: unknown,
+        condition: unknown,
+      ) => {
+        where: (condition: unknown) => {
+          limit: (count: number) => Promise<Record<string, unknown>[]>;
+        };
+      };
+    };
+  };
+};
+
+export async function addModelNode(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, userId, modelVersionId }: AddModelNodeInput,
+): Promise<AddModelNodeResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const lookup = tx as unknown as ModelVersionLookupExecutor;
+      const versions = (await lookup
+        .select({
+          id: modelVersion.id,
+          version: modelVersion.version,
+          contract: modelVersion.contract,
+          modelName: model.name,
+        })
+        .from(modelVersion)
+        .innerJoin(model, eq(model.id, modelVersion.modelId))
+        .where(and(eq(modelVersion.id, modelVersionId), eq(model.applicationId, application.id)))
+        .limit(1)) as {
+        id: string;
+        version: string;
+        contract: ModelVersionContract | null;
+        modelName: string;
+      }[];
+      const selected = versions[0];
+      if (!selected) return { kind: "modelVersionNotFound" as const };
+      if (!selected.contract) return { kind: "contractRequired" as const };
+
+      const node: WorkflowNode = {
+        id: crypto.randomUUID(),
+        type: "model.tflite",
+        modelVersionId: selected.id,
+        modelName: selected.modelName,
+        version: selected.version,
+        inputs: { image: selected.contract.input },
+        outputs: { result: selected.contract.output },
+      };
+      const updater = tx as WorkflowUpdateExecutor;
+      const rows = (await updater
+        .update(workflow)
+        .set({
+          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+        })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return rows[0]
+        ? { kind: "added" as const, draft: rows[0].draft ?? { nodes: [node] } }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  if (result.value.kind === "added") return { ok: true, draft: result.value.draft };
+  return { ok: false, reason: result.value.kind };
 }
 
 export type RenameWorkflowInput = {

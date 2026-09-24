@@ -1,5 +1,11 @@
-import { application, type ModelVersionContract, model, modelVersion } from "@ayni/db/schema/index";
-import { and, desc, eq } from "drizzle-orm";
+import {
+  application,
+  type ModelVersionContract,
+  model,
+  modelVersion,
+  workflow,
+} from "@ayni/db/schema/index";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import {
   type ApplicationDatabase,
@@ -256,9 +262,8 @@ type DeleteModelVersionExecutor = TransactionExecutor & {
 };
 
 /**
- * Deletes a model version owned by an application and removes its artifact.
- * The caller supplies the published-workflow reference check so this store
- * remains independent of the workflow JSON representation.
+ * Deletes an unreferenced model version owned by an application and removes
+ * its artifact. Draft references are checked in the same transaction.
  */
 export async function deleteModelVersion(
   database: ApplicationDatabase,
@@ -284,7 +289,7 @@ export async function deleteModelVersion(
   let deleted: Awaited<
     ReturnType<
       typeof executeApplicationAction<
-        { kind: "notFound" } | { kind: "deleted"; storageKey: string }
+        { kind: "notFound" } | { kind: "inUse" } | { kind: "deleted"; storageKey: string }
       >
     >
   >;
@@ -311,6 +316,19 @@ export async function deleteModelVersion(
         const found = versionRows[0];
         if (!found) return { kind: "notFound" } as const;
 
+        const draftReferences = (await tx
+          .select({ id: workflow.id })
+          .from(workflow)
+          .where(
+            and(
+              eq(workflow.applicationId, application.id),
+              sql`${workflow.draft} @> ${JSON.stringify({ nodes: [{ modelVersionId }] })}::jsonb`,
+            ),
+          )
+          .limit(1)
+          .for("update")) as { id: string }[];
+        if (draftReferences[0]) return { kind: "inUse" } as const;
+
         const rows = await tx.delete(modelVersion).where(eq(modelVersion.id, found.id)).returning();
         if (!rows[0]) throw new Error("Model version deletion returned no record");
         return { kind: "deleted", storageKey: found.storageKey } as const;
@@ -322,6 +340,7 @@ export async function deleteModelVersion(
 
   if (deleted.ok === false) return { ok: false, reason: deleted.reason };
   if (deleted.value.kind === "notFound") return { ok: false, reason: "notFound" };
+  if (deleted.value.kind === "inUse") return { ok: false, reason: "inUse" };
 
   try {
     await storage.removeArtifact(deleted.value.storageKey);

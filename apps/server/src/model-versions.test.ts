@@ -256,7 +256,7 @@ describe("DELETE /applications/:applicationId/models/:modelId/versions/:modelVer
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      message: "No puedes eliminar esta versión porque un workflow publicado la usa.",
+      message: "No puedes eliminar esta versión porque un workflow la usa.",
       code: "modelVersionInUse",
     });
     expect(removeMock).toHaveBeenCalledTimes(1);

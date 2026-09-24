@@ -5,6 +5,8 @@ import type { Application } from "./applications";
 import type {
   AddImageInputInput,
   AddImageInputResult,
+  AddModelNodeInput,
+  AddModelNodeResult,
   CreateWorkflowInput,
   CreateWorkflowResult,
   RenameWorkflowInput,
@@ -38,6 +40,7 @@ type Dependencies = {
     get: (applicationId: string, workflowId: string) => Promise<WorkflowDetail | undefined>;
     rename: (input: RenameWorkflowInput) => Promise<RenameWorkflowResult>;
     addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
+    addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
   };
 };
 
@@ -183,15 +186,25 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (
       typeof body !== "object" ||
       body === null ||
-      (body as { type?: unknown }).type !== "input.image"
+      !["input.image", "model.tflite"].includes((body as { type?: string }).type ?? "")
     ) {
       return c.json({ message: "Tipo de nodo no válido." }, 400);
     }
-    const result = await workflows.addImageInput({
+    const workflowInput = {
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
-    });
+    };
+    const result =
+      (body as { type: string }).type === "model.tflite"
+        ? await workflows.addModelNode({
+            ...workflowInput,
+            modelVersionId:
+              typeof (body as { modelVersionId?: unknown }).modelVersionId === "string"
+                ? (body as { modelVersionId: string }).modelVersionId
+                : "",
+          })
+        : await workflows.addImageInput(workflowInput);
     if (result.ok) return c.json({ draft: result.draft });
     if (result.reason === "forbidden")
       return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
@@ -202,6 +215,16 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       );
     if (result.reason === "duplicate")
       return c.json({ message: DUPLICATE_IMAGE_INPUT_MESSAGE }, 409);
+    if (result.reason === "contractRequired")
+      return c.json(
+        { message: "Esta versión necesita un contrato antes de usarse en un workflow." },
+        409,
+      );
+    if (result.reason === "modelVersionNotFound")
+      return c.json(
+        { message: "No encontramos esta versión de modelo.", code: "modelVersionNotFound" },
+        404,
+      );
     if (result.reason === "workflowNotFound")
       return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);

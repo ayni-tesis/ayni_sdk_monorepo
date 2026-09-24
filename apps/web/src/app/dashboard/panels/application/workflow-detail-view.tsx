@@ -36,8 +36,32 @@ import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
-  draft: { nodes: { id: string; type: "input.image"; outputs: { imagen: "image" } }[] };
+  draft: { nodes: WorkflowNodeItem[] };
   versions: unknown[];
+};
+
+type ModelVersionContract = {
+  input: { type: "image"; width: number; height: number; channels: number; normalization: string };
+  output:
+    | { type: "classification"; labels: string[] }
+    | { type: "detection"; labels: string[]; scoreThreshold: number };
+};
+
+type WorkflowNodeItem =
+  | { id: string; type: "input.image"; outputs: { imagen: "image" } }
+  | {
+      id: string;
+      type: "model.tflite";
+      modelVersionId: string;
+      modelName: string;
+      version: string;
+      inputs: { image: ModelVersionContract["input"] };
+      outputs: { result: ModelVersionContract["output"] };
+    };
+type WorkflowModelOption = {
+  id: string;
+  name: string;
+  versions: { id: string; version: string; contract: ModelVersionContract | null }[];
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
@@ -141,6 +165,9 @@ export function WorkflowDetailView({
   const [renameError, setRenameError] = useState("");
   const [savingRename, setSavingRename] = useState(false);
   const [addingImageInput, setAddingImageInput] = useState(false);
+  const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
+  const [selectedModelVersionId, setSelectedModelVersionId] = useState("");
+  const [addingModel, setAddingModel] = useState(false);
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -181,6 +208,43 @@ export function WorkflowDetailView({
       abortControllerRef.current?.abort();
     };
   }, [application.id, workflowId, loadDetail]);
+
+  useEffect(() => {
+    let active = true;
+    if (!canManage || application.status !== "active") {
+      setModelOptions([]);
+      return () => {
+        active = false;
+      };
+    }
+    async function loadModelOptions() {
+      try {
+        const { data } = await httpClient.get<{ models: { id: string; name: string }[] }>(
+          `/applications/${application.id}/models`,
+        );
+        const models = await Promise.all(
+          data.models.map(async (item) => {
+            try {
+              const response = await httpClient.get<{
+                versions: { id: string; version: string; contract: ModelVersionContract | null }[];
+              }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
+              return { ...item, versions: response.data.versions };
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (active)
+          setModelOptions(models.filter((item): item is WorkflowModelOption => item !== null));
+      } catch {
+        if (active) setModelOptions([]);
+      }
+    }
+    void loadModelOptions();
+    return () => {
+      active = false;
+    };
+  }, [application.id, application.status, canManage]);
 
   function openRenameWorkflow(currentName: string) {
     setRenameName(currentName);
@@ -234,6 +298,24 @@ export function WorkflowDetailView({
     } finally {
       addingImageInputRef.current = false;
       setAddingImageInput(false);
+    }
+  }
+
+  async function addModelNode() {
+    if (!selectedModelVersionId || addingModel) return;
+    setAddingModel(true);
+    try {
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
+        { type: "model.tflite", modelVersionId: selectedModelVersionId },
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      toast.success("Nodo de modelo agregado.");
+    } catch (addError) {
+      toast.error(errorMessage(addError, "No pudimos agregar el nodo."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      setAddingModel(false);
     }
   }
 
@@ -365,6 +447,41 @@ export function WorkflowDetailView({
                 >
                   Entrada de imagen
                 </Button>
+                <label htmlFor="workflow-model-version" className="block font-medium text-sm">
+                  Modelo
+                </label>
+                <select
+                  id="workflow-model-version"
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                  value={selectedModelVersionId}
+                  onChange={(event) => setSelectedModelVersionId(event.target.value)}
+                >
+                  <option value="">Selecciona una versión</option>
+                  {modelOptions.flatMap((item) =>
+                    item.versions
+                      .filter((version) => version.contract)
+                      .map((version) => (
+                        <option key={version.id} value={version.id}>
+                          {item.name} · {version.version}
+                        </option>
+                      )),
+                  )}
+                </select>
+                {modelOptions.some((item) =>
+                  item.versions.some((version) => !version.contract),
+                ) && (
+                  <p className="text-muted-foreground text-xs">
+                    Esta versión necesita un contrato antes de usarse en un workflow.
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!selectedModelVersionId || addingModel}
+                  onClick={() => void addModelNode()}
+                >
+                  {addingModel ? "Agregando…" : "Agregar modelo"}
+                </Button>
                 {draft.nodes.some((node) => node.type === "input.image") && (
                   <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
                 )}
@@ -382,10 +499,28 @@ export function WorkflowDetailView({
             >
               {draft.nodes.map((node) => (
                 <article key={node.id} className="w-fit rounded-md border bg-card p-3">
-                  <h4 className="font-medium text-sm">Imagen de entrada</h4>
-                  <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
-                    imagen: image
-                  </span>
+                  {node.type === "input.image" ? (
+                    <>
+                      <h4 className="font-medium text-sm">Imagen de entrada</h4>
+                      <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
+                        imagen: image
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <h4 className="font-medium text-sm">
+                        {node.modelName} · {node.version}
+                      </h4>
+                      <div className="mt-2 flex gap-2 text-xs">
+                        <span className="rounded bg-muted px-2 py-1">
+                          image: image ({node.inputs.image.width}×{node.inputs.image.height})
+                        </span>
+                        <span className="rounded bg-muted px-2 py-1">
+                          result: {node.outputs.result.type}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </article>
               ))}
               {draft.nodes.length === 0 && (
