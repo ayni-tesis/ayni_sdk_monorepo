@@ -1076,6 +1076,26 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
     });
 
+    it("shows the latest published version of each workflow under Última versión", async () => {
+      client.get.mockImplementation(async () => ({
+        data: {
+          workflows: [
+            { ...listedWorkflow, latestVersion: "1.2.0" },
+            { ...listedWorkflow, id: "workflow-2", latestVersion: null },
+          ],
+        },
+      }));
+
+      renderWorkflowList();
+
+      const published = await screen.findByTestId("workflow-row-workflow-1");
+      expect(within(published).getByText("1.2.0")).toBeTruthy();
+      expect(within(published).queryByText("Sin publicar")).toBeNull();
+      expect(
+        within(screen.getByTestId("workflow-row-workflow-2")).getByText("Sin publicar"),
+      ).toBeTruthy();
+    });
+
     it("lists every workflow of the application", async () => {
       client.get.mockImplementation(async () => ({
         data: {
@@ -1953,6 +1973,431 @@ describe("ApplicationDetailPanel", () => {
         expect(toastMock.error).toHaveBeenCalledWith(
           "No tienes permiso para editar este workflow.",
         );
+      });
+      await screen.findByTestId("workflow-node-image-node");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        within(screen.getByTestId("workflow-node-image-node"))
+          .getByRole("button", { name: "Imagen de entrada" })
+          .getAttribute("aria-pressed"),
+      ).toBe("false");
+    });
+
+    it("keeps a surviving connection selected after reloading the returned draft", async () => {
+      const otherNode = {
+        id: "other-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
+      const connection = {
+        sourceNodeId: "other-node",
+        sourcePort: "imagen",
+        targetNodeId: "image-node",
+        targetPort: "imagen",
+      };
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1")
+          ? {
+              data: {
+                ...workflowDetail,
+                draft: { nodes: [imageNode, otherNode], connections: [connection] },
+              },
+            }
+          : { data: { models: [] } },
+      );
+      client.delete.mockResolvedValueOnce({
+        data: { draft: { nodes: [otherNode], connections: [{ ...connection }] } },
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-node-image-node");
+      fireEvent.click(screen.getByRole("button", { name: "imagen → imagen" }));
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-image-node")).getByRole("button", {
+          name: "Imagen de entrada",
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "imagen → imagen" }).getAttribute("aria-pressed"),
+        ).toBe("true");
+      });
+      expect(screen.getByRole("button", { name: "Eliminar conexión" })).toBeTruthy();
+    });
+  });
+  describe("US-035: Validar un borrador de workflow", () => {
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [],
+    };
+    const validationUrl = "/applications/app-1/workflows/workflow-1/validation";
+
+    function workflowDetailPanel({
+      application = activeApp,
+      canManage = true,
+    }: {
+      application?: Application;
+      canManage?: boolean;
+    } = {}) {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    function mockValidation(response: () => Promise<unknown>) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === validationUrl) return response();
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: workflowDetail };
+      });
+    }
+
+    it("offers Validar workflow only to administrators of an active application", async () => {
+      mockValidation(async () => ({ data: { publishable: true, errors: [] } }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.getByRole("button", { name: "Validar workflow" })).toBeTruthy();
+      cleanup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Validar workflow" })).toBeNull();
+      cleanup();
+
+      render(workflowDetailPanel({ application: archivedApp }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Validar workflow" })).toBeNull();
+    });
+
+    it("shows Validando workflow… and then confirms that the draft is publishable", async () => {
+      let resolveValidation: (value: unknown) => void = () => {};
+      mockValidation(
+        () =>
+          new Promise((resolve) => {
+            resolveValidation = resolve;
+          }),
+      );
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      const pending = await screen.findByRole("button", { name: "Validando workflow…" });
+      expect((pending as HTMLButtonElement).disabled).toBe(true);
+
+      resolveValidation({ data: { publishable: true, errors: [] } });
+
+      expect(await screen.findByText("El workflow está listo para publicarse.")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
+      expect(client.post).not.toHaveBeenCalled();
+      expect(client.patch).not.toHaveBeenCalled();
+    });
+
+    it("opens Errores de validación with the node, port and description of each error", async () => {
+      mockValidation(async () => ({
+        data: {
+          publishable: false,
+          errors: [
+            {
+              code: "requiredInput",
+              nodeId: "classifier",
+              nodeName: "Clasificador",
+              port: "image",
+              message: 'El nodo "Clasificador" necesita una imagen de entrada.',
+            },
+            {
+              code: "missingOutput",
+              nodeId: null,
+              nodeName: null,
+              port: null,
+              message: "El workflow necesita al menos un nodo de salida.",
+            },
+          ],
+        },
+      }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      const panel = await screen.findByRole("region", { name: "Errores de validación" });
+      expect(within(panel).getByRole("columnheader", { name: "Nodo" })).toBeTruthy();
+      expect(within(panel).getByRole("columnheader", { name: "Puerto" })).toBeTruthy();
+      expect(within(panel).getByRole("columnheader", { name: "Descripción" })).toBeTruthy();
+      const [, first, second] = within(panel).getAllByRole("row");
+      expect(
+        within(first as HTMLElement)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual([
+        "Clasificador",
+        "Entrada de imagen",
+        'El nodo "Clasificador" necesita una imagen de entrada.',
+      ]);
+      expect(
+        within(second as HTMLElement)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["Workflow", "—", "El workflow necesita al menos un nodo de salida."]);
+      expect(screen.queryByText("El workflow está listo para publicarse.")).toBeNull();
+    });
+
+    it("reports a failed validation request without showing a result", async () => {
+      mockValidation(async () => {
+        throw new Error("network");
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No pudimos validar el workflow. Inténtalo nuevamente.",
+        );
+      });
+      expect(screen.getByRole("button", { name: "Validar workflow" })).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
+    });
+  });
+
+  describe("US-036: Publicar una versión de workflow", () => {
+    const publishedVersion = {
+      id: "version-1",
+      workflowId: "workflow-1",
+      version: "1.0.0",
+      createdAt: "2026-09-24T12:00:00.000Z",
+    };
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [] as (typeof publishedVersion)[],
+    };
+    const versionsUrl = "/applications/app-1/workflows/workflow-1/versions";
+
+    function workflowDetailPanel({
+      application = activeApp,
+      canManage = true,
+    }: {
+      application?: Application;
+      canManage?: boolean;
+    } = {}) {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    function mockDetail(detail = workflowDetail) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: detail };
+      });
+    }
+
+    async function openPublishDialog(version: string) {
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Publicar versión" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.change(within(dialog).getByLabelText("Versión"), { target: { value: version } });
+      return dialog;
+    }
+
+    function rejection(status: number, data: unknown) {
+      return Object.assign(new Error("Request failed"), {
+        isAxiosError: true,
+        response: { status, data },
+      });
+    }
+
+    it("offers Publicar versión only to administrators of an active application", async () => {
+      mockDetail();
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.getByRole("button", { name: "Publicar versión" })).toBeTruthy();
+      cleanup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Publicar versión" })).toBeNull();
+      cleanup();
+
+      render(workflowDetailPanel({ application: archivedApp }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Publicar versión" })).toBeNull();
+    });
+
+    it("publishes a version from the dialog and lists it under Versiones publicadas", async () => {
+      mockDetail();
+      let resolvePublish: (value: unknown) => void = () => {};
+      client.post.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePublish = resolve;
+        }),
+      );
+      const user = userEvent.setup();
+
+      render(workflowDetailPanel());
+      const dialog = await openPublishDialog(" 1.0.0 ");
+      expect(
+        within(dialog).getByText("Se publicará una versión inmutable del workflow."),
+      ).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Cancelar" })).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publicar versión" }));
+
+      const pending = await within(dialog).findByRole("button", { name: "Publicando versión…" });
+      expect((pending as HTMLButtonElement).disabled).toBe(true);
+      expect(client.post).toHaveBeenCalledWith(versionsUrl, { version: "1.0.0" });
+
+      resolvePublish({ data: { version: publishedVersion } });
+
+      await waitFor(() => {
+        expect(toastMock.success).toHaveBeenCalledWith("Versión 1.0.0 publicada.");
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      await user.click(screen.getByRole("tab", { name: "Versiones publicadas" }));
+      const table = screen.getByRole("table", { name: "Versiones publicadas" });
+      expect(
+        within(table)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["1.0.0", formatLongDateEs("2026-09-24T12:00:00.000Z")]);
+      expect(screen.queryByText("Aún no hay versiones publicadas.")).toBeNull();
+    });
+
+    it("lists the versions already published, most recent first", async () => {
+      mockDetail({
+        ...workflowDetail,
+        versions: [{ ...publishedVersion, id: "version-2", version: "1.1.0" }, publishedVersion],
+      });
+      const user = userEvent.setup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await user.click(await screen.findByRole("tab", { name: "Versiones publicadas" }));
+
+      const rows = within(screen.getByRole("table", { name: "Versiones publicadas" })).getAllByRole(
+        "row",
+      );
+      expect(rows.map((row) => row.firstElementChild?.textContent)).toEqual([
+        "Versión",
+        "1.1.0",
+        "1.0.0",
+      ]);
+    });
+
+    it("rejects an unpublishable draft and shows its validation errors", async () => {
+      mockDetail();
+      client.post.mockRejectedValueOnce(
+        rejection(409, {
+          message: "Corrige los errores de validación antes de publicar.",
+          code: "workflowInvalid",
+          errors: [
+            {
+              code: "missingOutput",
+              nodeId: null,
+              nodeName: null,
+              port: null,
+              message: "El workflow necesita al menos un nodo de salida.",
+            },
+          ],
+        }),
+      );
+
+      render(workflowDetailPanel());
+      const dialog = await openPublishDialog("1.0.0");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publicar versión" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "Corrige los errores de validación antes de publicar.",
+        );
+      });
+      const panel = await screen.findByRole("region", { name: "Errores de validación" });
+      expect(
+        within(panel).getByText("El workflow necesita al menos un nodo de salida."),
+      ).toBeTruthy();
+      expect(toastMock.success).not.toHaveBeenCalled();
+    });
+
+    it("keeps the dialog open with the server message when the version already exists", async () => {
+      mockDetail({ ...workflowDetail, versions: [publishedVersion] });
+      client.post.mockRejectedValueOnce(
+        rejection(409, {
+          message: "Este workflow ya tiene una versión 1.0.0.",
+          code: "versionExists",
+        }),
+      );
+
+      render(workflowDetailPanel());
+      const dialog = await openPublishDialog("1.0.0");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publicar versión" }));
+
+      expect(
+        await within(dialog).findByText("Este workflow ya tiene una versión 1.0.0."),
+      ).toBeTruthy();
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      expect(toastMock.success).not.toHaveBeenCalled();
+    });
+
+    it("requires a version before calling the server and closes via Cancelar", async () => {
+      mockDetail();
+
+      render(workflowDetailPanel());
+      const dialog = await openPublishDialog("   ");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publicar versión" }));
+
+      expect(
+        await within(dialog).findByText(
+          "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.",
+        ),
+      ).toBeTruthy();
+      expect(client.post).not.toHaveBeenCalled();
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
       });
     });
   });

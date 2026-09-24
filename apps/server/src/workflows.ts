@@ -24,11 +24,21 @@ import type {
   WorkflowDetail,
   WorkflowNodePosition,
 } from "./workflow-store";
+import { validateWorkflowDraft } from "./workflow-validation";
+import type {
+  PublishWorkflowVersionInput,
+  PublishWorkflowVersionResult,
+} from "./workflow-version-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const FORBIDDEN_MESSAGE = "No tienes permiso para crear workflows.";
 const FORBIDDEN_RENAME_MESSAGE = "No tienes permiso para editar este workflow.";
+const FORBIDDEN_VALIDATE_MESSAGE = "No tienes permiso para validar este workflow.";
+const FORBIDDEN_PUBLISH_MESSAGE = "No tienes permiso para publicar este workflow.";
+const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
+const INVALID_DRAFT_MESSAGE = "Corrige los errores de validación antes de publicar.";
+const PUBLISH_ARCHIVED_MESSAGE = "No puedes publicar versiones en una aplicación archivada.";
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes crear workflows en una aplicación archivada.";
 const WORKFLOW_RENAME_ARCHIVED_MESSAGE = "No puedes editar workflows en una aplicación archivada.";
 const DUPLICATE_IMAGE_INPUT_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
@@ -57,6 +67,12 @@ const outputNodeSchema = z.object({
   sourcePort: z.enum(["result", "true", "false"]),
   resultType: z.enum(["classification", "detection", "boolean"]),
   position: workflowPositionSchema.optional(),
+});
+const workflowVersionSchema = z.object({
+  version: z
+    .string()
+    .trim()
+    .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/),
 });
 const connectionSchema = z.object({
   sourceNodeId: z.string().min(1),
@@ -95,6 +111,7 @@ type Dependencies = {
       nodeId: string;
       userId: string;
     }) => Promise<DeleteWorkflowNodeResult>;
+    publishVersion: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   };
 };
 
@@ -102,9 +119,10 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
   const app = new Hono();
   const getMemberApplication = async (applicationId: string, userId: string) => {
     const application = await applications.get(applicationId);
-    if (!application || !(await applications.getMembership(userId, application.organizationId)))
-      return undefined;
-    return application;
+    const role =
+      application && (await applications.getMembership(userId, application.organizationId));
+    if (!application || !role) return undefined;
+    return { ...application, role };
   };
 
   app.get("/applications/:applicationId/workflows", async (c) => {
@@ -128,6 +146,56 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!detail) return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
 
     return c.json(detail);
+  });
+
+  app.get("/applications/:applicationId/workflows/:workflowId/validation", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    if (application.role !== "admin" && application.role !== "owner")
+      return c.json({ message: FORBIDDEN_VALIDATE_MESSAGE }, 403);
+
+    const detail = await workflows.get(application.id, c.req.param("workflowId"));
+    if (!detail) return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+
+    return c.json(validateWorkflowDraft(detail.draft));
+  });
+
+  app.post("/applications/:applicationId/workflows/:workflowId/versions", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const parsed = workflowVersionSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ message: INVALID_VERSION_MESSAGE }, 400);
+    const result = await workflows.publishVersion({
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      userId: session.user.id,
+      version: parsed.data.version,
+    });
+    if (result.ok) return c.json({ version: result.version }, 201);
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_PUBLISH_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json({ message: PUBLISH_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    if (result.reason === "invalidDraft")
+      return c.json(
+        { message: INVALID_DRAFT_MESSAGE, code: "workflowInvalid", errors: result.errors },
+        409,
+      );
+    if (result.reason === "versionExists")
+      return c.json(
+        {
+          message: `Este workflow ya tiene una versión ${parsed.data.version}.`,
+          code: "versionExists",
+        },
+        409,
+      );
+    if (result.reason === "workflowNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
   });
 
   app.post("/applications/:applicationId/workflows", async (c) => {

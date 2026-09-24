@@ -1,4 +1,4 @@
-import { application, member, workflow } from "@ayni/db/schema/index";
+import { application, member, workflow, workflowVersion } from "@ayni/db/schema/index";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,11 @@ import {
   type WorkflowDetail,
   type WorkflowNode,
 } from "./workflow-store";
+import type { WorkflowValidationResult } from "./workflow-validation";
+import type {
+  PublishWorkflowVersionInput,
+  PublishWorkflowVersionResult,
+} from "./workflow-version-store";
 import { createWorkflowsApp } from "./workflows";
 
 describe("findWorkflowCycle", () => {
@@ -126,6 +131,13 @@ function makeApp({
     ok: true,
     draft: { nodes: [] },
   }),
+  publishVersion = async ({
+    workflowId,
+    version,
+  }: PublishWorkflowVersionInput): Promise<PublishWorkflowVersionResult> => ({
+    ok: true,
+    version: { id: "version-1", workflowId, version, createdAt: "2026-09-24T12:00:00.000Z" },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -154,6 +166,7 @@ function makeApp({
   deleteNode?: (
     input: import("./workflow-store").DeleteWorkflowNodeInput,
   ) => Promise<DeleteWorkflowNodeResult>;
+  publishVersion?: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -175,6 +188,7 @@ function makeApp({
   }));
   const updateNodePositionMock = vi.fn(updateNodePosition);
   const deleteNodeMock = vi.fn(deleteNode);
+  const publishVersionMock = vi.fn(publishVersion);
   return {
     create: createMock,
     list: listMock,
@@ -188,6 +202,7 @@ function makeApp({
     removeConnection: removeConnectionMock,
     updateNodePosition: updateNodePositionMock,
     deleteNode: deleteNodeMock,
+    publishVersion: publishVersionMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -207,6 +222,7 @@ function makeApp({
         removeConnection: removeConnectionMock,
         updateNodePosition: updateNodePositionMock,
         deleteNode: deleteNodeMock,
+        publishVersion: publishVersionMock,
       },
     }),
   };
@@ -662,6 +678,283 @@ describe("GET /applications/:applicationId/workflows/:workflowId", () => {
       code: "notFound",
     });
     expect(get).toHaveBeenCalledWith("app-1", "workflow-9");
+  });
+});
+
+describe("GET /applications/:applicationId/workflows/:workflowId/validation", () => {
+  const validationPath = "/applications/app-1/workflows/workflow-1/validation";
+  const completeDraft: WorkflowDetail["draft"] = {
+    nodes: [
+      { id: "input", type: "input.image", outputs: { imagen: "image" } },
+      {
+        id: "classifier",
+        type: "model.tflite",
+        modelVersionId: "version-1",
+        modelName: "Clasificador",
+        version: "1.0.0",
+        inputs: {
+          image: {
+            type: "image",
+            width: 224,
+            height: 224,
+            channels: 3,
+            normalization: "zero_to_one",
+          },
+        },
+        outputs: { result: { type: "classification", labels: ["sana"] } },
+      },
+      {
+        id: "diagnosis",
+        type: "output",
+        name: "Diagnóstico",
+        sourceNodeId: "classifier",
+        sourcePort: "result",
+        resultType: "classification",
+      },
+    ],
+    connections: [
+      {
+        sourceNodeId: "input",
+        sourcePort: "imagen",
+        targetNodeId: "classifier",
+        targetPort: "image",
+      },
+    ],
+  };
+
+  it("confirms that a complete draft is publishable", async () => {
+    const { request, get } = makeApp({
+      workflowDetail: { ...sampleDetail, draft: completeDraft },
+    });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ publishable: true, errors: [] });
+    expect(get).toHaveBeenCalledWith("app-1", "workflow-1");
+  });
+
+  it("reports the node and port of a disconnected required input without modifying the draft", async () => {
+    const app = makeApp({
+      membershipRole: "owner",
+      workflowDetail: { ...sampleDetail, draft: { ...completeDraft, connections: [] } },
+    });
+
+    const response = await app.request.request(validationPath);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as WorkflowValidationResult;
+    expect(body.publishable).toBe(false);
+    expect(body.errors).toContainEqual({
+      code: "requiredInput",
+      nodeId: "classifier",
+      nodeName: "Clasificador",
+      port: "image",
+      message: 'El nodo "Clasificador" necesita una imagen de entrada.',
+    });
+    for (const write of [
+      app.create,
+      app.rename,
+      app.addImageInput,
+      app.addModelNode,
+      app.addConditionNode,
+      app.addOutputNode,
+      app.addConnection,
+      app.removeConnection,
+      app.updateNodePosition,
+    ])
+      expect(write).not.toHaveBeenCalled();
+  });
+
+  it("allows only administrators and owners to validate", async () => {
+    const { request, get } = makeApp({ membershipRole: "member" });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para validar este workflow.",
+    });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, get } = makeApp({ session: null });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(401);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-member exactly like a missing application", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    const nonMemberResponse = await nonMember.request.request(validationPath);
+    const missingResponse = await missing.request.request(validationPath);
+
+    expect(nonMemberResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    await expect(nonMemberResponse.json()).resolves.toEqual(await missingResponse.json());
+    expect(nonMember.get).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the workflow does not exist in the application", async () => {
+    const { request } = makeApp({ workflowDetail: null });
+
+    const response = await request.request(validationPath);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+  });
+});
+
+describe("POST /applications/:applicationId/workflows/:workflowId/versions", () => {
+  function postVersion(request: ReturnType<typeof makeApp>["request"], body: unknown) {
+    return request.request("/applications/app-1/workflows/workflow-1/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("publishes the draft as a new version for an administrator", async () => {
+    const { request, publishVersion } = makeApp();
+
+    const response = await postVersion(request, { version: " 1.0.0 " });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      version: {
+        id: "version-1",
+        workflowId: "workflow-1",
+        version: "1.0.0",
+        createdAt: "2026-09-24T12:00:00.000Z",
+      },
+    });
+    expect(publishVersion).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      version: "1.0.0",
+    });
+  });
+
+  it.each([
+    ["a missing version", {}],
+    ["a non-SemVer version", { version: "v1" }],
+    ["a version with a leading zero", { version: "01.0.0" }],
+  ])("rejects %s with 400 without publishing", async (_caseName, body) => {
+    const { request, publishVersion } = makeApp();
+
+    const response = await postVersion(request, body);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      message: "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.",
+    });
+    expect(publishVersion).not.toHaveBeenCalled();
+  });
+
+  it("rejects a draft that is not publishable with its validation errors", async () => {
+    const errors: WorkflowValidationResult["errors"] = [
+      {
+        code: "missingOutput",
+        nodeId: null,
+        nodeName: null,
+        port: null,
+        message: "El workflow necesita al menos un nodo de salida.",
+      },
+    ];
+    const { request } = makeApp({
+      publishVersion: async () => ({ ok: false, reason: "invalidDraft", errors }),
+    });
+
+    const response = await postVersion(request, { version: "1.0.0" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Corrige los errores de validación antes de publicar.",
+      code: "workflowInvalid",
+      errors,
+    });
+  });
+
+  it("rejects a version identifier the workflow already uses", async () => {
+    const { request } = makeApp({
+      publishVersion: async () => ({ ok: false, reason: "versionExists" }),
+    });
+
+    const response = await postVersion(request, { version: "1.0.0" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Este workflow ya tiene una versión 1.0.0.",
+      code: "versionExists",
+    });
+  });
+
+  it("maps a plain member to 403 and an archived application to 409", async () => {
+    const member = makeApp({
+      membershipRole: "member",
+      publishVersion: async () => ({ ok: false, reason: "forbidden" }),
+    });
+    const archived = makeApp({
+      publishVersion: async () => ({ ok: false, reason: "archived" }),
+    });
+
+    const memberResponse = await postVersion(member.request, { version: "1.0.0" });
+    const archivedResponse = await postVersion(archived.request, { version: "1.0.0" });
+
+    expect(memberResponse.status).toBe(403);
+    await expect(memberResponse.json()).resolves.toEqual({
+      message: "No tienes permiso para publicar este workflow.",
+    });
+    expect(archivedResponse.status).toBe(409);
+    await expect(archivedResponse.json()).resolves.toEqual({
+      message: "No puedes publicar versiones en una aplicación archivada.",
+      code: "applicationArchived",
+    });
+  });
+
+  it("answers 404 when the workflow does not exist in the application", async () => {
+    const { request } = makeApp({
+      publishVersion: async () => ({ ok: false, reason: "workflowNotFound" }),
+    });
+
+    const response = await postVersion(request, { version: "1.0.0" });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+  });
+
+  it("answers a non-member exactly like a missing application, without publishing", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    const nonMemberResponse = await postVersion(nonMember.request, { version: "1.0.0" });
+    const missingResponse = await postVersion(missing.request, { version: "v1" });
+
+    expect(nonMemberResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    await expect(nonMemberResponse.json()).resolves.toEqual(await missingResponse.json());
+    expect(nonMember.publishVersion).not.toHaveBeenCalled();
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, publishVersion } = makeApp({ session: null });
+
+    const response = await postVersion(request, { version: "1.0.0" });
+
+    expect(response.status).toBe(401);
+    expect(publishVersion).not.toHaveBeenCalled();
   });
 });
 
@@ -1559,6 +1852,7 @@ function makeImageInputStoreDb(nodes: WorkflowNode[] = []) {
             const result = Promise.resolve(rows);
             return table === workflow ? result : { for: async () => rows };
           },
+          orderBy: async () => [],
         }),
       }),
     }),
@@ -1729,6 +2023,7 @@ describe("listWorkflows", () => {
         status: "draft",
         createdAt: "2026-09-21T15:30:00.000Z",
         updatedAt: "2026-09-21T15:30:00.000Z",
+        latestVersion: "1.2.0",
       },
     ]);
 
@@ -1742,6 +2037,7 @@ describe("listWorkflows", () => {
         status: "draft",
         createdAt: "2026-09-21T15:00:00.000Z",
         updatedAt: "2026-09-21T16:00:00.000Z",
+        latestVersion: null,
       },
       {
         id: "workflow-2",
@@ -1750,8 +2046,20 @@ describe("listWorkflows", () => {
         status: "draft",
         createdAt: "2026-09-21T15:30:00.000Z",
         updatedAt: "2026-09-21T15:30:00.000Z",
+        latestVersion: "1.2.0",
       },
     ]);
+  });
+
+  it("selects the most recently published version of each workflow as its latest version", async () => {
+    const transaction = makeListDb([]);
+
+    await listWorkflows(transaction.db, "app-1");
+
+    expect(toQuery(transaction.selectedFields[0]?.latestVersion)).toEqual({
+      sql: '(select "workflow_version"."version" from "workflow_version" where "workflow_version"."workflow_id" = "workflow"."id" order by "workflow_version"."created_at" desc limit 1)',
+      params: [],
+    });
   });
 
   it("scopes the query to the requested application only", async () => {
@@ -1781,14 +2089,25 @@ describe("listWorkflows", () => {
   });
 });
 
-function makeGetDb(rows: Record<string, unknown>[]) {
+function makeGetDb(rows: Record<string, unknown>[], versionRows: Record<string, unknown>[] = []) {
   const filters: unknown[] = [];
   const limits: number[] = [];
+  const versionFilters: unknown[] = [];
+  const versionOrderings: unknown[] = [];
 
   const executor = {
     select: (_fields: Record<string, unknown>) => ({
-      from: (_table: unknown) => ({
+      from: (table: unknown) => ({
         where: (condition: unknown) => {
+          if (table === workflowVersion) {
+            versionFilters.push(condition);
+            return {
+              orderBy: async (column: unknown) => {
+                versionOrderings.push(column);
+                return versionRows;
+              },
+            };
+          }
           filters.push(condition);
           return {
             limit: async (count: number) => {
@@ -1804,6 +2123,8 @@ function makeGetDb(rows: Record<string, unknown>[]) {
   return {
     filters,
     limits,
+    versionFilters,
+    versionOrderings,
     db: {
       transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
     },
@@ -1849,6 +2170,49 @@ describe("getWorkflow", () => {
     const transaction = makeGetDb([]);
 
     await expect(getWorkflow(transaction.db, "app-1", "workflow-9")).resolves.toBeUndefined();
+    expect(transaction.versionFilters).toHaveLength(0);
+  });
+
+  it("returns the published versions of the workflow, most recent first", async () => {
+    const transaction = makeGetDb(
+      [
+        {
+          id: "workflow-1",
+          applicationId: "app-1",
+          name: "Diagnóstico de hoja de café",
+          status: "draft",
+          createdAt: new Date("2026-09-21T15:00:00.000Z"),
+          updatedAt: "2026-09-21T16:00:00.000Z",
+        },
+      ],
+      [
+        {
+          id: "version-2",
+          workflowId: "workflow-1",
+          version: "1.1.0",
+          createdAt: new Date("2026-09-24T12:00:00.000Z"),
+        },
+      ],
+    );
+
+    const detail = await getWorkflow(transaction.db, "app-1", "workflow-1");
+
+    expect(detail?.versions).toEqual([
+      {
+        id: "version-2",
+        workflowId: "workflow-1",
+        version: "1.1.0",
+        createdAt: "2026-09-24T12:00:00.000Z",
+      },
+    ]);
+    expect(toQuery(transaction.versionFilters[0])).toEqual({
+      sql: '"workflow_version"."workflow_id" = $1',
+      params: ["workflow-1"],
+    });
+    expect(toQuery(transaction.versionOrderings[0])).toEqual({
+      sql: '"workflow_version"."created_at" desc',
+      params: [],
+    });
   });
 });
 
@@ -1951,10 +2315,50 @@ describe("deleteWorkflowNode", () => {
           resultType: "boolean" as const,
         },
         { id: "other", type: "input.image" as const, outputs: { imagen: "image" as const } },
+        {
+          id: "model-2",
+          type: "model.tflite" as const,
+          modelVersionId: "version-2",
+          modelName: "Second classifier",
+          version: "2.0.0",
+          inputs: {
+            image: {
+              type: "image" as const,
+              width: 224,
+              height: 224,
+              channels: 3 as const,
+              normalization: "none" as const,
+            },
+          },
+          outputs: { result: { type: "classification" as const, labels: ["healthy", "diseased"] } },
+        },
+        {
+          id: "condition-independent",
+          type: "condition" as const,
+          sourceNodeId: "model-2",
+          label: "diseased",
+          operator: "gte" as const,
+          threshold: 0.7,
+          branches: { true: "Verdadero" as const, false: "Falso" as const },
+        },
+        {
+          id: "output-independent",
+          type: "output" as const,
+          name: "Independent",
+          sourceNodeId: "condition-independent",
+          sourcePort: "true",
+          resultType: "boolean" as const,
+        },
       ],
       connections: [
         { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
         { sourceNodeId: "other", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
+        {
+          sourceNodeId: "other",
+          sourcePort: "imagen",
+          targetNodeId: "model-2",
+          targetPort: "image",
+        },
       ],
       layout: {
         model: { x: 80, y: 90 },
@@ -1962,6 +2366,9 @@ describe("deleteWorkflowNode", () => {
         "condition-2": { x: 120, y: 120 },
         "output-dependent": { x: 140, y: 140 },
         other: { x: 180, y: 190 },
+        "model-2": { x: 220, y: 230 },
+        "condition-independent": { x: 240, y: 250 },
+        "output-independent": { x: 260, y: 270 },
       },
     };
     const store = makeWorkflowPositionStoreDb(draft);
@@ -1974,9 +2381,14 @@ describe("deleteWorkflowNode", () => {
 
     expect(result).toMatchObject({ ok: true });
     expect(store.reload()).toEqual({
-      nodes: [draft.nodes[0], draft.nodes[5]],
-      connections: [],
-      layout: { other: { x: 180, y: 190 } },
+      nodes: [draft.nodes[0], draft.nodes[5], draft.nodes[6], draft.nodes[7], draft.nodes[8]],
+      connections: [draft.connections[2]],
+      layout: {
+        other: { x: 180, y: 190 },
+        "model-2": { x: 220, y: 230 },
+        "condition-independent": { x: 240, y: 250 },
+        "output-independent": { x: 260, y: 270 },
+      },
     });
     const remainingNodeIds = new Set(store.reload().nodes.map((node) => node.id));
     const danglingDerivedEdges = store

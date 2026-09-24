@@ -1,5 +1,11 @@
-import { type ModelVersionContract, model, modelVersion, workflow } from "@ayni/db/schema/index";
-import { and, asc, eq, not, sql } from "drizzle-orm";
+import {
+  type ModelVersionContract,
+  model,
+  modelVersion,
+  workflow,
+  workflowVersion,
+} from "@ayni/db/schema/index";
+import { and, asc, desc, eq, not, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -28,6 +34,30 @@ export type WorkflowRow = {
   updatedAt: Date | string;
   draft?: WorkflowDraft;
 };
+
+/** A published, immutable workflow version (metadata only, never its DAG). */
+export type WorkflowVersion = {
+  id: string;
+  workflowId: string;
+  version: string;
+  createdAt: string;
+};
+
+export type WorkflowVersionRow = {
+  id: string;
+  workflowId: string;
+  version: string;
+  createdAt: Date | string;
+};
+
+export function toWorkflowVersion(row: WorkflowVersionRow): WorkflowVersion {
+  return {
+    id: row.id,
+    workflowId: row.workflowId,
+    version: row.version,
+    createdAt: toIsoString(row.createdAt),
+  };
+}
 
 export type WorkflowNode =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
@@ -104,6 +134,26 @@ export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: Wor
   const inputType =
     target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
   return Boolean(outputType && inputType && outputType === inputType);
+}
+
+export function isConditionSourceCompatible(source: WorkflowNode | undefined, label: string) {
+  return (
+    source?.type === "model.tflite" &&
+    source.outputs.result.type === "classification" &&
+    source.outputs.result.labels.includes(label)
+  );
+}
+
+export function isOutputSourceCompatible(
+  source: WorkflowNode | undefined,
+  sourcePort: string,
+  resultType: "classification" | "detection" | "boolean",
+) {
+  return resultType === "boolean"
+    ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
+    : source?.type === "model.tflite" &&
+        sourcePort === "result" &&
+        source.outputs.result.type === resultType;
 }
 
 export function findWorkflowCycle(
@@ -666,13 +716,7 @@ export async function addConditionNode(
       const draft = rows[0]?.draft;
       if (!rows[0]) return { kind: "workflowNotFound" as const };
       const source = draft?.nodes.find((node) => node.id === sourceNodeId);
-      if (
-        !draft ||
-        !source ||
-        source.type !== "model.tflite" ||
-        source.outputs.result.type !== "classification" ||
-        !source.outputs.result.labels.includes(label)
-      )
+      if (!draft || !isConditionSourceCompatible(source, label))
         return { kind: "incompatibleSource" as const };
       const node: WorkflowNode = {
         id: crypto.randomUUID(),
@@ -756,13 +800,8 @@ export async function addOutputNode(
       const draft = rows[0]?.draft;
       if (!rows[0]) return { kind: "workflowNotFound" as const };
       const source = draft?.nodes.find((node) => node.id === sourceNodeId);
-      const compatible =
-        resultType === "boolean"
-          ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
-          : source?.type === "model.tflite" &&
-            sourcePort === "result" &&
-            source.outputs.result.type === resultType;
-      if (!draft || !compatible) return { kind: "incompatibleSource" as const };
+      if (!draft || !isOutputSourceCompatible(source, sourcePort, resultType))
+        return { kind: "incompatibleSource" as const };
       const node: WorkflowNode = {
         id: crypto.randomUUID(),
         type: "output",
@@ -839,13 +878,13 @@ export async function renameWorkflow(
 }
 
 /**
- * Workflow detail: the workflow, its persisted draft nodes, and published
- * versions. Published versions remain empty until US-036 adds version storage.
+ * Workflow detail: the workflow, its persisted draft nodes, and its published
+ * versions, most recent first.
  */
 export type WorkflowDetail = {
   workflow: Workflow;
   draft: WorkflowDraft;
-  versions: never[];
+  versions: WorkflowVersion[];
 };
 
 type GetWorkflowExecutor = {
@@ -853,6 +892,7 @@ type GetWorkflowExecutor = {
     from: (table: unknown) => {
       where: (condition: unknown) => {
         limit: (count: number) => Promise<Record<string, unknown>[]>;
+        orderBy: (column: unknown) => Promise<Record<string, unknown>[]>;
       };
     };
   };
@@ -889,14 +929,27 @@ export async function getWorkflow(
     const row = rows[0];
     if (!row) return undefined;
 
-    const emptyVersions: never[] = [];
+    const versionRows = (await tx
+      .select({
+        id: workflowVersion.id,
+        workflowId: workflowVersion.workflowId,
+        version: workflowVersion.version,
+        createdAt: workflowVersion.createdAt,
+      })
+      .from(workflowVersion)
+      .where(eq(workflowVersion.workflowId, row.id))
+      .orderBy(desc(workflowVersion.createdAt))) as WorkflowVersionRow[];
+
     return {
       workflow: toWorkflow(row),
       draft: row.draft ?? { nodes: [] },
-      versions: emptyVersions,
+      versions: versionRows.map(toWorkflowVersion),
     };
   });
 }
+
+/** A listed workflow with the identifier of its most recently published version. */
+export type WorkflowListItem = Workflow & { latestVersion: string | null };
 
 type ListWorkflowsExecutor = {
   select: (fields: Record<string, unknown>) => {
@@ -916,7 +969,7 @@ type ListWorkflowsExecutor = {
 export async function listWorkflows(
   database: WorkflowDatabase,
   applicationId: string,
-): Promise<Workflow[]> {
+): Promise<WorkflowListItem[]> {
   return database.transaction(async (transaction) => {
     const tx = transaction as ListWorkflowsExecutor;
 
@@ -928,11 +981,14 @@ export async function listWorkflows(
         status: workflow.status,
         createdAt: workflow.createdAt,
         updatedAt: workflow.updatedAt,
+        latestVersion: sql<
+          string | null
+        >`(select ${workflowVersion.version} from ${workflowVersion} where ${workflowVersion.workflowId} = ${workflow.id} order by ${workflowVersion.createdAt} desc limit 1)`,
       })
       .from(workflow)
       .where(eq(workflow.applicationId, applicationId))
-      .orderBy(asc(workflow.createdAt))) as WorkflowRow[];
+      .orderBy(asc(workflow.createdAt))) as (WorkflowRow & { latestVersion?: string | null })[];
 
-    return rows.map(toWorkflow);
+    return rows.map((row) => ({ ...toWorkflow(row), latestVersion: row.latestVersion ?? null }));
   });
 }
