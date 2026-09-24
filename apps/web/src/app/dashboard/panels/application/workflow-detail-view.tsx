@@ -514,7 +514,12 @@ export function WorkflowDetailView({
       setConnectionSource(null);
       toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
     } catch (connectionError) {
-      toast.error(errorMessage(connectionError, "Estos puertos no son compatibles."));
+      toast.error(
+        errorMessage(
+          connectionError,
+          remove ? "No pudimos eliminar la conexión." : "No pudimos crear la conexión.",
+        ),
+      );
       void loadDetail(application.id, workflowId);
     }
   }
@@ -900,7 +905,13 @@ export function WorkflowDetailView({
                 <button
                   key={`${connection.sourceNodeId}:${connection.sourcePort}:${connection.targetNodeId}:${connection.targetPort}`}
                   type="button"
-                  className="block rounded border px-2 py-1 text-xs"
+                  aria-pressed={
+                    selectedConnection?.sourceNodeId === connection.sourceNodeId &&
+                    selectedConnection.sourcePort === connection.sourcePort &&
+                    selectedConnection.targetNodeId === connection.targetNodeId &&
+                    selectedConnection.targetPort === connection.targetPort
+                  }
+                  className="block rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
                   onClick={() => setSelectedConnection(connection)}
                 >
                   ↳ {connection.sourceNodeId}:{connection.sourcePort} → {connection.targetNodeId}:
