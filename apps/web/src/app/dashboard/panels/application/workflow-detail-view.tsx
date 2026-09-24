@@ -140,6 +140,8 @@ export function WorkflowDetailView({
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [addingImageInput, setAddingImageInput] = useState(false);
+  const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -216,6 +218,9 @@ export function WorkflowDetailView({
   }
 
   async function addImageInput() {
+    if (addingImageInputRef.current) return;
+    addingImageInputRef.current = true;
+    setAddingImageInput(true);
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
@@ -226,6 +231,9 @@ export function WorkflowDetailView({
     } catch (addError) {
       toast.error(errorMessage(addError, "No pudimos agregar el nodo."));
       void loadDetail(application.id, workflowId);
+    } finally {
+      addingImageInputRef.current = false;
+      setAddingImageInput(false);
     }
   }
 
@@ -339,8 +347,12 @@ export function WorkflowDetailView({
                 <Button
                   type="button"
                   variant="outline"
-                  draggable={!draft.nodes.some((node) => node.type === "input.image")}
-                  disabled={draft.nodes.some((node) => node.type === "input.image")}
+                  draggable={
+                    !addingImageInput && !draft.nodes.some((node) => node.type === "input.image")
+                  }
+                  disabled={
+                    addingImageInput || draft.nodes.some((node) => node.type === "input.image")
+                  }
                   title={
                     draft.nodes.some((node) => node.type === "input.image")
                       ? IMAGE_INPUT_EXISTS_MESSAGE
