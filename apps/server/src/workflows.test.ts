@@ -81,6 +81,7 @@ function makeApp({
     ok: true,
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
   }),
+  addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
 }: {
   session?: { user: { id: string } } | null;
@@ -97,6 +98,9 @@ function makeApp({
     userId: string;
     modelVersionId: string;
   }) => Promise<import("./workflow-store").AddModelNodeResult>;
+  addConditionNode?: (
+    input: import("./workflow-store").AddConditionNodeInput,
+  ) => Promise<import("./workflow-store").AddConditionNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -106,6 +110,7 @@ function makeApp({
   const renameMock = vi.fn(rename);
   const addImageInputMock = vi.fn(addImageInput);
   const addModelNodeMock = vi.fn(addModelNode);
+  const addConditionNodeMock = vi.fn(addConditionNode);
   return {
     create: createMock,
     list: listMock,
@@ -113,6 +118,7 @@ function makeApp({
     rename: renameMock,
     addImageInput: addImageInputMock,
     addModelNode: addModelNodeMock,
+    addConditionNode: addConditionNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -126,6 +132,7 @@ function makeApp({
         rename: renameMock,
         addImageInput: addImageInputMock,
         addModelNode: addModelNodeMock,
+        addConditionNode: addConditionNodeMock,
       },
     }),
   };
@@ -160,6 +167,58 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("validates and dispatches a typed classification condition", async () => {
+    const addConditionNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const { request } = makeApp({ addConditionNode });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(200);
+    expect(addConditionNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+  });
+
+  it("rejects arbitrary operators and out of range thresholds", async () => {
+    const { request, addConditionNode } = makeApp();
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "eval",
+      threshold: 1.2,
+    });
+    expect(response.status).toBe(400);
+    expect(addConditionNode).not.toHaveBeenCalled();
+  });
+
+  it("reports incompatible classification sources without mutating the draft", async () => {
+    const { request } = makeApp({
+      addConditionNode: async () => ({ ok: false, reason: "incompatibleSource" }),
+    });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "detection-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Esta condición no es compatible con la salida seleccionada.",
+    });
+  });
+
   it("dispatches model nodes with the selected version id", async () => {
     const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
     const { request } = makeApp({ addModelNode });

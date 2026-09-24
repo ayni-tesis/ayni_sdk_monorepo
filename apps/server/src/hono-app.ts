@@ -52,6 +52,7 @@ import {
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import {
+  addConditionNode,
   addImageInputNode,
   addModelNode,
   createWorkflow,
@@ -176,6 +177,9 @@ const workflows = {
     modelVersionId: string;
   }) {
     return addModelNode(db, input);
+  },
+  addConditionNode(input: Parameters<typeof addConditionNode>[1]) {
+    return addConditionNode(db, input);
   },
 };
 
