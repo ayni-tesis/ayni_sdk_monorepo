@@ -106,6 +106,26 @@ export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: Wor
   return Boolean(outputType && inputType && outputType === inputType);
 }
 
+export function isConditionSourceCompatible(source: WorkflowNode | undefined, label: string) {
+  return (
+    source?.type === "model.tflite" &&
+    source.outputs.result.type === "classification" &&
+    source.outputs.result.labels.includes(label)
+  );
+}
+
+export function isOutputSourceCompatible(
+  source: WorkflowNode | undefined,
+  sourcePort: string,
+  resultType: "classification" | "detection" | "boolean",
+) {
+  return resultType === "boolean"
+    ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
+    : source?.type === "model.tflite" &&
+        sourcePort === "result" &&
+        source.outputs.result.type === resultType;
+}
+
 export function findWorkflowCycle(
   draft: WorkflowDraft,
   connection: WorkflowConnection,
@@ -573,13 +593,7 @@ export async function addConditionNode(
       const draft = rows[0]?.draft;
       if (!rows[0]) return { kind: "workflowNotFound" as const };
       const source = draft?.nodes.find((node) => node.id === sourceNodeId);
-      if (
-        !draft ||
-        !source ||
-        source.type !== "model.tflite" ||
-        source.outputs.result.type !== "classification" ||
-        !source.outputs.result.labels.includes(label)
-      )
+      if (!draft || !isConditionSourceCompatible(source, label))
         return { kind: "incompatibleSource" as const };
       const node: WorkflowNode = {
         id: crypto.randomUUID(),
@@ -663,13 +677,8 @@ export async function addOutputNode(
       const draft = rows[0]?.draft;
       if (!rows[0]) return { kind: "workflowNotFound" as const };
       const source = draft?.nodes.find((node) => node.id === sourceNodeId);
-      const compatible =
-        resultType === "boolean"
-          ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
-          : source?.type === "model.tflite" &&
-            sourcePort === "result" &&
-            source.outputs.result.type === resultType;
-      if (!draft || !compatible) return { kind: "incompatibleSource" as const };
+      if (!draft || !isOutputSourceCompatible(source, sourcePort, resultType))
+        return { kind: "incompatibleSource" as const };
       const node: WorkflowNode = {
         id: crypto.randomUUID(),
         type: "output",

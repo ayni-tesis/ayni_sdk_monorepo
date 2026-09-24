@@ -101,6 +101,26 @@ type WorkflowOutputOption = {
   label: string;
 };
 
+type WorkflowValidationResult = {
+  publishable: boolean;
+  errors: {
+    code: string;
+    nodeId: string | null;
+    nodeName: string | null;
+    port: string | null;
+    message: string;
+  }[];
+};
+
+const WORKFLOW_PORT_LABELS: Record<string, string> = {
+  image: "Entrada de imagen",
+  imagen: "imagen",
+  result: "Resultado",
+  source: "Origen",
+  true: "Verdadero",
+  false: "Falso",
+};
+
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
 const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
@@ -224,6 +244,12 @@ export function WorkflowDetailView({
     sourcePort: string;
   } | null>(null);
   const [cycleNodeIds, setCycleNodeIds] = useState<string[]>([]);
+  const [validating, setValidating] = useState(false);
+  // The draft the result belongs to; any later draft change hides the stale result.
+  const [validation, setValidation] = useState<{
+    draft: WorkflowCanvasDraft;
+    result: WorkflowValidationResult;
+  } | null>(null);
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -433,6 +459,25 @@ export function WorkflowDetailView({
     }
   }
 
+  async function validateWorkflow() {
+    if (!detail || validating) return;
+    const validatedDraft = detail.draft;
+    setValidating(true);
+    try {
+      const { data } = await httpClient.get<WorkflowValidationResult>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/validation`,
+      );
+      setValidation({ draft: validatedDraft, result: data });
+    } catch (validationError) {
+      setValidation(null);
+      toast.error(
+        errorMessage(validationError, "No pudimos validar el workflow. Inténtalo nuevamente."),
+      );
+    } finally {
+      setValidating(false);
+    }
+  }
+
   if (loading) {
     return (
       <p data-testid="workflow-detail-loading" className="text-muted-foreground text-sm">
@@ -470,6 +515,7 @@ export function WorkflowDetailView({
   }
 
   const { workflow, draft, versions } = detail;
+  const validationResult = validation?.draft === draft ? validation.result : null;
   const classificationNodes = draft.nodes.filter(
     (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
       node.type === "model.tflite" && node.outputs.result.type === "classification",
@@ -682,7 +728,63 @@ export function WorkflowDetailView({
           <TabsTrigger value="draft">Borrador</TabsTrigger>
           <TabsTrigger value="versions">Versiones publicadas</TabsTrigger>
         </TabsList>
-        <TabsContent value="draft">
+        <TabsContent value="draft" className="space-y-4">
+          {canManage && application.status === "active" && (
+            <div className="space-y-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={validating}
+                onClick={() => void validateWorkflow()}
+              >
+                {validating ? "Validando workflow…" : "Validar workflow"}
+              </Button>
+              {validationResult?.publishable && (
+                <p role="status" className="text-sm">
+                  El workflow está listo para publicarse.
+                </p>
+              )}
+              {validationResult && !validationResult.publishable && (
+                <section
+                  aria-labelledby="workflow-validation-errors-title"
+                  className="rounded-lg border border-destructive/50 p-3"
+                >
+                  <h3
+                    id="workflow-validation-errors-title"
+                    className="mb-2 font-medium text-destructive text-sm"
+                  >
+                    Errores de validación
+                  </h3>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-muted-foreground">
+                        <th className="pb-2 font-medium">Nodo</th>
+                        <th className="pb-2 font-medium">Puerto</th>
+                        <th className="pb-2 font-medium">Descripción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {validationResult.errors.map((validationError) => (
+                        <tr
+                          key={`${validationError.code}:${validationError.nodeId}:${validationError.port}:${validationError.message}`}
+                          className="border-b last:border-0"
+                        >
+                          <td className="py-2">{validationError.nodeName ?? "Workflow"}</td>
+                          <td className="py-2">
+                            {validationError.port
+                              ? (WORKFLOW_PORT_LABELS[validationError.port] ?? validationError.port)
+                              : "—"}
+                          </td>
+                          <td className="py-2">{validationError.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              )}
+            </div>
+          )}
           <WorkflowCanvas
             draft={draft}
             canManage={canManage && application.status === "active"}

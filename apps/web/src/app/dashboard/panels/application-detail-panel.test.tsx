@@ -1858,4 +1858,160 @@ describe("ApplicationDetailPanel", () => {
       });
     });
   });
+
+  describe("US-035: Validar un borrador de workflow", () => {
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [],
+    };
+    const validationUrl = "/applications/app-1/workflows/workflow-1/validation";
+
+    function workflowDetailPanel({
+      application = activeApp,
+      canManage = true,
+    }: {
+      application?: Application;
+      canManage?: boolean;
+    } = {}) {
+      return (
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>
+      );
+    }
+
+    function mockValidation(response: () => Promise<unknown>) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === validationUrl) return response();
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: workflowDetail };
+      });
+    }
+
+    it("offers Validar workflow only to administrators of an active application", async () => {
+      mockValidation(async () => ({ data: { publishable: true, errors: [] } }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.getByRole("button", { name: "Validar workflow" })).toBeTruthy();
+      cleanup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Validar workflow" })).toBeNull();
+      cleanup();
+
+      render(workflowDetailPanel({ application: archivedApp }));
+      await screen.findByTestId("workflow-detail-header");
+      expect(screen.queryByRole("button", { name: "Validar workflow" })).toBeNull();
+    });
+
+    it("shows Validando workflow… and then confirms that the draft is publishable", async () => {
+      let resolveValidation: (value: unknown) => void = () => {};
+      mockValidation(
+        () =>
+          new Promise((resolve) => {
+            resolveValidation = resolve;
+          }),
+      );
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      const pending = await screen.findByRole("button", { name: "Validando workflow…" });
+      expect((pending as HTMLButtonElement).disabled).toBe(true);
+
+      resolveValidation({ data: { publishable: true, errors: [] } });
+
+      expect(await screen.findByText("El workflow está listo para publicarse.")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
+      expect(client.post).not.toHaveBeenCalled();
+      expect(client.patch).not.toHaveBeenCalled();
+    });
+
+    it("opens Errores de validación with the node, port and description of each error", async () => {
+      mockValidation(async () => ({
+        data: {
+          publishable: false,
+          errors: [
+            {
+              code: "requiredInput",
+              nodeId: "classifier",
+              nodeName: "Clasificador",
+              port: "image",
+              message: 'El nodo "Clasificador" necesita una imagen de entrada.',
+            },
+            {
+              code: "missingOutput",
+              nodeId: null,
+              nodeName: null,
+              port: null,
+              message: "El workflow necesita al menos un nodo de salida.",
+            },
+          ],
+        },
+      }));
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      const panel = await screen.findByRole("region", { name: "Errores de validación" });
+      expect(within(panel).getByRole("columnheader", { name: "Nodo" })).toBeTruthy();
+      expect(within(panel).getByRole("columnheader", { name: "Puerto" })).toBeTruthy();
+      expect(within(panel).getByRole("columnheader", { name: "Descripción" })).toBeTruthy();
+      const [, first, second] = within(panel).getAllByRole("row");
+      expect(
+        within(first as HTMLElement)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual([
+        "Clasificador",
+        "Entrada de imagen",
+        'El nodo "Clasificador" necesita una imagen de entrada.',
+      ]);
+      expect(
+        within(second as HTMLElement)
+          .getAllByRole("cell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["Workflow", "—", "El workflow necesita al menos un nodo de salida."]);
+      expect(screen.queryByText("El workflow está listo para publicarse.")).toBeNull();
+    });
+
+    it("reports a failed validation request without showing a result", async () => {
+      mockValidation(async () => {
+        throw new Error("network");
+      });
+
+      render(workflowDetailPanel());
+      await screen.findByTestId("workflow-detail-header");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No pudimos validar el workflow. Inténtalo nuevamente.",
+        );
+      });
+      expect(screen.getByRole("button", { name: "Validar workflow" })).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
+    });
+  });
 });
