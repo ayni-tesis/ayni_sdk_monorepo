@@ -17,8 +17,11 @@ import type {
   CreateWorkflowResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
+  UpdateWorkflowNodePositionInput,
+  UpdateWorkflowNodePositionResult,
   Workflow,
   WorkflowDetail,
+  WorkflowNodePosition,
 } from "./workflow-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
@@ -29,9 +32,14 @@ const APPLICATION_ARCHIVED_MESSAGE = "No puedes crear workflows en una aplicaci�
 const WORKFLOW_RENAME_ARCHIVED_MESSAGE = "No puedes editar workflows en una aplicación archivada.";
 const DUPLICATE_IMAGE_INPUT_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
+const WORKFLOW_POSITION_INVALID_MESSAGE = "No se pudo guardar la posición del nodo.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
+});
+const workflowPositionSchema = z.object({
+  x: z.number().finite().min(0).max(100_000),
+  y: z.number().finite().min(0).max(100_000),
 });
 const conditionNodeSchema = z.object({
   type: z.literal("condition"),
@@ -39,6 +47,7 @@ const conditionNodeSchema = z.object({
   label: z.string().trim().min(1),
   operator: z.enum(["gte", "gt", "lte", "lt"]),
   threshold: z.number().finite().min(0).max(1),
+  position: workflowPositionSchema.optional(),
 });
 const outputNodeSchema = z.object({
   type: z.literal("output"),
@@ -46,6 +55,7 @@ const outputNodeSchema = z.object({
   sourceNodeId: z.string().min(1),
   sourcePort: z.enum(["result", "true", "false"]),
   resultType: z.enum(["classification", "detection", "boolean"]),
+  position: workflowPositionSchema.optional(),
 });
 const connectionSchema = z.object({
   sourceNodeId: z.string().min(1),
@@ -75,6 +85,9 @@ type Dependencies = {
     removeConnection: (
       input: ChangeWorkflowConnectionInput,
     ) => Promise<ChangeWorkflowConnectionResult>;
+    updateNodePosition: (
+      input: UpdateWorkflowNodePositionInput,
+    ) => Promise<UpdateWorkflowNodePositionResult>;
   };
 };
 
@@ -213,6 +226,15 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
     };
+    let position: WorkflowNodePosition | undefined;
+    if ((body as { position?: unknown }).position !== undefined) {
+      const parsedPosition = workflowPositionSchema.safeParse(
+        (body as { position?: unknown }).position,
+      );
+      if (!parsedPosition.success)
+        return c.json({ message: WORKFLOW_POSITION_INVALID_MESSAGE }, 400);
+      position = parsedPosition.data;
+    }
     const nodeType = (body as { type: string }).type;
     if (nodeType === "output") {
       const parsed = outputNodeSchema.safeParse(body);
@@ -226,7 +248,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         return c.json({ message }, 400);
       }
       const { type: _type, ...output } = parsed.data;
-      const result = await workflows.addOutputNode({ ...workflowInput, ...output });
+      const result = await workflows.addOutputNode({ ...workflowInput, ...output, position });
       if (result.ok) return c.json({ draft: result.draft });
       if (result.reason === "forbidden")
         return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
@@ -248,7 +270,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       const parsed = conditionNodeSchema.safeParse(body);
       if (!parsed.success) return c.json({ message: "Ingresa una condición válida." }, 400);
       const { type: _type, ...condition } = parsed.data;
-      const result = await workflows.addConditionNode({ ...workflowInput, ...condition });
+      const result = await workflows.addConditionNode({ ...workflowInput, ...condition, position });
       if (result.ok) return c.json({ draft: result.draft });
       if (result.reason === "forbidden")
         return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
@@ -274,8 +296,9 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
               typeof (body as { modelVersionId?: unknown }).modelVersionId === "string"
                 ? (body as { modelVersionId: string }).modelVersionId
                 : "",
+            position,
           })
-        : await workflows.addImageInput(workflowInput);
+        : await workflows.addImageInput({ ...workflowInput, position });
     if (result.ok) return c.json({ draft: result.draft });
     if (result.reason === "forbidden")
       return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
@@ -344,6 +367,35 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
   });
+
+  app.patch(
+    "/applications/:applicationId/workflows/:workflowId/nodes/:nodeId/position",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+      const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+      if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+      const parsed = workflowPositionSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ message: WORKFLOW_POSITION_INVALID_MESSAGE }, 400);
+      const result = await workflows.updateNodePosition({
+        ...parsed.data,
+        applicationId: application.id,
+        workflowId: c.req.param("workflowId"),
+        nodeId: c.req.param("nodeId"),
+        userId: session.user.id,
+      });
+      if (result.ok) return c.json({ position: result.position });
+      if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+      if (result.reason === "archived")
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    },
+  );
 
   app.delete("/applications/:applicationId/workflows/:workflowId/connections", async (c) => {
     const session = await getSession(c.req.raw.headers);

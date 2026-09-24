@@ -15,7 +15,16 @@ export const workflow = pgTable(
       .default("draft")
       .notNull(),
     draft: jsonb("draft")
-      .$type<{ nodes: { id: string; type: "input.image"; outputs: { imagen: "image" } }[] }>()
+      .$type<{
+        nodes: { id: string; type: "input.image"; outputs: { imagen: "image" } }[];
+        connections?: {
+          sourceNodeId: string;
+          sourcePort: string;
+          targetNodeId: string;
+          targetPort: string;
+        }[];
+        layout?: Record<string, { x: number; y: number }>;
+      }>()
       .default({ nodes: [] })
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

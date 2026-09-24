@@ -29,26 +29,31 @@ export async function uploadModelVersion(input: {
   onProgress: (percent: number) => void;
   signal?: AbortSignal;
 }): Promise<ModelVersionUploadResult> {
-  const form = new FormData();
-  form.append("version", input.version);
-  form.append("file", input.file, input.file.name);
-
   try {
+    const baseUrl = `${env.NEXT_PUBLIC_SERVER_URL}/applications/${input.applicationId}/models/${input.modelId}/versions`;
+    const { data: upload } = await axios.post<{ uploadId: string; uploadUrl: string }>(
+      `${baseUrl}/upload-url`,
+      { version: input.version },
+      { withCredentials: true, signal: input.signal },
+    );
+    await axios.put(upload.uploadUrl, input.file, {
+      headers: { "Content-Type": "application/octet-stream" },
+      timeout: 0,
+      signal: input.signal,
+      onUploadProgress: (event) => {
+        const total = event.total ?? input.file.size;
+        if (total > 0) input.onProgress(Math.min(99, Math.round((event.loaded / total) * 99)));
+      },
+    });
     const response = await axios.post<{ modelVersion: ModelVersionDto }>(
-      `${env.NEXT_PUBLIC_SERVER_URL}/applications/${input.applicationId}/models/${input.modelId}/versions`,
-      form,
+      `${baseUrl}/complete`,
+      { version: input.version, uploadId: upload.uploadId },
       {
         withCredentials: true,
-        timeout: 0,
         signal: input.signal,
-        onUploadProgress: (event) => {
-          const total = event.total ?? input.file.size;
-          if (total > 0) {
-            input.onProgress(Math.min(100, Math.round((event.loaded / total) * 100)));
-          }
-        },
       },
     );
+    input.onProgress(100);
     return { ok: true, modelVersion: response.data.modelVersion };
   } catch (error) {
     if (axios.isCancel(error)) {

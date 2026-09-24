@@ -14,6 +14,7 @@ export const MAX_MODEL_VERSION_BYTES = 128 * 1024 * 1024;
 
 const INVALID_MODEL_FILE_MESSAGE = "El archivo no es un modelo TensorFlow Lite válido.";
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
+const MAX_MODEL_CONTRACT_BYTES = 1024 * 1024;
 
 const versionFieldSchema = z
   .string({ error: INVALID_VERSION_MESSAGE })
@@ -37,13 +38,13 @@ const contractSchema = z
       z
         .object({
           type: z.literal("classification"),
-          labels: z.array(z.string().trim().min(1)).min(1).max(1000),
+          labels: z.array(z.string().trim().min(1)).min(1).max(1001),
         })
         .strict(),
       z
         .object({
           type: z.literal("detection"),
-          labels: z.array(z.string().trim().min(1)).min(1).max(1000),
+          labels: z.array(z.string().trim().min(1)).min(1).max(1001),
           scoreThreshold: z.number().min(0).max(1),
         })
         .strict(),
@@ -67,6 +68,10 @@ type Dependencies = {
       bytes: Uint8Array;
       maxBytes: number;
     }) => Promise<CreateModelVersionResult>;
+    createUploadUrl: (key: string, expiresIn: number) => Promise<string>;
+    getArtifactSize: (key: string) => Promise<number | null>;
+    getArtifact: (key: string) => Promise<Uint8Array>;
+    removeArtifact: (key: string) => Promise<void>;
     list: (applicationId: string, modelId: string) => Promise<ListModelVersionsResult>;
     remove: (input: {
       applicationId: string;
@@ -93,6 +98,156 @@ type Dependencies = {
 export function createModelVersionsApp({ getSession, applications, modelVersions }: Dependencies) {
   const app = new Hono();
 
+  app.post("/applications/:applicationId/models/:modelId/versions/upload-url", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await applications.get(c.req.param("applicationId"));
+    if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    const role = await applications.getMembership(session.user.id, application.organizationId);
+    if (!role) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    if (role !== "admin" && role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json(
+        {
+          message: "No puedes subir versiones a una aplicación archivada.",
+          code: "applicationArchived",
+        },
+        409,
+      );
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      body = null;
+    }
+    const parsed = z.object({ version: versionFieldSchema }).safeParse(body);
+    if (!parsed.success)
+      return c.json({ message: INVALID_VERSION_MESSAGE, code: "invalidVersion" }, 400);
+    const model = await modelVersions.list(application.id, c.req.param("modelId"));
+    if (!model.ok) return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
+    const uploadId = crypto.randomUUID();
+    const key = `staging/${application.id}/models/${c.req.param("modelId")}/${uploadId}.tflite`;
+    try {
+      const uploadUrl = await modelVersions.createUploadUrl(key, 900);
+      return c.json({ uploadId, uploadUrl });
+    } catch {
+      return c.json(
+        { message: "No se pudo iniciar la subida del modelo.", code: "uploadFailed" },
+        500,
+      );
+    }
+  });
+
+  app.post("/applications/:applicationId/models/:modelId/versions/complete", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await applications.get(c.req.param("applicationId"));
+    if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    const role = await applications.getMembership(session.user.id, application.organizationId);
+    if (!role) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    if (role !== "admin" && role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
+        403,
+      );
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      body = null;
+    }
+    const parsed = z
+      .object({ version: versionFieldSchema, uploadId: z.string().uuid() })
+      .safeParse(body);
+    if (!parsed.success)
+      return c.json({ message: "La subida no es válida.", code: "invalidUpload" }, 400);
+    const model = await modelVersions.list(application.id, c.req.param("modelId"));
+    if (!model.ok) return c.json({ message: "No encontramos este modelo.", code: "notFound" }, 404);
+    const key = `staging/${application.id}/models/${c.req.param("modelId")}/${parsed.data.uploadId}.tflite`;
+    try {
+      if (application.status !== "active") {
+        return c.json(
+          {
+            message: "No puedes subir versiones a una aplicación archivada.",
+            code: "applicationArchived",
+          },
+          409,
+        );
+      }
+      const size = await modelVersions.getArtifactSize(key);
+      if (size === null)
+        return c.json({ message: INVALID_MODEL_FILE_MESSAGE, code: "invalidModelFile" }, 400);
+      if (size > MAX_MODEL_VERSION_BYTES)
+        return c.json(
+          { message: "El archivo supera el tamaño máximo permitido.", code: "fileTooLarge" },
+          413,
+        );
+      const bytes = await modelVersions.getArtifact(key);
+      const result = await modelVersions.create({
+        applicationId: application.id,
+        modelId: c.req.param("modelId"),
+        userId: session.user.id,
+        version: parsed.data.version,
+        bytes,
+        maxBytes: MAX_MODEL_VERSION_BYTES,
+      });
+      if (result.ok) return c.json({ modelVersion: result.modelVersion }, 201);
+      const status =
+        result.reason === "forbidden"
+          ? 403
+          : result.reason === "archived" || result.reason === "versionExists"
+            ? 409
+            : result.reason === "modelNotFound" || result.reason === "notFound"
+              ? 404
+              : result.reason === "size"
+                ? 413
+                : ["compressed", "identifier", "root-offset", "vtable"].includes(result.reason)
+                  ? 400
+                  : 500;
+      const code =
+        result.reason === "versionExists"
+          ? "modelVersionExists"
+          : result.reason === "archived"
+            ? "applicationArchived"
+            : result.reason === "forbidden"
+              ? "forbidden"
+              : result.reason === "size"
+                ? "fileTooLarge"
+                : result.reason === "compressed"
+                  ? "compressedModelFile"
+                  : ["identifier", "root-offset", "vtable"].includes(result.reason)
+                    ? "invalidModelFile"
+                    : "modelVersionSaveFailed";
+      return c.json(
+        {
+          message:
+            code === "modelVersionSaveFailed"
+              ? "No se pudo guardar la versión del modelo. Inténtalo de nuevo."
+              : "No se pudo validar la versión del modelo.",
+          code,
+        },
+        status as 400,
+      );
+    } catch {
+      return c.json(
+        {
+          message: "No se pudo guardar la versión del modelo. Inténtalo de nuevo.",
+          code: "modelVersionSaveFailed",
+        },
+        500,
+      );
+    } finally {
+      await modelVersions.removeArtifact(key).catch(() => {});
+    }
+  });
+
   app.get("/applications/:applicationId/models/:modelId/versions", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
@@ -115,6 +270,14 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
 
   app.patch(
     "/applications/:applicationId/models/:modelId/versions/:modelVersionId/contract",
+    bodyLimit({
+      maxSize: MAX_MODEL_CONTRACT_BYTES,
+      onError: (c) =>
+        c.json(
+          { message: "El contrato supera el tamaño máximo permitido.", code: "contractTooLarge" },
+          413,
+        ),
+    }),
     async (c) => {
       const session = await getSession(c.req.raw.headers);
       if (!session) return c.json({ message: "Authentication required" }, 401);

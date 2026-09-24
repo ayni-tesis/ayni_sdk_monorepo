@@ -15,6 +15,7 @@ import {
   type RenameWorkflowResult,
   renameWorkflow,
   type TransactionExecutor,
+  updateWorkflowNodePosition,
   type Workflow,
   type WorkflowDatabase,
   type WorkflowDetail,
@@ -115,6 +116,10 @@ function makeApp({
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
   addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
+  updateNodePosition = async ({ x, y }: { x: number; y: number }) => ({
+    ok: true as const,
+    position: { x, y },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -129,6 +134,7 @@ function makeApp({
     workflowId: string;
     userId: string;
     modelVersionId: string;
+    position?: { x: number; y: number };
   }) => Promise<import("./workflow-store").AddModelNodeResult>;
   addConditionNode?: (
     input: import("./workflow-store").AddConditionNodeInput,
@@ -136,6 +142,9 @@ function makeApp({
   addOutputNode?: (
     input: import("./workflow-store").AddOutputNodeInput,
   ) => Promise<import("./workflow-store").AddOutputNodeResult>;
+  updateNodePosition?: (
+    input: import("./workflow-store").UpdateWorkflowNodePositionInput,
+  ) => Promise<import("./workflow-store").UpdateWorkflowNodePositionResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -155,6 +164,7 @@ function makeApp({
     ok: false as const,
     reason: "connectionNotFound" as const,
   }));
+  const updateNodePositionMock = vi.fn(updateNodePosition);
   return {
     create: createMock,
     list: listMock,
@@ -166,6 +176,7 @@ function makeApp({
     addOutputNode: addOutputNodeMock,
     addConnection: addConnectionMock,
     removeConnection: removeConnectionMock,
+    updateNodePosition: updateNodePositionMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -183,6 +194,7 @@ function makeApp({
         addOutputNode: addOutputNodeMock,
         addConnection: addConnectionMock,
         removeConnection: removeConnectionMock,
+        updateNodePosition: updateNodePositionMock,
       },
     }),
   };
@@ -207,6 +219,59 @@ function patchWorkflow(
     body: JSON.stringify(body),
   });
 }
+
+function patchWorkflowNodePosition(
+  request: ReturnType<typeof makeApp>["request"],
+  body: unknown,
+  nodeId = "node-1",
+) {
+  return request.request(`/applications/app-1/workflows/workflow-1/nodes/${nodeId}/position`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("PATCH /applications/:applicationId/workflows/:workflowId/nodes/:nodeId/position", () => {
+  it("persists a finite node position", async () => {
+    const app = makeApp();
+    const response = await patchWorkflowNodePosition(app.request, { x: 264, y: 512 });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ position: { x: 264, y: 512 } });
+    expect(app.updateNodePosition).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "node-1",
+      userId: "admin",
+      x: 264,
+      y: 512,
+    });
+  });
+
+  it.each([
+    { x: -1, y: 0 },
+    { x: 0, y: 100_001 },
+    { x: Number.NaN, y: 2 },
+  ])("rejects invalid coordinates without updating", async (position) => {
+    const app = makeApp();
+    const response = await patchWorkflowNodePosition(app.request, position);
+
+    expect(response.status).toBe(400);
+    expect(app.updateNodePosition).not.toHaveBeenCalled();
+  });
+
+  it("keeps node positions administrator-only", async () => {
+    const app = makeApp({
+      membershipRole: "member",
+      updateNodePosition: async () => ({ ok: false, reason: "forbidden" }),
+    });
+    const response = await patchWorkflowNodePosition(app.request, { x: 10, y: 20 });
+
+    expect(response.status).toBe(403);
+    expect(app.updateNodePosition).toHaveBeenCalledTimes(1);
+  });
+});
 
 function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: unknown) {
   return request.request("/applications/app-1/workflows/workflow-1/nodes", {
@@ -1736,3 +1801,104 @@ describe("getWorkflow", () => {
     await expect(getWorkflow(transaction.db, "app-1", "workflow-9")).resolves.toBeUndefined();
   });
 });
+
+describe("updateWorkflowNodePosition", () => {
+  it("persists layout metadata without changing nodes or connections", async () => {
+    const draft = {
+      nodes: [
+        { id: "node-1", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      ],
+      connections: [
+        {
+          sourceNodeId: "node-1",
+          sourcePort: "imagen",
+          targetNodeId: "node-2",
+          targetPort: "image",
+        },
+      ],
+      layout: { "node-2": { x: 320, y: 48 } },
+    };
+    const store = makeWorkflowPositionStoreDb(draft);
+    const result = await updateWorkflowNodePosition(store.db, {
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "node-1",
+      userId: "admin",
+      x: 128,
+      y: 256,
+    });
+
+    expect(result).toEqual({ ok: true, position: { x: 128, y: 256 } });
+    expect(store.reload()).toEqual({
+      ...draft,
+      layout: { "node-1": { x: 128, y: 256 }, "node-2": { x: 320, y: 48 } },
+    });
+    expect(store.lockedTables).toContain(workflow);
+  });
+
+  it("does not write a position for a missing node", async () => {
+    const store = makeWorkflowPositionStoreDb({ nodes: [] });
+    const result = await updateWorkflowNodePosition(store.db, {
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "missing-node",
+      userId: "admin",
+      x: 128,
+      y: 256,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "nodeNotFound" });
+    expect(store.writes).toBe(0);
+  });
+});
+
+function makeWorkflowPositionStoreDb(draft: import("./workflow-store").WorkflowDraft) {
+  let storedDraft = structuredClone(draft);
+  let writes = 0;
+  const lockedTables: unknown[] = [];
+  const executor = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => ({
+            for: async () => {
+              lockedTables.push(table);
+              if (table === application)
+                return [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }];
+              if (table === member) return [{ role: "admin" }];
+              if (table === workflow) return [{ draft: structuredClone(storedDraft) }];
+              return [];
+            },
+          }),
+        }),
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (values: Record<string, unknown>) => ({
+        where: () => ({
+          returning: async () => {
+            expect(table).toBe(workflow);
+            const query = toQuery(values.draft);
+            const serializedDraft = query.params.find((value) => typeof value === "string");
+            if (typeof serializedDraft !== "string")
+              throw new Error("Updated draft was not serialized");
+            storedDraft = JSON.parse(serializedDraft) as typeof storedDraft;
+            writes += 1;
+            return [{ draft: structuredClone(storedDraft) }];
+          },
+        }),
+      }),
+    }),
+  };
+  const db: WorkflowDatabase = {
+    transaction: (callback) => callback(executor),
+  };
+  return {
+    db,
+    lockedTables,
+    get writes() {
+      return writes;
+    },
+    reload: () => structuredClone(storedDraft),
+  };
+}

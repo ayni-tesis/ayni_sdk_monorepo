@@ -1317,6 +1317,21 @@ describe("ApplicationDetailPanel", () => {
       );
     });
 
+    it("explains that a classification model must be added before configuring a condition", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      render(workflowDetailPanel({ canManage: true }));
+
+      expect(
+        await screen.findByText(
+          "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
+        ),
+      ).toBeTruthy();
+      expect((screen.getByLabelText("Resultado de origen") as HTMLSelectElement).disabled).toBe(
+        true,
+      );
+    });
+
     it("keeps contracted versions when another model's versions fail to load", async () => {
       client.get.mockImplementation(async (url: string) => {
         if (url === "/applications/app-1/workflows/workflow-1") return { data: workflowDetail };

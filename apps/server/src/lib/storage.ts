@@ -21,6 +21,7 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "";
 export const r2Client = new S3Client({
   region: "auto",
   endpoint: R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined,
+  requestChecksumCalculation: "WHEN_REQUIRED",
   credentials: {
     accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",

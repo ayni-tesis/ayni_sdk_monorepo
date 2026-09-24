@@ -62,6 +62,7 @@ import {
   listWorkflows,
   removeWorkflowConnection,
   renameWorkflow,
+  updateWorkflowNodePosition,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
@@ -141,6 +142,18 @@ const modelVersions = {
   }) {
     return createModelVersionWithArtifact(db, r2ModelVersionStorage, input);
   },
+  createUploadUrl(key: string, expiresIn: number) {
+    return r2ModelVersionStorage.createUploadUrl(key, expiresIn);
+  },
+  getArtifactSize(key: string) {
+    return r2ModelVersionStorage.getArtifactSize(key);
+  },
+  getArtifact(key: string) {
+    return r2ModelVersionStorage.getArtifact(key);
+  },
+  removeArtifact(key: string) {
+    return r2ModelVersionStorage.removeArtifact(key);
+  },
   list(applicationId: string, modelId: string) {
     return listModelVersions(db, applicationId, modelId);
   },
@@ -170,7 +183,7 @@ const workflows = {
   rename(input: { applicationId: string; workflowId: string; userId: string; name: string }) {
     return renameWorkflow(db, input);
   },
-  addImageInput(input: { applicationId: string; workflowId: string; userId: string }) {
+  addImageInput(input: Parameters<typeof addImageInputNode>[1]) {
     return addImageInputNode(db, input);
   },
   addModelNode(input: {
@@ -178,6 +191,7 @@ const workflows = {
     workflowId: string;
     userId: string;
     modelVersionId: string;
+    position?: { x: number; y: number };
   }) {
     return addModelNode(db, input);
   },
@@ -192,6 +206,9 @@ const workflows = {
   },
   removeConnection(input: Parameters<typeof removeWorkflowConnection>[1]) {
     return removeWorkflowConnection(db, input);
+  },
+  updateNodePosition(input: Parameters<typeof updateWorkflowNodePosition>[1]) {
+    return updateWorkflowNodePosition(db, input);
   },
 };
 

@@ -63,7 +63,31 @@ export type WorkflowConnection = {
   targetNodeId: string;
   targetPort: string;
 };
-export type WorkflowDraft = { nodes: WorkflowNode[]; connections?: WorkflowConnection[] };
+export type WorkflowNodePosition = { x: number; y: number };
+export type WorkflowDraft = {
+  nodes: WorkflowNode[];
+  connections?: WorkflowConnection[];
+  layout?: Record<string, WorkflowNodePosition>;
+};
+
+function appendWorkflowNode(
+  draft: WorkflowDraft,
+  node: WorkflowNode,
+  position?: WorkflowNodePosition,
+): WorkflowDraft {
+  return {
+    ...draft,
+    nodes: [...draft.nodes, node],
+    ...(position ? { layout: { ...draft.layout, [node.id]: position } } : {}),
+  };
+}
+
+function appendWorkflowNodeSql(node: WorkflowNode, position?: WorkflowNodePosition) {
+  const withNode = sql`jsonb_set(coalesce(${workflow.draft}, '{"nodes":[]}'::jsonb), '{nodes}', coalesce(${workflow.draft}->'nodes', '[]'::jsonb) || ${JSON.stringify(node)}::jsonb)`;
+  return position
+    ? sql`jsonb_set(${withNode}, '{layout}', coalesce(${workflow.draft}->'layout', '{}'::jsonb) || ${JSON.stringify({ [node.id]: position })}::jsonb)`
+    : withNode;
+}
 
 export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: WorkflowConnection) {
   const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
@@ -147,6 +171,67 @@ export async function removeWorkflowConnection(
   input: ChangeWorkflowConnectionInput,
 ): Promise<ChangeWorkflowConnectionResult> {
   return changeWorkflowConnection(database, input, false);
+}
+
+export type UpdateWorkflowNodePositionInput = WorkflowNodePosition & {
+  applicationId: string;
+  workflowId: string;
+  nodeId: string;
+  userId: string;
+};
+export type UpdateWorkflowNodePositionResult =
+  | { ok: true; position: WorkflowNodePosition }
+  | {
+      ok: false;
+      reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "nodeNotFound";
+    };
+
+export async function updateWorkflowNodePosition(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, nodeId, userId, x, y }: UpdateWorkflowNodePositionInput,
+): Promise<UpdateWorkflowNodePositionResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const reader = tx as unknown as {
+        select: (fields: Record<string, unknown>) => {
+          from: (table: unknown) => {
+            where: (condition: unknown) => {
+              limit: (count: number) => {
+                for: (lock: "update") => Promise<{ draft: WorkflowDraft }[]>;
+              };
+            };
+          };
+        };
+      };
+      const rows = await reader
+        .select({ draft: workflow.draft })
+        .from(workflow)
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .limit(1)
+        .for("update");
+      const draft = rows[0]?.draft;
+      if (!draft) return { kind: "workflowNotFound" as const };
+      if (!draft.nodes.some((node) => node.id === nodeId)) return { kind: "nodeNotFound" as const };
+
+      const position = { x, y };
+      const updatedDraft = { ...draft, layout: { ...draft.layout, [nodeId]: position } };
+      const updater = tx as WorkflowUpdateExecutor;
+      const updated = (await updater
+        .update(workflow)
+        .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return updated[0]
+        ? { kind: "updated" as const, position }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  return result.value.kind === "updated"
+    ? { ok: true, position: result.value.position }
+    : { ok: false, reason: result.value.kind };
 }
 
 async function changeWorkflowConnection(
@@ -292,11 +377,16 @@ export type AddImageInputResult =
   | { ok: true; draft: WorkflowDraft }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "duplicate" };
 
-export type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
+export type AddImageInputInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+  position?: WorkflowNodePosition;
+};
 
 export async function addImageInputNode(
   database: WorkflowDatabase,
-  { applicationId, workflowId, userId }: AddImageInputInput,
+  { applicationId, workflowId, userId, position }: AddImageInputInput,
 ): Promise<AddImageInputResult> {
   const node: WorkflowNode = {
     id: crypto.randomUUID(),
@@ -311,7 +401,7 @@ export async function addImageInputNode(
       const rows = (await updater
         .update(workflow)
         .set({
-          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+          draft: appendWorkflowNodeSql(node, position),
         })
         .where(
           and(
@@ -327,7 +417,11 @@ export async function addImageInputNode(
     },
   );
   if (!result.ok) return result;
-  if (result.value) return { ok: true, draft: result.value.draft ?? { nodes: [node] } };
+  if (result.value)
+    return {
+      ok: true,
+      draft: result.value.draft ?? appendWorkflowNode({ nodes: [] }, node, position),
+    };
 
   const existing = await getWorkflow(database, applicationId, workflowId);
   return existing ? { ok: false, reason: "duplicate" } : { ok: false, reason: "workflowNotFound" };
@@ -338,6 +432,7 @@ export type AddModelNodeInput = {
   workflowId: string;
   userId: string;
   modelVersionId: string;
+  position?: WorkflowNodePosition;
 };
 
 export type AddModelNodeResult =
@@ -370,7 +465,7 @@ type ModelVersionLookupExecutor = {
 
 export async function addModelNode(
   database: WorkflowDatabase,
-  { applicationId, workflowId, userId, modelVersionId }: AddModelNodeInput,
+  { applicationId, workflowId, userId, modelVersionId, position }: AddModelNodeInput,
 ): Promise<AddModelNodeResult> {
   const result = await executeApplicationAction(
     database,
@@ -410,12 +505,15 @@ export async function addModelNode(
       const rows = (await updater
         .update(workflow)
         .set({
-          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+          draft: appendWorkflowNodeSql(node, position),
         })
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
         .returning()) as WorkflowRow[];
       return rows[0]
-        ? { kind: "added" as const, draft: rows[0].draft ?? { nodes: [node] } }
+        ? {
+            kind: "added" as const,
+            draft: rows[0].draft ?? appendWorkflowNode({ nodes: [] }, node, position),
+          }
         : { kind: "workflowNotFound" as const };
     },
   );
@@ -432,6 +530,7 @@ export type AddConditionNodeInput = {
   label: string;
   operator: "gte" | "gt" | "lte" | "lt";
   threshold: number;
+  position?: WorkflowNodePosition;
 };
 export type AddConditionNodeResult =
   | { ok: true; draft: WorkflowDraft }
@@ -450,6 +549,7 @@ export async function addConditionNode(
     label,
     operator,
     threshold,
+    position,
   }: AddConditionNodeInput,
 ): Promise<AddConditionNodeResult> {
   const result = await executeApplicationAction(
@@ -494,12 +594,15 @@ export async function addConditionNode(
       const updated = (await updater
         .update(workflow)
         .set({
-          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+          draft: appendWorkflowNodeSql(node, position),
         })
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
         .returning()) as WorkflowRow[];
       return updated[0]
-        ? { kind: "added" as const, draft: updated[0].draft ?? { nodes: [...draft.nodes, node] } }
+        ? {
+            kind: "added" as const,
+            draft: updated[0].draft ?? appendWorkflowNode(draft, node, position),
+          }
         : { kind: "workflowNotFound" as const };
     },
   );
@@ -517,6 +620,7 @@ export type AddOutputNodeInput = {
   sourceNodeId: string;
   sourcePort: string;
   resultType: "classification" | "detection" | "boolean";
+  position?: WorkflowNodePosition;
 };
 export type AddOutputNodeResult =
   | { ok: true; draft: WorkflowDraft }
@@ -535,6 +639,7 @@ export async function addOutputNode(
     sourceNodeId,
     sourcePort,
     resultType,
+    position,
   }: AddOutputNodeInput,
 ): Promise<AddOutputNodeResult> {
   const result = await executeApplicationAction(
@@ -577,12 +682,15 @@ export async function addOutputNode(
       const updated = (await updater
         .update(workflow)
         .set({
-          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+          draft: appendWorkflowNodeSql(node, position),
         })
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
         .returning()) as WorkflowRow[];
       return updated[0]
-        ? { kind: "added" as const, draft: updated[0].draft ?? { nodes: [...draft.nodes, node] } }
+        ? {
+            kind: "added" as const,
+            draft: updated[0].draft ?? appendWorkflowNode(draft, node, position),
+          }
         : { kind: "workflowNotFound" as const };
     },
   );

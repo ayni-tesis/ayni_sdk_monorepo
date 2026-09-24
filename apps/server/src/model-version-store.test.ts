@@ -87,6 +87,8 @@ function makeFakeStorage(putError?: unknown) {
       artifacts.set(key, bytes);
     }),
     getArtifact: vi.fn(async (key: string) => artifacts.get(key) ?? new Uint8Array()),
+    getArtifactSize: vi.fn(async (key: string) => artifacts.get(key)?.length ?? null),
+    createUploadUrl: vi.fn(async (key: string) => `https://r2.test/${key}`),
     removeArtifact: vi.fn(async (key: string) => {
       artifacts.delete(key);
     }),

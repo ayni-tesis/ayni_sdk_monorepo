@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { postMock, axiosMock } = vi.hoisted(() => {
+const { postMock, putMock, axiosMock } = vi.hoisted(() => {
   const postMock = vi.fn();
+  const putMock = vi.fn();
   return {
     postMock,
+    putMock,
     axiosMock: {
       post: postMock,
+      put: putMock,
       isAxiosError: (error: unknown): boolean =>
         typeof error === "object" && error !== null && "isAxiosError" in error,
       isCancel: (error: unknown): boolean =>
@@ -33,9 +36,10 @@ const baseInput = {
 describe("uploadModelVersion", () => {
   afterEach(() => {
     postMock.mockReset();
+    putMock.mockReset();
   });
 
-  it("posts multipart data with the version and file and returns the record", async () => {
+  it("uploads the file directly to R2 and then registers its version", async () => {
     const modelVersion = {
       id: "mv-1",
       modelId: "model-1",
@@ -46,47 +50,65 @@ describe("uploadModelVersion", () => {
       createdAt: "2026-09-20T00:00:00.000Z",
       uploadedById: "admin",
     };
-    postMock.mockResolvedValue({ data: { modelVersion } });
+    postMock
+      .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
+      .mockResolvedValueOnce({ data: { modelVersion } });
+    putMock.mockResolvedValue({ status: 200 });
     const onProgress = vi.fn();
 
     const result = await uploadModelVersion({ ...baseInput, onProgress });
 
     expect(result).toEqual({ ok: true, modelVersion });
-    const [url, body, config] = postMock.mock.calls[0] as [
-      string,
-      FormData,
-      Record<string, unknown>,
-    ];
-    expect(url).toBe("http://localhost:3000/applications/app-1/models/model-1/versions");
-    expect(body.get("version")).toBe("1.0.0");
-    expect((body.get("file") as File).name).toBe("modelo.tflite");
-    expect(config.withCredentials).toBe(true);
-    expect(config.timeout).toBe(0);
+    expect(postMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3000/applications/app-1/models/model-1/versions/upload-url",
+    );
+    expect(postMock.mock.calls[0]?.[1]).toEqual({ version: "1.0.0" });
+    expect(putMock).toHaveBeenCalledWith(
+      "https://r2.test/put",
+      baseInput.file,
+      expect.objectContaining({
+        headers: { "Content-Type": "application/octet-stream" },
+        timeout: 0,
+      }),
+    );
+    expect(postMock.mock.calls[1]?.[0]).toBe(
+      "http://localhost:3000/applications/app-1/models/model-1/versions/complete",
+    );
+    expect(postMock.mock.calls[1]?.[1]).toEqual({ version: "1.0.0", uploadId: "upload-1" });
+    expect(
+      (postMock.mock.calls[0]?.[2] as Record<string, unknown> | undefined)?.withCredentials,
+    ).toBe(true);
   });
 
   it("reports upload progress as a percentage of transferred bytes", async () => {
-    postMock.mockImplementation((_url: string, _body: FormData, config: unknown) => {
+    postMock
+      .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
+      .mockResolvedValueOnce({ data: { modelVersion: {} } });
+    putMock.mockImplementation((_url: string, _file: File, config: unknown) => {
       const { onUploadProgress } = config as {
         onUploadProgress: (event: { loaded: number; total?: number }) => void;
       };
       onUploadProgress({ loaded: 50, total: 200 });
       onUploadProgress({ loaded: 200, total: 200 });
-      return Promise.resolve({ data: { modelVersion: {} } });
+      return Promise.resolve({ status: 200 });
     });
     const onProgress = vi.fn();
 
     await uploadModelVersion({ ...baseInput, onProgress });
 
-    expect(onProgress.mock.calls.map(([percent]) => percent)).toEqual([25, 100]);
+    expect(onProgress.mock.calls.map(([percent]) => percent)).toEqual([25, 99, 100]);
   });
 
   it("falls back to the file size when the request total is unknown", async () => {
-    postMock.mockImplementation((_url: string, _body: FormData, config: unknown) => {
+    postMock
+      .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
+      .mockResolvedValueOnce({ data: { modelVersion: {} } });
+    putMock.mockImplementation((_url: string, _file: File, config: unknown) => {
       const { onUploadProgress } = config as {
         onUploadProgress: (event: { loaded: number; total?: number }) => void;
       };
       onUploadProgress({ loaded: baseInput.file.size });
-      return Promise.resolve({ data: { modelVersion: {} } });
+      return Promise.resolve({ status: 200 });
     });
     const onProgress = vi.fn();
 

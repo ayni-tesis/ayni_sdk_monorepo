@@ -32,18 +32,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import {
+  nextWorkflowCanvasPosition,
+  WORKFLOW_CYCLE_MESSAGE,
+  WorkflowCanvas,
+  type WorkflowCanvasDraft,
+  type WorkflowCanvasNodeType,
+  type WorkflowCanvasPosition,
+  type WorkflowCanvasConnection as WorkflowConnectionItem,
+  type WorkflowCanvasNode as WorkflowNodeItem,
+  WorkflowPaletteButton,
+} from "./workflow-canvas";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
-  draft: { nodes: WorkflowNodeItem[]; connections?: WorkflowConnectionItem[] };
+  draft: WorkflowCanvasDraft;
   versions: unknown[];
-};
-type WorkflowConnectionItem = {
-  sourceNodeId: string;
-  sourcePort: string;
-  targetNodeId: string;
-  targetPort: string;
 };
 
 export function findWorkflowCycleNodeIds(
@@ -84,34 +89,6 @@ type ModelVersionContract = {
     | { type: "detection"; labels: string[]; scoreThreshold: number };
 };
 
-type WorkflowNodeItem =
-  | { id: string; type: "input.image"; outputs: { imagen: "image" } }
-  | {
-      id: string;
-      type: "model.tflite";
-      modelVersionId: string;
-      modelName: string;
-      version: string;
-      inputs: { image: ModelVersionContract["input"] };
-      outputs: { result: ModelVersionContract["output"] };
-    }
-  | {
-      id: string;
-      type: "condition";
-      sourceNodeId: string;
-      label: string;
-      operator: "gte" | "gt" | "lte" | "lt";
-      threshold: number;
-      branches: { true: "Verdadero"; false: "Falso" };
-    }
-  | {
-      id: string;
-      type: "output";
-      name: string;
-      sourceNodeId: string;
-      sourcePort: string;
-      resultType: "classification" | "detection" | "boolean";
-    };
 type WorkflowModelOption = {
   id: string;
   name: string;
@@ -125,12 +102,11 @@ type WorkflowOutputOption = {
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
+const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
-const EMPTY_DRAFT_MESSAGE = "Este borrador aún no tiene nodos.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
 const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
 const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
-const WORKFLOW_CYCLE_MESSAGE = "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.";
 
 export type RenameWorkflowDialogProps = {
   open: boolean;
@@ -220,6 +196,7 @@ export function WorkflowDetailView({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  const [savingPosition, setSavingPosition] = useState(false);
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
@@ -227,6 +204,9 @@ export function WorkflowDetailView({
   const [savingRename, setSavingRename] = useState(false);
   const [addingImageInput, setAddingImageInput] = useState(false);
   const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
+  const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
+  const [modelOptionsError, setModelOptionsError] = useState("");
+  const [modelOptionsReload, setModelOptionsReload] = useState(0);
   const [selectedModelVersionId, setSelectedModelVersionId] = useState("");
   const [addingModel, setAddingModel] = useState(false);
   const [conditionSourceId, setConditionSourceId] = useState("");
@@ -243,7 +223,6 @@ export function WorkflowDetailView({
     sourceNodeId: string;
     sourcePort: string;
   } | null>(null);
-  const [compatibleTargetId, setCompatibleTargetId] = useState("");
   const [cycleNodeIds, setCycleNodeIds] = useState<string[]>([]);
   const addingImageInputRef = useRef(false);
 
@@ -290,43 +269,60 @@ export function WorkflowDetailView({
     let active = true;
     if (!canManage || application.status !== "active") {
       setModelOptions([]);
+      setModelOptionsLoading(false);
+      setModelOptionsError("");
       return () => {
         active = false;
       };
     }
     async function loadModelOptions() {
+      setModelOptionsLoading(true);
+      setModelOptionsError("");
       try {
         const { data } = await httpClient.get<{ models: { id: string; name: string }[] }>(
           `/applications/${application.id}/models`,
         );
-        const models = await Promise.all(
+        const versionResults = await Promise.allSettled(
           data.models.map(async (item) => {
-            try {
-              const response = await httpClient.get<{
-                versions: { id: string; version: string; contract: ModelVersionContract | null }[];
-              }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
-              return { ...item, versions: response.data.versions };
-            } catch {
-              return null;
-            }
+            const response = await httpClient.get<{
+              versions: { id: string; version: string; contract: ModelVersionContract | null }[];
+            }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
+            return { ...item, versions: response.data.versions };
           }),
         );
-        if (active)
-          setModelOptions(models.filter((item): item is WorkflowModelOption => item !== null));
-      } catch {
-        if (active) setModelOptions([]);
+        if (active) {
+          setModelOptions(
+            versionResults.flatMap((result) =>
+              result.status === "fulfilled" ? [result.value] : [],
+            ),
+          );
+          if (versionResults.some((result) => result.status === "rejected")) {
+            setModelOptionsError("No pudimos cargar las versiones de todos los modelos.");
+          }
+        }
+      } catch (loadError) {
+        if (active) {
+          setModelOptions([]);
+          setModelOptionsError(errorMessage(loadError, MODEL_OPTIONS_LOAD_ERROR));
+        }
+      } finally {
+        if (active) setModelOptionsLoading(false);
       }
     }
     void loadModelOptions();
     return () => {
       active = false;
     };
-  }, [application.id, application.status, canManage]);
+  }, [application.id, application.status, canManage, modelOptionsReload]);
 
   function openRenameWorkflow(currentName: string) {
     setRenameName(currentName);
     setRenameError("");
     setRenameDialogOpen(true);
+  }
+
+  function newNodePosition(position?: WorkflowCanvasPosition) {
+    return position ?? (detail ? nextWorkflowCanvasPosition(detail.draft) : undefined);
   }
 
   async function handleRenameWorkflow(event: React.FormEvent<HTMLFormElement>) {
@@ -358,14 +354,14 @@ export function WorkflowDetailView({
     }
   }
 
-  async function addImageInput() {
+  async function addImageInput(position?: WorkflowCanvasPosition) {
     if (addingImageInputRef.current) return;
     addingImageInputRef.current = true;
     setAddingImageInput(true);
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        { type: "input.image" },
+        { type: "input.image", position: newNodePosition(position) },
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Nodo agregado.");
@@ -378,13 +374,17 @@ export function WorkflowDetailView({
     }
   }
 
-  async function addModelNode() {
+  async function addModelNode(position?: WorkflowCanvasPosition) {
     if (!selectedModelVersionId || addingModel) return;
     setAddingModel(true);
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        { type: "model.tflite", modelVersionId: selectedModelVersionId },
+        {
+          type: "model.tflite",
+          modelVersionId: selectedModelVersionId,
+          position: newNodePosition(position),
+        },
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Nodo de modelo agregado.");
@@ -396,7 +396,7 @@ export function WorkflowDetailView({
     }
   }
 
-  async function addConditionNode() {
+  async function addConditionNode(position?: WorkflowCanvasPosition) {
     if (!conditionThreshold.trim()) return;
     const threshold = Number(conditionThreshold);
     if (
@@ -419,6 +419,7 @@ export function WorkflowDetailView({
           label: conditionLabel.trim(),
           operator: conditionOperator,
           threshold,
+          position: newNodePosition(position),
         },
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
@@ -473,6 +474,10 @@ export function WorkflowDetailView({
     (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
       node.type === "model.tflite" && node.outputs.result.type === "classification",
   );
+  const contractedModelVersionCount = modelOptions.reduce(
+    (count, item) => count + item.versions.filter((version) => version.contract).length,
+    0,
+  );
   const outputOptions: WorkflowOutputOption[] = draft.nodes.flatMap(
     (node): WorkflowOutputOption[] => {
       if (node.type === "model.tflite")
@@ -503,7 +508,7 @@ export function WorkflowDetailView({
     },
   );
 
-  async function addOutputNode() {
+  async function addOutputNode(position?: WorkflowCanvasPosition) {
     const name = outputName.trim();
     const selected = outputOptions.find(
       (option) => `${option.id}:${option.port ?? "result"}` === outputSource,
@@ -523,6 +528,7 @@ export function WorkflowDetailView({
           sourceNodeId: selected.id,
           sourcePort: selected.port ?? "result",
           resultType: selected.type,
+          position: newNodePosition(position),
         },
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
@@ -534,6 +540,47 @@ export function WorkflowDetailView({
     } finally {
       setAddingOutput(false);
     }
+  }
+
+  async function moveWorkflowNode(nodeId: string, position: WorkflowCanvasPosition) {
+    if (!detail || savingPosition || !canManage || application.status !== "active") return;
+    const previousPosition = detail.draft.layout?.[nodeId];
+    setSavingPosition(true);
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            draft: {
+              ...current.draft,
+              layout: { ...current.draft.layout, [nodeId]: position },
+            },
+          }
+        : current,
+    );
+    try {
+      await httpClient.patch(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}/position`,
+        position,
+      );
+    } catch (positionError) {
+      setDetail((current) => {
+        if (!current) return current;
+        const layout = { ...current.draft.layout };
+        if (previousPosition) layout[nodeId] = previousPosition;
+        else delete layout[nodeId];
+        return { ...current, draft: { ...current.draft, layout } };
+      });
+      toast.error(errorMessage(positionError, "No pudimos guardar la posición del nodo."));
+    } finally {
+      setSavingPosition(false);
+    }
+  }
+
+  function dropPaletteNode(nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) {
+    if (nodeType === "input.image") void addImageInput(position);
+    else if (nodeType === "model.tflite") void addModelNode(position);
+    else if (nodeType === "condition") void addConditionNode(position);
+    else void addOutputNode(position);
   }
 
   async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
@@ -636,358 +683,262 @@ export function WorkflowDetailView({
           <TabsTrigger value="versions">Versiones publicadas</TabsTrigger>
         </TabsList>
         <TabsContent value="draft">
-          <div className="grid gap-4 md:grid-cols-[12rem_1fr]" data-testid="workflow-draft-editor">
-            {canManage && application.status === "active" && (
-              <aside aria-label="Nodos" className="space-y-2 rounded-md border p-3">
-                <h3 className="font-medium text-sm">Nodos</h3>
-                <Button
-                  type="button"
-                  variant="outline"
-                  draggable={
-                    !addingImageInput && !draft.nodes.some((node) => node.type === "input.image")
-                  }
-                  disabled={
-                    addingImageInput || draft.nodes.some((node) => node.type === "input.image")
-                  }
-                  title={
-                    draft.nodes.some((node) => node.type === "input.image")
-                      ? IMAGE_INPUT_EXISTS_MESSAGE
-                      : undefined
-                  }
-                  onClick={() => void addImageInput()}
-                  onDragStart={(event) =>
-                    event.dataTransfer.setData("application/x-ayni-node", "input.image")
-                  }
+          <WorkflowCanvas
+            draft={draft}
+            canManage={canManage && application.status === "active"}
+            selectedConnection={selectedConnection}
+            connectionSource={connectionSource}
+            cycleNodeIds={cycleNodeIds}
+            savingPosition={savingPosition}
+            onSelectSource={setConnectionSource}
+            onSelectConnection={setSelectedConnection}
+            onConnect={(connection) => void changeConnection(connection)}
+            onMoveNode={(nodeId, position) => void moveWorkflowNode(nodeId, position)}
+            onDropPalette={dropPaletteNode}
+            onRemoveConnection={(connection) => void changeConnection(connection, true)}
+            palette={
+              canManage && application.status === "active" ? (
+                <aside
+                  aria-label="Nodos"
+                  className="max-h-[720px] space-y-3 overflow-y-auto rounded-lg border bg-card p-3"
                 >
-                  Entrada de imagen
-                </Button>
-                <label htmlFor="workflow-model-version" className="block font-medium text-sm">
-                  Modelo
-                </label>
-                <select
-                  id="workflow-model-version"
-                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                  value={selectedModelVersionId}
-                  onChange={(event) => setSelectedModelVersionId(event.target.value)}
-                >
-                  <option value="">Selecciona una versión</option>
-                  {modelOptions.flatMap((item) =>
-                    item.versions
-                      .filter((version) => version.contract)
-                      .map((version) => (
-                        <option key={version.id} value={version.id}>
-                          {item.name} · {version.version}
-                        </option>
-                      )),
+                  <h3 className="font-medium text-sm">Nodos disponibles</h3>
+                  <WorkflowPaletteButton
+                    nodeType="input.image"
+                    disabled={
+                      savingPosition ||
+                      addingImageInput ||
+                      draft.nodes.some((node) => node.type === "input.image")
+                    }
+                    onClick={() => void addImageInput()}
+                  >
+                    Entrada de imagen
+                  </WorkflowPaletteButton>
+                  {draft.nodes.some((node) => node.type === "input.image") && (
+                    <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
                   )}
-                </select>
-                {modelOptions.some((item) =>
-                  item.versions.some((version) => !version.contract),
-                ) && (
-                  <p className="text-muted-foreground text-xs">
-                    Esta versión necesita un contrato antes de usarse en un workflow.
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!selectedModelVersionId || addingModel}
-                  onClick={() => void addModelNode()}
-                >
-                  {addingModel ? "Agregando…" : "Agregar modelo"}
-                </Button>
-                <div className="space-y-2 border-t pt-3">
-                  <h4 className="font-medium text-sm">Condición</h4>
-                  <label htmlFor="condition-source" className="block text-sm">
-                    Resultado de origen
-                  </label>
-                  <select
-                    id="condition-source"
-                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                    value={conditionSourceId}
-                    onChange={(event) => {
-                      setConditionSourceId(event.target.value);
-                      setConditionLabel("");
-                    }}
-                  >
-                    <option value="">Selecciona una clasificación</option>
-                    {classificationNodes.map((node) => (
-                      <option key={node.id} value={node.id}>
-                        {node.modelName} · {node.version}
+
+                  <div className="space-y-2 border-t pt-3">
+                    <label htmlFor="workflow-model-version" className="block font-medium text-sm">
+                      Modelo
+                    </label>
+                    <select
+                      id="workflow-model-version"
+                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                      value={selectedModelVersionId}
+                      onChange={(event) => setSelectedModelVersionId(event.target.value)}
+                    >
+                      <option value="">
+                        {modelOptionsLoading
+                          ? "Cargando modelos…"
+                          : contractedModelVersionCount
+                            ? "Selecciona una versión"
+                            : modelOptionsError
+                              ? "No se pudieron cargar los modelos"
+                              : modelOptions.length === 0
+                                ? "No hay modelos registrados"
+                                : "No hay versiones con contrato"}
                       </option>
-                    ))}
-                  </select>
-                  <label htmlFor="condition-label" className="block text-sm">
-                    Etiqueta
-                  </label>
-                  <select
-                    id="condition-label"
-                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                    value={conditionLabel}
-                    onChange={(event) => setConditionLabel(event.target.value)}
-                  >
-                    <option value="">Selecciona una etiqueta</option>
-                    {classificationNodes
-                      .find((node) => node.id === conditionSourceId)
-                      ?.outputs.result.labels.map((label) => (
-                        <option key={label} value={label}>
-                          {label}
+                      {modelOptions.flatMap((item) =>
+                        item.versions
+                          .filter((version) => version.contract)
+                          .map((version) => (
+                            <option key={version.id} value={version.id}>
+                              {item.name} · {version.version}
+                            </option>
+                          )),
+                      )}
+                    </select>
+                    {modelOptionsLoading && (
+                      <p role="status" className="text-muted-foreground text-xs">
+                        Cargando modelos y versiones…
+                      </p>
+                    )}
+                    {modelOptionsError && (
+                      <div role="alert" className="space-y-2">
+                        <p className="text-destructive text-xs">{modelOptionsError}</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setModelOptionsReload((value) => value + 1)}
+                        >
+                          <IconRefresh className="mr-1 size-4" />
+                          Reintentar
+                        </Button>
+                      </div>
+                    )}
+                    {!modelOptionsLoading &&
+                      !modelOptionsError &&
+                      modelOptions.length > 0 &&
+                      contractedModelVersionCount === 0 && (
+                        <p className="text-muted-foreground text-xs">
+                          Registra una versión y configura su contrato para usar ese modelo en el
+                          workflow.
+                        </p>
+                      )}
+                    {contractedModelVersionCount > 0 &&
+                      modelOptions.some((item) =>
+                        item.versions.some((version) => !version.contract),
+                      ) && (
+                        <p className="text-muted-foreground text-xs">
+                          Las versiones sin contrato no se pueden agregar al workflow.
+                        </p>
+                      )}
+                    <WorkflowPaletteButton
+                      nodeType="model.tflite"
+                      disabled={savingPosition || !selectedModelVersionId || addingModel}
+                      onClick={() => void addModelNode()}
+                    >
+                      {addingModel ? "Agregando…" : "Agregar modelo"}
+                    </WorkflowPaletteButton>
+                  </div>
+
+                  <div className="space-y-2 border-t pt-3">
+                    <h4 className="font-medium text-sm">Condición</h4>
+                    <label htmlFor="condition-source" className="block text-sm">
+                      Resultado de origen
+                    </label>
+                    <select
+                      id="condition-source"
+                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                      value={conditionSourceId}
+                      disabled={classificationNodes.length === 0}
+                      onChange={(event) => {
+                        setConditionSourceId(event.target.value);
+                        setConditionLabel("");
+                      }}
+                    >
+                      <option value="">Selecciona una clasificación</option>
+                      {classificationNodes.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node.modelName} · {node.version}
                         </option>
                       ))}
-                  </select>
-                  <label htmlFor="condition-operator" className="block text-sm">
-                    Operador
-                  </label>
-                  <select
-                    id="condition-operator"
-                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                    value={conditionOperator}
-                    onChange={(event) =>
-                      setConditionOperator(event.target.value as typeof conditionOperator)
-                    }
-                  >
-                    <option value="gte">≥</option>
-                    <option value="gt">&gt;</option>
-                    <option value="lte">≤</option>
-                    <option value="lt">&lt;</option>
-                  </select>
-                  <label htmlFor="condition-threshold" className="block text-sm">
-                    Umbral
-                  </label>
-                  <Input
-                    id="condition-threshold"
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={conditionThreshold}
-                    onChange={(event) => setConditionThreshold(event.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!conditionSourceId || !conditionLabel || addingCondition}
-                    onClick={() => void addConditionNode()}
-                  >
-                    {addingCondition ? "Guardando…" : "Guardar condición"}
-                  </Button>
-                </div>
-                <div className="space-y-2 border-t pt-3">
-                  <h4 className="font-medium text-sm">Salida</h4>
-                  <label htmlFor="workflow-output-name" className="block text-sm">
-                    Nombre de salida
-                  </label>
-                  <Input
-                    id="workflow-output-name"
-                    value={outputName}
-                    onChange={(event) => setOutputName(event.target.value)}
-                  />
-                  <label htmlFor="workflow-output-type" className="block text-sm">
-                    Tipo de resultado
-                  </label>
-                  <select
-                    id="workflow-output-type"
-                    className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                    value={outputSource}
-                    aria-invalid={Boolean(outputTypeError)}
-                    aria-describedby={outputTypeError ? "workflow-output-type-error" : undefined}
-                    onChange={(event) => {
-                      setOutputSource(event.target.value);
-                      if (outputTypeError) setOutputTypeError("");
-                    }}
-                  >
-                    <option value="">Selecciona un tipo de resultado</option>
-                    {outputOptions.map((option) => (
-                      <option
-                        key={`${option.id}:${option.port ?? "result"}`}
-                        value={`${option.id}:${option.port ?? "result"}`}
-                      >
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {outputTypeError && (
-                    <p
-                      id="workflow-output-type-error"
-                      className="text-destructive text-sm"
-                      role="alert"
+                    </select>
+                    {classificationNodes.length === 0 && (
+                      <p role="status" className="text-muted-foreground text-xs">
+                        Agrega primero al lienzo una versión contratada de un modelo de
+                        clasificación.
+                      </p>
+                    )}
+                    <label htmlFor="condition-label" className="block text-sm">
+                      Etiqueta
+                    </label>
+                    <select
+                      id="condition-label"
+                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                      value={conditionLabel}
+                      disabled={!conditionSourceId}
+                      onChange={(event) => setConditionLabel(event.target.value)}
                     >
-                      {outputTypeError}
-                    </p>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!outputName.trim() || addingOutput}
-                    onClick={() => void addOutputNode()}
-                  >
-                    {addingOutput ? "Agregando…" : "Agregar salida"}
-                  </Button>
-                </div>
-                {draft.nodes.some((node) => node.type === "input.image") && (
-                  <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
-                )}
-              </aside>
-            )}
-            <section
-              aria-label="Lienzo del workflow"
-              className="min-h-40 space-y-3 rounded-md border border-dashed p-4"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (event.dataTransfer.getData("application/x-ayni-node") === "input.image")
-                  void addImageInput();
-              }}
-            >
-              {cycleNodeIds.length > 0 && (
-                <p role="alert" className="text-destructive text-sm">
-                  {WORKFLOW_CYCLE_MESSAGE}
-                </p>
-              )}
-              {draft.nodes.map((node) => (
-                <article
-                  key={node.id}
-                  className={`w-fit rounded-md border bg-card p-3 ${cycleNodeIds.includes(node.id) ? "border-destructive ring-2 ring-destructive" : ""}`}
-                >
-                  {node.type === "input.image" ? (
-                    <>
-                      <h4 className="font-medium text-sm">Imagen de entrada</h4>
-                      <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
-                        imagen: image
-                      </span>
-                      {canManage && application.status === "active" && (
-                        <button
-                          type="button"
-                          draggable
-                          aria-pressed={connectionSource?.sourceNodeId === node.id}
-                          className="ml-2 inline-flex cursor-grab rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
-                          onClick={() =>
-                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" })
-                          }
-                          onDragStart={(event) => {
-                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" });
-                            setCompatibleTargetId("");
-                            event.dataTransfer.setData(
-                              "application/x-ayni-port",
-                              JSON.stringify({ sourceNodeId: node.id, sourcePort: "imagen" }),
-                            );
-                          }}
+                      <option value="">Selecciona una etiqueta</option>
+                      {classificationNodes
+                        .find((node) => node.id === conditionSourceId)
+                        ?.outputs.result.labels.map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                    <label htmlFor="condition-operator" className="block text-sm">
+                      Operador
+                    </label>
+                    <select
+                      id="condition-operator"
+                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                      value={conditionOperator}
+                      onChange={(event) =>
+                        setConditionOperator(event.target.value as typeof conditionOperator)
+                      }
+                    >
+                      <option value="gte">≥</option>
+                      <option value="gt">&gt;</option>
+                      <option value="lte">≤</option>
+                      <option value="lt">&lt;</option>
+                    </select>
+                    <label htmlFor="condition-threshold" className="block text-sm">
+                      Umbral
+                    </label>
+                    <Input
+                      id="condition-threshold"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={conditionThreshold}
+                      onChange={(event) => setConditionThreshold(event.target.value)}
+                    />
+                    <WorkflowPaletteButton
+                      nodeType="condition"
+                      disabled={
+                        savingPosition || !conditionSourceId || !conditionLabel || addingCondition
+                      }
+                      onClick={() => void addConditionNode()}
+                    >
+                      {addingCondition ? "Guardando…" : "Agregar condición"}
+                    </WorkflowPaletteButton>
+                  </div>
+
+                  <div className="space-y-2 border-t pt-3">
+                    <h4 className="font-medium text-sm">Salida</h4>
+                    <label htmlFor="workflow-output-name" className="block text-sm">
+                      Nombre de salida
+                    </label>
+                    <Input
+                      id="workflow-output-name"
+                      value={outputName}
+                      onChange={(event) => setOutputName(event.target.value)}
+                    />
+                    <label htmlFor="workflow-output-type" className="block text-sm">
+                      Tipo de resultado
+                    </label>
+                    <select
+                      id="workflow-output-type"
+                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                      value={outputSource}
+                      aria-invalid={Boolean(outputTypeError)}
+                      aria-describedby={outputTypeError ? "workflow-output-type-error" : undefined}
+                      onChange={(event) => {
+                        setOutputSource(event.target.value);
+                        if (outputTypeError) setOutputTypeError("");
+                      }}
+                    >
+                      <option value="">Selecciona un tipo de resultado</option>
+                      {outputOptions.map((option) => (
+                        <option
+                          key={`${option.id}:${option.port}`}
+                          value={`${option.id}:${option.port}`}
                         >
-                          Salida imagen · seleccionar o arrastrar
-                        </button>
-                      )}
-                    </>
-                  ) : node.type === "model.tflite" ? (
-                    <>
-                      <h4 className="font-medium text-sm">
-                        {node.modelName} · {node.version}
-                      </h4>
-                      <div className="mt-2 flex gap-2 text-xs">
-                        <span className="rounded bg-muted px-2 py-1">
-                          image: image ({node.inputs.image.width}×{node.inputs.image.height})
-                        </span>
-                        {canManage && application.status === "active" && (
-                          <button
-                            type="button"
-                            aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
-                            aria-disabled={!connectionSource}
-                            className={`rounded border px-2 py-1 text-xs ${compatibleTargetId === node.id ? "border-primary bg-primary/10" : ""}`}
-                            onDragOver={(event) => {
-                              const sourceNode = draft.nodes.find(
-                                (item) => item.id === connectionSource?.sourceNodeId,
-                              );
-                              if (
-                                event.dataTransfer.types.includes("application/x-ayni-port") &&
-                                sourceNode?.type === "input.image" &&
-                                connectionSource?.sourcePort === "imagen"
-                              ) {
-                                event.preventDefault();
-                                setCompatibleTargetId(node.id);
-                              }
-                            }}
-                            onDragLeave={() => setCompatibleTargetId("")}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              setCompatibleTargetId("");
-                              if (connectionSource)
-                                void changeConnection({
-                                  ...connectionSource,
-                                  targetNodeId: node.id,
-                                  targetPort: "image",
-                                });
-                            }}
-                            onClick={() => {
-                              const sourceNode = draft.nodes.find(
-                                (item) => item.id === connectionSource?.sourceNodeId,
-                              );
-                              if (connectionSource && sourceNode?.type === "input.image")
-                                void changeConnection({
-                                  ...connectionSource,
-                                  targetNodeId: node.id,
-                                  targetPort: "image",
-                                });
-                            }}
-                          >
-                            Entrada image · soltar o activar para conectar
-                          </button>
-                        )}
-                        <span className="rounded bg-muted px-2 py-1">
-                          result: {node.outputs.result.type}
-                        </span>
-                      </div>
-                    </>
-                  ) : node.type === "condition" ? (
-                    <>
-                      <h4 className="font-medium text-sm">
-                        Condición: {node.label} {node.operator} {node.threshold}
-                      </h4>
-                      <div className="mt-2 flex gap-2 text-xs">
-                        <span className="rounded bg-muted px-2 py-1">{node.branches.true}</span>
-                        <span className="rounded bg-muted px-2 py-1">{node.branches.false}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <h4 className="font-medium text-sm">Salida: {node.name}</h4>
-                      <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
-                        {node.resultType}
-                      </span>
-                    </>
-                  )}
-                </article>
-              ))}
-              {(draft.connections ?? []).map((connection) => (
-                <button
-                  key={`${connection.sourceNodeId}:${connection.sourcePort}:${connection.targetNodeId}:${connection.targetPort}`}
-                  type="button"
-                  aria-pressed={
-                    selectedConnection?.sourceNodeId === connection.sourceNodeId &&
-                    selectedConnection.sourcePort === connection.sourcePort &&
-                    selectedConnection.targetNodeId === connection.targetNodeId &&
-                    selectedConnection.targetPort === connection.targetPort
-                  }
-                  className="block rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
-                  onClick={() => setSelectedConnection(connection)}
-                >
-                  ↳ {connection.sourceNodeId}:{connection.sourcePort} → {connection.targetNodeId}:
-                  {connection.targetPort}
-                </button>
-              ))}
-              {selectedConnection && canManage && application.status === "active" && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void changeConnection(selectedConnection, true)}
-                >
-                  Eliminar conexión
-                </Button>
-              )}
-              {draft.nodes.length === 0 && (
-                <p className="text-muted-foreground text-sm">{EMPTY_DRAFT_MESSAGE}</p>
-              )}
-            </section>
-          </div>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {outputTypeError && (
+                      <p
+                        id="workflow-output-type-error"
+                        className="text-destructive text-sm"
+                        role="alert"
+                      >
+                        {outputTypeError}
+                      </p>
+                    )}
+                    <WorkflowPaletteButton
+                      nodeType="output"
+                      disabled={savingPosition || !outputName.trim() || addingOutput}
+                      onClick={() => void addOutputNode()}
+                    >
+                      {addingOutput ? "Agregando…" : "Agregar salida"}
+                    </WorkflowPaletteButton>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    Arrastra un botón al lienzo para colocarlo; también puedes seleccionarlo para
+                    usar su ubicación sugerida.
+                  </p>
+                </aside>
+              ) : null
+            }
+          />
         </TabsContent>
         <TabsContent value="versions">
           {versions.length === 0 && (

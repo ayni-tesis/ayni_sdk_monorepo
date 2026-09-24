@@ -75,8 +75,14 @@ function makeApp({
   >;
 } = {}) {
   const createMock = vi.fn(create);
+  const createUploadUrlMock = vi.fn(
+    async (key: string, expiresIn: number) => `https://r2.test/${key}?ttl=${expiresIn}`,
+  );
   const listMock = vi.fn(list);
   const removeMock = vi.fn(remove);
+  const removeArtifactMock = vi.fn(async () => {});
+  const getArtifactSizeMock = vi.fn(async () => 20);
+  const getArtifactMock = vi.fn(async () => new Uint8Array(20));
   const setContractMock = vi.fn(
     setContract ?? (async (input) => ({ ok: true as const, contract: input.contract })),
   );
@@ -88,12 +94,26 @@ function makeApp({
     },
     modelVersions: {
       create: createMock,
+      createUploadUrl: createUploadUrlMock,
+      getArtifactSize: getArtifactSizeMock,
+      getArtifact: getArtifactMock,
+      removeArtifact: removeArtifactMock,
       list: listMock,
       remove: removeMock,
       setContract: setContractMock,
     },
   });
-  return { app, createMock, listMock, removeMock };
+  return {
+    app,
+    createMock,
+    createUploadUrlMock,
+    getArtifactSizeMock,
+    getArtifactMock,
+    listMock,
+    removeMock,
+    removeArtifactMock,
+    setContractMock,
+  };
 }
 
 function uploadRequest({
@@ -111,6 +131,115 @@ function uploadRequest({
 }
 
 const MODEL_URL = "/applications/app-1/models/model-1/versions";
+
+describe("direct-to-R2 model upload", () => {
+  it("issues a short-lived upload URL only to application administrators", async () => {
+    const { app } = makeApp();
+    const response = await app.request(`${MODEL_URL}/upload-url`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0" }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      uploadId: expect.any(String),
+      uploadUrl: expect.stringContaining("https://r2.test/staging/app-1/models/model-1/"),
+    });
+  });
+
+  it("rejects members from starting direct uploads", async () => {
+    const { app } = makeApp({ membershipRole: "member" });
+    const response = await app.request(`${MODEL_URL}/upload-url`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0" }),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("does not issue an upload URL for a missing model", async () => {
+    const { app, createUploadUrlMock } = makeApp({
+      list: async () => ({ ok: false, reason: "modelNotFound" }),
+    });
+    const response = await app.request(`${MODEL_URL}/upload-url`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0" }),
+    });
+    expect(response.status).toBe(404);
+    expect(createUploadUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("conceals the application from non-members when issuing upload URLs", async () => {
+    const { app, createUploadUrlMock } = makeApp({ membershipRole: null });
+    const response = await app.request(`${MODEL_URL}/upload-url`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0" }),
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ message: "No encontramos esta aplicación." });
+    expect(createUploadUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("validates and registers a staged artifact, then removes the staging object", async () => {
+    const { app, createMock, removeArtifactMock } = makeApp();
+    const response = await app.request(`${MODEL_URL}/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0", uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+    });
+    expect(response.status).toBe(201);
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ version: "1.0.0", bytes: expect.any(Uint8Array) }),
+    );
+    expect(removeArtifactMock).toHaveBeenCalledWith(
+      "staging/app-1/models/model-1/5a50fbab-a999-4c20-b190-2c2fb7e5b98e.tflite",
+    );
+  });
+
+  it("rejects completion after the application is archived", async () => {
+    const { app, createMock, removeArtifactMock } = makeApp({ application: archivedApplication });
+    const response = await app.request(`${MODEL_URL}/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0", uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "applicationArchived" });
+    expect(createMock).not.toHaveBeenCalled();
+    expect(removeArtifactMock).toHaveBeenCalled();
+  });
+
+  it("conceals the application from non-members when completing staged uploads", async () => {
+    const { app, getArtifactMock, removeArtifactMock } = makeApp({ membershipRole: null });
+    const response = await app.request(`${MODEL_URL}/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0", uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ message: "No encontramos esta aplicación." });
+    expect(getArtifactMock).not.toHaveBeenCalled();
+    expect(removeArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("checks model ownership before reading staged data", async () => {
+    const { app, getArtifactMock, getArtifactSizeMock, removeArtifactMock } = makeApp({
+      list: async () => ({ ok: false, reason: "modelNotFound" }),
+    });
+    const response = await app.request(`${MODEL_URL}/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: "1.0.0", uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ code: "notFound" });
+    expect(getArtifactSizeMock).not.toHaveBeenCalled();
+    expect(getArtifactMock).not.toHaveBeenCalled();
+    expect(removeArtifactMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /applications/:applicationId/models/:modelId/versions", () => {
   it("requires authentication", async () => {
@@ -364,5 +493,56 @@ describe("GET /applications/:applicationId/models/:modelId/versions", () => {
       message: "No encontramos este modelo.",
       code: "notFound",
     });
+  });
+});
+
+describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVersionId/contract", () => {
+  it("accepts ImageNet classification contracts with 1001 labels", async () => {
+    const { app } = makeApp();
+    const contract = {
+      input: {
+        type: "image",
+        width: 224,
+        height: 224,
+        channels: 3,
+        normalization: "zero_to_one",
+      },
+      output: {
+        type: "classification",
+        labels: Array.from({ length: 1001 }, (_, index) => `label-${index}`),
+      },
+    };
+
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(contract),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ contract });
+  });
+
+  it("rejects contracts with more than 1001 labels", async () => {
+    const { app } = makeApp();
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        input: {
+          type: "image",
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one",
+        },
+        output: {
+          type: "classification",
+          labels: Array.from({ length: 1002 }, (_, index) => `label-${index}`),
+        },
+      }),
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "incompatibleContract" });
   });
 });
