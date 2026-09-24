@@ -219,6 +219,24 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     });
   });
 
+  it("preserves the workflow not-found response", async () => {
+    const { request } = makeApp({
+      addConditionNode: async () => ({ ok: false, reason: "workflowNotFound" }),
+    });
+    const response = await postWorkflowNode(request, {
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+  });
+
   it("dispatches model nodes with the selected version id", async () => {
     const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
     const { request } = makeApp({ addModelNode });

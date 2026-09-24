@@ -250,7 +250,10 @@ export async function addModelNode(
   return { ok: false, reason: result.value.kind };
 }
 
-export type AddConditionNodeInput = Omit<AddModelNodeInput, "modelVersionId"> & {
+export type AddConditionNodeInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
   sourceNodeId: string;
   label: string;
   operator: "gte" | "gt" | "lte" | "lt";
@@ -294,6 +297,7 @@ export async function addConditionNode(
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
         .limit(1);
       const draft = rows[0]?.draft;
+      if (!rows[0]) return { kind: "workflowNotFound" as const };
       const source = draft?.nodes.find((node) => node.id === sourceNodeId);
       if (
         !draft ||
