@@ -148,3 +148,8 @@
     font-family: var(--font-geist-mono), "Geist Mono", monospace;
   }
 }
+
+html,
+body {
+  overflow-x: clip;
+}

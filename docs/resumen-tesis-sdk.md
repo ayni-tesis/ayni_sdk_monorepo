@@ -112,8 +112,9 @@ plataformas iniciales soportadas.
 | Gestión y exportación de datasets | US-075–US-088 | `epicas/gestion-exportacion-datasets` |
 | Empaquetado y distribución del SDK | US-089–US-099 | `epicas/empaquetado-distribucion-sdk` |
 | Observabilidad, telemetría y diagnóstico | US-100–US-113 | `epicas/observabilidad-telemetria-diagnostico` |
+| Página inicial para desarrolladores | US-120–US-123 | `epicas/pagina-inicial-ayni` |
 
-Total: **119 historias de usuario**.
+Total: **123 historias de usuario**.
 
 ## Límites actuales
 
