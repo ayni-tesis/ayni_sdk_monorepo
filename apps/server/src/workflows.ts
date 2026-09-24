@@ -11,6 +11,8 @@ import type {
   AddModelNodeResult,
   AddOutputNodeInput,
   AddOutputNodeResult,
+  ArchiveWorkflowInput,
+  ArchiveWorkflowResult,
   ChangeWorkflowConnectionInput,
   ChangeWorkflowConnectionResult,
   CreateWorkflowInput,
@@ -35,6 +37,7 @@ const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const FORBIDDEN_MESSAGE = "No tienes permiso para crear workflows.";
 const FORBIDDEN_RENAME_MESSAGE = "No tienes permiso para editar este workflow.";
 const FORBIDDEN_VALIDATE_MESSAGE = "No tienes permiso para validar este workflow.";
+const FORBIDDEN_ARCHIVE_MESSAGE = "No tienes permiso para archivar este workflow.";
 const FORBIDDEN_PUBLISH_MESSAGE = "No tienes permiso para publicar este workflow.";
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
 const INVALID_DRAFT_MESSAGE = "Corrige los errores de validación antes de publicar.";
@@ -92,6 +95,7 @@ type Dependencies = {
     list: (applicationId: string) => Promise<Workflow[]>;
     get: (applicationId: string, workflowId: string) => Promise<WorkflowDetail | undefined>;
     rename: (input: RenameWorkflowInput) => Promise<RenameWorkflowResult>;
+    archive: (input: ArchiveWorkflowInput) => Promise<ArchiveWorkflowResult>;
     addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
     addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
     addConditionNode: (input: AddConditionNodeInput) => Promise<AddConditionNodeResult>;
@@ -274,6 +278,28 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     }
 
     return c.json({ workflow: result.workflow });
+  });
+
+  app.post("/applications/:applicationId/workflows/:workflowId/archive", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const result = await workflows.archive({
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ workflow: result.workflow });
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_ARCHIVE_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "workflowNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
   });
 
   app.post("/applications/:applicationId/workflows/:workflowId/nodes", async (c) => {

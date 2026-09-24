@@ -5,8 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Application } from "./applications";
 import {
   type AddImageInputResult,
+  type ArchiveWorkflowResult,
   addConditionNode,
   addImageInputNode,
+  archiveWorkflow,
   type CreateWorkflowResult,
   createWorkflow,
   type DeleteWorkflowNodeResult,
@@ -82,6 +84,7 @@ const sampleDetail: WorkflowDetail = {
 
 type CreateInput = { applicationId: string; userId: string; name: string };
 type RenameInput = { applicationId: string; workflowId: string; userId: string; name: string };
+type ArchiveInput = { applicationId: string; workflowId: string; userId: string };
 type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
 
 function makeApp({
@@ -116,6 +119,15 @@ function makeApp({
       updatedAt: "2026-09-22T09:00:00.000Z",
     },
   }),
+  archive = async ({ workflowId }: ArchiveInput): Promise<ArchiveWorkflowResult> => ({
+    ok: true,
+    workflow: {
+      ...sampleWorkflow,
+      id: workflowId,
+      status: "archived",
+      updatedAt: "2026-09-24T12:00:00.000Z",
+    },
+  }),
   addImageInput = async (): Promise<AddImageInputResult> => ({
     ok: true,
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
@@ -146,6 +158,7 @@ function makeApp({
   workflowDetail?: WorkflowDetail | null;
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
   rename?: (input: RenameInput) => Promise<RenameWorkflowResult>;
+  archive?: (input: ArchiveInput) => Promise<ArchiveWorkflowResult>;
   addImageInput?: (input: AddImageInputInput) => Promise<AddImageInputResult>;
   addModelNode?: (input: {
     applicationId: string;
@@ -174,6 +187,7 @@ function makeApp({
     async (_applicationId: string, _workflowId: string) => workflowDetail ?? undefined,
   );
   const renameMock = vi.fn(rename);
+  const archiveMock = vi.fn(archive);
   const addImageInputMock = vi.fn(addImageInput);
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
@@ -194,6 +208,7 @@ function makeApp({
     list: listMock,
     get: getMock,
     rename: renameMock,
+    archive: archiveMock,
     addImageInput: addImageInputMock,
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
@@ -214,6 +229,7 @@ function makeApp({
         list: listMock,
         get: getMock,
         rename: renameMock,
+        archive: archiveMock,
         addImageInput: addImageInputMock,
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
@@ -1312,6 +1328,96 @@ describe("PATCH /applications/:applicationId/workflows/:workflowId", () => {
   });
 });
 
+describe("POST /applications/:applicationId/workflows/:workflowId/archive", () => {
+  function archiveRequest(
+    request: ReturnType<typeof makeApp>["request"],
+    workflowId = "workflow-1",
+  ) {
+    return request.request(`/applications/app-1/workflows/${workflowId}/archive`, {
+      method: "POST",
+    });
+  }
+
+  it("lets an administrator archive a workflow and answers the archived workflow", async () => {
+    const { request, archive } = makeApp();
+
+    const response = await archiveRequest(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      workflow: { ...sampleWorkflow, status: "archived", updatedAt: "2026-09-24T12:00:00.000Z" },
+    });
+    expect(archive).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+    });
+  });
+
+  it("rejects a member without administration permissions with 403", async () => {
+    const { request } = makeApp({
+      membershipRole: "member",
+      archive: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await archiveRequest(request);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para archivar este workflow.",
+    });
+  });
+
+  it("rejects an archived application with the applicationArchived code and status 409", async () => {
+    const { request } = makeApp({ archive: async () => ({ ok: false, reason: "archived" }) });
+
+    const response = await archiveRequest(request);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "No puedes editar workflows en una aplicación archivada.",
+      code: "applicationArchived",
+    });
+  });
+
+  it("returns not found with code notFound when the workflow does not exist in the application", async () => {
+    const { request } = makeApp({
+      archive: async () => ({ ok: false, reason: "workflowNotFound" }),
+    });
+
+    const response = await archiveRequest(request, "workflow-9");
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "No encontramos este workflow.",
+      code: "notFound",
+    });
+  });
+
+  it("requires an authenticated session", async () => {
+    const { request, archive } = makeApp({ session: null });
+
+    const response = await archiveRequest(request);
+
+    expect(response.status).toBe(401);
+    expect(archive).not.toHaveBeenCalled();
+  });
+
+  it("answers a non-member exactly like a missing application, without archiving", async () => {
+    const nonMember = makeApp({ membershipRole: null });
+    const missing = makeApp({ application: null });
+
+    for (const { request, archive } of [nonMember, missing]) {
+      const response = await archiveRequest(request);
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({
+        message: "No encontramos esta aplicación.",
+      });
+      expect(archive).not.toHaveBeenCalled();
+    }
+  });
+});
+
 type FakeTransactionState = {
   application: Record<string, unknown> | undefined;
   membership: Record<string, unknown> | undefined;
@@ -1776,6 +1882,100 @@ describe("renameWorkflow", () => {
 
     expect(result).toEqual({ ok: false, reason: "workflowNotFound" });
     expect(transaction.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("archiveWorkflow", () => {
+  const archivedRow = { ...renamedRow, name: "Diagnóstico de hoja de café", status: "archived" };
+  const archiveInput = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+
+  it("archives a workflow of an active application for an administrator", async () => {
+    const transaction = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "active" },
+      membership: { role: "admin" },
+      returning: [archivedRow],
+    });
+
+    const result = await archiveWorkflow(transaction.db, archiveInput);
+
+    expect(result).toEqual({
+      ok: true,
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "archived",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-22T09:00:00.000Z",
+      },
+    });
+  });
+
+  it("changes only the status, keeping the draft and never touching published versions", async () => {
+    const transaction = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "active" },
+      membership: { role: "owner" },
+      returning: [archivedRow],
+    });
+
+    await archiveWorkflow(transaction.db, archiveInput);
+
+    expect(transaction.update).toHaveBeenCalledTimes(1);
+    expect(transaction.update).toHaveBeenCalledWith(workflow);
+    expect(transaction.setCalls).toEqual([{ status: "archived" }]);
+    expect(toQuery(transaction.whereCalls[0])).toEqual({
+      sql: '("workflow"."id" = $1 and "workflow"."application_id" = $2)',
+      params: ["workflow-1", "app-1"],
+    });
+  });
+
+  it("rejects a plain member and leaves the workflow status unchanged", async () => {
+    const transaction = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "active" },
+      membership: { role: "member" },
+      returning: [],
+    });
+
+    const result = await archiveWorkflow(transaction.db, archiveInput);
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an archived application without updating the workflow", async () => {
+    const transaction = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "archived" },
+      membership: { role: "admin" },
+      returning: [],
+    });
+
+    const result = await archiveWorkflow(transaction.db, archiveInput);
+
+    expect(result).toEqual({ ok: false, reason: "archived" });
+    expect(transaction.update).not.toHaveBeenCalled();
+  });
+
+  it("returns notFound for a non-member and workflowNotFound for a workflow outside the application", async () => {
+    const nonMemberTx = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "active" },
+      membership: undefined,
+      returning: [],
+    });
+    const missingWorkflowTx = makeRenameTransactionDb({
+      application: { id: "app-1", organizationId: "org-1", status: "active" },
+      membership: { role: "admin" },
+      returning: [],
+    });
+
+    await expect(archiveWorkflow(nonMemberTx.db, archiveInput)).resolves.toEqual({
+      ok: false,
+      reason: "notFound",
+    });
+    await expect(archiveWorkflow(missingWorkflowTx.db, archiveInput)).resolves.toEqual({
+      ok: false,
+      reason: "workflowNotFound",
+    });
+    expect(nonMemberTx.update).not.toHaveBeenCalled();
   });
 });
 

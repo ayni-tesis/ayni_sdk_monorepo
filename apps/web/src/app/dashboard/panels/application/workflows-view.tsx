@@ -102,7 +102,7 @@ export type WorkflowItem = {
   id: string;
   applicationId: string;
   name: string;
-  status: "draft";
+  status: "draft" | "archived";
   createdAt: string;
   updatedAt: string;
 };
@@ -115,6 +115,7 @@ const WORKFLOWS_EMPTY_MESSAGE = "Aún no hay workflows en esta aplicación.";
 
 export const WORKFLOW_STATUS_LABELS: Record<WorkflowItem["status"], string> = {
   draft: "Borrador",
+  archived: "Archivado",
 };
 
 const NO_PUBLISHED_VERSION_LABEL = "Sin publicar";
