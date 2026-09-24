@@ -1,8 +1,11 @@
+import { application, member, workflow } from "@ayni/db/schema/index";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
 import {
+  type AddImageInputResult,
+  addImageInputNode,
   type CreateWorkflowResult,
   createWorkflow,
   getWorkflow,
@@ -11,6 +14,7 @@ import {
   renameWorkflow,
   type TransactionExecutor,
   type Workflow,
+  type WorkflowDatabase,
   type WorkflowDetail,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
@@ -39,6 +43,7 @@ const sampleDetail: WorkflowDetail = {
 
 type CreateInput = { applicationId: string; userId: string; name: string };
 type RenameInput = { applicationId: string; workflowId: string; userId: string; name: string };
+type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -72,6 +77,10 @@ function makeApp({
       updatedAt: "2026-09-22T09:00:00.000Z",
     },
   }),
+  addImageInput = async (): Promise<AddImageInputResult> => ({
+    ok: true,
+    draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+  }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -80,6 +89,7 @@ function makeApp({
   workflowDetail?: WorkflowDetail | null;
   create?: (input: CreateInput) => Promise<CreateWorkflowResult>;
   rename?: (input: RenameInput) => Promise<RenameWorkflowResult>;
+  addImageInput?: (input: AddImageInputInput) => Promise<AddImageInputResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -87,18 +97,26 @@ function makeApp({
     async (_applicationId: string, _workflowId: string) => workflowDetail ?? undefined,
   );
   const renameMock = vi.fn(rename);
+  const addImageInputMock = vi.fn(addImageInput);
   return {
     create: createMock,
     list: listMock,
     get: getMock,
     rename: renameMock,
+    addImageInput: addImageInputMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
         getMembership: async () => membershipRole ?? undefined,
       },
-      workflows: { create: createMock, list: listMock, get: getMock, rename: renameMock },
+      workflows: {
+        create: createMock,
+        list: listMock,
+        get: getMock,
+        rename: renameMock,
+        addImageInput: addImageInputMock,
+      },
     }),
   };
 }
@@ -122,6 +140,57 @@ function patchWorkflow(
     body: JSON.stringify(body),
   });
 }
+
+function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: unknown) {
+  return request.request("/applications/app-1/workflows/workflow-1/nodes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("maps a duplicate image-input result to HTTP 409", async () => {
+    const addImageInput = vi
+      .fn(
+        async (_input: AddImageInputInput): Promise<AddImageInputResult> => ({
+          ok: true,
+          draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+      })
+      .mockResolvedValueOnce({ ok: false, reason: "duplicate" });
+    const { request } = makeApp({ addImageInput });
+
+    const created = await postWorkflowNode(request, { type: "input.image" });
+    expect(created.status).toBe(200);
+    await expect(created.json()).resolves.toEqual({
+      draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+    });
+    const duplicate = await postWorkflowNode(request, { type: "input.image" });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toEqual({
+      message: "Este workflow ya tiene una entrada de imagen.",
+    });
+  });
+
+  it("allows only administrators to add a node", async () => {
+    const { request, addImageInput } = makeApp({
+      membershipRole: "member",
+      addImageInput: async () => ({ ok: false, reason: "forbidden" }),
+    });
+    const response = await postWorkflowNode(request, { type: "input.image" });
+    expect(response.status).toBe(403);
+    expect(addImageInput).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+    });
+  });
+});
 
 describe("GET /applications/:applicationId/workflows", () => {
   it("lists the workflows of the application for any workspace member", async () => {
@@ -1128,6 +1197,96 @@ function toQuery(fragment: unknown) {
   );
   return { sql, params };
 }
+
+function makeImageInputStoreDb() {
+  const storedWorkflow = {
+    id: "workflow-1",
+    applicationId: "app-1",
+    name: "DiagnÃ³stico",
+    status: "draft",
+    createdAt: new Date("2026-09-21T15:00:00.000Z"),
+    updatedAt: new Date("2026-09-21T16:00:00.000Z"),
+    draft: { nodes: [] as { id: string; type: "input.image"; outputs: { imagen: "image" } }[] },
+  };
+  const writes: unknown[] = [];
+  const cloneWorkflow = () => structuredClone(storedWorkflow);
+
+  const executor = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => {
+            const rows =
+              table === application
+                ? [{ id: "app-1", organizationId: "org-1", name: "CÃ¡mara", status: "active" }]
+                : table === member
+                  ? [{ role: "admin" }]
+                  : table === workflow
+                    ? [cloneWorkflow()]
+                    : [];
+            const result = Promise.resolve(rows);
+            return table === workflow ? result : { for: async () => rows };
+          },
+        }),
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (values: Record<string, unknown>) => ({
+        where: (condition: unknown) => ({
+          returning: async () => {
+            expect(table).toBe(workflow);
+            const whereQuery = toQuery(condition);
+            expect(whereQuery.sql).toContain("jsonb_path_exists");
+            expect(whereQuery.params).toEqual(["workflow-1", "app-1"]);
+
+            if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
+
+            const draftQuery = toQuery(values.draft);
+            const serializedNode = draftQuery.params.find(
+              (value): value is string =>
+                typeof value === "string" && value.includes('"type":"input.image"'),
+            );
+            if (!serializedNode)
+              throw new Error("Image input node was not added to the SQL update");
+            const node = JSON.parse(serializedNode) as (typeof storedWorkflow.draft.nodes)[number];
+            storedWorkflow.draft.nodes.push(node);
+            writes.push(values);
+            return [cloneWorkflow()];
+          },
+        }),
+      }),
+    }),
+  };
+
+  const db: WorkflowDatabase = {
+    transaction: (callback) => callback(executor),
+  };
+  return { db, writes, reload: () => cloneWorkflow().draft };
+}
+
+describe("addImageInputNode", () => {
+  it("persists one image input, rejects a duplicate, and reloads the unchanged draft", async () => {
+    const store = makeImageInputStoreDb();
+    const input = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+
+    const first = await addImageInputNode(store.db, input);
+    expect(first).toEqual({
+      ok: true,
+      draft: {
+        nodes: [{ id: expect.any(String), type: "input.image", outputs: { imagen: "image" } }],
+      },
+    });
+    const savedDraft = (await getWorkflow(store.db, "app-1", "workflow-1"))?.draft;
+    expect(savedDraft).toEqual(first.ok ? first.draft : undefined);
+
+    const duplicate = await addImageInputNode(store.db, input);
+    const reloadedDraft = (await getWorkflow(store.db, "app-1", "workflow-1"))?.draft;
+    expect(duplicate).toEqual({ ok: false, reason: "duplicate" });
+    expect(reloadedDraft).toEqual(savedDraft);
+    expect(store.reload()).toEqual(savedDraft);
+    expect(store.writes).toHaveLength(1);
+  });
+});
 
 describe("listWorkflows", () => {
   it("maps rows to workflows with ISO dates and the draft status", async () => {

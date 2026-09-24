@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 import { application } from "./application";
 
@@ -13,6 +13,10 @@ export const workflow = pgTable(
     name: text("name").notNull(),
     status: text("status", { enum: ["draft"] })
       .default("draft")
+      .notNull(),
+    draft: jsonb("draft")
+      .$type<{ nodes: { id: string; type: "input.image"; outputs: { imagen: "image" } }[] }>()
+      .default({ nodes: [] })
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

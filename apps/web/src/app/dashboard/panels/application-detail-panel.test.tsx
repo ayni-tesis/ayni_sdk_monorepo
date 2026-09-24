@@ -1223,10 +1223,12 @@ describe("ApplicationDetailPanel", () => {
     function workflowDetailPanel({
       application = activeApp,
       workflowId = "workflow-1",
+      canManage = false,
       onBackToWorkflows = vi.fn(),
     }: {
       application?: Application;
       workflowId?: string;
+      canManage?: boolean;
       onBackToWorkflows?: () => void;
     } = {}) {
       return (
@@ -1234,7 +1236,7 @@ describe("ApplicationDetailPanel", () => {
           <ApplicationDetailPanel
             application={application}
             workspaceName="Laboratorio Andino"
-            canManage={false}
+            canManage={canManage}
             activeSection="workflows"
             workflowId={workflowId}
             onBackToWorkflows={onBackToWorkflows}
@@ -1358,6 +1360,77 @@ describe("ApplicationDetailPanel", () => {
       expect(versionsTab.getAttribute("aria-selected")).toBe("true");
       expect(screen.getByText("Aún no hay versiones publicadas.")).toBeTruthy();
       expect(screen.queryByText("Este borrador aún no tiene nodos.")).toBeNull();
+    });
+
+    it("keeps image input disabled after a conflict reloads the persisted node", async () => {
+      let detailCalls = 0;
+      client.get.mockImplementation(async () => {
+        detailCalls += 1;
+        return {
+          data:
+            detailCalls === 1
+              ? workflowDetail
+              : {
+                  ...workflowDetail,
+                  draft: {
+                    nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }],
+                  },
+                },
+        };
+      });
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { message: "Este workflow ya tiene una entrada de imagen." },
+        },
+      });
+
+      render(workflowDetailPanel({ canManage: true }));
+
+      const button = (await screen.findByRole("button", {
+        name: "Entrada de imagen",
+      })) as HTMLButtonElement;
+      fireEvent.click(button);
+      expect(button.disabled).toBe(true);
+      fireEvent.drop(screen.getByRole("region", { name: "Lienzo del workflow" }), {
+        dataTransfer: { getData: () => "input.image" },
+      });
+      expect(client.post).toHaveBeenCalledTimes(1);
+
+      expect(await screen.findByText("Imagen de entrada")).toBeTruthy();
+      expect(
+        (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(client.post).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows retry after a non-conflict request failure", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.post
+        .mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {} } })
+        .mockResolvedValueOnce({
+          data: {
+            draft: {
+              nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }],
+            },
+          },
+        });
+
+      render(workflowDetailPanel({ canManage: true }));
+      const button = (await screen.findByRole("button", {
+        name: "Entrada de imagen",
+      })) as HTMLButtonElement;
+      fireEvent.click(button);
+      expect(button.disabled).toBe(true);
+      await waitFor(() =>
+        expect(
+          (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Entrada de imagen" }));
+      expect(await screen.findByText("Imagen de entrada")).toBeTruthy();
+      expect(client.post).toHaveBeenCalledTimes(2);
     });
 
     it.each([

@@ -1,5 +1,5 @@
 import { workflow } from "@ayni/db/schema/index";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, not, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -26,7 +26,11 @@ export type WorkflowRow = {
   status: string;
   createdAt: Date | string;
   updatedAt: Date | string;
+  draft?: WorkflowDraft;
 };
+
+export type WorkflowNode = { id: string; type: "input.image"; outputs: { imagen: "image" } };
+export type WorkflowDraft = { nodes: WorkflowNode[] };
 
 export function toWorkflow(row: WorkflowRow): Workflow {
   return {
@@ -91,6 +95,51 @@ type WorkflowUpdateExecutor = TransactionExecutor & {
   };
 };
 
+export type AddImageInputResult =
+  | { ok: true; draft: WorkflowDraft }
+  | { ok: false; reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "duplicate" };
+
+export type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
+
+export async function addImageInputNode(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, userId }: AddImageInputInput,
+): Promise<AddImageInputResult> {
+  const node: WorkflowNode = {
+    id: crypto.randomUUID(),
+    type: "input.image",
+    outputs: { imagen: "image" },
+  };
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const updater = tx as WorkflowUpdateExecutor;
+      const rows = (await updater
+        .update(workflow)
+        .set({
+          draft: sql`jsonb_set(${workflow.draft}, '{nodes}', ${workflow.draft}->'nodes' || ${JSON.stringify(node)}::jsonb)`,
+        })
+        .where(
+          and(
+            eq(workflow.id, workflowId),
+            eq(workflow.applicationId, application.id),
+            not(
+              sql`jsonb_path_exists(${workflow.draft}, '$.nodes[*] ? (@.type == "input.image")')`,
+            ),
+          ),
+        )
+        .returning()) as WorkflowRow[];
+      return rows[0];
+    },
+  );
+  if (!result.ok) return result;
+  if (result.value) return { ok: true, draft: result.value.draft ?? { nodes: [node] } };
+
+  const existing = await getWorkflow(database, applicationId, workflowId);
+  return existing ? { ok: false, reason: "duplicate" } : { ok: false, reason: "workflowNotFound" };
+}
+
 export type RenameWorkflowInput = {
   applicationId: string;
   workflowId: string;
@@ -137,14 +186,12 @@ export async function renameWorkflow(
 }
 
 /**
- * Workflow detail: the workflow plus its draft and its published versions. No
- * node or version storage exists yet, so both are empty by construction; the
- * `never[]` element types force this to be revisited when nodes (US-028) and
- * published versions (US-036) land.
+ * Workflow detail: the workflow, its persisted draft nodes, and published
+ * versions. Published versions remain empty until US-036 adds version storage.
  */
 export type WorkflowDetail = {
   workflow: Workflow;
-  draft: { nodes: never[] };
+  draft: WorkflowDraft;
   versions: never[];
 };
 
@@ -180,6 +227,7 @@ export async function getWorkflow(
         status: workflow.status,
         createdAt: workflow.createdAt,
         updatedAt: workflow.updatedAt,
+        draft: workflow.draft,
       })
       .from(workflow)
       .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, applicationId)))
@@ -188,9 +236,12 @@ export async function getWorkflow(
     const row = rows[0];
     if (!row) return undefined;
 
-    const emptyNodes: never[] = [];
     const emptyVersions: never[] = [];
-    return { workflow: toWorkflow(row), draft: { nodes: emptyNodes }, versions: emptyVersions };
+    return {
+      workflow: toWorkflow(row),
+      draft: row.draft ?? { nodes: [] },
+      versions: emptyVersions,
+    };
   });
 }
 

@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import type { Application } from "./applications";
 import type {
+  AddImageInputInput,
+  AddImageInputResult,
   CreateWorkflowInput,
   CreateWorkflowResult,
   RenameWorkflowInput,
@@ -17,6 +19,7 @@ const FORBIDDEN_MESSAGE = "No tienes permiso para crear workflows.";
 const FORBIDDEN_RENAME_MESSAGE = "No tienes permiso para editar este workflow.";
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes crear workflows en una aplicación archivada.";
 const WORKFLOW_RENAME_ARCHIVED_MESSAGE = "No puedes editar workflows en una aplicación archivada.";
+const DUPLICATE_IMAGE_INPUT_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 
 const workflowNameSchema = z.object({
@@ -34,6 +37,7 @@ type Dependencies = {
     list: (applicationId: string) => Promise<Workflow[]>;
     get: (applicationId: string, workflowId: string) => Promise<WorkflowDetail | undefined>;
     rename: (input: RenameWorkflowInput) => Promise<RenameWorkflowResult>;
+    addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
   };
 };
 
@@ -159,6 +163,48 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     }
 
     return c.json({ workflow: result.workflow });
+  });
+
+  app.post("/applications/:applicationId/workflows/:workflowId/nodes", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await applications.get(c.req.param("applicationId"));
+    if (
+      !application ||
+      !(await applications.getMembership(session.user.id, application.organizationId))
+    )
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      body = null;
+    }
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      (body as { type?: unknown }).type !== "input.image"
+    ) {
+      return c.json({ message: "Tipo de nodo no válido." }, 400);
+    }
+    const result = await workflows.addImageInput({
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ draft: result.draft });
+    if (result.reason === "forbidden")
+      return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "duplicate")
+      return c.json({ message: DUPLICATE_IMAGE_INPUT_MESSAGE }, 409);
+    if (result.reason === "workflowNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
   });
 
   return app;

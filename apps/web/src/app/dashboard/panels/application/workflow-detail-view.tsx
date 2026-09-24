@@ -36,7 +36,7 @@ import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
-  draft: { nodes: unknown[] };
+  draft: { nodes: { id: string; type: "input.image"; outputs: { imagen: "image" } }[] };
   versions: unknown[];
 };
 
@@ -45,6 +45,7 @@ const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const EMPTY_DRAFT_MESSAGE = "Este borrador aún no tiene nodos.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
 const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
+const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 
 export type RenameWorkflowDialogProps = {
   open: boolean;
@@ -139,6 +140,8 @@ export function WorkflowDetailView({
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [addingImageInput, setAddingImageInput] = useState(false);
+  const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -211,6 +214,26 @@ export function WorkflowDetailView({
       );
     } finally {
       setSavingRename(false);
+    }
+  }
+
+  async function addImageInput() {
+    if (addingImageInputRef.current) return;
+    addingImageInputRef.current = true;
+    setAddingImageInput(true);
+    try {
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
+        { type: "input.image" },
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      toast.success("Nodo agregado.");
+    } catch (addError) {
+      toast.error(errorMessage(addError, "No pudimos agregar el nodo."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      addingImageInputRef.current = false;
+      setAddingImageInput(false);
     }
   }
 
@@ -317,9 +340,59 @@ export function WorkflowDetailView({
           <TabsTrigger value="versions">Versiones publicadas</TabsTrigger>
         </TabsList>
         <TabsContent value="draft">
-          {draft.nodes.length === 0 && (
-            <p className="text-muted-foreground text-sm">{EMPTY_DRAFT_MESSAGE}</p>
-          )}
+          <div className="grid gap-4 md:grid-cols-[12rem_1fr]" data-testid="workflow-draft-editor">
+            {canManage && application.status === "active" && (
+              <aside aria-label="Nodos" className="space-y-2 rounded-md border p-3">
+                <h3 className="font-medium text-sm">Nodos</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  draggable={
+                    !addingImageInput && !draft.nodes.some((node) => node.type === "input.image")
+                  }
+                  disabled={
+                    addingImageInput || draft.nodes.some((node) => node.type === "input.image")
+                  }
+                  title={
+                    draft.nodes.some((node) => node.type === "input.image")
+                      ? IMAGE_INPUT_EXISTS_MESSAGE
+                      : undefined
+                  }
+                  onClick={() => void addImageInput()}
+                  onDragStart={(event) =>
+                    event.dataTransfer.setData("application/x-ayni-node", "input.image")
+                  }
+                >
+                  Entrada de imagen
+                </Button>
+                {draft.nodes.some((node) => node.type === "input.image") && (
+                  <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
+                )}
+              </aside>
+            )}
+            <section
+              aria-label="Lienzo del workflow"
+              className="min-h-40 space-y-3 rounded-md border border-dashed p-4"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (event.dataTransfer.getData("application/x-ayni-node") === "input.image")
+                  void addImageInput();
+              }}
+            >
+              {draft.nodes.map((node) => (
+                <article key={node.id} className="w-fit rounded-md border bg-card p-3">
+                  <h4 className="font-medium text-sm">Imagen de entrada</h4>
+                  <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
+                    imagen: image
+                  </span>
+                </article>
+              ))}
+              {draft.nodes.length === 0 && (
+                <p className="text-muted-foreground text-sm">{EMPTY_DRAFT_MESSAGE}</p>
+              )}
+            </section>
+          </div>
         </TabsContent>
         <TabsContent value="versions">
           {versions.length === 0 && (

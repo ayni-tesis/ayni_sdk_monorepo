@@ -1,0 +1,1 @@
+ALTER TABLE "workflow" ADD COLUMN "draft" jsonb DEFAULT '{"nodes":[]}'::jsonb NOT NULL;
