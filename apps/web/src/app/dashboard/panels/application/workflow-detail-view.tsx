@@ -46,6 +46,37 @@ type WorkflowConnectionItem = {
   targetPort: string;
 };
 
+export function findWorkflowCycleNodeIds(
+  draft: WorkflowDetailItem["draft"],
+  connection: WorkflowConnectionItem,
+): string[] | undefined {
+  const pending = [connection.targetNodeId];
+  const previous = new Map<string, string>();
+  const visited = new Set(pending);
+  while (pending.length) {
+    const nodeId = pending.pop();
+    if (nodeId === undefined) continue;
+    if (nodeId === connection.sourceNodeId) {
+      const path = [nodeId];
+      let currentNodeId = nodeId;
+      while (currentNodeId !== connection.targetNodeId) {
+        const parentNodeId = previous.get(currentNodeId);
+        if (!parentNodeId) return undefined;
+        path.unshift(parentNodeId);
+        currentNodeId = parentNodeId;
+      }
+      return [...new Set([connection.sourceNodeId, ...path])];
+    }
+    for (const edge of draft.connections ?? []) {
+      if (edge.sourceNodeId === nodeId && !visited.has(edge.targetNodeId)) {
+        visited.add(edge.targetNodeId);
+        previous.set(edge.targetNodeId, nodeId);
+        pending.push(edge.targetNodeId);
+      }
+    }
+  }
+}
+
 type ModelVersionContract = {
   input: { type: "image"; width: number; height: number; channels: number; normalization: string };
   output:
@@ -99,6 +130,7 @@ const EMPTY_DRAFT_MESSAGE = "Este borrador aún no tiene nodos.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
 const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
 const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
+const WORKFLOW_CYCLE_MESSAGE = "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.";
 
 export type RenameWorkflowDialogProps = {
   open: boolean;
@@ -212,6 +244,7 @@ export function WorkflowDetailView({
     sourcePort: string;
   } | null>(null);
   const [compatibleTargetId, setCompatibleTargetId] = useState("");
+  const [cycleNodeIds, setCycleNodeIds] = useState<string[]>([]);
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -504,6 +537,14 @@ export function WorkflowDetailView({
   }
 
   async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
+    if (!remove) {
+      const cycle = detail && findWorkflowCycleNodeIds(detail.draft, connection);
+      if (cycle) {
+        setCycleNodeIds(cycle);
+        toast.error(WORKFLOW_CYCLE_MESSAGE);
+        return;
+      }
+    }
     try {
       const url = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
       const { data } = remove
@@ -514,6 +555,11 @@ export function WorkflowDetailView({
       setConnectionSource(null);
       toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
     } catch (connectionError) {
+      if (
+        axios.isAxiosError(connectionError) &&
+        connectionError.response?.data?.code === "workflowCycle"
+      )
+        setCycleNodeIds(connectionError.response.data.nodeIds ?? []);
       toast.error(
         errorMessage(
           connectionError,
@@ -792,8 +838,16 @@ export function WorkflowDetailView({
                   void addImageInput();
               }}
             >
+              {cycleNodeIds.length > 0 && (
+                <p role="alert" className="text-destructive text-sm">
+                  {WORKFLOW_CYCLE_MESSAGE}
+                </p>
+              )}
               {draft.nodes.map((node) => (
-                <article key={node.id} className="w-fit rounded-md border bg-card p-3">
+                <article
+                  key={node.id}
+                  className={`w-fit rounded-md border bg-card p-3 ${cycleNodeIds.includes(node.id) ? "border-destructive ring-2 ring-destructive" : ""}`}
+                >
                   {node.type === "input.image" ? (
                     <>
                       <h4 className="font-medium text-sm">Imagen de entrada</h4>

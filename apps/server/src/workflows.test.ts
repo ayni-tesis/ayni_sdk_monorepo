@@ -9,6 +9,7 @@ import {
   addImageInputNode,
   type CreateWorkflowResult,
   createWorkflow,
+  findWorkflowCycle,
   getWorkflow,
   listWorkflows,
   type RenameWorkflowResult,
@@ -20,6 +21,34 @@ import {
   type WorkflowNode,
 } from "./workflow-store";
 import { createWorkflowsApp } from "./workflows";
+
+describe("findWorkflowCycle", () => {
+  const candidate = {
+    sourceNodeId: "b",
+    sourcePort: "result",
+    targetNodeId: "a",
+    targetPort: "image",
+  };
+
+  it("detects direct and indirect cycles and leaves acyclic additions alone", () => {
+    const edge = (sourceNodeId: string, targetNodeId: string) => ({
+      sourceNodeId,
+      sourcePort: "result",
+      targetNodeId,
+      targetPort: "image",
+    });
+    expect(findWorkflowCycle({ nodes: [], connections: [edge("a", "b")] }, candidate)).toEqual([
+      "b",
+      "a",
+    ]);
+    expect(
+      findWorkflowCycle({ nodes: [], connections: [edge("a", "c"), edge("c", "b")] }, candidate),
+    ).toEqual(["b", "a", "c"]);
+    expect(findWorkflowCycle({ nodes: [], connections: [edge("a", "c")] }, candidate)).toBe(
+      undefined,
+    );
+  });
+});
 
 const activeApplication: Application = {
   id: "app-1",
