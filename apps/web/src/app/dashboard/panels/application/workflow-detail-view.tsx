@@ -551,6 +551,7 @@ export function WorkflowDetailView({
         ? await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(url, { data: connection })
         : await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(url, connection);
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setCycleNodeIds([]);
       setSelectedConnection(null);
       setConnectionSource(null);
       toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
