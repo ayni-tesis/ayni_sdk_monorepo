@@ -36,8 +36,14 @@ import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
-  draft: { nodes: WorkflowNodeItem[] };
+  draft: { nodes: WorkflowNodeItem[]; connections?: WorkflowConnectionItem[] };
   versions: unknown[];
+};
+type WorkflowConnectionItem = {
+  sourceNodeId: string;
+  sourcePort: string;
+  targetNodeId: string;
+  targetPort: string;
 };
 
 type ModelVersionContract = {
@@ -200,6 +206,8 @@ export function WorkflowDetailView({
   const [outputSource, setOutputSource] = useState("");
   const [outputTypeError, setOutputTypeError] = useState("");
   const [addingOutput, setAddingOutput] = useState(false);
+  const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
+  const [compatibleTargetId, setCompatibleTargetId] = useState("");
   const addingImageInputRef = useRef(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -491,6 +499,21 @@ export function WorkflowDetailView({
     }
   }
 
+  async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
+    try {
+      const url = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
+      const { data } = remove
+        ? await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(url, { data: connection })
+        : await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(url, connection);
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setSelectedConnection(null);
+      toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
+    } catch (connectionError) {
+      toast.error(errorMessage(connectionError, "Estos puertos no son compatibles."));
+      void loadDetail(application.id, workflowId);
+    }
+  }
+
   return (
     <section className="space-y-6">
       <Breadcrumb>
@@ -767,6 +790,20 @@ export function WorkflowDetailView({
                       <span className="mt-2 inline-flex rounded bg-muted px-2 py-1 text-xs">
                         imagen: image
                       </span>
+                      {canManage && application.status === "active" && (
+                        <span
+                          draggable
+                          className="ml-2 inline-flex cursor-grab rounded border px-2 py-1 text-xs"
+                          onDragStart={(event) =>
+                            event.dataTransfer.setData(
+                              "application/x-ayni-port",
+                              JSON.stringify({ sourceNodeId: node.id, sourcePort: "imagen" }),
+                            )
+                          }
+                        >
+                          Arrastrar salida
+                        </span>
+                      )}
                     </>
                   ) : node.type === "model.tflite" ? (
                     <>
@@ -777,6 +814,33 @@ export function WorkflowDetailView({
                         <span className="rounded bg-muted px-2 py-1">
                           image: image ({node.inputs.image.width}×{node.inputs.image.height})
                         </span>
+                        {canManage && application.status === "active" && (
+                          <span
+                            className={`rounded border px-2 py-1 text-xs ${compatibleTargetId === node.id ? "border-primary bg-primary/10" : ""}`}
+                            onDragOver={(event) => {
+                              if (event.dataTransfer.types.includes("application/x-ayni-port")) {
+                                event.preventDefault();
+                                setCompatibleTargetId(node.id);
+                              }
+                            }}
+                            onDragLeave={() => setCompatibleTargetId("")}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              setCompatibleTargetId("");
+                              const source = JSON.parse(
+                                event.dataTransfer.getData("application/x-ayni-port") || "null",
+                              ) as { sourceNodeId: string; sourcePort: string } | null;
+                              if (source)
+                                void changeConnection({
+                                  ...source,
+                                  targetNodeId: node.id,
+                                  targetPort: "image",
+                                });
+                            }}
+                          >
+                            Soltar entrada compatible
+                          </span>
+                        )}
                         <span className="rounded bg-muted px-2 py-1">
                           result: {node.outputs.result.type}
                         </span>
@@ -802,6 +866,27 @@ export function WorkflowDetailView({
                   )}
                 </article>
               ))}
+              {(draft.connections ?? []).map((connection) => (
+                <button
+                  key={`${connection.sourceNodeId}:${connection.sourcePort}:${connection.targetNodeId}:${connection.targetPort}`}
+                  type="button"
+                  className="block rounded border px-2 py-1 text-xs"
+                  onClick={() => setSelectedConnection(connection)}
+                >
+                  ↳ {connection.sourceNodeId}:{connection.sourcePort} → {connection.targetNodeId}:
+                  {connection.targetPort}
+                </button>
+              ))}
+              {selectedConnection && canManage && application.status === "active" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void changeConnection(selectedConnection, true)}
+                >
+                  Eliminar conexión
+                </Button>
+              )}
               {draft.nodes.length === 0 && (
                 <p className="text-muted-foreground text-sm">{EMPTY_DRAFT_MESSAGE}</p>
               )}

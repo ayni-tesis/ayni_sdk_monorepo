@@ -56,6 +56,8 @@ import {
   addImageInputNode,
   addModelNode,
   addOutputNode,
+  addWorkflowConnection,
+  removeWorkflowConnection,
   createWorkflow,
   getWorkflow,
   listWorkflows,
@@ -184,6 +186,12 @@ const workflows = {
   },
   addOutputNode(input: Parameters<typeof addOutputNode>[1]) {
     return addOutputNode(db, input);
+  },
+  addConnection(input: Parameters<typeof addWorkflowConnection>[1]) {
+    return addWorkflowConnection(db, input);
+  },
+  removeConnection(input: Parameters<typeof removeWorkflowConnection>[1]) {
+    return removeWorkflowConnection(db, input);
   },
 };
 
