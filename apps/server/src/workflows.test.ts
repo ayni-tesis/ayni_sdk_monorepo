@@ -85,6 +85,7 @@ function makeApp({
   }),
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
+  addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
 }: {
   session?: { user: { id: string } } | null;
   application?: Application | null;
@@ -103,6 +104,9 @@ function makeApp({
   addConditionNode?: (
     input: import("./workflow-store").AddConditionNodeInput,
   ) => Promise<import("./workflow-store").AddConditionNodeResult>;
+  addOutputNode?: (
+    input: import("./workflow-store").AddOutputNodeInput,
+  ) => Promise<import("./workflow-store").AddOutputNodeResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -113,6 +117,7 @@ function makeApp({
   const addImageInputMock = vi.fn(addImageInput);
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
+  const addOutputNodeMock = vi.fn(addOutputNode);
   return {
     create: createMock,
     list: listMock,
@@ -121,6 +126,7 @@ function makeApp({
     addImageInput: addImageInputMock,
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
+    addOutputNode: addOutputNodeMock,
     request: createWorkflowsApp({
       getSession: async () => session,
       applications: {
@@ -135,6 +141,7 @@ function makeApp({
         addImageInput: addImageInputMock,
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
+        addOutputNode: addOutputNodeMock,
       },
     }),
   };
