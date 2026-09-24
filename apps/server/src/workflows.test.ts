@@ -1376,18 +1376,19 @@ function makeImageInputStoreDb(nodes: WorkflowNode[] = []) {
           returning: async () => {
             expect(table).toBe(workflow);
             const whereQuery = toQuery(condition);
-            expect(whereQuery.sql).toContain("jsonb_path_exists");
             expect(whereQuery.params).toEqual(["workflow-1", "app-1"]);
-
-            if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
 
             const draftQuery = toQuery(values.draft);
             const serializedNode = draftQuery.params.find(
               (value): value is string =>
-                typeof value === "string" && value.includes('"type":"input.image"'),
+                typeof value === "string" &&
+                (value.includes('"type":"input.image"') || value.includes('"type":"condition"')),
             );
-            if (!serializedNode)
-              throw new Error("Image input node was not added to the SQL update");
+            if (!serializedNode) throw new Error("Workflow node was not added to the SQL update");
+            if (serializedNode.includes('"type":"input.image"')) {
+              expect(whereQuery.sql).toContain("jsonb_path_exists");
+              if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
+            }
             const node = JSON.parse(serializedNode) as (typeof storedWorkflow.draft.nodes)[number];
             storedWorkflow.draft.nodes.push(node);
             writes.push(values);
@@ -1462,6 +1463,35 @@ describe("addConditionNode source validation", () => {
     expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
     expect(store.reload()).toEqual(originalDraft);
     expect(store.writes).toHaveLength(0);
+  });
+
+  it("persists and reloads a condition with its typed source and branches", async () => {
+    const store = makeImageInputStoreDb([modelNode]);
+    const result = await addConditionNode(store.db, {
+      ...input,
+      sourceNodeId: modelNode.id,
+    });
+    expect(result).toEqual({
+      ok: true,
+      draft: {
+        nodes: [
+          modelNode,
+          {
+            id: expect.any(String),
+            type: "condition",
+            sourceNodeId: modelNode.id,
+            label: input.label,
+            operator: input.operator,
+            threshold: input.threshold,
+            branches: { true: "Verdadero", false: "Falso" },
+          },
+        ],
+      },
+    });
+    const savedCondition = result.ok ? result.draft.nodes[1] : undefined;
+    const reloadedCondition = store.reload().nodes[1];
+    expect(reloadedCondition).toEqual(savedCondition);
+    expect(store.writes).toHaveLength(1);
   });
 });
 
