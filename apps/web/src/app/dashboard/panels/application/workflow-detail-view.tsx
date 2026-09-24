@@ -46,6 +46,7 @@ type ModelVersionContract = {
     | { type: "classification"; labels: string[] }
     | { type: "detection"; labels: string[]; scoreThreshold: number };
 };
+
 type WorkflowNodeItem =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
   | {
@@ -455,7 +456,9 @@ export function WorkflowDetailView({
                       )),
                   )}
                 </select>
-                {modelOptions.some((item) => item.versions.some((version) => !version.contract)) && (
+                {modelOptions.some((item) =>
+                  item.versions.some((version) => !version.contract),
+                ) && (
                   <p className="text-muted-foreground text-xs">
                     Esta versión necesita un contrato antes de usarse en un workflow.
                   </p>
