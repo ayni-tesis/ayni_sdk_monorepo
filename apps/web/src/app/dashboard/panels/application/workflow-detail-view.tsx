@@ -198,6 +198,7 @@ export function WorkflowDetailView({
   const [addingCondition, setAddingCondition] = useState(false);
   const [outputName, setOutputName] = useState("");
   const [outputSource, setOutputSource] = useState("");
+  const [outputTypeError, setOutputTypeError] = useState("");
   const [addingOutput, setAddingOutput] = useState(false);
   const addingImageInputRef = useRef(false);
 
@@ -462,7 +463,11 @@ export function WorkflowDetailView({
     const selected = outputOptions.find(
       (option) => `${option.id}:${option.port ?? "result"}` === outputSource,
     );
-    if (!name || !selected || addingOutput) return;
+    if (!name || addingOutput) return;
+    if (!selected) {
+      setOutputTypeError("Selecciona un tipo de resultado para la salida.");
+      return;
+    }
     setAddingOutput(true);
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
@@ -704,7 +709,10 @@ export function WorkflowDetailView({
                     id="workflow-output-type"
                     className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
                     value={outputSource}
-                    onChange={(event) => setOutputSource(event.target.value)}
+                    onChange={(event) => {
+                      setOutputSource(event.target.value);
+                      if (outputTypeError) setOutputTypeError("");
+                    }}
                   >
                     <option value="">Selecciona un tipo de resultado</option>
                     {outputOptions.map((option) => (
@@ -716,10 +724,15 @@ export function WorkflowDetailView({
                       </option>
                     ))}
                   </select>
+                  {outputTypeError && (
+                    <p className="text-destructive text-sm" role="alert">
+                      {outputTypeError}
+                    </p>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={!outputName.trim() || !outputSource || addingOutput}
+                    disabled={!outputName.trim() || addingOutput}
                     onClick={() => void addOutputNode()}
                   >
                     {addingOutput ? "Agregando…" : "Agregar salida"}
