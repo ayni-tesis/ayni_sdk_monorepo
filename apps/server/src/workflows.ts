@@ -331,6 +331,15 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         },
         409,
       );
+    if (result.reason === "cycle")
+      return c.json(
+        {
+          message: "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.",
+          code: "workflowCycle",
+          nodeIds: result.nodeIds,
+        },
+        409,
+      );
     if (result.reason === "workflowNotFound")
       return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);

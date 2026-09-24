@@ -6,7 +6,38 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatLongDateEs } from "@/lib/format-date";
 import type { Application } from "../types";
+import { findWorkflowCycleNodeIds } from "./application/workflow-detail-view";
 import { ApplicationDetailPanel } from "./application-detail-panel";
+
+describe("findWorkflowCycleNodeIds", () => {
+  const connection = {
+    sourceNodeId: "b",
+    sourcePort: "result",
+    targetNodeId: "a",
+    targetPort: "image",
+  };
+  const edge = (sourceNodeId: string, targetNodeId: string) => ({
+    sourceNodeId,
+    sourcePort: "result",
+    targetNodeId,
+    targetPort: "image",
+  });
+
+  it("finds direct and indirect cycles before posting a connection", () => {
+    expect(
+      findWorkflowCycleNodeIds({ nodes: [], connections: [edge("a", "b")] }, connection),
+    ).toEqual(["b", "a"]);
+    expect(
+      findWorkflowCycleNodeIds(
+        { nodes: [], connections: [edge("a", "c"), edge("c", "b")] },
+        connection,
+      ),
+    ).toEqual(["b", "a", "c"]);
+    expect(findWorkflowCycleNodeIds({ nodes: [], connections: [edge("a", "c")] }, connection)).toBe(
+      undefined,
+    );
+  });
+});
 
 const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
   client: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },

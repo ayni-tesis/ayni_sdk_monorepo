@@ -82,6 +82,39 @@ export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: Wor
   return Boolean(outputType && inputType && outputType === inputType);
 }
 
+export function findWorkflowCycle(
+  draft: WorkflowDraft,
+  connection: WorkflowConnection,
+): string[] | undefined {
+  const pending = [connection.targetNodeId];
+  const previous = new Map<string, string>();
+  const visited = new Set(pending);
+  const edges = draft.connections ?? [];
+  // ponytail: scan all edges per visited node; build adjacency lists if workflows grow materially.
+  while (pending.length) {
+    const nodeId = pending.pop();
+    if (nodeId === undefined) continue;
+    if (nodeId === connection.sourceNodeId) {
+      const path = [nodeId];
+      let currentNodeId = nodeId;
+      while (currentNodeId !== connection.targetNodeId) {
+        const parentNodeId = previous.get(currentNodeId);
+        if (!parentNodeId) return undefined;
+        path.unshift(parentNodeId);
+        currentNodeId = parentNodeId;
+      }
+      return [...new Set([connection.sourceNodeId, ...path])];
+    }
+    for (const edge of edges) {
+      if (edge.sourceNodeId === nodeId && !visited.has(edge.targetNodeId)) {
+        visited.add(edge.targetNodeId);
+        previous.set(edge.targetNodeId, nodeId);
+        pending.push(edge.targetNodeId);
+      }
+    }
+  }
+}
+
 export type ChangeWorkflowConnectionInput = WorkflowConnection & {
   applicationId: string;
   workflowId: string;
@@ -89,6 +122,7 @@ export type ChangeWorkflowConnectionInput = WorkflowConnection & {
 };
 export type ChangeWorkflowConnectionResult =
   | { ok: true; draft: WorkflowDraft }
+  | { ok: false; reason: "cycle"; nodeIds: string[] }
   | {
       ok: false;
       reason:
@@ -129,7 +163,9 @@ async function changeWorkflowConnection(
         select: (fields: Record<string, unknown>) => {
           from: (table: unknown) => {
             where: (condition: unknown) => {
-              limit: (n: number) => Promise<{ draft: WorkflowDraft }[]>;
+              limit: (n: number) => {
+                for: (lock: "update") => Promise<{ draft: WorkflowDraft }[]>;
+              };
             };
           };
         };
@@ -138,7 +174,8 @@ async function changeWorkflowConnection(
         .select({ draft: workflow.draft })
         .from(workflow)
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
-        .limit(1);
+        .limit(1)
+        .for("update");
       const draft = rows[0]?.draft ?? { nodes: [] };
       if (!rows[0]) return { kind: "workflowNotFound" as const };
       const connections = draft.connections ?? [];
@@ -153,6 +190,8 @@ async function changeWorkflowConnection(
       if (!add && !exists) return { kind: "connectionNotFound" as const };
       if (add && !areWorkflowPortsCompatible(draft, connection))
         return { kind: "incompatible" as const };
+      const cycle = add ? findWorkflowCycle(draft, connection) : undefined;
+      if (cycle) return { kind: "cycle" as const, nodeIds: cycle };
       const updatedDraft = {
         ...draft,
         connections: add
@@ -179,6 +218,8 @@ async function changeWorkflowConnection(
     },
   );
   if (!result.ok) return result;
+  if (result.value.kind === "cycle")
+    return { ok: false, reason: "cycle", nodeIds: result.value.nodeIds };
   return result.value.kind === "changed"
     ? { ok: true, draft: result.value.draft }
     : { ok: false, reason: result.value.kind };
