@@ -2045,6 +2045,89 @@ describe("ApplicationDetailPanel", () => {
       });
       expect(screen.getByRole("button", { name: "Eliminar conexión" })).toBeTruthy();
     });
+
+    it("clears deleted condition sources and cycle highlights", async () => {
+      const modelNode = {
+        id: "model-node",
+        type: "model.tflite" as const,
+        modelVersionId: "model-version-1",
+        modelName: "Clasificador",
+        version: "1.0.0",
+        inputs: {
+          image: {
+            type: "image" as const,
+            width: 224,
+            height: 224,
+            channels: 3,
+            normalization: "zero_to_one" as const,
+          },
+        },
+        outputs: { result: { type: "classification" as const, labels: ["hoja"] } },
+      };
+      const unrelatedNode = {
+        id: "unrelated-node",
+        type: "input.image" as const,
+        outputs: { imagen: "image" as const },
+      };
+      const detail = {
+        ...workflowDetail,
+        draft: { nodes: [imageNode, modelNode, unrelatedNode], connections: [] },
+      };
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: detail } : { data: { models: [] } },
+      );
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { code: "workflowCycle", nodeIds: ["image-node", "model-node"] },
+        },
+      });
+      client.delete.mockResolvedValueOnce({
+        data: { draft: { nodes: [unrelatedNode], connections: [] } },
+      });
+
+      render(workflowDetailPanel({ canManage: true }));
+      await screen.findByTestId("workflow-node-model-node");
+      fireEvent.change(screen.getByLabelText("Resultado de origen"), {
+        target: { value: "model-node" },
+      });
+      fireEvent.change(screen.getByLabelText("Etiqueta"), { target: { value: "hoja" } });
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-image-node")).getByRole("button", {
+          name: "Salida imagen",
+        }),
+      );
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-model-node")).getByRole("button", {
+          name: "Conectar entrada de imagen de Clasificador · 1.0.0",
+        }),
+      );
+      expect(
+        await screen.findByText(
+          "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.",
+        ),
+      ).toBeTruthy();
+
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-model-node")).getByRole("button", {
+          name: "Clasificador · 1.0.0",
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: '¿Eliminar "Clasificador · 1.0.0"?',
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => expect(screen.queryByTestId("workflow-node-model-node")).toBeNull());
+      expect(screen.queryByTestId("workflow-node-image-node")).toBeNull();
+      expect((screen.getByLabelText("Resultado de origen") as HTMLSelectElement).value).toBe("");
+      expect((screen.getByLabelText("Etiqueta") as HTMLSelectElement).value).toBe("");
+      expect(
+        screen.queryByText("Esta conexión crearía un ciclo. Los workflows deben ser acíclicos."),
+      ).toBeNull();
+    });
   });
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {

@@ -895,6 +895,12 @@ export function WorkflowDetailView({
           ? current
           : null,
       );
+      const remainingNodeIds = new Set(data.draft.nodes.map((node) => node.id));
+      setCycleNodeIds((current) => current.filter((nodeId) => remainingNodeIds.has(nodeId)));
+      if (conditionSourceId && !remainingNodeIds.has(conditionSourceId)) {
+        setConditionSourceId("");
+        setConditionLabel("");
+      }
       setDeleteNodeDialogOpen(false);
       toast.success("Nodo eliminado.");
     } catch (deleteError) {
