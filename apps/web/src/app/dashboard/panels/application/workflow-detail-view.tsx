@@ -207,6 +207,10 @@ export function WorkflowDetailView({
   const [outputTypeError, setOutputTypeError] = useState("");
   const [addingOutput, setAddingOutput] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
+  const [connectionSource, setConnectionSource] = useState<{
+    sourceNodeId: string;
+    sourcePort: string;
+  } | null>(null);
   const [compatibleTargetId, setCompatibleTargetId] = useState("");
   const addingImageInputRef = useRef(false);
 
@@ -507,6 +511,7 @@ export function WorkflowDetailView({
         : await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(url, connection);
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setSelectedConnection(null);
+      setConnectionSource(null);
       toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
     } catch (connectionError) {
       toast.error(errorMessage(connectionError, "Estos puertos no son compatibles."));
@@ -791,18 +796,25 @@ export function WorkflowDetailView({
                         imagen: image
                       </span>
                       {canManage && application.status === "active" && (
-                        <span
+                        <button
+                          type="button"
                           draggable
-                          className="ml-2 inline-flex cursor-grab rounded border px-2 py-1 text-xs"
-                          onDragStart={(event) =>
+                          aria-pressed={connectionSource?.sourceNodeId === node.id}
+                          className="ml-2 inline-flex cursor-grab rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
+                          onClick={() =>
+                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" })
+                          }
+                          onDragStart={(event) => {
+                            setConnectionSource({ sourceNodeId: node.id, sourcePort: "imagen" });
+                            setCompatibleTargetId("");
                             event.dataTransfer.setData(
                               "application/x-ayni-port",
                               JSON.stringify({ sourceNodeId: node.id, sourcePort: "imagen" }),
-                            )
-                          }
+                            );
+                          }}
                         >
-                          Arrastrar salida
-                        </span>
+                          Salida imagen · seleccionar o arrastrar
+                        </button>
                       )}
                     </>
                   ) : node.type === "model.tflite" ? (
@@ -815,10 +827,20 @@ export function WorkflowDetailView({
                           image: image ({node.inputs.image.width}×{node.inputs.image.height})
                         </span>
                         {canManage && application.status === "active" && (
-                          <span
+                          <button
+                            type="button"
+                            aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
+                            aria-disabled={!connectionSource}
                             className={`rounded border px-2 py-1 text-xs ${compatibleTargetId === node.id ? "border-primary bg-primary/10" : ""}`}
                             onDragOver={(event) => {
-                              if (event.dataTransfer.types.includes("application/x-ayni-port")) {
+                              const sourceNode = draft.nodes.find(
+                                (item) => item.id === connectionSource?.sourceNodeId,
+                              );
+                              if (
+                                event.dataTransfer.types.includes("application/x-ayni-port") &&
+                                sourceNode?.type === "input.image" &&
+                                connectionSource?.sourcePort === "imagen"
+                              ) {
                                 event.preventDefault();
                                 setCompatibleTargetId(node.id);
                               }
@@ -827,19 +849,27 @@ export function WorkflowDetailView({
                             onDrop={(event) => {
                               event.preventDefault();
                               setCompatibleTargetId("");
-                              const source = JSON.parse(
-                                event.dataTransfer.getData("application/x-ayni-port") || "null",
-                              ) as { sourceNodeId: string; sourcePort: string } | null;
-                              if (source)
+                              if (connectionSource)
                                 void changeConnection({
-                                  ...source,
+                                  ...connectionSource,
+                                  targetNodeId: node.id,
+                                  targetPort: "image",
+                                });
+                            }}
+                            onClick={() => {
+                              const sourceNode = draft.nodes.find(
+                                (item) => item.id === connectionSource?.sourceNodeId,
+                              );
+                              if (connectionSource && sourceNode?.type === "input.image")
+                                void changeConnection({
+                                  ...connectionSource,
                                   targetNodeId: node.id,
                                   targetPort: "image",
                                 });
                             }}
                           >
-                            Soltar entrada compatible
-                          </span>
+                            Entrada image · soltar o activar para conectar
+                          </button>
                         )}
                         <span className="rounded bg-muted px-2 py-1">
                           result: {node.outputs.result.type}

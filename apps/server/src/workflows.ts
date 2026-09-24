@@ -80,18 +80,19 @@ type Dependencies = {
 
 export function createWorkflowsApp({ getSession, applications, workflows }: Dependencies) {
   const app = new Hono();
+  const getMemberApplication = async (applicationId: string, userId: string) => {
+    const application = await applications.get(applicationId);
+    if (!application || !(await applications.getMembership(userId, application.organizationId)))
+      return undefined;
+    return application;
+  };
 
   app.get("/applications/:applicationId/workflows", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    }
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
 
     return c.json({ workflows: await workflows.list(application.id) });
   });
@@ -100,13 +101,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    }
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
 
     const detail = await workflows.get(application.id, c.req.param("workflowId"));
     if (!detail) return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
@@ -118,13 +114,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    }
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
 
     let rawBody: unknown;
     try {
@@ -157,13 +148,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    }
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
 
     let rawBody: unknown;
     try {
@@ -205,12 +191,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
   app.post("/applications/:applicationId/workflows/:workflowId/nodes", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    )
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     let body: unknown;
     try {
       body = await c.req.json();
@@ -322,12 +304,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
   app.post("/applications/:applicationId/workflows/:workflowId/connections", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    )
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     const parsed = connectionSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ message: "Selecciona puertos válidos." }, 400);
     const result = await workflows.addConnection({
@@ -361,12 +339,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
   app.delete("/applications/:applicationId/workflows/:workflowId/connections", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    )
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     const parsed = connectionSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ message: "Selecciona una conexión válida." }, 400);
     const result = await workflows.removeConnection({
