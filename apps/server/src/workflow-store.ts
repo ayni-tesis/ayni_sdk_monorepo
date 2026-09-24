@@ -20,7 +20,7 @@ export type Workflow = {
   id: string;
   applicationId: string;
   name: string;
-  status: "draft";
+  status: "draft" | "archived";
   createdAt: string;
   updatedAt: string;
 };
@@ -361,11 +361,14 @@ async function changeWorkflowConnection(
 }
 
 export function toWorkflow(row: WorkflowRow): Workflow {
+  if (row.status !== "draft" && row.status !== "archived") {
+    throw new Error(`Unsupported workflow status: ${String(row.status)}`);
+  }
   return {
     id: row.id,
     applicationId: row.applicationId,
     name: row.name,
-    status: "draft",
+    status: row.status,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
   };
@@ -780,6 +783,43 @@ export async function renameWorkflow(
     if (result.reason === "archived") return { ok: false, reason: "archived" };
     return { ok: false, reason: "notFound" };
   }
+  if (!result.value) return { ok: false, reason: "workflowNotFound" };
+  return { ok: true, workflow: toWorkflow(result.value) };
+}
+
+export type ArchiveWorkflowInput = {
+  applicationId: string;
+  workflowId: string;
+  userId: string;
+};
+
+export type ArchiveWorkflowResult = RenameWorkflowResult;
+
+/**
+ * Archives a workflow so that future synchronizations stop delivering it. Only
+ * the status changes: the draft and every published version are kept, and
+ * versions already stored offline on devices are never withdrawn. Only
+ * workspace administrators and owners of an active application may archive.
+ */
+export async function archiveWorkflow(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, userId }: ArchiveWorkflowInput,
+): Promise<ArchiveWorkflowResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const updater = tx as WorkflowUpdateExecutor;
+      const workflowRows = (await updater
+        .update(workflow)
+        .set({ status: "archived" })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return workflowRows[0];
+    },
+  );
+
+  if (!result.ok) return result;
   if (!result.value) return { ok: false, reason: "workflowNotFound" };
   return { ok: true, workflow: toWorkflow(result.value) };
 }

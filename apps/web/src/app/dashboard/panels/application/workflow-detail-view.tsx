@@ -279,6 +279,50 @@ export function RenameWorkflowDialog({
   );
 }
 
+export type ArchiveWorkflowDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workflowName: string;
+  archiving: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+};
+
+export function ArchiveWorkflowDialog({
+  open,
+  onOpenChange,
+  workflowName,
+  archiving,
+  onSubmit,
+}: ArchiveWorkflowDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>¿Archivar &quot;{workflowName}&quot;?</DialogTitle>
+          <DialogDescription>
+            El SDK dejará de recibir versiones nuevas de este workflow. El historial se conservará.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={archiving}
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={archiving}>
+              {archiving ? "Archivando workflow…" : "Archivar workflow"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export type WorkflowDetailViewProps = {
   application: Application;
   workflowId: string;
@@ -302,6 +346,8 @@ export function WorkflowDetailView({
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
   const [savingRename, setSavingRename] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [publishVersion, setPublishVersion] = useState("");
   const [publishError, setPublishError] = useState("");
@@ -461,6 +507,26 @@ export function WorkflowDetailView({
       );
     } finally {
       setSavingRename(false);
+    }
+  }
+
+  async function handleArchiveWorkflow(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (archiving) return;
+    setArchiving(true);
+    try {
+      const { data } = await httpClient.post<{ workflow: WorkflowItem }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/archive`,
+      );
+      setDetail((current) => (current ? { ...current, workflow: data.workflow } : current));
+      setArchiveDialogOpen(false);
+      toast.success("Workflow archivado.");
+    } catch (archiveError) {
+      toast.error(
+        errorMessage(archiveError, "No pudimos archivar el workflow. Inténtalo nuevamente."),
+      );
+    } finally {
+      setArchiving(false);
     }
   }
 
@@ -855,6 +921,15 @@ export function WorkflowDetailView({
               >
                 Editar nombre
               </DropdownMenuItem>
+              {workflow.status !== "archived" && (
+                <DropdownMenuItem
+                  data-testid="workflow-detail-archive-trigger"
+                  variant="destructive"
+                  onClick={() => setArchiveDialogOpen(true)}
+                >
+                  Archivar workflow
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -1230,6 +1305,14 @@ export function WorkflowDetailView({
         setNameError={setRenameError}
         saving={savingRename}
         onSubmit={handleRenameWorkflow}
+      />
+
+      <ArchiveWorkflowDialog
+        open={archiveDialogOpen}
+        onOpenChange={setArchiveDialogOpen}
+        workflowName={workflow.name}
+        archiving={archiving}
+        onSubmit={handleArchiveWorkflow}
       />
     </section>
   );

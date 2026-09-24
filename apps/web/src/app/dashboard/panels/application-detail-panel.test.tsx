@@ -1075,6 +1075,18 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByTestId("create-workflow-trigger")).toBeNull();
     });
 
+    it("labels an archived workflow as Archivado (US-037)", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { workflows: [{ ...listedWorkflow, status: "archived", latestVersion: "1.0.0" }] },
+      }));
+
+      renderWorkflowList();
+
+      const row = await screen.findByTestId("workflow-row-workflow-1");
+      expect(within(row).getByText("Archivado")).toBeTruthy();
+      expect(within(row).getByText("1.0.0")).toBeTruthy();
+    });
+
     it("shows the latest published version of each workflow under Última versión", async () => {
       client.get.mockImplementation(async () => ({
         data: {
@@ -1875,6 +1887,175 @@ describe("ApplicationDetailPanel", () => {
         expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/..%2Fprivate", {
           name: "Diagnóstico de café",
         });
+      });
+    });
+  });
+
+  describe("US-037: Archivar un workflow", () => {
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft: { nodes: [] },
+      versions: [
+        {
+          id: "version-1",
+          workflowId: "workflow-1",
+          version: "1.0.0",
+          createdAt: "2026-09-23T10:00:00.000Z",
+        },
+      ],
+    };
+    const archivedWorkflow = { ...workflowDetail.workflow, status: "archived" };
+
+    function renderWorkflowDetail(workflowId = "workflow-1") {
+      return render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId={workflowId}
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+    }
+
+    async function openArchiveDialog() {
+      fireEvent.click(await screen.findByTestId("workflow-detail-actions"));
+      fireEvent.click(await screen.findByTestId("workflow-detail-archive-trigger"));
+      return screen.findByRole("dialog");
+    }
+
+    it("warns from Acciones > Archivar workflow that the SDK stops receiving new versions", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      renderWorkflowDetail();
+      const dialog = await openArchiveDialog();
+
+      expect(
+        within(dialog).getByText(
+          "El SDK dejará de recibir versiones nuevas de este workflow. El historial se conservará.",
+        ),
+      ).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Archivar workflow" })).toBeTruthy();
+      expect(within(dialog).getByRole("button", { name: "Cancelar" })).toBeTruthy();
+    });
+
+    it("archives on confirmation, shows Workflow archivado. and the Archivado label, and keeps the versions", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      let resolvePost: (value: unknown) => void = () => {};
+      client.post.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+      );
+
+      renderWorkflowDetail();
+      const dialog = await openArchiveDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Archivar workflow" }));
+
+      expect(
+        (await within(dialog).findByRole("button", { name: "Archivando workflow…" })).hasAttribute(
+          "disabled",
+        ),
+      ).toBe(true);
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/archive");
+
+      resolvePost({ data: { workflow: archivedWorkflow } });
+      await waitFor(() => {
+        expect(toastMock.success).toHaveBeenCalledWith("Workflow archivado.");
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      const header = screen.getByTestId("workflow-detail-header");
+      expect(within(header).getByText("Archivado")).toBeTruthy();
+
+      await userEvent.setup().click(screen.getByRole("tab", { name: "Versiones publicadas" }));
+      expect(
+        within(screen.getByRole("table", { name: "Versiones publicadas" })).getByText("1.0.0"),
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId("workflow-detail-actions"));
+      await screen.findByTestId("workflow-detail-rename-trigger");
+      expect(screen.queryByTestId("workflow-detail-archive-trigger")).toBeNull();
+    });
+
+    it("does not offer Archivar workflow for an already archived workflow", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { ...workflowDetail, workflow: archivedWorkflow },
+      }));
+
+      renderWorkflowDetail();
+      const header = await screen.findByTestId("workflow-detail-header");
+      expect(within(header).getByText("Archivado")).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId("workflow-detail-actions"));
+      await screen.findByTestId("workflow-detail-rename-trigger");
+      expect(screen.queryByTestId("workflow-detail-archive-trigger")).toBeNull();
+    });
+
+    it("closes via Cancelar without archiving", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+
+      renderWorkflowDetail();
+      const dialog = await openArchiveDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it("shows the permission error and keeps the workflow status when the server rejects it", async () => {
+      client.get.mockImplementation(async () => ({ data: workflowDetail }));
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 403,
+          data: { message: "No tienes permiso para archivar este workflow." },
+        },
+      });
+
+      renderWorkflowDetail();
+      const dialog = await openArchiveDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Archivar workflow" }));
+
+      await waitFor(() => {
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No tienes permiso para archivar este workflow.",
+        );
+      });
+      const header = screen.getByTestId("workflow-detail-header");
+      expect(within(header).getByText("Borrador")).toBeTruthy();
+      expect(within(header).queryByText("Archivado")).toBeNull();
+    });
+
+    it("encodes the workflow id when building the archive url", async () => {
+      client.get.mockImplementation(async () => ({
+        data: { ...workflowDetail, workflow: { ...workflowDetail.workflow, id: "../private" } },
+      }));
+      client.post.mockResolvedValueOnce({
+        data: { workflow: { ...archivedWorkflow, id: "../private" } },
+      });
+
+      renderWorkflowDetail("../private");
+      const dialog = await openArchiveDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Archivar workflow" }));
+
+      await waitFor(() => {
+        expect(client.post).toHaveBeenCalledWith(
+          "/applications/app-1/workflows/..%2Fprivate/archive",
+        );
       });
     });
   });

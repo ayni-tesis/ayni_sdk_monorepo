@@ -11,7 +11,7 @@ export const workflow = pgTable(
       .notNull()
       .references(() => application.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    status: text("status", { enum: ["draft"] })
+    status: text("status", { enum: ["draft", "archived"] })
       .default("draft")
       .notNull(),
     draft: jsonb("draft")
@@ -35,6 +35,6 @@ export const workflow = pgTable(
   },
   (table) => [
     index("workflow_application_id_idx").on(table.applicationId),
-    check("workflow_status_check", sql`${table.status} in ('draft')`),
+    check("workflow_status_check", sql`${table.status} in ('draft', 'archived')`),
   ],
 );
