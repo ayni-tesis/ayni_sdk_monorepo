@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatLongDateEs } from "@/lib/format-date";
 import type { Application } from "../types";
+import { stubWorkflowCanvasLayout } from "./application/workflow-canvas-test-utils";
 import { findWorkflowCycleNodeIds } from "./application/workflow-detail-view";
 import { ApplicationDetailPanel } from "./application-detail-panel";
 
@@ -1995,57 +1996,6 @@ describe("ApplicationDetailPanel", () => {
       ).toBe("false");
     });
 
-    it("keeps a surviving connection selected after reloading the returned draft", async () => {
-      const otherNode = {
-        id: "other-node",
-        type: "input.image" as const,
-        outputs: { imagen: "image" as const },
-      };
-      const survivingNode = {
-        id: "surviving-node",
-        type: "input.image" as const,
-        outputs: { imagen: "image" as const },
-      };
-      const connection = {
-        sourceNodeId: "other-node",
-        sourcePort: "imagen",
-        targetNodeId: "surviving-node",
-        targetPort: "imagen",
-      };
-      client.get.mockImplementation(async (url: string) =>
-        url.endsWith("/workflows/workflow-1")
-          ? {
-              data: {
-                ...workflowDetail,
-                draft: { nodes: [imageNode, otherNode, survivingNode], connections: [connection] },
-              },
-            }
-          : { data: { models: [] } },
-      );
-      client.delete.mockResolvedValueOnce({
-        data: { draft: { nodes: [otherNode, survivingNode], connections: [{ ...connection }] } },
-      });
-
-      render(workflowDetailPanel());
-      await screen.findByTestId("workflow-node-image-node");
-      fireEvent.click(screen.getByRole("button", { name: "imagen → imagen" }));
-      fireEvent.click(
-        within(screen.getByTestId("workflow-node-image-node")).getByRole("button", {
-          name: "Imagen de entrada",
-        }),
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
-      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
-      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
-
-      await waitFor(() => {
-        expect(
-          screen.getByRole("button", { name: "imagen → imagen" }).getAttribute("aria-pressed"),
-        ).toBe("true");
-      });
-      expect(screen.getByRole("button", { name: "Eliminar conexión" })).toBeTruthy();
-    });
-
     it("clears deleted condition sources and cycle highlights", async () => {
       const modelNode = {
         id: "model-node",
@@ -2131,6 +2081,9 @@ describe("ApplicationDetailPanel", () => {
   });
 
   describe("US-122: Conectar nodos arrastrando desde sus puertos", () => {
+    // Edges need measured ports, which jsdom cannot provide on its own.
+    stubWorkflowCanvasLayout();
+
     const imageNode = {
       id: "image-node",
       type: "input.image" as const,
@@ -2216,7 +2169,11 @@ describe("ApplicationDetailPanel", () => {
 
       await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Conexión creada."));
       expect(client.post).toHaveBeenCalledWith(connectionsUrl, imageToModel);
-      expect(await screen.findByRole("button", { name: "imagen → image" })).toBeTruthy();
+      await waitFor(() =>
+        expect(
+          document.querySelector('.react-flow__edge[data-id="image-node:imagen:model-node:image"]'),
+        ).not.toBeNull(),
+      );
     });
 
     it("shows the generic message when the connection cannot be saved", async () => {
@@ -2241,7 +2198,6 @@ describe("ApplicationDetailPanel", () => {
 
       expect(toastMock.error).toHaveBeenCalledWith("Estos puertos no son compatibles.");
       expect(client.post).not.toHaveBeenCalled();
-      expect(screen.queryByRole("region", { name: "Conexiones del workflow" })).toBeNull();
     });
 
     it("rejects a connection that already exists", async () => {
@@ -2371,6 +2327,220 @@ describe("ApplicationDetailPanel", () => {
         "No pudimos guardar las posiciones. Se restauró la ubicación anterior.",
       );
       expect(screen.queryByText("Guardando posiciones…")).toBeNull();
+    });
+  });
+
+  describe("US-123: Seleccionar y eliminar conexiones en el lienzo", () => {
+    // Edges need measured ports, which jsdom cannot provide on its own.
+    stubWorkflowCanvasLayout();
+
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite" as const,
+      modelVersionId: "model-version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image" as const,
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one" as const,
+        },
+      },
+      outputs: { result: { type: "classification" as const, labels: ["perro"] } },
+    };
+    const imageToModel = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "model-node",
+      targetPort: "image",
+    };
+    const connected = {
+      nodes: [imageNode, modelNode],
+      connections: [imageToModel],
+      layout: { "image-node": { x: 48, y: 48 }, "model-node": { x: 400, y: 48 } },
+    };
+    const disconnected = { ...connected, connections: [] };
+    const connectionsUrl = "/applications/app-1/workflows/workflow-1/connections";
+
+    function renderConnectedDraft(draft: { nodes: unknown[] } = connected) {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1")
+          ? {
+              data: {
+                workflow: {
+                  id: "workflow-1",
+                  applicationId: "app-1",
+                  name: "Diagnóstico de hoja de café",
+                  status: "draft",
+                  createdAt: "2026-09-21T15:00:00.000Z",
+                  updatedAt: "2026-09-21T16:00:00.000Z",
+                },
+                draft,
+                versions: [],
+              },
+            }
+          : { data: { models: [] } },
+      );
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+    }
+    const imageToModelEdge = () =>
+      document.querySelector('.react-flow__edge[data-id="image-node:imagen:model-node:image"]');
+
+    async function deleteImageToModel() {
+      renderConnectedDraft();
+      await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
+      fireEvent.click(imageToModelEdge() as Element);
+      fireEvent.click(await screen.findByRole("button", { name: "Eliminar conexión" }));
+    }
+
+    /** Runs the Deshacer action of the last success notice. */
+    async function undoLastNotice() {
+      const options = toastMock.success.mock.calls.at(-1)?.[1] as {
+        action: { onClick: () => void };
+      };
+      await act(async () => options.action.onClick());
+    }
+
+    it("deletes the selected connection, keeps both nodes and offers Deshacer for 5 seconds", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+
+      await deleteImageToModel();
+
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+      expect(client.delete).toHaveBeenCalledExactlyOnceWith(connectionsUrl, {
+        data: imageToModel,
+      });
+      expect(toastMock.success).toHaveBeenCalledWith("Conexión eliminada.", {
+        duration: 5000,
+        action: expect.objectContaining({ label: "Deshacer" }),
+      });
+      expect(screen.getByTestId("workflow-node-image-node")).toBeTruthy();
+      expect(screen.getByTestId("workflow-node-model-node")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Eliminar conexión" })).toBeNull();
+    });
+
+    it("deletes the selected connection with the Supr key", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      renderConnectedDraft();
+      await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
+
+      fireEvent.click(imageToModelEdge() as Element);
+      await screen.findByRole("button", { name: "Eliminar conexión" });
+      fireEvent.keyDown(screen.getByRole("region", { name: "Lienzo del workflow" }), {
+        key: "Delete",
+      });
+
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+      expect(client.delete).toHaveBeenCalledExactlyOnceWith(connectionsUrl, {
+        data: imageToModel,
+      });
+    });
+
+    it("recreates the same connection with Deshacer while the draft is unchanged", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.post.mockResolvedValueOnce({ data: { draft: connected } });
+      await deleteImageToModel();
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+
+      await undoLastNotice();
+
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(connectionsUrl, imageToModel);
+      await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
+      expect(toastMock.success).toHaveBeenLastCalledWith("Conexión restaurada.");
+    });
+
+    it("does not restore the connection once the draft changed", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.patch.mockResolvedValueOnce({ data: { positions: {} } });
+      await deleteImageToModel();
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+
+      // Moving a node changes the draft after the deletion.
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.keyDown(canvas, { key: "ArrowRight", shiftKey: true });
+      fireEvent.keyUp(canvas, { key: "Shift" });
+      await waitFor(() => expect(client.patch).toHaveBeenCalledTimes(1));
+      await undoLastNotice();
+
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No pudimos restaurar la conexión porque el borrador cambió.",
+      );
+      expect(client.post).not.toHaveBeenCalled();
+      expect(imageToModelEdge()).toBeNull();
+    });
+
+    it("reloads the draft when the connection cannot be restored", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.post.mockRejectedValueOnce(new Error("network"));
+      await deleteImageToModel();
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+      const loads = client.get.mock.calls.filter(([url]) =>
+        String(url).endsWith("/workflows/workflow-1"),
+      ).length;
+
+      await undoLastNotice();
+
+      expect(toastMock.error).toHaveBeenCalledWith("No pudimos restaurar la conexión.");
+      await waitFor(() =>
+        expect(
+          client.get.mock.calls.filter(([url]) => String(url).endsWith("/workflows/workflow-1")),
+        ).toHaveLength(loads + 1),
+      );
+    });
+
+    it("keeps the connection when it cannot be deleted", async () => {
+      client.delete.mockRejectedValueOnce(new Error("network"));
+
+      await deleteImageToModel();
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No pudimos eliminar la conexión."),
+      );
+      expect(toastMock.success).not.toHaveBeenCalled();
+      await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
+    });
+
+    it("keeps a surviving connection selected after deleting a node", async () => {
+      const otherNode = { ...imageNode, id: "other-node" };
+      client.delete.mockResolvedValueOnce({ data: { draft: connected } });
+      renderConnectedDraft({ ...connected, nodes: [imageNode, modelNode, otherNode] });
+      await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
+
+      fireEvent.click(imageToModelEdge() as Element);
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-other-node")).getByRole("button", {
+          name: "Imagen de entrada",
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
+      const dialog = await screen.findByRole("dialog", { name: '¿Eliminar "Imagen de entrada"?' });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Eliminar nodo" }));
+
+      await waitFor(() => expect(screen.queryByTestId("workflow-node-other-node")).toBeNull());
+      expect(imageToModelEdge()?.classList.contains("selected")).toBe(true);
+      expect(screen.getByRole("button", { name: "Eliminar conexión" })).toBeTruthy();
     });
   });
 

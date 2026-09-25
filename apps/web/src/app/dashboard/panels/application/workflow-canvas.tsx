@@ -5,9 +5,14 @@ import "@xyflow/react/dist/style.css";
 import { IconBan, IconCheck } from "@tabler/icons-react";
 import {
   Background,
+  BaseEdge,
   type Connection,
   type Dimensions,
   type Edge,
+  type EdgeChange,
+  EdgeLabelRenderer,
+  type EdgeProps,
+  getBezierPath,
   Handle,
   MarkerType,
   type Node,
@@ -126,6 +131,18 @@ type WorkflowFlowNodeData = {
   onConnect: (connection: WorkflowCanvasConnection) => void;
 };
 type WorkflowFlowNode = Node<WorkflowFlowNodeData, "workflow">;
+type WorkflowFlowEdgeData = {
+  connection: WorkflowCanvasConnection;
+  /** The source of a condition or an output: it can be reassigned, not removed. */
+  required: boolean;
+  /** Offers Eliminar conexión once the edge is selected. */
+  canManage: boolean;
+  /** False while positions save. */
+  canRemove: boolean;
+  hovered: boolean;
+  onRemove: (connection: WorkflowCanvasConnection) => void;
+};
+type WorkflowFlowEdge = Edge<WorkflowFlowEdgeData, "workflow">;
 
 const NODE_WIDTH = 292;
 const NODE_HEIGHT = 188;
@@ -169,6 +186,10 @@ const PALETTE_NODE_TYPES: readonly string[] = [
 ];
 export const WORKFLOW_CYCLE_MESSAGE =
   "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.";
+export const WORKFLOW_REQUIRED_CONNECTION_MESSAGE =
+  "Esta conexión es obligatoria. Reasígnala arrastrándola a otro nodo.";
+const EDGE_COLOR = "var(--muted-foreground)";
+const SELECTED_EDGE_COLOR = "var(--color-cyan-500, #06b6d4)";
 
 export function defaultWorkflowCanvasPosition(index: number): WorkflowCanvasPosition {
   return { x: 48 + (index % 3) * NODE_GAP_X, y: 48 + Math.floor(index / 3) * NODE_GAP_Y };
@@ -246,6 +267,21 @@ export function workflowNodeTitle(node: WorkflowCanvasNode): string {
         : `Salida: ${node.name}`;
 }
 
+const connectionKey = (edge: WorkflowCanvasConnection) =>
+  `${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`;
+
+export function sameWorkflowConnection(
+  a: WorkflowCanvasConnection,
+  b: WorkflowCanvasConnection,
+): boolean {
+  return connectionKey(a) === connectionKey(b);
+}
+
+/** Only connections between ports can be removed; condition and output sources cannot. */
+function removableConnection(draft: WorkflowCanvasDraft, connection: WorkflowCanvasConnection) {
+  return (draft.connections ?? []).some((edge) => sameWorkflowConnection(edge, connection));
+}
+
 export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
   return [
     ...(draft.connections ?? []),
@@ -303,6 +339,7 @@ export function WorkflowPaletteButton({
 }
 
 const nodeTypes = { workflow: WorkflowNodeCard };
+const edgeTypes = { workflow: WorkflowEdge };
 
 /** How a port answers the connection in progress; the port it starts from has none. */
 function portState(
@@ -482,6 +519,74 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
   );
 }
 
+// An edge thickens under the pointer; once selected it turns cyan and thicker,
+// solid instead of dashed, and shows Eliminar conexión at its midpoint.
+function WorkflowEdge({
+  id,
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  markerEnd,
+  selected,
+  data,
+}: EdgeProps<WorkflowFlowEdge>) {
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const helpId = `workflow-edge-help-${id}`;
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={{
+          stroke: selected ? SELECTED_EDGE_COLOR : EDGE_COLOR,
+          strokeWidth: selected ? 4 : data?.hovered ? 3 : 2,
+          strokeDasharray: selected ? undefined : "5 5",
+        }}
+      />
+      {selected && data?.canManage && (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-auto absolute flex max-w-56 flex-col items-center gap-1 text-center"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="bg-background"
+              disabled={data.required || !data.canRemove}
+              aria-describedby={data.required ? helpId : undefined}
+              onClick={() => data.onRemove(data.connection)}
+            >
+              Eliminar conexión
+            </Button>
+            {data.required && (
+              <p
+                id={helpId}
+                className="rounded bg-background/90 px-2 py-1 text-muted-foreground text-xs"
+              >
+                {WORKFLOW_REQUIRED_CONNECTION_MESSAGE}
+              </p>
+            )}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -504,7 +609,8 @@ type WorkflowCanvasProps = {
   selectedNodeIds: string[];
   onSelectNodes: (nodeIds: string[]) => void;
   onRequestDeleteNode: (nodeId: string) => void;
-  onSelectConnection: (connection: WorkflowCanvasConnection) => void;
+  /** Selects the clicked edge; `null` when a click elsewhere clears it. */
+  onSelectConnection: (connection: WorkflowCanvasConnection | null) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
   /** Saves every moved node in one operation. */
   onMoveNodes: (positions: WorkflowCanvasPositions) => void;
@@ -552,6 +658,7 @@ function WorkflowCanvasFlow({
   const [keyboardMoved, setKeyboardMoved] = useState<Record<string, XYPosition>>({});
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [dropActive, setDropActive] = useState(false);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   // React Flow may report several selection changes before the next render.
   const selectionRef = useRef(selectedNodeIds);
   selectionRef.current = selectedNodeIds;
@@ -638,6 +745,7 @@ function WorkflowCanvasFlow({
     measured: measured[node.id],
     initialWidth: NODE_WIDTH,
     initialHeight: NODE_HEIGHT,
+    selectable: canManageDraft,
     selected: selectedNodeIds.includes(node.id),
     data: {
       node,
@@ -652,18 +760,53 @@ function WorkflowCanvasFlow({
       onConnect,
     },
   }));
-  const edges: Edge[] = workflowCanvasEdges(draft)
+  const edges: WorkflowFlowEdge[] = workflowCanvasEdges(draft)
     .filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId))
-    .map((edge) => ({
-      id: `${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`,
-      source: edge.sourceNodeId,
-      sourceHandle: edge.sourcePort,
-      target: edge.targetNodeId,
-      targetHandle: edge.targetPort,
-      selectable: false,
-      style: { stroke: "var(--muted-foreground)", strokeWidth: 2, strokeDasharray: "5 5" },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--muted-foreground)" },
-    }));
+    .map((edge) => {
+      const selected = selectedConnection
+        ? sameWorkflowConnection(edge, selectedConnection)
+        : false;
+      return {
+        id: connectionKey(edge),
+        type: "workflow",
+        source: edge.sourceNodeId,
+        sourceHandle: edge.sourcePort,
+        target: edge.targetNodeId,
+        targetHandle: edge.targetPort,
+        selected,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: selected ? SELECTED_EDGE_COLOR : EDGE_COLOR,
+        },
+        data: {
+          connection: edge,
+          required: !removableConnection(draft, edge),
+          canManage: canManageDraft,
+          canRemove: canManage,
+          hovered: hoveredEdgeId === connectionKey(edge),
+          onRemove: onRemoveConnection,
+        },
+      };
+    });
+  const removableSelection =
+    canManage && selectedConnection && removableConnection(draft, selectedConnection)
+      ? selectedConnection
+      : null;
+
+  // Only selection matters here: edges change through the draft. Selecting one
+  // edge may arrive in the same batch as unselecting the previous one, in either
+  // order, so a selected edge wins and only the edge shown as selected clears it.
+  function handleEdgesChange(changes: EdgeChange<WorkflowFlowEdge>[]) {
+    let selection: WorkflowCanvasConnection | null | undefined;
+    for (const change of changes) {
+      if (change.type !== "select") continue;
+      const edge = edges.find((item) => item.id === change.id);
+      if (!edge?.data) continue;
+      if (change.selected) selection = edge.data.connection;
+      else if (selection === undefined && edge.selected) selection = null;
+    }
+    if (selection !== undefined) onSelectConnection(selection);
+  }
 
   // Sizes, in-progress drags and selection matter here; removal is off.
   function handleNodesChange(changes: NodeChange<WorkflowFlowNode>[]) {
@@ -718,7 +861,15 @@ function WorkflowCanvasFlow({
             // biome-ignore lint/a11y/noNoninteractiveTabindex: the canvas takes keyboard shortcuts.
             tabIndex={0}
             className={`relative h-[720px] overflow-hidden rounded-lg border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
-            onKeyDown={moveSelectionWithKeyboard}
+            onKeyDown={(event) => {
+              // Supr deletes the selected connection, without a dialog.
+              if (event.key === "Delete" && removableSelection) {
+                event.preventDefault();
+                onRemoveConnection(removableSelection);
+                return;
+              }
+              moveSelectionWithKeyboard(event);
+            }}
             onKeyUp={(event) => {
               if (event.key === "Shift") finishKeyboardMove();
             }}
@@ -753,11 +904,17 @@ function WorkflowCanvasFlow({
               );
             }}
           >
-            <ReactFlow<WorkflowFlowNode>
+            <ReactFlow<WorkflowFlowNode, WorkflowFlowEdge>
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               onNodesChange={handleNodesChange}
+              onEdgesChange={handleEdgesChange}
+              onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
+              onEdgeMouseLeave={(_, edge) =>
+                setHoveredEdgeId((current) => (current === edge.id ? null : current))
+              }
               // Also called, with every dragged node, when the selection box is dragged.
               onNodeDragStop={(_, _node, moved) => saveDraggedNodes(moved)}
               // A drag connects only from an output to a compatible input; the
@@ -800,8 +957,9 @@ function WorkflowCanvasFlow({
               edgesFocusable={false}
               // Shift + drag on the background draws a selection box; Ctrl or Cmd +
               // click adds or removes a node; a click on the background clears it.
-              elementsSelectable={canManageDraft}
-              selectionKeyCode="Shift"
+              // Members may still select an edge to inspect it, but no node.
+              elementsSelectable
+              selectionKeyCode={canManageDraft ? "Shift" : null}
               multiSelectionKeyCode={["Control", "Meta"]}
               // The canvas moves the selection with Shift + arrows itself, so React
               // Flow's own arrow-key moves stay off.
@@ -852,35 +1010,6 @@ function WorkflowCanvasFlow({
               </div>
             )}
           </section>
-          {draft.connections?.length ? (
-            <section className="flex flex-wrap gap-2" aria-label="Conexiones del workflow">
-              {draft.connections.map((edge) => {
-                const selected = selectedConnection === edge;
-                return (
-                  <Button
-                    key={`${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`}
-                    type="button"
-                    size="sm"
-                    variant={selected ? "secondary" : "outline"}
-                    aria-pressed={selected}
-                    onClick={() => onSelectConnection(edge)}
-                  >
-                    {edge.sourcePort} → {edge.targetPort}
-                  </Button>
-                );
-              })}
-            </section>
-          ) : null}
-          {selectedConnection && canManage && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => onRemoveConnection(selectedConnection)}
-            >
-              Eliminar conexión
-            </Button>
-          )}
           {/* Deleting one node needs exactly one selected node. */}
           {selectedNodeIds.length === 1 && canManage && (
             <Button

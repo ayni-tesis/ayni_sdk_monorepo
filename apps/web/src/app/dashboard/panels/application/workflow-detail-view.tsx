@@ -35,6 +35,7 @@ import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
 import {
   nextWorkflowCanvasPosition,
+  sameWorkflowConnection,
   WORKFLOW_CYCLE_MESSAGE,
   WorkflowCanvas,
   type WorkflowCanvasDraft,
@@ -44,6 +45,7 @@ import {
   type WorkflowCanvasConnection as WorkflowConnectionItem,
   type WorkflowCanvasNode as WorkflowNodeItem,
   WorkflowPaletteButton,
+  workflowCanvasEdges,
   workflowNodeTitle,
 } from "./workflow-canvas";
 import {
@@ -131,6 +133,10 @@ type WorkflowValidationResult = {
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
 const WORKFLOW_POSITIONS_SAVE_ERROR =
   "No pudimos guardar las posiciones. Se restauró la ubicación anterior.";
+const WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE =
+  "No pudimos restaurar la conexión porque el borrador cambió.";
+// Deshacer stays available while the notice is visible.
+const WORKFLOW_CONNECTION_UNDO_DURATION = 5000;
 const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
@@ -387,6 +393,10 @@ export function WorkflowDetailView({
     result: WorkflowValidationResult;
   } | null>(null);
   const addingImageInputRef = useRef(false);
+  const removingConnectionRef = useRef(false);
+  // A notice's Deshacer runs later than the render that created it.
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -840,8 +850,10 @@ export function WorkflowDetailView({
     else void addOutputNode(position);
   }
 
-  async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
-    if (!remove && detail) {
+  const connectionsUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
+
+  async function changeConnection(connection: WorkflowConnectionItem) {
+    if (detail) {
       // Rejected connections never reach the server and leave the draft as it is.
       const compatibility = workflowPortCompatibility(detail.draft, connection);
       if (compatibility !== "compatible") {
@@ -860,27 +872,72 @@ export function WorkflowDetailView({
       }
     }
     try {
-      const url = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
-      const { data } = remove
-        ? await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(url, { data: connection })
-        : await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(url, connection);
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        connectionsUrl,
+        connection,
+      );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setCycleNodeIds([]);
       setSelectedConnection(null);
       setConnectionSource(null);
-      toast.success(remove ? "Conexión eliminada." : "Conexión creada.");
+      toast.success("Conexión creada.");
     } catch (connectionError) {
       if (
         axios.isAxiosError(connectionError) &&
         connectionError.response?.data?.code === "workflowCycle"
       )
         setCycleNodeIds(connectionError.response.data.nodeIds ?? []);
-      toast.error(
-        errorMessage(
-          connectionError,
-          remove ? "No pudimos eliminar la conexión." : "No pudimos crear la conexión.",
-        ),
+      toast.error(errorMessage(connectionError, "No pudimos crear la conexión."));
+      void loadDetail(application.id, workflowId);
+    }
+  }
+
+  // Deshacer restores the connection only on the very draft the deletion left.
+  // TODO(US-130): compare the server's draft revision instead, so that changes
+  // made by someone else also block the restore.
+  async function removeConnection(connection: WorkflowConnectionItem) {
+    if (removingConnectionRef.current) return;
+    removingConnectionRef.current = true;
+    try {
+      const { data } = await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(
+        connectionsUrl,
+        { data: connection },
       );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setCycleNodeIds([]);
+      setSelectedConnection(null);
+      toast.success("Conexión eliminada.", {
+        duration: WORKFLOW_CONNECTION_UNDO_DURATION,
+        action: {
+          label: "Deshacer",
+          onClick: () => void restoreConnection(connection, data.draft),
+        },
+      });
+    } catch (removeError) {
+      toast.error(errorMessage(removeError, "No pudimos eliminar la conexión."));
+      void loadDetail(application.id, workflowId);
+    } finally {
+      removingConnectionRef.current = false;
+    }
+  }
+
+  async function restoreConnection(
+    connection: WorkflowConnectionItem,
+    draftAfterRemoval: WorkflowDetailItem["draft"],
+  ) {
+    if (detailRef.current?.draft !== draftAfterRemoval) {
+      toast.error(WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE);
+      return;
+    }
+    try {
+      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
+        connectionsUrl,
+        connection,
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      toast.success("Conexión restaurada.");
+    } catch (restoreError) {
+      toast.error(errorMessage(restoreError, "No pudimos restaurar la conexión."));
       void loadDetail(application.id, workflowId);
     }
   }
@@ -896,12 +953,8 @@ export function WorkflowDetailView({
       setSelectedNodeIds([]);
       setSelectedConnection((current) =>
         current
-          ? (data.draft.connections?.find(
-              (edge) =>
-                edge.sourceNodeId === current.sourceNodeId &&
-                edge.sourcePort === current.sourcePort &&
-                edge.targetNodeId === current.targetNodeId &&
-                edge.targetPort === current.targetPort,
+          ? (workflowCanvasEdges(data.draft).find((edge) =>
+              sameWorkflowConnection(edge, current),
             ) ?? null)
           : null,
       );
@@ -1081,7 +1134,7 @@ export function WorkflowDetailView({
             onConnect={(connection) => void changeConnection(connection)}
             onMoveNodes={(positions) => void moveWorkflowNodes(positions)}
             onDropPalette={dropPaletteNode}
-            onRemoveConnection={(connection) => void changeConnection(connection, true)}
+            onRemoveConnection={(connection) => void removeConnection(connection)}
             palette={
               canManage && application.status === "active" ? (
                 <aside
