@@ -9,7 +9,7 @@ nodos del lienzo para organizar visualmente la lógica del workflow.
 
 ## Interfaz
 
-En `Borrador`, cualquier parte de la tarjeta de un nodo sirve para arrastrarlo, excepto sus puertos y botones. Al soltarlo, el nodo se alinea a una cuadrícula de 16 px; el control `Alinear a la cuadrícula` activa o desactiva esa alineación. `Shift` + arrastre sobre el fondo dibuja una caja de selección; `Ctrl`/`Cmd` + clic agrega o quita un nodo de la selección. Los nodos seleccionados muestran un borde cian más grueso y se mueven juntos. Mientras guarda muestra `Guardando posiciones…` junto al nivel de zoom; al terminar, el indicador desaparece sin aviso adicional, porque mover es una acción frecuente; si falla, devuelve los nodos a su ubicación anterior y muestra `No pudimos guardar las posiciones. Se restauró la ubicación anterior.` Sin permisos, los nodos no se pueden arrastrar.
+En `Borrador`, cualquier parte de la tarjeta de un nodo sirve para arrastrarlo, excepto sus puertos y botones. Al soltarlo, el nodo se alinea a una cuadrícula de 16 px; el control `Alinear a la cuadrícula` activa o desactiva esa alineación. `Shift` + arrastre sobre el fondo dibuja una caja de selección; `Ctrl`/`Cmd` + clic agrega o quita un nodo de la selección; `Seleccionar todo`, en la barra del lienzo, selecciona todos los nodos, y un clic sobre el fondo limpia la selección. Los nodos seleccionados muestran un borde cian más grueso y se mueven juntos. Mientras guarda muestra `Guardando posiciones…` junto al nivel de zoom; al terminar, el indicador desaparece sin aviso adicional, porque mover es una acción frecuente; si falla, devuelve los nodos a su ubicación anterior y muestra `No pudimos guardar las posiciones. Se restauró la ubicación anterior.` Sin permisos, los nodos no se pueden arrastrar.
 
 ## Happy path
 
@@ -45,6 +45,7 @@ Scenario: Miembro sin permisos de administración
 - Solo los administradores pueden mover nodos del borrador.
 - Mover nodos cambia solo su posición en el lienzo; no altera nodos, conexiones ni versiones publicadas.
 - Las posiciones de todos los nodos movidos se guardan juntas o no se guarda ninguna.
+- Si otra persona cambió el borrador desde que se cargó, las posiciones no se guardan y se aplica US-130.
 - Un nodo puede ubicarse en cualquier zona del lienzo, incluso a la izquierda o arriba del nodo inicial.
 - `Alinear a la cuadrícula` está activado por defecto; desactivarlo permite posiciones libres y no mueve los nodos ya ubicados.
 - El nodo seleccionado se distingue por color y por grosor del borde, no solo por color.

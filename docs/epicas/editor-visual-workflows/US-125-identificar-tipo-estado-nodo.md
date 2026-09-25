@@ -35,7 +35,8 @@ Scenario: Corregir un nodo con error
 ## Criterios de aceptación
 
 - Cada tipo de nodo se distingue por icono y texto, no solo por color.
-- El icono, el tipo y el resumen son visibles para cualquier miembro del workspace; los indicadores de error aparecen tras una validación.
+- El icono, el tipo y el resumen son visibles para cualquier miembro del workspace.
+- Los indicadores de error solo los ve el administrador que ejecutó `Validar workflow`, en esa sesión; no se guardan en el borrador ni los ven otras personas.
 - Los indicadores de error usan los mismos mensajes que el panel `Errores de validación`.
 - El lienzo no muestra errores que ya no corresponden al borrador actual.
 - Las versiones e identificadores usan fuente monoespaciada; los nombres usan la fuente normal.

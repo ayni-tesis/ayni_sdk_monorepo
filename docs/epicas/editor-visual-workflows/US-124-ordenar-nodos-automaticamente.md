@@ -9,7 +9,7 @@ del lienzo para leer el workflow de izquierda a derecha sin acomodarlo a mano.
 
 ## Interfaz
 
-La barra del lienzo ofrece `Ordenar nodos` (atajo `Shift` + `Alt` + `T`). La acción acomoda los nodos por niveles del DAG, de izquierda a derecha, empezando por la entrada de imagen y separando las ramas `Verdadero` y `Falso`. Después ajusta la vista a todos los nodos. Mientras guarda muestra `Ordenando nodos…`; al terminar, `Nodos ordenados.` con la acción `Deshacer`, que restaura las posiciones anteriores. Si falla, conserva las posiciones anteriores y muestra `No pudimos ordenar los nodos. Inténtalo nuevamente.` Sin nodos, el botón está deshabilitado con la ayuda `No hay nodos para ordenar.`; sin permisos, no aparece.
+La barra del lienzo ofrece `Ordenar nodos` (atajo `Shift` + `Alt` + `T`). La acción acomoda los nodos por niveles del DAG, de izquierda a derecha, empezando por la entrada de imagen y separando las ramas `Verdadero` y `Falso`. Usa el tamaño real de cada tarjeta en pantalla. Los nodos que no se alcanzan desde la entrada de imagen se ubican en una fila aparte, debajo del flujo principal. Después ajusta la vista a todos los nodos. Mientras guarda muestra `Ordenando nodos…`; al terminar, `Nodos ordenados.` con la acción `Deshacer`, que restaura las posiciones anteriores. Si falla, conserva las posiciones anteriores y muestra `No pudimos ordenar los nodos. Inténtalo nuevamente.` Sin nodos, el botón está deshabilitado con la ayuda `No hay nodos para ordenar.`; sin permisos, no aparece.
 
 ## Happy path
 
@@ -36,5 +36,7 @@ Scenario: Falla el guardado del orden
 
 - Solo los administradores pueden ordenar los nodos del borrador.
 - Ordenar cambia solo posiciones; no altera nodos, conexiones ni versiones publicadas.
-- Ordenar dos veces seguidas el mismo borrador produce las mismas posiciones.
+- Ordenar dos veces seguidas el mismo borrador produce las mismas posiciones: los empates dentro de un nivel se resuelven por el orden de los nodos en el borrador.
+- Ningún par de tarjetas se superpone según su tamaño medido, con una separación mínima de 48 px entre niveles y de 24 px entre nodos de un mismo nivel.
+- Los nodos desconectados o con errores de validación también se ordenan y no bloquean la acción.
 - `Deshacer` restaura exactamente las posiciones previas al orden.

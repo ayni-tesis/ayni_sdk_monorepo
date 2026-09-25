@@ -10,7 +10,7 @@ y ubicado sin pasos adicionales.
 
 ## Interfaz
 
-Cada puerto de salida sin conexiones muestra un botón `+` con el nombre accesible `Agregar nodo después de <puerto>`. Al pulsarlo, o al soltar una conexión en un espacio vacío del lienzo, se abre el panel `Agregar nodo` filtrado a los tipos que aceptan ese puerto: después de `imagen`, modelos; después de `Resultado` de clasificación, condiciones y salidas de clasificación; después de `Resultado` de detección, salidas de detección; después de `Verdadero` o `Falso`, salidas booleanas. El puerto elegido queda como origen del nodo nuevo, por ejemplo como `Resultado de origen` de una condición; si el tipo necesita más datos, como la `Etiqueta` de una condición o el `Nombre de salida`, el panel los pide antes de agregarlo, y el `Tipo de resultado` de una salida se deduce del puerto. El nodo se ubica a la derecha del nodo origen sin superponerse y queda conectado. Muestra `Nodo agregado y conectado.`; si falla, `No pudimos agregar el nodo.` y el lienzo no cambia. Si ningún tipo es compatible muestra `No hay nodos compatibles con esta salida.`
+Cada puerto de salida muestra un botón `+` con el nombre accesible `Agregar nodo después de <puerto>`, tenga o no conexiones: en un puerto ya conectado, el nodo nuevo abre una rama adicional sin tocar las existentes. Al pulsarlo, o al soltar una conexión en un espacio vacío del lienzo, se abre el panel `Agregar nodo` filtrado a los tipos que aceptan ese puerto: después de `imagen`, modelos; después de `Resultado` de clasificación, condiciones y salidas de clasificación; después de `Resultado` de detección, salidas de detección; después de `Verdadero` o `Falso`, salidas booleanas. El puerto elegido queda como origen del nodo nuevo, por ejemplo como `Resultado de origen` de una condición; si el tipo necesita más datos, como la `Etiqueta` de una condición o el `Nombre de salida`, el panel los pide antes de agregarlo, y el `Tipo de resultado` de una salida se deduce del puerto. El nodo se ubica a la derecha del nodo origen sin superponerse y queda conectado. Muestra `Nodo agregado y conectado.`; si falla, `No pudimos agregar el nodo.` y el lienzo no cambia. Si ningún tipo es compatible muestra `No hay nodos compatibles con esta salida.`
 
 ## Happy path
 
@@ -20,6 +20,14 @@ Scenario: Agregar una salida después de una rama de condición
   When pulso + en su puerto Verdadero y elijo una salida booleana
   Then el sistema agrega la salida conectada a la rama Verdadero
   And la ubica a la derecha de la condición
+```
+
+```gherkin
+Scenario: Abrir una segunda rama desde un resultado ya conectado
+  Given que soy administrador de un workflow con un modelo de clasificación cuyo Resultado ya alimenta una salida
+  When pulso + en su puerto Resultado y agrego una condición
+  Then el sistema agrega la condición con ese modelo como origen
+  And la salida existente conserva su conexión
 ```
 
 ## Bad path
@@ -36,5 +44,6 @@ Scenario: Falla al agregar el nodo conectado
 
 - Solo los administradores pueden agregar nodos desde un puerto.
 - El nodo y su conexión se guardan juntos o no se guarda ninguno.
+- Agregar desde un puerto ya conectado crea una rama nueva y conserva las conexiones existentes de ese puerto.
 - El panel ofrece solo tipos compatibles con el puerto de origen, con las reglas de compatibilidad del DAG.
 - El nodo nuevo se ubica a la derecha del nodo origen; si ese lugar está ocupado, baja hasta el primer espacio libre, sin superponerse a nodos existentes.

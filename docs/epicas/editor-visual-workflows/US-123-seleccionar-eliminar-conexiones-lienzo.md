@@ -9,7 +9,7 @@ en el lienzo y eliminarla para corregir el flujo sin buscarla en una lista.
 
 ## Interfaz
 
-Al pasar el cursor sobre una arista, esta se engrosa; al hacer clic queda seleccionada en cian y muestra en su punto medio el botón `Eliminar conexión`. La tecla `Supr` elimina la arista seleccionada. Tras eliminarla muestra `Conexión eliminada.` con la acción `Deshacer`, que vuelve a crear la misma conexión mientras el aviso está visible; si falla, `No pudimos eliminar la conexión.` y la arista permanece. Las aristas que dan el origen obligatorio de una condición o una salida no se pueden eliminar: al seleccionarlas, el botón aparece deshabilitado con la ayuda `Esta conexión es obligatoria. Reasígnala arrastrándola a otro nodo.` Esta interacción reemplaza la lista de conexiones que hoy aparece debajo del lienzo. Sin permisos, las aristas se pueden seleccionar para inspeccionarlas, pero no eliminar.
+Al pasar el cursor sobre una arista, esta se engrosa; al hacer clic queda seleccionada en cian y muestra en su punto medio el botón `Eliminar conexión`. La tecla `Supr` elimina la arista seleccionada. Tras eliminarla muestra `Conexión eliminada.` con la acción `Deshacer`, disponible mientras el aviso está visible (5 segundos). `Deshacer` vuelve a crear la misma conexión solo si el borrador no cambió desde la eliminación; si cambió, muestra `No pudimos restaurar la conexión porque el borrador cambió.` Si eliminar falla, muestra `No pudimos eliminar la conexión.` y la arista permanece. Solo se eliminan las conexiones entre puertos, como imagen → modelo. Las aristas que dan el origen obligatorio de una condición o una salida no se pueden eliminar: al seleccionarlas, el botón aparece deshabilitado con la ayuda `Esta conexión es obligatoria. Reasígnala arrastrándola a otro nodo.` (US-131). Esta interacción reemplaza la lista de conexiones que hoy aparece debajo del lienzo. Sin permisos, las aristas se pueden seleccionar para inspeccionarlas, pero no eliminar.
 
 ## Happy path
 
@@ -44,6 +44,6 @@ Scenario: Miembro sin permisos de administración
 
 - Solo los administradores pueden eliminar conexiones del borrador.
 - Eliminar una conexión no elimina los nodos que unía.
-- `Deshacer` restaura la conexión eliminada con los mismos puertos; si ya no es válida, muestra `No pudimos restaurar la conexión.` y el DAG no cambia.
+- `Deshacer` restaura la conexión eliminada con los mismos puertos solo si la revisión del borrador es la misma que dejó la eliminación (US-130); en otro caso, el DAG no cambia.
 - El origen obligatorio de una condición o una salida solo se puede reasignar, no dejar vacío.
 - La arista seleccionada se distingue por color y por grosor, no solo por color.

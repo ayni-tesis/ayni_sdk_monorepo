@@ -9,13 +9,14 @@ borrador para recorrer workflows grandes sin perder de vista su estructura.
 
 ## Interfaz
 
-En `Borrador`, el lienzo ocupa el área principal. Abajo a la izquierda están los controles `Acercar`, `Alejar` y `Ajustar a la vista`, junto al nivel de zoom actual, por ejemplo `100 %`; hacer clic en ese nivel ejecuta `Restablecer zoom` y vuelve al 100 %. Abajo a la derecha, el `Minimapa` muestra todos los nodos y el área visible; al hacer clic en él se centra esa zona. La rueda del mouse con `Ctrl` hace zoom; `Espacio` + arrastre o el botón central desplazan el lienzo. Al abrir el borrador, la vista se ajusta a todos los nodos. Sin nodos muestra el texto actual `Este borrador aún no tiene nodos.`, y solo a los administradores la ayuda `Agrega un nodo de entrada de imagen para empezar.`; una persona sin permisos de edición ve el lienzo en modo lectura con los mismos controles.
+En `Borrador`, el lienzo ocupa el área principal. Abajo a la izquierda están los controles `Acercar`, `Alejar` y `Ajustar a la vista`, junto al nivel de zoom actual, por ejemplo `100 %`; hacer clic en ese nivel ejecuta `Restablecer zoom` y vuelve al 100 %. Abajo a la derecha, el `Minimapa` muestra todos los nodos y el área visible; al hacer clic en él se centra esa zona. La rueda del mouse con `Ctrl` hace zoom; `Espacio` + arrastre o el botón central desplazan el lienzo. Al abrir el borrador, la vista se ajusta a todos los nodos. Si no caben ni al zoom mínimo, la vista queda en ese zoom centrada en la entrada de imagen, y el `Minimapa` permite llegar al resto. Sin nodos muestra el texto actual `Este borrador aún no tiene nodos.`, y solo a los administradores la ayuda `Agrega un nodo de entrada de imagen para empezar.`; una persona sin permisos de edición ve el lienzo en modo lectura con los mismos controles.
 
 ## Happy path
 
 ```gherkin
 Scenario: Recorrer un workflow que no cabe en pantalla
   Given que pertenezco al workspace de un workflow con nodos fuera del área visible
+  And todos los nodos caben en pantalla con un zoom de 25 % o más
   When uso Ajustar a la vista
   Then el lienzo muestra todos los nodos del borrador
   And el nivel de zoom refleja la nueva escala
@@ -33,7 +34,8 @@ Scenario: Superar el límite de zoom
 
 ## Criterios de aceptación
 
-- El zoom se limita entre 25 % y 200 %.
+- El zoom se limita entre 25 % y 200 %, también al usar `Ajustar a la vista`.
+- Si los nodos no caben al 25 %, `Ajustar a la vista` usa el 25 % y centra la entrada de imagen, o el primer nodo si no hay entrada.
 - Navegar el lienzo no modifica el borrador ni las posiciones guardadas de los nodos.
 - Los miembros sin permisos de administración pueden navegar el lienzo, pero no editarlo.
 - Cada control del lienzo tiene un nombre accesible y se puede usar con teclado.
