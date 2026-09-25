@@ -182,7 +182,7 @@ describe("workflow canvas navigation", () => {
     expect(zoomLevel()).toBe("50 %");
     // Free placement, so the result shows the plain screen-to-board conversion.
     fireEvent.click(control("Alinear a la cuadrícula"));
-    const card = within(screen.getByTestId("workflow-node-a")).getByText("condition");
+    const card = within(screen.getByTestId("workflow-node-a")).getByText("a ≥ 0,5");
 
     act(() => dragCanvasElement(card, 60, 40));
 
@@ -197,7 +197,7 @@ describe("workflow canvas navigation", () => {
     fireEvent.click(control("Acercar"));
 
     expect(zoomLevel()).toBe("50 %");
-    expect(control("Condición: a").disabled).toBe(true);
+    expect(control("Condición a ≥ 0,5").disabled).toBe(true);
     expect(document.querySelector(".react-flow__node.draggable")).toBeNull();
   });
 

@@ -2061,7 +2061,7 @@ describe("ApplicationDetailPanel", () => {
 
       fireEvent.click(
         within(screen.getByTestId("workflow-node-model-node")).getByRole("button", {
-          name: "Clasificador · 1.0.0",
+          name: "Modelo Clasificador · 1.0.0",
         }),
       );
       fireEvent.click(screen.getByRole("button", { name: "Eliminar nodo" }));
@@ -2717,6 +2717,169 @@ describe("ApplicationDetailPanel", () => {
       await renderOverlappingDraft(false);
 
       expect(screen.queryByRole("button", { name: "Ordenar nodos" })).toBeNull();
+    });
+  });
+
+  describe("US-125: Identificar el tipo y el estado de cada nodo", () => {
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite" as const,
+      modelVersionId: "model-version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image" as const,
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one" as const,
+        },
+      },
+      outputs: { result: { type: "classification" as const, labels: ["perro"] } },
+    };
+    const imageToModel = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "model-node",
+      targetPort: "image",
+    };
+    const missingImageMessage = 'El nodo "Clasificador" necesita una imagen de entrada.';
+    const missingOutputMessage = "El workflow necesita al menos un nodo de salida.";
+    const invalidDraft = {
+      publishable: false,
+      errors: [
+        {
+          code: "requiredInput",
+          nodeId: "model-node",
+          nodeName: "Clasificador",
+          port: "image",
+          message: missingImageMessage,
+        },
+        {
+          code: "missingOutput",
+          nodeId: null,
+          nodeName: null,
+          port: null,
+          message: missingOutputMessage,
+        },
+      ],
+    };
+    const validationUrl = "/applications/app-1/workflows/workflow-1/validation";
+
+    function renderDraft(validation: () => Promise<unknown>) {
+      const detail = {
+        workflow: {
+          id: "workflow-1",
+          applicationId: "app-1",
+          name: "Diagnóstico de hoja de café",
+          status: "draft",
+          createdAt: "2026-09-21T15:00:00.000Z",
+          updatedAt: "2026-09-21T16:00:00.000Z",
+        },
+        draft: { nodes: [imageNode, modelNode], connections: [] },
+        versions: [],
+      };
+      client.get.mockImplementation(async (url: string) => {
+        if (url === validationUrl) return validation();
+        return url.endsWith("/workflows/workflow-1") ? { data: detail } : { data: { models: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+    }
+    const inNode = (nodeId: string, name: string) =>
+      within(screen.getByTestId(`workflow-node-${nodeId}`)).getByRole("button", { name });
+    const errorIndicator = (nodeId: string) =>
+      within(screen.getByTestId(`workflow-node-${nodeId}`)).queryByRole("button", {
+        name: /de validación$/,
+      });
+
+    async function connectImageToModel() {
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode, modelNode], connections: [imageToModel] } },
+      });
+      fireEvent.click(inNode("image-node", "Salida imagen"));
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
+      await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Conexión creada."));
+    }
+
+    it("shows the validation error on the model node that needs an image input", async () => {
+      renderDraft(async () => ({ data: invalidDraft }));
+      await screen.findByTestId("workflow-node-model-node");
+      expect(errorIndicator("model-node")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+
+      const indicator = await waitFor(() => {
+        const found = errorIndicator("model-node");
+        expect(found).not.toBeNull();
+        return found as HTMLElement;
+      });
+      expect(indicator.getAttribute("aria-label")).toBe("1 error de validación");
+      expect(screen.getByTestId("workflow-node-model-node").className).toContain(
+        "border-destructive",
+      );
+      expect(errorIndicator("image-node")).toBeNull();
+
+      act(() => indicator.focus());
+      expect((await screen.findByRole("tooltip")).textContent).toBe(missingImageMessage);
+
+      // The workflow's own errors stay only in the panel, next to the node's.
+      const panel = screen.getByRole("region", { name: "Errores de validación" });
+      expect(within(panel).getByText(missingOutputMessage)).toBeTruthy();
+      expect(within(panel).getByText(missingImageMessage)).toBeTruthy();
+    });
+
+    it("removes the node's error indicator once the draft changes", async () => {
+      renderDraft(async () => ({ data: invalidDraft }));
+      await screen.findByTestId("workflow-node-model-node");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+      await waitFor(() => expect(errorIndicator("model-node")).not.toBeNull());
+
+      await connectImageToModel();
+
+      await waitFor(() => expect(errorIndicator("model-node")).toBeNull());
+      expect(screen.getByTestId("workflow-node-model-node").className).not.toContain(
+        "border-destructive",
+      );
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
+    });
+
+    it("does not show errors of a validation that finishes after the draft changed", async () => {
+      let resolveValidation: (value: unknown) => void = () => {};
+      renderDraft(
+        () =>
+          new Promise((resolve) => {
+            resolveValidation = resolve;
+          }),
+      );
+      await screen.findByTestId("workflow-node-model-node");
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+      await screen.findByRole("button", { name: "Validando workflow…" });
+
+      await connectImageToModel();
+      await act(async () => resolveValidation({ data: invalidDraft }));
+
+      await screen.findByRole("button", { name: "Validar workflow" });
+      expect(errorIndicator("model-node")).toBeNull();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
     });
   });
 

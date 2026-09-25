@@ -5,6 +5,7 @@ import {
   type WorkflowCanvasDraft,
   workflowCanvasEdges,
   workflowCanvasFitViewport,
+  workflowConditionRule,
   workflowNodePosition,
 } from "./workflow-canvas";
 
@@ -128,5 +129,25 @@ describe("workflow canvas fit to view", () => {
 
     expect(viewport.zoom).toBe(0.25);
     expect(viewport.x + (100 + 292 / 2) * viewport.zoom).toBe(size.width / 2);
+  });
+});
+
+describe("workflow condition rule", () => {
+  const condition = (operator: "gte" | "gt" | "lte" | "lt", threshold: number) =>
+    ({
+      id: "condition",
+      type: "condition",
+      sourceNodeId: "model",
+      label: "perro",
+      operator,
+      threshold,
+      branches: { true: "Verdadero", false: "Falso" },
+    }) as const;
+
+  it("reads the label, the operator symbol and the threshold with a decimal comma", () => {
+    expect(workflowConditionRule(condition("gte", 0.8))).toBe("perro ≥ 0,8");
+    expect(workflowConditionRule(condition("gt", 0.25))).toBe("perro > 0,25");
+    expect(workflowConditionRule(condition("lte", 1))).toBe("perro ≤ 1");
+    expect(workflowConditionRule(condition("lt", 0))).toBe("perro < 0");
   });
 });

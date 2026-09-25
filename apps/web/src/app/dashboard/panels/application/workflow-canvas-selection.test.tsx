@@ -87,10 +87,10 @@ afterEach(() => {
 });
 
 const card = (id: string) => screen.getByTestId(`workflow-node-${id}`);
-// The type badge is a plain part of the card, neither a port nor a button.
-const cardBody = (id: string) => within(card(id)).getByText("condition");
+// The summary is a plain part of the card, neither a port nor a button.
+const cardBody = (id: string) => within(card(id)).getByText(`${id} ≥ 0,5`);
 const selectButton = (id: string) =>
-  screen.getByRole("button", { name: `Condición: ${id}` }) as HTMLButtonElement;
+  screen.getByRole("button", { name: `Condición ${id} ≥ 0,5` }) as HTMLButtonElement;
 const isSelected = (id: string) => selectButton(id).getAttribute("aria-pressed") === "true";
 const canvas = () => screen.getByRole("region", { name: "Lienzo del workflow" });
 const pane = () => document.querySelector(".react-flow__pane") as HTMLElement;
