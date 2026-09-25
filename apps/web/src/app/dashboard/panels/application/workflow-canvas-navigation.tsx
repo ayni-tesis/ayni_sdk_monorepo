@@ -4,6 +4,7 @@ import {
   IconFocus2,
   IconGridDots,
   IconSelectAll,
+  IconSitemap,
   IconZoomIn,
   IconZoomOut,
 } from "@tabler/icons-react";
@@ -23,11 +24,17 @@ import {
 const MINIMAP_SIZE = { width: 192, height: 128 };
 const MINIMAP_KEY_STEP = 0.1;
 
-/** Selection and grid controls; only administrators who can edit the draft get them. */
+export const WORKFLOW_ARRANGE_SHORTCUT = "Shift+Alt+T";
+const NO_NODES_TO_ARRANGE_MESSAGE = "No hay nodos para ordenar.";
+
+/** Selection, grid and arrangement controls; only administrators who can edit the draft get them. */
 export type WorkflowCanvasEditControls = {
   snapToGrid: boolean;
   onToggleSnapToGrid: () => void;
   onSelectAll: () => void;
+  /** Without nodes, Ordenar nodos is disabled and says why. */
+  hasNodes: boolean;
+  onArrangeNodes: () => void;
 };
 
 export function WorkflowCanvasControls({
@@ -37,6 +44,7 @@ export function WorkflowCanvasControls({
   onFit,
   onReset,
   savingPositions = false,
+  arrangingNodes = false,
   editing,
 }: {
   zoom: number;
@@ -45,6 +53,7 @@ export function WorkflowCanvasControls({
   onFit: () => void;
   onReset: () => void;
   savingPositions?: boolean;
+  arrangingNodes?: boolean;
   editing?: WorkflowCanvasEditControls;
 }) {
   const level = formatWorkflowCanvasZoom(zoom);
@@ -96,9 +105,9 @@ export function WorkflowCanvasControls({
       >
         {level}
       </Button>
-      {savingPositions && (
+      {(savingPositions || arrangingNodes) && (
         <span role="status" className="whitespace-nowrap px-2 text-muted-foreground text-xs">
-          Guardando posiciones…
+          {arrangingNodes ? "Ordenando nodos…" : "Guardando posiciones…"}
         </span>
       )}
       {editing && (
@@ -125,6 +134,21 @@ export function WorkflowCanvasControls({
           >
             <IconSelectAll aria-hidden="true" />
             Seleccionar todo
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="whitespace-nowrap"
+            aria-keyshortcuts={WORKFLOW_ARRANGE_SHORTCUT}
+            title={
+              editing.hasNodes ? "Ordenar nodos (Shift + Alt + T)" : NO_NODES_TO_ARRANGE_MESSAGE
+            }
+            disabled={!editing.hasNodes || savingPositions || arrangingNodes}
+            onClick={editing.onArrangeNodes}
+          >
+            <IconSitemap aria-hidden="true" />
+            Ordenar nodos
           </Button>
         </>
       )}

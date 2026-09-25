@@ -40,6 +40,7 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { arrangeWorkflowNodes } from "./workflow-canvas-layout";
 import {
   WorkflowCanvasControls,
   type WorkflowCanvasEditControls,
@@ -220,14 +221,21 @@ export function nextWorkflowCanvasPosition(draft: WorkflowCanvasDraft): Workflow
   }
 }
 
+/** The card's size on screen, or its initial size until React Flow measures it. */
+function workflowNodeSize(nodeId: string, measured: MeasuredSizes): WorkflowCanvasSize {
+  return {
+    width: measured[nodeId]?.width || NODE_WIDTH,
+    height: measured[nodeId]?.height || NODE_HEIGHT,
+  };
+}
+
 function workflowNodeBoxes(
   draft: WorkflowCanvasDraft,
   measured: MeasuredSizes = {},
 ): WorkflowCanvasBox[] {
   return draft.nodes.map((node, index) => ({
     ...workflowNodePosition(draft, node, index),
-    width: measured[node.id]?.width || NODE_WIDTH,
-    height: measured[node.id]?.height || NODE_HEIGHT,
+    ...workflowNodeSize(node.id, measured),
   }));
 }
 
@@ -602,6 +610,8 @@ type WorkflowCanvasProps = {
   connectionSource: ConnectionSource;
   cycleNodeIds: string[];
   savingPositions: boolean;
+  /** True while Ordenar nodos saves the new positions. */
+  arrangingNodes: boolean;
   palette: ReactNode;
   /** Picks the output to connect from; `null` when Escape cancels it. */
   onSelectSource: (source: ConnectionSource) => void;
@@ -614,6 +624,8 @@ type WorkflowCanvasProps = {
   onConnect: (connection: WorkflowCanvasConnection) => void;
   /** Saves every moved node in one operation. */
   onMoveNodes: (positions: WorkflowCanvasPositions) => void;
+  /** Saves the arranged position of every node in one operation; resolves whether it was saved. */
+  onArrangeNodes: (positions: WorkflowCanvasPositions) => Promise<boolean>;
   onDropPalette: (nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) => void;
   onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
 };
@@ -625,6 +637,7 @@ function WorkflowCanvasFlow({
   connectionSource,
   cycleNodeIds,
   savingPositions,
+  arrangingNodes,
   palette,
   onSelectSource,
   selectedNodeIds,
@@ -633,11 +646,12 @@ function WorkflowCanvasFlow({
   onSelectConnection,
   onConnect,
   onMoveNodes,
+  onArrangeNodes,
   onDropPalette,
   onRemoveConnection,
 }: WorkflowCanvasProps) {
-  const canManage = canManageDraft && !savingPositions;
-  const { screenToFlowPosition } = useReactFlow();
+  const canManage = canManageDraft && !savingPositions && !arrangingNodes;
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const store = useStoreApi<WorkflowFlowNode>();
   // The output a connection is being dragged from.
   const draggedSource = useConnection<WorkflowFlowNode, ConnectionSource>((connection) =>
@@ -734,6 +748,21 @@ function WorkflowCanvasFlow({
     if (moved.length === 0) return;
     setKeyboardMoved({});
     saveMovedNodes(moved.map(([id, position]) => ({ id, position })));
+  }
+
+  /** Arranges every node with the size it has on screen, then fits the view to them once saved. */
+  async function arrangeNodes() {
+    if (!canManage || draft.nodes.length === 0) return;
+    const sizes = Object.fromEntries(
+      draft.nodes.map((node) => [node.id, workflowNodeSize(node.id, measured)]),
+    );
+    const positions = arrangeWorkflowNodes(draft.nodes, workflowCanvasEdges(draft), sizes);
+    if (!(await onArrangeNodes(positions))) return;
+    const { width, height } = store.getState();
+    // Like the fit when the draft opens, a small draft is not enlarged past 100 %.
+    void setViewport(
+      workflowCanvasFitViewport({ ...draft, layout: positions }, { width, height }, measured, 1),
+    );
   }
 
   const nodeIds = new Set(draft.nodes.map((node) => node.id));
@@ -862,6 +891,13 @@ function WorkflowCanvasFlow({
             tabIndex={0}
             className={`relative h-[720px] overflow-hidden rounded-lg border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
             onKeyDown={(event) => {
+              // Shift + Alt + T is Ordenar nodos; the key code is used because Alt
+              // changes the typed character on some keyboards.
+              if (event.shiftKey && event.altKey && event.code === "KeyT") {
+                event.preventDefault();
+                if (canManageDraft) void arrangeNodes();
+                return;
+              }
               // Supr deletes the selected connection, without a dialog.
               if (event.key === "Delete" && removableSelection) {
                 event.preventDefault();
@@ -985,12 +1021,15 @@ function WorkflowCanvasFlow({
                 draft={draft}
                 measured={measured}
                 savingPositions={savingPositions}
+                arrangingNodes={arrangingNodes}
                 editing={
                   canManageDraft
                     ? {
                         snapToGrid,
                         onToggleSnapToGrid: () => setSnapToGrid((current) => !current),
                         onSelectAll: () => changeSelection(draft.nodes.map((node) => node.id)),
+                        hasNodes: draft.nodes.length > 0,
+                        onArrangeNodes: () => void arrangeNodes(),
                       }
                     : undefined
                 }
@@ -1031,11 +1070,13 @@ function CanvasNavigation({
   draft,
   measured,
   savingPositions,
+  arrangingNodes,
   editing,
 }: {
   draft: WorkflowCanvasDraft;
   measured: MeasuredSizes;
   savingPositions: boolean;
+  arrangingNodes: boolean;
   editing?: WorkflowCanvasEditControls;
 }) {
   const { setViewport, zoomTo, setCenter } = useReactFlow();
@@ -1066,6 +1107,7 @@ function CanvasNavigation({
           onFit={() => void setViewport(workflowCanvasFitViewport(draft, size, measured))}
           onReset={() => void zoomTo(1)}
           savingPositions={savingPositions}
+          arrangingNodes={arrangingNodes}
           editing={editing}
         />
       </Panel>

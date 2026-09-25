@@ -36,6 +36,7 @@ const handlers = {
   onSelectConnection: vi.fn(),
   onConnect: vi.fn(),
   onMoveNodes: vi.fn(),
+  onArrangeNodes: vi.fn(),
   onDropPalette: vi.fn(),
   onRemoveConnection: vi.fn(),
 };
@@ -60,6 +61,7 @@ function Canvas({
       connectionSource={null}
       cycleNodeIds={[]}
       savingPositions={savingPositions}
+      arrangingNodes={false}
       palette={null}
       {...handlers}
       selectedNodeIds={selectedNodeIds}

@@ -2544,6 +2544,162 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-124: Ordenar automáticamente los nodos", () => {
+    stubWorkflowCanvasLayout();
+
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite" as const,
+      modelVersionId: "model-version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image" as const,
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one" as const,
+        },
+      },
+      outputs: { result: { type: "classification" as const, labels: ["perro"] } },
+    };
+    const connection = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "model-node",
+      targetPort: "image",
+    };
+    // Both nodes piled on the same spot.
+    const overlapping = {
+      nodes: [imageNode, modelNode],
+      connections: [connection],
+      layout: { "image-node": { x: 48, y: 48 }, "model-node": { x: 48, y: 48 } },
+    };
+    const layoutUrl = "/applications/app-1/workflows/workflow-1/layout";
+    const arranged = { "image-node": { x: 48, y: 48 }, "model-node": { x: 389, y: 48 } };
+    const nodePosition = (id: string) =>
+      (document.querySelector(`.react-flow__node[data-id="${id}"]`) as HTMLElement).style.transform;
+
+    async function renderOverlappingDraft(canManage = true) {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1")
+          ? {
+              data: {
+                workflow: {
+                  id: "workflow-1",
+                  applicationId: "app-1",
+                  name: "Diagnóstico de hoja de café",
+                  status: "draft",
+                  createdAt: "2026-09-21T15:00:00.000Z",
+                  updatedAt: "2026-09-21T16:00:00.000Z",
+                },
+                draft: overlapping,
+                versions: [],
+              },
+            }
+          : { data: { models: [] } },
+      );
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByTestId("workflow-node-model-node");
+    }
+
+    async function arrangeNodes() {
+      await renderOverlappingDraft();
+      fireEvent.click(screen.getByRole("button", { name: "Ordenar nodos" }));
+    }
+
+    it("saves a new position for every node in one operation and offers Deshacer", async () => {
+      let finishSave: (value: unknown) => void = () => {};
+      client.patch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+      );
+
+      await arrangeNodes();
+
+      expect(client.patch).toHaveBeenCalledExactlyOnceWith(layoutUrl, { positions: arranged });
+      expect(screen.getByText("Ordenando nodos…")).toBeTruthy();
+      expect(nodePosition("model-node")).toBe("translate(48px,48px)");
+
+      await act(async () => finishSave({ data: { positions: arranged } }));
+
+      await waitFor(() => expect(nodePosition("model-node")).toBe("translate(389px,48px)"));
+      expect(screen.queryByText("Ordenando nodos…")).toBeNull();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodos ordenados.", {
+        duration: 5000,
+        action: expect.objectContaining({ label: "Deshacer" }),
+      });
+      // Only positions change: nodes and connections are never written.
+      expect(client.post).not.toHaveBeenCalled();
+      expect(client.delete).not.toHaveBeenCalled();
+    });
+
+    it("puts every node back where it was with Deshacer", async () => {
+      client.patch.mockResolvedValue({ data: { positions: {} } });
+      await arrangeNodes();
+      await waitFor(() => expect(nodePosition("model-node")).toBe("translate(389px,48px)"));
+
+      const options = toastMock.success.mock.calls.at(-1)?.[1] as {
+        action: { onClick: () => void };
+      };
+      await act(async () => options.action.onClick());
+
+      expect(client.patch).toHaveBeenLastCalledWith(layoutUrl, {
+        positions: overlapping.layout,
+      });
+      await waitFor(() => expect(nodePosition("model-node")).toBe("translate(48px,48px)"));
+      expect(toastMock.success).toHaveBeenLastCalledWith("Posiciones restauradas.");
+    });
+
+    it("keeps the previous positions and the DAG when the positions cannot be saved", async () => {
+      client.patch.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { status: 500, data: { message: "Error interno." } },
+      });
+
+      await arrangeNodes();
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No pudimos ordenar los nodos. Inténtalo nuevamente.",
+        ),
+      );
+      expect(nodePosition("image-node")).toBe("translate(48px,48px)");
+      expect(nodePosition("model-node")).toBe("translate(48px,48px)");
+      expect(screen.queryByText("Ordenando nodos…")).toBeNull();
+      expect(
+        document.querySelector('.react-flow__edge[data-id="image-node:imagen:model-node:image"]'),
+      ).not.toBeNull();
+      expect(toastMock.success).not.toHaveBeenCalled();
+    });
+
+    it("does not offer Ordenar nodos to members", async () => {
+      await renderOverlappingDraft(false);
+
+      expect(screen.queryByRole("button", { name: "Ordenar nodos" })).toBeNull();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {
