@@ -417,7 +417,15 @@ async function changeWorkflowConnection(
       );
       if (add && exists) return { kind: "duplicate" as const };
       if (!add && !exists) return { kind: "connectionNotFound" as const };
-      if (add && !areWorkflowPortsCompatible(draft, connection))
+      // An input admits a single connection (today only a model's image input
+      // takes explicit connections). Kept out of areWorkflowPortsCompatible,
+      // which validation also runs on the connections already saved.
+      const inputTaken = connections.some(
+        (item) =>
+          item.targetNodeId === connection.targetNodeId &&
+          item.targetPort === connection.targetPort,
+      );
+      if (add && (inputTaken || !areWorkflowPortsCompatible(draft, connection)))
         return { kind: "incompatible" as const };
       const cycle = add ? findWorkflowCycle(draft, connection) : undefined;
       if (cycle) return { kind: "cycle" as const, nodeIds: cycle };

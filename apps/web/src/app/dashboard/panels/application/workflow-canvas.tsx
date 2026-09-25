@@ -2,8 +2,10 @@
 
 import "@xyflow/react/dist/style.css";
 
+import { IconBan, IconCheck } from "@tabler/icons-react";
 import {
   Background,
+  type Connection,
   type Dimensions,
   type Edge,
   Handle,
@@ -15,9 +17,11 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useConnection,
   useNodesInitialized,
   useReactFlow,
   useStore,
+  useStoreApi,
   useViewport,
   type XYPosition,
 } from "@xyflow/react";
@@ -36,6 +40,7 @@ import {
   type WorkflowCanvasEditControls,
   WorkflowCanvasMinimap,
 } from "./workflow-canvas-navigation";
+import { workflowNodePorts, workflowPortCompatibility } from "./workflow-canvas-ports";
 import {
   fitWorkflowCanvasViewport,
   stepWorkflowCanvasZoom,
@@ -107,10 +112,14 @@ type CanvasEdge = WorkflowCanvasConnection;
 type MeasuredSizes = Record<string, Partial<Dimensions> | undefined>;
 type WorkflowFlowNodeData = {
   node: WorkflowCanvasNode;
+  draft: WorkflowCanvasDraft;
   canManage: boolean;
   canSelect: boolean;
   cycle: boolean;
+  /** The output picked with its Salida button. */
   connectionSource: ConnectionSource;
+  /** The output a connection is being dragged from, or else the picked one. */
+  pendingSource: ConnectionSource;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
   /** Selects only this node, or adds or removes it when `toggle` is set. */
   onSelectNode: (nodeId: string, toggle: boolean) => void;
@@ -213,6 +222,30 @@ export function workflowCanvasFitViewport(
   return fitWorkflowCanvasViewport(boxes, size, boxes[Math.max(0, imageInputIndex)], maxZoom);
 }
 
+function toCanvasConnection(
+  connection: Pick<Connection, "source" | "target"> & {
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  },
+): WorkflowCanvasConnection {
+  return {
+    sourceNodeId: connection.source,
+    sourcePort: connection.sourceHandle ?? "",
+    targetNodeId: connection.target,
+    targetPort: connection.targetHandle ?? "",
+  };
+}
+
+export function workflowNodeTitle(node: WorkflowCanvasNode): string {
+  return node.type === "input.image"
+    ? "Imagen de entrada"
+    : node.type === "model.tflite"
+      ? `${node.modelName} · ${node.version}`
+      : node.type === "condition"
+        ? `Condición: ${node.label}`
+        : `Salida: ${node.name}`;
+}
+
 export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
   return [
     ...(draft.connections ?? []),
@@ -271,22 +304,78 @@ export function WorkflowPaletteButton({
 
 const nodeTypes = { workflow: WorkflowNodeCard };
 
+/** How a port answers the connection in progress; the port it starts from has none. */
+function portState(
+  data: WorkflowFlowNodeData,
+  portId: string,
+  direction: "input" | "output",
+): "compatible" | "incompatible" | undefined {
+  const { draft, node, pendingSource } = data;
+  if (!pendingSource) return undefined;
+  if (direction === "output")
+    return pendingSource.sourceNodeId === node.id && pendingSource.sourcePort === portId
+      ? undefined
+      : "incompatible";
+  return workflowPortCompatibility(draft, {
+    ...pendingSource,
+    targetNodeId: node.id,
+    targetPort: portId,
+  }) === "compatible"
+    ? "compatible"
+    : "incompatible";
+}
+
+// Compatibility shows as a cyan ring or dimming, and always as a text label too.
+function PortRow({
+  portId,
+  state,
+  align,
+  children,
+}: {
+  portId: string;
+  state: "compatible" | "incompatible" | undefined;
+  align: "start" | "end";
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-port={portId}
+      data-port-state={state}
+      className={`relative flex items-center gap-2 rounded ${align === "end" ? "flex-row-reverse" : ""} ${state === "compatible" ? "ring-2 ring-cyan-500" : state === "incompatible" ? "opacity-50" : ""}`}
+    >
+      {children}
+      {state && (
+        <span
+          className={`flex shrink-0 items-center gap-1 text-xs ${state === "compatible" ? "text-cyan-700 dark:text-cyan-400" : "text-muted-foreground"}`}
+        >
+          {state === "compatible" ? (
+            <IconCheck aria-hidden className="size-3" />
+          ) : (
+            <IconBan aria-hidden className="size-3" />
+          )}
+          {state === "compatible" ? "Compatible" : "No compatible"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 // Any part of the card drags the node; its buttons carry `nodrag` and its ports
 // start connections instead.
 function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
   const { node, canManage, canSelect, cycle, connectionSource } = data;
-  const nodeTitle =
-    node.type === "input.image"
-      ? "Imagen de entrada"
-      : node.type === "model.tflite"
-        ? `${node.modelName} · ${node.version}`
-        : node.type === "condition"
-          ? `Condición: ${node.label}`
-          : `Salida: ${node.name}`;
-  const connectFromSelection = () => {
-    if (node.type === "model.tflite" && connectionSource?.sourcePort === "imagen")
-      data.onConnect({ ...connectionSource, targetNodeId: node.id, targetPort: "image" });
-  };
+  const nodeTitle = workflowNodeTitle(node);
+  const ports = workflowNodePorts(node);
+  const details =
+    node.type === "model.tflite"
+      ? `${node.inputs.image.width}×${node.inputs.image.height} · ${node.outputs.result.type}`
+      : node.type === "condition"
+        ? `${node.operator} ${node.threshold}`
+        : node.type === "output"
+          ? node.resultType
+          : null;
 
   return (
     <article
@@ -315,80 +404,80 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
         </span>
       </header>
 
-      {/* Each Handle sits inside the relative row of its port, so edges and
-          drag-to-connect start and end next to the port they belong to. */}
-      {node.type === "input.image" && (
-        <div className="relative flex items-center justify-between gap-2">
-          <span className="rounded bg-muted px-2 py-1 text-xs">imagen: image</span>
-          <button
-            type="button"
-            disabled={!canManage}
-            aria-pressed={
-              connectionSource?.sourceNodeId === node.id && connectionSource.sourcePort === "imagen"
-            }
-            aria-label="Salida imagen"
-            title="Selecciónala para conectar, o arrastra desde su punto de salida hasta la entrada de un modelo"
-            className="nodrag rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
-            onClick={() => data.onSelectSource({ sourceNodeId: node.id, sourcePort: "imagen" })}
-          >
-            Salida imagen
-          </button>
-          <Handle type="source" position={Position.Right} id="imagen" isConnectable={canManage} />
-        </div>
-      )}
+      {details && <p className="mb-3 text-muted-foreground text-xs">{details}</p>}
 
-      {node.type === "model.tflite" && (
-        <div className="space-y-3">
-          <div className="relative">
+      {/* Each Handle sits inside the relative row of its port, so edges and
+          drag-to-connect start and end next to the port they belong to. Only
+          outputs start a connection and only inputs end one. Each port also has
+          a button for connecting without dragging: Salida picks the output,
+          then Conectar picks the input. */}
+      <div className="space-y-2 text-xs">
+        {ports.inputs.map((port) => (
+          <PortRow
+            key={port.id}
+            portId={port.id}
+            state={portState(data, port.id, "input")}
+            align="start"
+          >
+            <Handle
+              type="target"
+              position={Position.Left}
+              id={port.id}
+              isConnectable={canManage}
+              isConnectableStart={false}
+              isConnectableEnd={canManage}
+            />
             <button
               type="button"
               disabled={!canManage}
-              aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
+              aria-label={`Conectar ${lowerFirst(port.label)} de ${nodeTitle}`}
               aria-disabled={!canManage || !connectionSource}
-              className="nodrag flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={connectFromSelection}
+              className="nodrag flex min-w-0 flex-1 items-center justify-between gap-2 rounded border px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                if (connectionSource)
+                  data.onConnect({
+                    ...connectionSource,
+                    targetNodeId: node.id,
+                    targetPort: port.id,
+                  });
+              }}
             >
-              <span>Entrada de imagen</span>
-              <span className="text-muted-foreground">
-                {node.inputs.image.width}×{node.inputs.image.height}
-              </span>
+              <span>{port.label}</span>
             </button>
-            <Handle type="target" position={Position.Left} id="image" isConnectable={canManage} />
-          </div>
-          <div className="relative flex items-center justify-between gap-2">
-            <span className="text-muted-foreground text-xs">Resultado del modelo</span>
-            <span className="rounded bg-muted px-2 py-1 text-xs">{node.outputs.result.type}</span>
-            <Handle type="source" position={Position.Right} id="result" isConnectable={false} />
-          </div>
-        </div>
-      )}
-
-      {node.type === "condition" && (
-        <div className="space-y-3 text-xs">
-          <p className="relative">
-            {node.operator} {node.threshold}
-            <Handle type="target" position={Position.Left} id="source" isConnectable={false} />
-          </p>
-          <div className="flex gap-2">
-            <span className="relative rounded bg-muted px-2 py-1">
-              {node.branches.true}
-              <Handle type="source" position={Position.Right} id="true" isConnectable={false} />
-            </span>
-            <span className="relative rounded bg-muted px-2 py-1">
-              {node.branches.false}
-              <Handle type="source" position={Position.Right} id="false" isConnectable={false} />
-            </span>
-          </div>
-        </div>
-      )}
-
-      {node.type === "output" && (
-        <div className="relative flex items-center justify-between gap-2">
-          <Handle type="target" position={Position.Left} id="source" isConnectable={false} />
-          <span className="text-muted-foreground text-xs">Resultado recibido</span>
-          <span className="rounded bg-muted px-2 py-1 text-xs">{node.resultType}</span>
-        </div>
-      )}
+          </PortRow>
+        ))}
+        {ports.outputs.map((port) => (
+          <PortRow
+            key={port.id}
+            portId={port.id}
+            state={portState(data, port.id, "output")}
+            align="end"
+          >
+            <button
+              type="button"
+              disabled={!canManage}
+              aria-pressed={
+                connectionSource?.sourceNodeId === node.id &&
+                connectionSource.sourcePort === port.id
+              }
+              aria-label={`Salida ${port.label}`}
+              title="Selecciónala y luego elige una entrada, o arrastra desde su punto hasta una entrada compatible"
+              className="nodrag rounded border px-2 py-1 aria-pressed:border-primary aria-pressed:bg-primary/10"
+              onClick={() => data.onSelectSource({ sourceNodeId: node.id, sourcePort: port.id })}
+            >
+              {port.label}
+            </button>
+            <Handle
+              type="source"
+              position={Position.Right}
+              id={port.id}
+              isConnectable={canManage}
+              isConnectableStart={canManage}
+              isConnectableEnd={false}
+            />
+          </PortRow>
+        ))}
+      </div>
     </article>
   );
 }
@@ -409,7 +498,8 @@ type WorkflowCanvasProps = {
   cycleNodeIds: string[];
   savingPositions: boolean;
   palette: ReactNode;
-  onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
+  /** Picks the output to connect from; `null` when Escape cancels it. */
+  onSelectSource: (source: ConnectionSource) => void;
   /** The selected nodes, in draft order. */
   selectedNodeIds: string[];
   onSelectNodes: (nodeIds: string[]) => void;
@@ -442,6 +532,18 @@ function WorkflowCanvasFlow({
 }: WorkflowCanvasProps) {
   const canManage = canManageDraft && !savingPositions;
   const { screenToFlowPosition } = useReactFlow();
+  const store = useStoreApi<WorkflowFlowNode>();
+  // The output a connection is being dragged from.
+  const draggedSource = useConnection<WorkflowFlowNode, ConnectionSource>((connection) =>
+    connection.inProgress
+      ? {
+          sourceNodeId: connection.fromHandle.nodeId,
+          sourcePort: connection.fromHandle.id ?? "",
+        }
+      : null,
+  );
+  // Escape cancels the drag, but React Flow may still report the drop afterwards.
+  const connectionCancelledRef = useRef(false);
   // React Flow reports measured sizes and in-progress drag positions through
   // `onNodesChange`; the saved positions still come only from the draft.
   const [measured, setMeasured] = useState<MeasuredSizes>({});
@@ -453,6 +555,22 @@ function WorkflowCanvasFlow({
   // React Flow may report several selection changes before the next render.
   const selectionRef = useRef(selectedNodeIds);
   selectionRef.current = selectedNodeIds;
+
+  // Escape cancels the connection being dragged, or else the output picked with Salida.
+  const connecting = draggedSource !== null || connectionSource !== null;
+  useEffect(() => {
+    if (!connecting) return;
+    function cancelOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const { connection, cancelConnection } = store.getState();
+      if (connection.inProgress) {
+        connectionCancelledRef.current = true;
+        cancelConnection();
+      } else onSelectSource(null);
+    }
+    document.addEventListener("keydown", cancelOnEscape);
+    return () => document.removeEventListener("keydown", cancelOnEscape);
+  }, [connecting, store, onSelectSource]);
 
   const clearDragged = (nodeId: string) => setDragged(({ [nodeId]: _cleared, ...rest }) => rest);
   const draftOrder = (nodeIds: Set<string>) =>
@@ -523,10 +641,12 @@ function WorkflowCanvasFlow({
     selected: selectedNodeIds.includes(node.id),
     data: {
       node,
+      draft,
       canManage,
       canSelect: canManageDraft,
       cycle: cycleNodeIds.includes(node.id),
       connectionSource,
+      pendingSource: canManage ? (draggedSource ?? connectionSource) : null,
       onSelectSource,
       onSelectNode: selectNode,
       onConnect,
@@ -640,14 +760,37 @@ function WorkflowCanvasFlow({
               onNodesChange={handleNodesChange}
               // Also called, with every dragged node, when the selection box is dragged.
               onNodeDragStop={(_, _node, moved) => saveDraggedNodes(moved)}
-              onConnect={(connection) =>
-                onConnect({
-                  sourceNodeId: connection.source,
-                  sourcePort: connection.sourceHandle ?? "",
-                  targetNodeId: connection.target,
-                  targetPort: connection.targetHandle ?? "",
-                })
+              // A drag connects only from an output to a compatible input; the
+              // preview line and the port labels follow the same rules.
+              isValidConnection={(connection) =>
+                workflowPortCompatibility(draft, toCanvasConnection(connection)) === "compatible"
               }
+              onConnectStart={() => {
+                connectionCancelledRef.current = false;
+              }}
+              onConnect={(connection) => {
+                if (!connectionCancelledRef.current) onConnect(toCanvasConnection(connection));
+              }}
+              // A drop on an incompatible port is reported too, so it can be
+              // rejected with its reason. A drop on the background does nothing
+              // until US-128 opens Agregar nodo there.
+              onConnectEnd={(_, { isValid, fromHandle, toHandle }) => {
+                if (connectionCancelledRef.current || isValid || !fromHandle || !toHandle) return;
+                if (
+                  toHandle.nodeId === fromHandle.nodeId &&
+                  toHandle.id === fromHandle.id &&
+                  toHandle.type === fromHandle.type
+                )
+                  return;
+                onConnect({
+                  sourceNodeId: fromHandle.nodeId,
+                  sourcePort: fromHandle.id ?? "",
+                  targetNodeId: toHandle.nodeId,
+                  targetPort: toHandle.id ?? "",
+                });
+              }}
+              // The Salida and Conectar buttons replace clicking the port dots.
+              connectOnClick={false}
               nodeExtent={NODE_EXTENT}
               minZoom={WORKFLOW_CANVAS_MIN_ZOOM}
               maxZoom={WORKFLOW_CANVAS_MAX_ZOOM}

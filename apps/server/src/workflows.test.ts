@@ -8,6 +8,7 @@ import {
   type ArchiveWorkflowResult,
   addConditionNode,
   addImageInputNode,
+  addWorkflowConnection,
   archiveWorkflow,
   type CreateWorkflowResult,
   createWorkflow,
@@ -2504,6 +2505,71 @@ describe("updateWorkflowNodePositions", () => {
     expect(result).toEqual({ ok: false, reason: "nodeNotFound" });
     expect(store.writes).toBe(0);
     expect(store.reload()).toEqual(positionedDraft);
+  });
+});
+
+describe("addWorkflowConnection", () => {
+  const imageNode = (id: string) => ({
+    id,
+    type: "input.image" as const,
+    outputs: { imagen: "image" as const },
+  });
+  const connectedDraft = {
+    nodes: [
+      imageNode("image-1"),
+      imageNode("image-2"),
+      {
+        id: "model",
+        type: "model.tflite" as const,
+        modelVersionId: "version-1",
+        modelName: "Classifier",
+        version: "1.0.0",
+        inputs: {
+          image: {
+            type: "image" as const,
+            width: 224,
+            height: 224,
+            channels: 3 as const,
+            normalization: "none" as const,
+          },
+        },
+        outputs: { result: { type: "classification" as const, labels: ["ok"] } },
+      },
+    ],
+    connections: [
+      { sourceNodeId: "image-1", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
+    ],
+  };
+  const connectionInput = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    sourcePort: "imagen",
+    targetNodeId: "model",
+    targetPort: "image",
+  };
+
+  it("rejects a second connection to a model image input without writing", async () => {
+    const store = makeWorkflowPositionStoreDb(connectedDraft);
+    const result = await addWorkflowConnection(store.db, {
+      ...connectionInput,
+      sourceNodeId: "image-2",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "incompatible" });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(connectedDraft);
+  });
+
+  it("still reports the same connection as a duplicate", async () => {
+    const store = makeWorkflowPositionStoreDb(connectedDraft);
+    const result = await addWorkflowConnection(store.db, {
+      ...connectionInput,
+      sourceNodeId: "image-1",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "duplicate" });
+    expect(store.writes).toBe(0);
   });
 });
 
