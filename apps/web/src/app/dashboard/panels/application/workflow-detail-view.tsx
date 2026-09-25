@@ -46,6 +46,7 @@ import {
   type WorkflowCanvasNode as WorkflowNodeItem,
   WorkflowPaletteButton,
   workflowCanvasEdges,
+  workflowNodePosition,
   workflowNodeTitle,
 } from "./workflow-canvas";
 import {
@@ -133,10 +134,11 @@ type WorkflowValidationResult = {
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
 const WORKFLOW_POSITIONS_SAVE_ERROR =
   "No pudimos guardar las posiciones. Se restauró la ubicación anterior.";
+const WORKFLOW_ARRANGE_ERROR = "No pudimos ordenar los nodos. Inténtalo nuevamente.";
 const WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE =
   "No pudimos restaurar la conexión porque el borrador cambió.";
 // Deshacer stays available while the notice is visible.
-const WORKFLOW_CONNECTION_UNDO_DURATION = 5000;
+const WORKFLOW_UNDO_DURATION = 5000;
 const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
@@ -348,6 +350,7 @@ export function WorkflowDetailView({
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [savingPositions, setSavingPositions] = useState(false);
+  const [arrangingNodes, setArrangingNodes] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   // Deleting a node applies only when exactly one node is selected.
   const selectedNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] : null;
@@ -394,6 +397,9 @@ export function WorkflowDetailView({
   } | null>(null);
   const addingImageInputRef = useRef(false);
   const removingConnectionRef = useRef(false);
+  // Moving, arranging and undoing an arrangement all write the layout; set at
+  // once, unlike state, so a Deshacer run from an older notice sees it too.
+  const savingLayoutRef = useRef(false);
   // A notice's Deshacer runs later than the render that created it.
   const detailRef = useRef(detail);
   detailRef.current = detail;
@@ -807,11 +813,9 @@ export function WorkflowDetailView({
     }
   }
 
-  // Saves every moved node in one operation; moving is frequent, so success is silent.
-  async function moveWorkflowNodes(positions: WorkflowCanvasPositions) {
-    if (!detail || savingPositions || !canManage || application.status !== "active") return;
-    const previousLayout = detail.draft.layout;
-    setSavingPositions(true);
+  const layoutUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/layout`;
+
+  function showPositions(positions: WorkflowCanvasPositions) {
     setDetail((current) =>
       current
         ? {
@@ -820,11 +824,17 @@ export function WorkflowDetailView({
           }
         : current,
     );
+  }
+
+  // Saves every moved node in one operation; moving is frequent, so success is silent.
+  async function moveWorkflowNodes(positions: WorkflowCanvasPositions) {
+    if (!detail || savingLayoutRef.current || !canManage || application.status !== "active") return;
+    const previousLayout = detail.draft.layout;
+    savingLayoutRef.current = true;
+    setSavingPositions(true);
+    showPositions(positions);
     try {
-      await httpClient.patch(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/layout`,
-        { positions },
-      );
+      await httpClient.patch(layoutUrl, { positions });
     } catch {
       setDetail((current) => {
         if (!current) return current;
@@ -839,6 +849,58 @@ export function WorkflowDetailView({
       // Unlike other edits, a failed move always reads the same: the nodes were restored.
       toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
     } finally {
+      savingLayoutRef.current = false;
+      setSavingPositions(false);
+    }
+  }
+
+  // Ordenar nodos saves every position in one operation and shows them only once
+  // saved, so a failure leaves the canvas as it was. Resolves whether it saved.
+  async function arrangeNodes(positions: WorkflowCanvasPositions): Promise<boolean> {
+    if (!detail || savingLayoutRef.current || !canManage || application.status !== "active")
+      return false;
+    const { draft } = detail;
+    const previous = Object.fromEntries(
+      draft.nodes.map((node, index) => [node.id, workflowNodePosition(draft, node, index)]),
+    );
+    savingLayoutRef.current = true;
+    setArrangingNodes(true);
+    try {
+      await httpClient.patch(layoutUrl, { positions });
+    } catch {
+      toast.error(WORKFLOW_ARRANGE_ERROR);
+      return false;
+    } finally {
+      savingLayoutRef.current = false;
+      setArrangingNodes(false);
+    }
+    showPositions(positions);
+    toast.success("Nodos ordenados.", {
+      duration: WORKFLOW_UNDO_DURATION,
+      action: { label: "Deshacer", onClick: () => void undoArrangeNodes(previous) },
+    });
+    return true;
+  }
+
+  // Deshacer puts back the positions the nodes had before Ordenar nodos, for the
+  // nodes still in the draft. It does nothing while other positions are saving.
+  async function undoArrangeNodes(previous: WorkflowCanvasPositions) {
+    if (savingLayoutRef.current) return;
+    const nodeIds = new Set(detailRef.current?.draft.nodes.map((node) => node.id));
+    const positions = Object.fromEntries(
+      Object.entries(previous).filter(([nodeId]) => nodeIds.has(nodeId)),
+    );
+    if (Object.keys(positions).length === 0) return;
+    savingLayoutRef.current = true;
+    setSavingPositions(true);
+    try {
+      await httpClient.patch(layoutUrl, { positions });
+      showPositions(positions);
+      toast.success("Posiciones restauradas.");
+    } catch (restoreError) {
+      toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
+    } finally {
+      savingLayoutRef.current = false;
       setSavingPositions(false);
     }
   }
@@ -907,7 +969,7 @@ export function WorkflowDetailView({
       setCycleNodeIds([]);
       setSelectedConnection(null);
       toast.success("Conexión eliminada.", {
-        duration: WORKFLOW_CONNECTION_UNDO_DURATION,
+        duration: WORKFLOW_UNDO_DURATION,
         action: {
           label: "Deshacer",
           onClick: () => void restoreConnection(connection, data.draft),
@@ -1123,6 +1185,7 @@ export function WorkflowDetailView({
             connectionSource={connectionSource}
             cycleNodeIds={cycleNodeIds}
             savingPositions={savingPositions}
+            arrangingNodes={arrangingNodes}
             onSelectSource={setConnectionSource}
             selectedNodeIds={selectedNodeIds}
             onSelectNodes={setSelectedNodeIds}
@@ -1133,6 +1196,7 @@ export function WorkflowDetailView({
             onSelectConnection={setSelectedConnection}
             onConnect={(connection) => void changeConnection(connection)}
             onMoveNodes={(positions) => void moveWorkflowNodes(positions)}
+            onArrangeNodes={arrangeNodes}
             onDropPalette={dropPaletteNode}
             onRemoveConnection={(connection) => void removeConnection(connection)}
             palette={
