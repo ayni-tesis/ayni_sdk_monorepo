@@ -397,6 +397,9 @@ export function WorkflowDetailView({
   } | null>(null);
   const addingImageInputRef = useRef(false);
   const removingConnectionRef = useRef(false);
+  // Moving, arranging and undoing an arrangement all write the layout; set at
+  // once, unlike state, so a Deshacer run from an older notice sees it too.
+  const savingLayoutRef = useRef(false);
   // A notice's Deshacer runs later than the render that created it.
   const detailRef = useRef(detail);
   detailRef.current = detail;
@@ -825,15 +828,9 @@ export function WorkflowDetailView({
 
   // Saves every moved node in one operation; moving is frequent, so success is silent.
   async function moveWorkflowNodes(positions: WorkflowCanvasPositions) {
-    if (
-      !detail ||
-      savingPositions ||
-      arrangingNodes ||
-      !canManage ||
-      application.status !== "active"
-    )
-      return;
+    if (!detail || savingLayoutRef.current || !canManage || application.status !== "active") return;
     const previousLayout = detail.draft.layout;
+    savingLayoutRef.current = true;
     setSavingPositions(true);
     showPositions(positions);
     try {
@@ -852,6 +849,7 @@ export function WorkflowDetailView({
       // Unlike other edits, a failed move always reads the same: the nodes were restored.
       toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
     } finally {
+      savingLayoutRef.current = false;
       setSavingPositions(false);
     }
   }
@@ -859,18 +857,13 @@ export function WorkflowDetailView({
   // Ordenar nodos saves every position in one operation and shows them only once
   // saved, so a failure leaves the canvas as it was. Resolves whether it saved.
   async function arrangeNodes(positions: WorkflowCanvasPositions): Promise<boolean> {
-    if (
-      !detail ||
-      savingPositions ||
-      arrangingNodes ||
-      !canManage ||
-      application.status !== "active"
-    )
+    if (!detail || savingLayoutRef.current || !canManage || application.status !== "active")
       return false;
     const { draft } = detail;
     const previous = Object.fromEntries(
       draft.nodes.map((node, index) => [node.id, workflowNodePosition(draft, node, index)]),
     );
+    savingLayoutRef.current = true;
     setArrangingNodes(true);
     try {
       await httpClient.patch(layoutUrl, { positions });
@@ -878,6 +871,7 @@ export function WorkflowDetailView({
       toast.error(WORKFLOW_ARRANGE_ERROR);
       return false;
     } finally {
+      savingLayoutRef.current = false;
       setArrangingNodes(false);
     }
     showPositions(positions);
@@ -889,13 +883,15 @@ export function WorkflowDetailView({
   }
 
   // Deshacer puts back the positions the nodes had before Ordenar nodos, for the
-  // nodes still in the draft.
+  // nodes still in the draft. It does nothing while other positions are saving.
   async function undoArrangeNodes(previous: WorkflowCanvasPositions) {
+    if (savingLayoutRef.current) return;
     const nodeIds = new Set(detailRef.current?.draft.nodes.map((node) => node.id));
     const positions = Object.fromEntries(
       Object.entries(previous).filter(([nodeId]) => nodeIds.has(nodeId)),
     );
     if (Object.keys(positions).length === 0) return;
+    savingLayoutRef.current = true;
     setSavingPositions(true);
     try {
       await httpClient.patch(layoutUrl, { positions });
@@ -904,6 +900,7 @@ export function WorkflowDetailView({
     } catch (restoreError) {
       toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
     } finally {
+      savingLayoutRef.current = false;
       setSavingPositions(false);
     }
   }

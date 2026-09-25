@@ -2671,6 +2671,26 @@ describe("ApplicationDetailPanel", () => {
       expect(toastMock.success).toHaveBeenLastCalledWith("Posiciones restauradas.");
     });
 
+    it("ignores Deshacer while other positions are still saving", async () => {
+      client.patch.mockResolvedValueOnce({ data: { positions: {} } });
+      client.patch.mockReturnValueOnce(new Promise(() => {}));
+      await arrangeNodes();
+      await waitFor(() => expect(nodePosition("model-node")).toBe("translate(389px,48px)"));
+      const options = toastMock.success.mock.calls.at(-1)?.[1] as {
+        action: { onClick: () => void };
+      };
+
+      // Moving every node starts a second save that does not finish.
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+      fireEvent.click(screen.getByRole("button", { name: "Seleccionar todo" }));
+      fireEvent.keyDown(canvas, { key: "ArrowRight", shiftKey: true });
+      fireEvent.keyUp(canvas, { key: "Shift" });
+      await waitFor(() => expect(client.patch).toHaveBeenCalledTimes(2));
+      await act(async () => options.action.onClick());
+
+      expect(client.patch).toHaveBeenCalledTimes(2);
+    });
+
     it("keeps the previous positions and the DAG when the positions cannot be saved", async () => {
       client.patch.mockRejectedValueOnce({
         isAxiosError: true,
