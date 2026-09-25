@@ -1,4 +1,4 @@
-# US-121 — Acceder al registro y al dashboard
+# US-134 — Acceder al registro y al dashboard
 
 **Épica:** Página inicial para desarrolladores
 

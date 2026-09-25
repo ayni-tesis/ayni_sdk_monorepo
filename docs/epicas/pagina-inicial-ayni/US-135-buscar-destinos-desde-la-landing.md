@@ -1,4 +1,4 @@
-# US-122 — Buscar destinos desde la página inicial
+# US-135 — Buscar destinos desde la página inicial
 
 **Épica:** Página inicial para desarrolladores
 

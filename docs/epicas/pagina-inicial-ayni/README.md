@@ -12,10 +12,10 @@ La página debe preservar el carácter técnico del producto: workflows DAG tipa
 
 | Historia | Resultado |
 | --- | --- |
-| [US-120](US-120-presentar-ayni-a-desarrolladores.md) | Comprender qué es Ayni y las etapas de su flujo. |
-| [US-121](US-121-acceder-a-registro-y-dashboard.md) | Llegar al registro o al dashboard desde la página raíz. |
-| [US-122](US-122-buscar-destinos-desde-la-landing.md) | Encontrar uno de los destinos disponibles mediante búsqueda. |
-| [US-123](US-123-consultar-estado-de-la-api.md) | Consultar el estado de conectividad de la API. |
+| [US-133](US-133-presentar-ayni-a-desarrolladores.md) | Comprender qué es Ayni y las etapas de su flujo. |
+| [US-134](US-134-acceder-a-registro-y-dashboard.md) | Llegar al registro o al dashboard desde la página raíz. |
+| [US-135](US-135-buscar-destinos-desde-la-landing.md) | Encontrar uno de los destinos disponibles mediante búsqueda. |
+| [US-136](US-136-consultar-estado-de-la-api.md) | Consultar el estado de conectividad de la API. |
 
 ## Verificación conocida
 
