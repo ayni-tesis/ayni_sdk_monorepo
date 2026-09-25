@@ -741,6 +741,11 @@ export function WorkflowDetailView({
 
   const { workflow, draft, versions } = detail;
   const validationResult = validation?.draft === draft ? validation.result : null;
+  // Errors that belong to a node also show on it, with the panel's messages.
+  const nodeErrors: Record<string, string[]> = {};
+  for (const { nodeId, message } of validationResult?.errors ?? []) {
+    if (nodeId) nodeErrors[nodeId] = [...(nodeErrors[nodeId] ?? []), message];
+  }
   const classificationNodes = draft.nodes.filter(
     (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
       node.type === "model.tflite" && node.outputs.result.type === "classification",
@@ -1184,6 +1189,7 @@ export function WorkflowDetailView({
             selectedConnection={selectedConnection}
             connectionSource={connectionSource}
             cycleNodeIds={cycleNodeIds}
+            nodeErrors={nodeErrors}
             savingPositions={savingPositions}
             arrangingNodes={arrangingNodes}
             onSelectSource={setConnectionSource}

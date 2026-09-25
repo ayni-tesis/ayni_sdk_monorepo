@@ -2,7 +2,15 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { IconBan, IconCheck } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconBan,
+  IconCheck,
+  IconCpu,
+  IconFlag,
+  IconGitBranch,
+  IconPhoto,
+} from "@tabler/icons-react";
 import {
   Background,
   BaseEdge,
@@ -36,10 +44,12 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { arrangeWorkflowNodes } from "./workflow-canvas-layout";
 import {
   WorkflowCanvasControls,
@@ -122,6 +132,8 @@ type WorkflowFlowNodeData = {
   canManage: boolean;
   canSelect: boolean;
   cycle: boolean;
+  /** The messages of the node's errors in the last validation of this draft. */
+  errors: string[];
   /** The output picked with its Salida button. */
   connectionSource: ConnectionSource;
   /** The output a connection is being dragged from, or else the picked one. */
@@ -275,6 +287,32 @@ export function workflowNodeTitle(node: WorkflowCanvasNode): string {
         : `Salida: ${node.name}`;
 }
 
+// Each type has its own icon as well as its name, so it is never told apart by color alone.
+const WORKFLOW_NODE_TYPES: Record<
+  WorkflowCanvasNodeType,
+  { label: string; Icon: typeof IconPhoto }
+> = {
+  "input.image": { label: "Imagen de entrada", Icon: IconPhoto },
+  "model.tflite": { label: "Modelo", Icon: IconCpu },
+  condition: { label: "Condición", Icon: IconGitBranch },
+  output: { label: "Salida", Icon: IconFlag },
+};
+const CONDITION_OPERATOR_SYMBOLS = { gte: "≥", gt: ">", lte: "≤", lt: "<" } as const;
+const RESULT_TYPE_LABELS = {
+  classification: "Clasificación",
+  detection: "Detección",
+  boolean: "Booleano",
+} as const;
+// Every decimal of the threshold, with a decimal comma: 0.8 reads 0,8.
+const thresholdFormat = new Intl.NumberFormat("es", { maximumFractionDigits: 20 });
+
+/** The condition's rule as it reads on its card, for example `perro ≥ 0,8`. */
+export function workflowConditionRule(
+  node: Extract<WorkflowCanvasNode, { type: "condition" }>,
+): string {
+  return `${node.label} ${CONDITION_OPERATOR_SYMBOLS[node.operator]} ${thresholdFormat.format(node.threshold)}`;
+}
+
 const connectionKey = (edge: WorkflowCanvasConnection) =>
   `${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`;
 
@@ -407,32 +445,75 @@ function PortRow({
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
+// The validation errors of one node: an alert icon and their number, whose
+// messages show while the pointer rests on it or it has the focus.
+function NodeErrorIndicator({ messages }: { messages: string[] }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        aria-label={`${messages.length} ${messages.length === 1 ? "error" : "errores"} de validación`}
+        className="nodrag flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-medium text-destructive text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <IconAlertTriangle aria-hidden className="size-4" />
+        {messages.length}
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <ul className="space-y-1">
+          {messages.map((message, index) => (
+            // One node may repeat a message for two of its ports.
+            // biome-ignore lint/suspicious/noArrayIndexKey: messages are not unique and never reorder.
+            <li key={index}>{message}</li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // Any part of the card drags the node; its buttons carry `nodrag` and its ports
 // start connections instead.
 function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
-  const { node, canManage, canSelect, cycle, connectionSource } = data;
+  const { node, canManage, canSelect, cycle, errors, connectionSource } = data;
   const nodeTitle = workflowNodeTitle(node);
   const ports = workflowNodePorts(node);
-  const details =
-    node.type === "model.tflite"
-      ? `${node.inputs.image.width}×${node.inputs.image.height} · ${node.outputs.result.type}`
-      : node.type === "condition"
-        ? `${node.operator} ${node.threshold}`
-        : node.type === "output"
-          ? node.resultType
-          : null;
+  const { label: typeLabel, Icon: TypeIcon } = WORKFLOW_NODE_TYPES[node.type];
+  const typeId = useId();
+  const summaryId = useId();
+  // Names use the normal font; versions use the monospaced one.
+  const summary =
+    node.type === "model.tflite" ? (
+      <p id={summaryId} className="truncate">
+        <span>{node.modelName}</span> · <span className="font-mono">{node.version}</span>
+      </p>
+    ) : node.type === "condition" ? (
+      <p id={summaryId} className="truncate">
+        {workflowConditionRule(node)}
+      </p>
+    ) : node.type === "output" ? (
+      <>
+        <p id={summaryId} className="truncate">
+          {node.name}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          Tipo de resultado: {RESULT_TYPE_LABELS[node.resultType]}
+        </p>
+      </>
+    ) : null;
 
   return (
     <article
       data-testid={`workflow-node-${node.id}`}
       // A selected node is told apart by a thicker border as well as its color;
-      // a cycle error keeps its red border and ring.
-      className={`w-[292px] rounded-lg bg-card p-3 text-card-foreground shadow-sm ${selected ? "border-2" : "border"} ${cycle ? "border-destructive ring-2 ring-destructive" : selected ? "border-cyan-500" : ""}`}
+      // a cycle error keeps its red border and ring, and a validation error its red border.
+      className={`w-[292px] rounded-lg bg-card p-3 text-card-foreground shadow-sm ${selected ? "border-2" : "border"} ${cycle ? "border-destructive ring-2 ring-destructive" : errors.length > 0 ? "border-destructive" : selected ? "border-cyan-500" : ""}`}
     >
-      <header className="mb-3 flex min-h-8 items-center gap-2 border-b pb-2">
+      <header className="mb-2 flex min-h-8 items-center gap-2 border-b pb-2">
+        {/* Named after the type and the summary, which tell the node apart. */}
         <button
           type="button"
-          className={`nodrag min-w-0 flex-1 truncate text-left font-medium text-sm ${selected ? "text-cyan-700 dark:text-cyan-400" : ""}`}
+          className={`nodrag flex min-w-0 flex-1 items-center gap-2 text-left font-medium text-sm ${selected ? "text-cyan-700 dark:text-cyan-400" : ""}`}
+          aria-labelledby={summary ? `${typeId} ${summaryId}` : typeId}
           aria-pressed={selected}
           disabled={!canSelect}
           title={canSelect ? "Ctrl o Cmd + clic agrega o quita el nodo de la selección" : undefined}
@@ -442,14 +523,15 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
             data.onSelectNode(node.id, event.ctrlKey || event.metaKey);
           }}
         >
-          {nodeTitle}
+          <TypeIcon aria-hidden className="size-4 shrink-0" />
+          <span id={typeId} className="truncate">
+            {typeLabel}
+          </span>
         </button>
-        <span className="rounded bg-muted px-2 py-1 text-muted-foreground text-xs uppercase tracking-wide">
-          {node.type.replace(".", " · ")}
-        </span>
+        {errors.length > 0 && <NodeErrorIndicator messages={errors} />}
       </header>
 
-      {details && <p className="mb-3 text-muted-foreground text-xs">{details}</p>}
+      {summary && <div className="mb-3 space-y-0.5 text-sm">{summary}</div>}
 
       {/* Each Handle sits inside the relative row of its port, so edges and
           drag-to-connect start and end next to the port they belong to. Only
@@ -598,7 +680,9 @@ function WorkflowEdge({
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   return (
     <ReactFlowProvider>
-      <WorkflowCanvasFlow {...props} />
+      <TooltipProvider>
+        <WorkflowCanvasFlow {...props} />
+      </TooltipProvider>
     </ReactFlowProvider>
   );
 }
@@ -609,6 +693,8 @@ type WorkflowCanvasProps = {
   selectedConnection: WorkflowCanvasConnection | null;
   connectionSource: ConnectionSource;
   cycleNodeIds: string[];
+  /** The messages of each node's errors in the last validation of this draft, by node id. */
+  nodeErrors?: Record<string, string[]>;
   savingPositions: boolean;
   /** True while Ordenar nodos saves the new positions. */
   arrangingNodes: boolean;
@@ -636,6 +722,7 @@ function WorkflowCanvasFlow({
   selectedConnection,
   connectionSource,
   cycleNodeIds,
+  nodeErrors,
   savingPositions,
   arrangingNodes,
   palette,
@@ -782,6 +869,7 @@ function WorkflowCanvasFlow({
       canManage,
       canSelect: canManageDraft,
       cycle: cycleNodeIds.includes(node.id),
+      errors: nodeErrors?.[node.id] ?? [],
       connectionSource,
       pendingSource: canManage ? (draggedSource ?? connectionSource) : null,
       onSelectSource,
