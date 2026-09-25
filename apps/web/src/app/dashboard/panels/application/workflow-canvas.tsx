@@ -195,10 +195,11 @@ export function workflowCanvasFitViewport(
   draft: WorkflowCanvasDraft,
   size: WorkflowCanvasSize,
   measured?: MeasuredSizes,
+  maxZoom?: number,
 ): WorkflowCanvasViewport {
   const boxes = workflowNodeBoxes(draft, measured);
   const imageInputIndex = draft.nodes.findIndex((node) => node.type === "input.image");
-  return fitWorkflowCanvasViewport(boxes, size, boxes[Math.max(0, imageInputIndex)]);
+  return fitWorkflowCanvasViewport(boxes, size, boxes[Math.max(0, imageInputIndex)], maxZoom);
 }
 
 export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
@@ -697,13 +698,14 @@ function CanvasNavigation({
   const fittedRef = useRef(false);
   const size = { width, height };
 
-  // When the draft opens, the view fits every node once they have been measured.
+  // When the draft opens, the view fits every node once they have been measured,
+  // without enlarging a small draft past 100 % (Ajustar a la vista may reach 200 %).
   useEffect(() => {
     if (fittedRef.current || !width || !height) return;
     if (draft.nodes.length > 0 && !nodesInitialized) return;
     fittedRef.current = true;
     if (draft.nodes.length > 0)
-      void setViewport(workflowCanvasFitViewport(draft, { width, height }, measured));
+      void setViewport(workflowCanvasFitViewport(draft, { width, height }, measured, 1));
   }, [draft, measured, nodesInitialized, width, height, setViewport]);
 
   return (

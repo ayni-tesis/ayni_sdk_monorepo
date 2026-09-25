@@ -39,13 +39,15 @@ function unionBox(boxes: WorkflowCanvasBox[]): WorkflowCanvasBox {
 }
 
 /**
- * Fits every box in the visible area within the zoom limits. When the boxes do
- * not fit even at the minimum zoom, it keeps that zoom and centers `focus`.
+ * Fits every box in the visible area within the zoom limits, and never above
+ * `maxZoom`. When the boxes do not fit even at the minimum zoom, it keeps that
+ * zoom and centers `focus`.
  */
 export function fitWorkflowCanvasViewport(
   boxes: WorkflowCanvasBox[],
   size: WorkflowCanvasSize,
   focus: WorkflowCanvasBox | undefined = boxes[0],
+  maxZoom: number = WORKFLOW_CANVAS_MAX_ZOOM,
 ): WorkflowCanvasViewport {
   if (boxes.length === 0) return { x: 0, y: 0, zoom: 1 };
   const bounds = unionBox(boxes);
@@ -53,7 +55,7 @@ export function fitWorkflowCanvasViewport(
     Math.max(1, size.width - FIT_PADDING * 2) / Math.max(1, bounds.width),
     Math.max(1, size.height - FIT_PADDING * 2) / Math.max(1, bounds.height),
   );
-  const zoom = clampWorkflowCanvasZoom(fitZoom);
+  const zoom = clampWorkflowCanvasZoom(Math.min(fitZoom, maxZoom));
   const target = fitZoom < WORKFLOW_CANVAS_MIN_ZOOM && focus ? focus : bounds;
   return {
     x: size.width / 2 - (target.x + target.width / 2) * zoom,

@@ -57,6 +57,17 @@ describe("workflow canvas viewport", () => {
     expect(fitWorkflowCanvasViewport([{ x: 0, y: 0, width: 100, height: 50 }], size).zoom).toBe(2);
   });
 
+  it("fits up to a lower zoom ceiling when one is given, keeping the boxes centered", () => {
+    const viewport = fitWorkflowCanvasViewport(
+      [{ x: 0, y: 0, width: 100, height: 50 }],
+      size,
+      undefined,
+      1,
+    );
+
+    expect(viewport).toEqual({ x: 450, y: 275, zoom: 1 });
+  });
+
   it("uses the minimum zoom centered on the focus box when the boxes do not fit", () => {
     const boxes = [
       { x: 0, y: 0, width: 300, height: 200 },

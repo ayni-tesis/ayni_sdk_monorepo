@@ -162,6 +162,20 @@ describe("workflow canvas navigation", () => {
     expect(y + (400 + 94) * zoom).toBeCloseTo(300);
   });
 
+  it("opens a small draft at 100 % while Ajustar a la vista may zoom up to 200 %", () => {
+    renderCanvas({ nodes: [condition("a")], layout: { a: { x: 100, y: 100 } } });
+
+    // A 292 × 188 node would fit at 200 % in 1000 × 600; opening stops at 100 %.
+    expect(zoomLevel()).toBe("100 %");
+    const { x, y } = viewport();
+    expect(x + (100 + 146)).toBeCloseTo(500);
+    expect(y + (100 + 94)).toBeCloseTo(300);
+
+    fireEvent.click(control("Ajustar a la vista"));
+
+    expect(zoomLevel()).toBe("200 %");
+  });
+
   it("keeps the maximum zoom and disables Acercar at 200 %", () => {
     renderCanvas();
 
@@ -211,7 +225,6 @@ describe("workflow canvas navigation", () => {
 
   it("saves a moved node in board coordinates at any zoom", async () => {
     renderCanvas({ nodes: [condition("a")], layout: { a: { x: 100, y: 100 } } }, true);
-    fireEvent.click(screen.getByRole("button", { name: "Restablecer zoom (200 %)" }));
     fireEvent.click(control("Alejar"));
     fireEvent.click(control("Alejar"));
     expect(zoomLevel()).toBe("50 %");
