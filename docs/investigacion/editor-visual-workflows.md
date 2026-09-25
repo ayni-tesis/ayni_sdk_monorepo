@@ -159,6 +159,7 @@ selección, foco y destinos compatibles durante un arrastre.
 | `1` / `0` | Ajustar a la vista / zoom 100 % | sí | sí |
 | `Espacio` + arrastre | Mover el lienzo | sí | sí |
 | Flechas | Nodo vecino | sí | sí |
+| `Shift` + flechas | Mover la selección 16 px | sí | no |
 | `Ctrl`/`Cmd` + `A` | Seleccionar todo | sí | sí |
 | `Esc` | Cerrar panel o limpiar selección | sí | sí |
 | `?` | `Atajos de teclado` | sí | sí |
@@ -171,7 +172,10 @@ Los atajos se desactivan con el foco en un campo, un menú o un diálogo.
 
 ### 3.5 Accesibilidad
 
-- Toda acción de arrastre tiene una alternativa con clic o teclado. La conexión
+- Toda acción de arrastre tiene una alternativa con clic o teclado. Para mover
+  nodos, `Shift` + flechas desplaza la selección una celda de 16 px (US-121);
+  las flechas solas navegan entre nodos. Se descarta `Alt` + flechas porque
+  `Alt` + `←` es "atrás" en los navegadores. La conexión
   por clic existe hoy solo para imagen → modelo (`Salida imagen` →
   `Conectar entrada de imagen de …`, `workflow-canvas.tsx:246-281` y `:331`).
   Generalizarla a los demás puertos y a la reasignación de origen es trabajo nuevo.
