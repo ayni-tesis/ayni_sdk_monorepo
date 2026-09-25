@@ -44,7 +44,14 @@ import {
   type WorkflowCanvasConnection as WorkflowConnectionItem,
   type WorkflowCanvasNode as WorkflowNodeItem,
   WorkflowPaletteButton,
+  workflowNodeTitle,
 } from "./workflow-canvas";
+import {
+  WORKFLOW_PORT_LABELS,
+  WORKFLOW_PORTS_CONNECTED_MESSAGE,
+  WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
+  workflowPortCompatibility,
+} from "./workflow-canvas-ports";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowVersionItem = {
@@ -119,15 +126,6 @@ type WorkflowValidationResult = {
     port: string | null;
     message: string;
   }[];
-};
-
-const WORKFLOW_PORT_LABELS: Record<string, string> = {
-  image: "Entrada de imagen",
-  imagen: "imagen",
-  result: "Resultado",
-  source: "Origen",
-  true: "Verdadero",
-  false: "Falso",
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
@@ -843,8 +841,18 @@ export function WorkflowDetailView({
   }
 
   async function changeConnection(connection: WorkflowConnectionItem, remove = false) {
-    if (!remove) {
-      const cycle = detail && findWorkflowCycleNodeIds(detail.draft, connection);
+    if (!remove && detail) {
+      // Rejected connections never reach the server and leave the draft as it is.
+      const compatibility = workflowPortCompatibility(detail.draft, connection);
+      if (compatibility !== "compatible") {
+        toast.error(
+          compatibility === "connected"
+            ? WORKFLOW_PORTS_CONNECTED_MESSAGE
+            : WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
+        );
+        return;
+      }
+      const cycle = findWorkflowCycleNodeIds(detail.draft, connection);
       if (cycle) {
         setCycleNodeIds(cycle);
         toast.error(WORKFLOW_CYCLE_MESSAGE);
@@ -1324,14 +1332,7 @@ export function WorkflowDetailView({
                   ¿Eliminar &quot;
                   {(() => {
                     const node = draft.nodes.find((item) => item.id === selectedNodeId);
-                    if (!node) return "";
-                    return node.type === "input.image"
-                      ? "Imagen de entrada"
-                      : node.type === "model.tflite"
-                        ? `${node.modelName} · ${node.version}`
-                        : node.type === "condition"
-                          ? `Condición: ${node.label}`
-                          : `Salida: ${node.name}`;
+                    return node ? workflowNodeTitle(node) : "";
                   })()}
                   &quot;?
                 </DialogTitle>

@@ -2130,6 +2130,147 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-122: Conectar nodos arrastrando desde sus puertos", () => {
+    const imageNode = {
+      id: "image-node",
+      type: "input.image" as const,
+      outputs: { imagen: "image" as const },
+    };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite" as const,
+      modelVersionId: "model-version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image" as const,
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one" as const,
+        },
+      },
+      outputs: { result: { type: "classification" as const, labels: ["perro"] } },
+    };
+    const conditionNode = {
+      id: "condition-node",
+      type: "condition" as const,
+      sourceNodeId: "model-node",
+      label: "perro",
+      operator: "gte" as const,
+      threshold: 0.8,
+      branches: { true: "Verdadero" as const, false: "Falso" as const },
+    };
+    const imageToModel = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "model-node",
+      targetPort: "image",
+    };
+    const connectionsUrl = "/applications/app-1/workflows/workflow-1/connections";
+
+    function renderDraft(draft: { nodes: unknown[]; connections?: (typeof imageToModel)[] }) {
+      const detail = {
+        workflow: {
+          id: "workflow-1",
+          applicationId: "app-1",
+          name: "Diagnóstico de hoja de café",
+          status: "draft",
+          createdAt: "2026-09-21T15:00:00.000Z",
+          updatedAt: "2026-09-21T16:00:00.000Z",
+        },
+        draft,
+        versions: [],
+      };
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: detail } : { data: { models: [] } },
+      );
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+    }
+    const inNode = (nodeId: string, name: string) =>
+      within(screen.getByTestId(`workflow-node-${nodeId}`)).getByRole("button", { name });
+
+    it("saves the image connection to a model and draws it", async () => {
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode, modelNode], connections: [imageToModel] } },
+      });
+      renderDraft({ nodes: [imageNode, modelNode], connections: [] });
+      await screen.findByTestId("workflow-node-model-node");
+
+      fireEvent.click(inNode("image-node", "Salida imagen"));
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
+
+      await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Conexión creada."));
+      expect(client.post).toHaveBeenCalledWith(connectionsUrl, imageToModel);
+      expect(await screen.findByRole("button", { name: "imagen → image" })).toBeTruthy();
+    });
+
+    it("shows the generic message when the connection cannot be saved", async () => {
+      client.post.mockRejectedValueOnce(new Error("network"));
+      renderDraft({ nodes: [imageNode, modelNode], connections: [] });
+      await screen.findByTestId("workflow-node-model-node");
+
+      fireEvent.click(inNode("image-node", "Salida imagen"));
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No pudimos crear la conexión."),
+      );
+    });
+
+    it("rejects incompatible ports without changing the draft", async () => {
+      renderDraft({ nodes: [imageNode, modelNode, conditionNode], connections: [] });
+      await screen.findByTestId("workflow-node-condition-node");
+
+      fireEvent.click(inNode("model-node", "Salida Resultado"));
+      fireEvent.click(inNode("condition-node", "Conectar origen de Condición: perro"));
+
+      expect(toastMock.error).toHaveBeenCalledWith("Estos puertos no son compatibles.");
+      expect(client.post).not.toHaveBeenCalled();
+      expect(screen.queryByRole("region", { name: "Conexiones del workflow" })).toBeNull();
+    });
+
+    it("rejects a connection that already exists", async () => {
+      renderDraft({ nodes: [imageNode, modelNode], connections: [imageToModel] });
+      await screen.findByTestId("workflow-node-model-node");
+
+      fireEvent.click(inNode("image-node", "Salida imagen"));
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
+
+      expect(toastMock.error).toHaveBeenCalledWith("Estos puertos ya están conectados.");
+      expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it("cancels the picked output with Escape", async () => {
+      renderDraft({ nodes: [imageNode, modelNode], connections: [] });
+      await screen.findByTestId("workflow-node-model-node");
+
+      fireEvent.click(inNode("image-node", "Salida imagen"));
+      expect(inNode("image-node", "Salida imagen").getAttribute("aria-pressed")).toBe("true");
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      await waitFor(() =>
+        expect(inNode("image-node", "Salida imagen").getAttribute("aria-pressed")).toBe("false"),
+      );
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
+      expect(client.post).not.toHaveBeenCalled();
+    });
+  });
+
   describe("US-121: Mover y seleccionar varios nodos", () => {
     const draft = {
       nodes: [

@@ -82,7 +82,7 @@ export function canvasViewport() {
  */
 export function canvasMouse(
   type: "mouseDown" | "mouseMove" | "mouseUp",
-  target: Element | Window,
+  target: Element | Window | Document,
   clientX: number,
   clientY: number,
 ) {
