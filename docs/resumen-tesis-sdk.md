@@ -106,6 +106,7 @@ plataformas iniciales soportadas.
 | Credenciales SDK | US-007–US-011 | `epicas/credenciales-sdk` |
 | Modelos | US-012–US-023 | `epicas/modelos` |
 | Workflows DAG | US-024–US-037 | `epicas/workflows-dag` |
+| Editor visual de workflows | US-120–US-129 | `epicas/editor-visual-workflows` |
 | Sincronización offline | US-038–US-048 | `epicas/sincronizacion-offline` |
 | Ejecución local del SDK | US-049–US-062 | `epicas/ejecucion-local-sdk` |
 | Recolección de evidencia para datasets | US-063–US-074 | `epicas/recoleccion-evidencia-datasets` |
@@ -113,7 +114,7 @@ plataformas iniciales soportadas.
 | Empaquetado y distribución del SDK | US-089–US-099 | `epicas/empaquetado-distribucion-sdk` |
 | Observabilidad, telemetría y diagnóstico | US-100–US-113 | `epicas/observabilidad-telemetria-diagnostico` |
 
-Total: **119 historias de usuario**.
+Total: **129 historias de usuario**.
 
 ## Límites actuales
 
