@@ -1,7 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowCanvas, type WorkflowCanvasDraft } from "./workflow-canvas";
+import {
+  afterCanvasDrag,
+  dragCanvasElement,
+  stubWorkflowCanvasLayout,
+  canvasViewport as viewport,
+} from "./workflow-canvas-test-utils";
 
 const condition = (id: string) =>
   ({
@@ -21,11 +35,11 @@ const wideDraft: WorkflowCanvasDraft = {
 
 const handlers = {
   onSelectSource: vi.fn(),
-  onSelectNode: vi.fn(),
+  onSelectNodes: vi.fn(),
   onRequestDeleteNode: vi.fn(),
   onSelectConnection: vi.fn(),
   onConnect: vi.fn(),
-  onMoveNode: vi.fn(),
+  onMoveNodes: vi.fn(),
   onDropPalette: vi.fn(),
   onRemoveConnection: vi.fn(),
 };
@@ -38,72 +52,15 @@ function renderCanvas(draft: WorkflowCanvasDraft = wideDraft, canManage = false)
       selectedConnection={null}
       connectionSource={null}
       cycleNodeIds={[]}
-      savingPosition={false}
+      savingPositions={false}
       palette={null}
-      selectedNodeId={null}
+      selectedNodeIds={[]}
       {...handlers}
     />,
   );
 }
 
-// jsdom has no layout. React Flow measures its container and nodes with
-// offsetWidth/offsetHeight and ResizeObserver, and reads the zoom back with
-// DOMMatrixReadOnly, so the canvas gets a 1000 × 600 size and 292 × 188 nodes.
-const sizeOf = (element: HTMLElement) =>
-  element.classList.contains("react-flow__renderer")
-    ? { width: 1000, height: 600 }
-    : element.classList.contains("react-flow__node")
-      ? { width: 292, height: 188 }
-      : { width: 0, height: 0 };
-const originalOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
-const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-
-beforeAll(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      constructor(private readonly callback: ResizeObserverCallback) {}
-      observe(target: Element) {
-        const contentRect = { x: 0, y: 0, ...sizeOf(target as HTMLElement) };
-        this.callback(
-          [{ target, contentRect } as unknown as ResizeObserverEntry],
-          this as unknown as ResizeObserver,
-        );
-      }
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-  vi.stubGlobal(
-    "DOMMatrixReadOnly",
-    class {
-      m22: number;
-      constructor(transform?: string) {
-        this.m22 = Number(transform?.match(/scale\(([\d.]+)\)/)?.[1] ?? 1);
-      }
-    },
-  );
-  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
-    configurable: true,
-    get() {
-      return sizeOf(this).width;
-    },
-  });
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-    configurable: true,
-    get() {
-      return sizeOf(this).height;
-    },
-  });
-});
-
-afterAll(() => {
-  vi.unstubAllGlobals();
-  if (originalOffsetWidth)
-    Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalOffsetWidth);
-  if (originalOffsetHeight)
-    Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
-});
+stubWorkflowCanvasLayout();
 
 afterEach(() => {
   cleanup();
@@ -113,13 +70,6 @@ afterEach(() => {
 const zoomLevel = () => screen.getByRole("button", { name: /^Restablecer zoom/ }).textContent;
 const control = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
 const pane = () => document.querySelector(".react-flow__pane") as HTMLElement;
-function viewport() {
-  const transform = (document.querySelector(".react-flow__viewport") as HTMLElement).style
-    .transform;
-  const [, x, y, zoom] =
-    transform.match(/translate\((-?[\d.e-]+)px, ?(-?[\d.e-]+)px\) scale\(([\d.e-]+)\)/) ?? [];
-  return { x: Number(x), y: Number(y), zoom: Number(zoom) };
-}
 
 describe("workflow canvas navigation", () => {
   it("offers named navigation controls", () => {
@@ -205,7 +155,7 @@ describe("workflow canvas navigation", () => {
     fireEvent.wheel(pane(), { ctrlKey: true, deltaY: -100, clientX: 500, clientY: 300 });
 
     expect(viewport().zoom).toBeGreaterThan(904 / 1892);
-    expect(handlers.onMoveNode).not.toHaveBeenCalled();
+    expect(handlers.onMoveNodes).not.toHaveBeenCalled();
     expect(wideDraft.layout).toEqual({ a: { x: 0, y: 0 }, b: { x: 1600, y: 700 } });
   });
 
@@ -228,62 +178,15 @@ describe("workflow canvas navigation", () => {
     fireEvent.click(control("Alejar"));
     fireEvent.click(control("Alejar"));
     expect(zoomLevel()).toBe("50 %");
-    const handle = screen.getByRole("button", { name: "Mover Condición: a" });
+    // Free placement, so the result shows the plain screen-to-board conversion.
+    fireEvent.click(control("Alinear a la cuadrícula"));
+    const card = within(screen.getByTestId("workflow-node-a")).getByText("condition");
 
-    // d3-drag reads `event.view`, which jsdom's MouseEvent constructor refuses
-    // to take, so it is set on each event afterwards.
-    const mouse = (
-      type: "mouseDown" | "mouseMove" | "mouseUp",
-      target: Element | Window,
-      clientX: number,
-      clientY: number,
-    ) => {
-      const event = createEvent[type](target, { button: 0, clientX, clientY });
-      Object.defineProperty(event, "view", { value: window });
-      fireEvent(target, event);
-    };
-    act(() => {
-      mouse("mouseDown", handle, 10, 10);
-      mouse("mouseMove", window, 12, 10);
-      mouse("mouseMove", window, 72, 50);
-      mouse("mouseUp", window, 72, 50);
-    });
+    act(() => dragCanvasElement(card, 60, 40));
 
-    // React Flow starts the drag once the pointer passes its 1 px threshold (12, 10);
-    // the next 60 × 40 screen pixels at 50 % are 120 × 80 board pixels.
-    expect(handlers.onMoveNode).toHaveBeenCalledWith("a", { x: 220, y: 180 });
-    // After a drag, d3-drag swallows the next click until a zero-delay timeout.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-
-  it("moves a node with the keyboard and saves it once when dropped", () => {
-    renderCanvas({ nodes: [condition("a")], layout: { a: { x: 100, y: 100 } } }, true);
-    const handle = control("Mover Condición: a");
-
-    fireEvent.keyDown(handle, { key: "Enter" });
-    expect(handle.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.keyDown(handle, { key: "ArrowRight" });
-    fireEvent.keyDown(handle, { key: "ArrowRight" });
-    fireEvent.keyDown(handle, { key: "ArrowDown" });
-    expect(handlers.onMoveNode).not.toHaveBeenCalled();
-    fireEvent.keyDown(handle, { key: "Enter" });
-
-    expect(handlers.onMoveNode).toHaveBeenCalledTimes(1);
-    expect(handlers.onMoveNode).toHaveBeenCalledWith("a", { x: 132, y: 116 });
-    expect(handle.getAttribute("aria-pressed")).toBe("false");
-  });
-
-  it("cancels a keyboard move with Escape without saving", () => {
-    renderCanvas({ nodes: [condition("a")], layout: { a: { x: 100, y: 100 } } }, true);
-    const handle = control("Mover Condición: a");
-
-    fireEvent.keyDown(handle, { key: " " });
-    fireEvent.keyDown(handle, { key: "ArrowLeft" });
-    fireEvent.keyDown(handle, { key: "Escape" });
-    fireEvent.keyDown(handle, { key: "ArrowLeft" });
-
-    expect(handlers.onMoveNode).not.toHaveBeenCalled();
-    expect(handle.getAttribute("aria-pressed")).toBe("false");
+    // 60 × 40 screen pixels at 50 % are 120 × 80 board pixels.
+    expect(handlers.onMoveNodes).toHaveBeenCalledWith({ a: { x: 220, y: 180 } });
+    await afterCanvasDrag();
   });
 
   it("lets members without edit permission navigate in read-only mode", () => {
@@ -292,7 +195,7 @@ describe("workflow canvas navigation", () => {
     fireEvent.click(control("Acercar"));
 
     expect(zoomLevel()).toBe("50 %");
-    expect(control("Mover Condición: a").disabled).toBe(true);
+    expect(control("Condición: a").disabled).toBe(true);
     expect(document.querySelector(".react-flow__node.draggable")).toBeNull();
   });
 

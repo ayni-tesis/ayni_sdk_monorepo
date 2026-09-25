@@ -40,6 +40,7 @@ import {
   type WorkflowCanvasDraft,
   type WorkflowCanvasNodeType,
   type WorkflowCanvasPosition,
+  type WorkflowCanvasPositions,
   type WorkflowCanvasConnection as WorkflowConnectionItem,
   type WorkflowCanvasNode as WorkflowNodeItem,
   WorkflowPaletteButton,
@@ -130,6 +131,8 @@ const WORKFLOW_PORT_LABELS: Record<string, string> = {
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
+const WORKFLOW_POSITIONS_SAVE_ERROR =
+  "No pudimos guardar las posiciones. Se restauró la ubicación anterior.";
 const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
@@ -340,8 +343,10 @@ export function WorkflowDetailView({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
-  const [savingPosition, setSavingPosition] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [savingPositions, setSavingPositions] = useState(false);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  // Deleting a node applies only when exactly one node is selected.
+  const selectedNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] : null;
   const [deleteNodeDialogOpen, setDeleteNodeDialogOpen] = useState(false);
   const [deletingNode, setDeletingNode] = useState(false);
 
@@ -794,37 +799,39 @@ export function WorkflowDetailView({
     }
   }
 
-  async function moveWorkflowNode(nodeId: string, position: WorkflowCanvasPosition) {
-    if (!detail || savingPosition || !canManage || application.status !== "active") return;
-    const previousPosition = detail.draft.layout?.[nodeId];
-    setSavingPosition(true);
+  // Saves every moved node in one operation; moving is frequent, so success is silent.
+  async function moveWorkflowNodes(positions: WorkflowCanvasPositions) {
+    if (!detail || savingPositions || !canManage || application.status !== "active") return;
+    const previousLayout = detail.draft.layout;
+    setSavingPositions(true);
     setDetail((current) =>
       current
         ? {
             ...current,
-            draft: {
-              ...current.draft,
-              layout: { ...current.draft.layout, [nodeId]: position },
-            },
+            draft: { ...current.draft, layout: { ...current.draft.layout, ...positions } },
           }
         : current,
     );
     try {
       await httpClient.patch(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}/position`,
-        position,
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/layout`,
+        { positions },
       );
-    } catch (positionError) {
+    } catch {
       setDetail((current) => {
         if (!current) return current;
         const layout = { ...current.draft.layout };
-        if (previousPosition) layout[nodeId] = previousPosition;
-        else delete layout[nodeId];
+        for (const nodeId of Object.keys(positions)) {
+          const previous = previousLayout?.[nodeId];
+          if (previous) layout[nodeId] = previous;
+          else delete layout[nodeId];
+        }
         return { ...current, draft: { ...current.draft, layout } };
       });
-      toast.error(errorMessage(positionError, "No pudimos guardar la posición del nodo."));
+      // Unlike other edits, a failed move always reads the same: the nodes were restored.
+      toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
     } finally {
-      setSavingPosition(false);
+      setSavingPositions(false);
     }
   }
 
@@ -878,7 +885,7 @@ export function WorkflowDetailView({
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(selectedNodeId)}`,
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      setSelectedNodeId(null);
+      setSelectedNodeIds([]);
       setSelectedConnection((current) =>
         current
           ? (data.draft.connections?.find(
@@ -905,7 +912,7 @@ export function WorkflowDetailView({
       toast.success("Nodo eliminado.");
     } catch (deleteError) {
       setDeleteNodeDialogOpen(false);
-      setSelectedNodeId(null);
+      setSelectedNodeIds([]);
       toast.error(errorMessage(deleteError, "No pudimos eliminar el nodo."));
       void loadDetail(application.id, workflowId);
     } finally {
@@ -1054,17 +1061,17 @@ export function WorkflowDetailView({
             selectedConnection={selectedConnection}
             connectionSource={connectionSource}
             cycleNodeIds={cycleNodeIds}
-            savingPosition={savingPosition}
+            savingPositions={savingPositions}
             onSelectSource={setConnectionSource}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
+            selectedNodeIds={selectedNodeIds}
+            onSelectNodes={setSelectedNodeIds}
             onRequestDeleteNode={(nodeId) => {
-              setSelectedNodeId(nodeId);
+              setSelectedNodeIds([nodeId]);
               setDeleteNodeDialogOpen(true);
             }}
             onSelectConnection={setSelectedConnection}
             onConnect={(connection) => void changeConnection(connection)}
-            onMoveNode={(nodeId, position) => void moveWorkflowNode(nodeId, position)}
+            onMoveNodes={(positions) => void moveWorkflowNodes(positions)}
             onDropPalette={dropPaletteNode}
             onRemoveConnection={(connection) => void changeConnection(connection, true)}
             palette={
@@ -1077,7 +1084,7 @@ export function WorkflowDetailView({
                   <WorkflowPaletteButton
                     nodeType="input.image"
                     disabled={
-                      savingPosition ||
+                      savingPositions ||
                       addingImageInput ||
                       draft.nodes.some((node) => node.type === "input.image")
                     }
@@ -1158,7 +1165,7 @@ export function WorkflowDetailView({
                       )}
                     <WorkflowPaletteButton
                       nodeType="model.tflite"
-                      disabled={savingPosition || !selectedModelVersionId || addingModel}
+                      disabled={savingPositions || !selectedModelVersionId || addingModel}
                       onClick={() => void addModelNode()}
                     >
                       {addingModel ? "Agregando…" : "Agregar modelo"}
@@ -1243,7 +1250,7 @@ export function WorkflowDetailView({
                     <WorkflowPaletteButton
                       nodeType="condition"
                       disabled={
-                        savingPosition || !conditionSourceId || !conditionLabel || addingCondition
+                        savingPositions || !conditionSourceId || !conditionLabel || addingCondition
                       }
                       onClick={() => void addConditionNode()}
                     >
@@ -1296,7 +1303,7 @@ export function WorkflowDetailView({
                     )}
                     <WorkflowPaletteButton
                       nodeType="output"
-                      disabled={savingPosition || !outputName.trim() || addingOutput}
+                      disabled={savingPositions || !outputName.trim() || addingOutput}
                       onClick={() => void addOutputNode()}
                     >
                       {addingOutput ? "Agregando…" : "Agregar salida"}

@@ -2,7 +2,6 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { IconGripVertical } from "@tabler/icons-react";
 import {
   Background,
   type Dimensions,
@@ -32,7 +31,11 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import { WorkflowCanvasControls, WorkflowCanvasMinimap } from "./workflow-canvas-navigation";
+import {
+  WorkflowCanvasControls,
+  type WorkflowCanvasEditControls,
+  WorkflowCanvasMinimap,
+} from "./workflow-canvas-navigation";
 import {
   fitWorkflowCanvasViewport,
   stepWorkflowCanvasZoom,
@@ -97,22 +100,21 @@ export type WorkflowCanvasDraft = {
 };
 export type WorkflowCanvasNodeType = WorkflowCanvasNode["type"];
 
+export type WorkflowCanvasPositions = Record<string, WorkflowCanvasPosition>;
+
 type ConnectionSource = { sourceNodeId: string; sourcePort: string } | null;
 type CanvasEdge = WorkflowCanvasConnection;
 type MeasuredSizes = Record<string, Partial<Dimensions> | undefined>;
 type WorkflowFlowNodeData = {
   node: WorkflowCanvasNode;
   canManage: boolean;
+  canSelect: boolean;
   cycle: boolean;
-  selected: boolean;
-  /** The move handle has picked the node up for keyboard movement. */
-  moving: boolean;
   connectionSource: ConnectionSource;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
-  onSelectNode: (nodeId: string) => void;
+  /** Selects only this node, or adds or removes it when `toggle` is set. */
+  onSelectNode: (nodeId: string, toggle: boolean) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
-  onMoveKeyDown: (nodeId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
-  onMoveBlur: (nodeId: string) => void;
 };
 type WorkflowFlowNode = Node<WorkflowFlowNodeData, "workflow">;
 
@@ -120,24 +122,33 @@ const NODE_WIDTH = 292;
 const NODE_HEIGHT = 188;
 const NODE_GAP_X = 344;
 const NODE_GAP_Y = 244;
-const KEYBOARD_MOVE_STEP = 16;
-// The server accepts node coordinates between 0 and 100 000.
+const GRID_SIZE = 16;
+const SNAP_GRID: [number, number] = [GRID_SIZE, GRID_SIZE];
+// The server accepts node coordinates between -100 000 and 100 000, so a node
+// may sit left of or above the first one.
 const NODE_EXTENT: [[number, number], [number, number]] = [
-  [0, 0],
+  [-100_000, -100_000],
   [100_000, 100_000],
 ];
+// Shift + an arrow moves the selection one grid cell.
 const KEYBOARD_MOVE_DELTAS: Record<string, XYPosition> = {
-  ArrowLeft: { x: -KEYBOARD_MOVE_STEP, y: 0 },
-  ArrowRight: { x: KEYBOARD_MOVE_STEP, y: 0 },
-  ArrowUp: { x: 0, y: -KEYBOARD_MOVE_STEP },
-  ArrowDown: { x: 0, y: KEYBOARD_MOVE_STEP },
+  ArrowLeft: { x: -GRID_SIZE, y: 0 },
+  ArrowRight: { x: GRID_SIZE, y: 0 },
+  ArrowUp: { x: 0, y: -GRID_SIZE },
+  ArrowDown: { x: 0, y: GRID_SIZE },
 };
 
 /** Rounds a board position and keeps the whole node inside the server's bounds. */
 function savablePosition(position: XYPosition): WorkflowCanvasPosition {
   return {
-    x: Math.min(NODE_EXTENT[1][0] - NODE_WIDTH, Math.max(0, Math.round(position.x))),
-    y: Math.min(NODE_EXTENT[1][1] - NODE_HEIGHT, Math.max(0, Math.round(position.y))),
+    x: Math.min(
+      NODE_EXTENT[1][0] - NODE_WIDTH,
+      Math.max(NODE_EXTENT[0][0], Math.round(position.x)),
+    ),
+    y: Math.min(
+      NODE_EXTENT[1][1] - NODE_HEIGHT,
+      Math.max(NODE_EXTENT[0][1], Math.round(position.y)),
+    ),
   };
 }
 const PALETTE_MIME = "application/x-ayni-workflow-node";
@@ -260,8 +271,10 @@ export function WorkflowPaletteButton({
 
 const nodeTypes = { workflow: WorkflowNodeCard };
 
-function WorkflowNodeCard({ data }: NodeProps<WorkflowFlowNode>) {
-  const { node, canManage, cycle, connectionSource, selected, moving } = data;
+// Any part of the card drags the node; its buttons carry `nodrag` and its ports
+// start connections instead.
+function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
+  const { node, canManage, canSelect, cycle, connectionSource } = data;
   const nodeTitle =
     node.type === "input.image"
       ? "Imagen de entrada"
@@ -278,29 +291,22 @@ function WorkflowNodeCard({ data }: NodeProps<WorkflowFlowNode>) {
   return (
     <article
       data-testid={`workflow-node-${node.id}`}
-      className={`w-[292px] rounded-lg border bg-card p-3 text-card-foreground shadow-sm ${cycle ? "border-destructive ring-2 ring-destructive" : ""}`}
+      // A selected node is told apart by a thicker border as well as its color;
+      // a cycle error keeps its red border and ring.
+      className={`w-[292px] rounded-lg bg-card p-3 text-card-foreground shadow-sm ${selected ? "border-2" : "border"} ${cycle ? "border-destructive ring-2 ring-destructive" : selected ? "border-cyan-500" : ""}`}
     >
       <header className="mb-3 flex min-h-8 items-center gap-2 border-b pb-2">
         <button
           type="button"
-          disabled={!canManage}
-          aria-label={`Mover ${nodeTitle}`}
-          aria-pressed={moving}
-          title={
-            canManage ? "Arrastra para mover este nodo, o pulsa Enter y usa las flechas" : undefined
-          }
-          onKeyDown={(event) => data.onMoveKeyDown(node.id, event)}
-          onBlur={() => data.onMoveBlur(node.id)}
-          className="workflow-node-drag-handle inline-flex size-7 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-        >
-          <IconGripVertical className="size-4" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className={`min-w-0 flex-1 truncate text-left font-medium text-sm ${selected ? "text-primary" : ""}`}
+          className={`nodrag min-w-0 flex-1 truncate text-left font-medium text-sm ${selected ? "text-cyan-700 dark:text-cyan-400" : ""}`}
           aria-pressed={selected}
-          disabled={!canManage}
-          onClick={() => data.onSelectNode(node.id)}
+          disabled={!canSelect}
+          title={canSelect ? "Ctrl o Cmd + clic agrega o quita el nodo de la selección" : undefined}
+          onClick={(event) => {
+            // The card would otherwise select the node a second time.
+            event.stopPropagation();
+            data.onSelectNode(node.id, event.ctrlKey || event.metaKey);
+          }}
         >
           {nodeTitle}
         </button>
@@ -322,7 +328,7 @@ function WorkflowNodeCard({ data }: NodeProps<WorkflowFlowNode>) {
             }
             aria-label="Salida imagen"
             title="Selecciónala para conectar, o arrastra desde su punto de salida hasta la entrada de un modelo"
-            className="rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
+            className="nodrag rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
             onClick={() => data.onSelectSource({ sourceNodeId: node.id, sourcePort: "imagen" })}
           >
             Salida imagen
@@ -339,7 +345,7 @@ function WorkflowNodeCard({ data }: NodeProps<WorkflowFlowNode>) {
               disabled={!canManage}
               aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
               aria-disabled={!canManage || !connectionSource}
-              className="flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="nodrag flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={connectFromSelection}
             >
               <span>Entrada de imagen</span>
@@ -401,15 +407,17 @@ type WorkflowCanvasProps = {
   selectedConnection: WorkflowCanvasConnection | null;
   connectionSource: ConnectionSource;
   cycleNodeIds: string[];
-  savingPosition: boolean;
+  savingPositions: boolean;
   palette: ReactNode;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
-  selectedNodeId: string | null;
-  onSelectNode: (nodeId: string) => void;
+  /** The selected nodes, in draft order. */
+  selectedNodeIds: string[];
+  onSelectNodes: (nodeIds: string[]) => void;
   onRequestDeleteNode: (nodeId: string) => void;
   onSelectConnection: (connection: WorkflowCanvasConnection) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
-  onMoveNode: (nodeId: string, position: WorkflowCanvasPosition) => void;
+  /** Saves every moved node in one operation. */
+  onMoveNodes: (positions: WorkflowCanvasPositions) => void;
   onDropPalette: (nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) => void;
   onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
 };
@@ -420,92 +428,108 @@ function WorkflowCanvasFlow({
   selectedConnection,
   connectionSource,
   cycleNodeIds,
-  savingPosition,
+  savingPositions,
   palette,
   onSelectSource,
-  selectedNodeId,
-  onSelectNode,
+  selectedNodeIds,
+  onSelectNodes,
   onRequestDeleteNode,
   onSelectConnection,
   onConnect,
-  onMoveNode,
+  onMoveNodes,
   onDropPalette,
   onRemoveConnection,
 }: WorkflowCanvasProps) {
-  const canManage = canManageDraft && !savingPosition;
+  const canManage = canManageDraft && !savingPositions;
   const { screenToFlowPosition } = useReactFlow();
   // React Flow reports measured sizes and in-progress drag positions through
   // `onNodesChange`; the saved positions still come only from the draft.
   const [measured, setMeasured] = useState<MeasuredSizes>({});
   const [dragged, setDragged] = useState<Record<string, XYPosition>>({});
-  const [keyboardMoveId, setKeyboardMoveId] = useState<string | null>(null);
+  // Positions reached with Shift + arrows, saved together once Shift is released.
+  const [keyboardMoved, setKeyboardMoved] = useState<Record<string, XYPosition>>({});
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [dropActive, setDropActive] = useState(false);
+  // React Flow may report several selection changes before the next render.
+  const selectionRef = useRef(selectedNodeIds);
+  selectionRef.current = selectedNodeIds;
 
   const clearDragged = (nodeId: string) => setDragged(({ [nodeId]: _cleared, ...rest }) => rest);
+  const draftOrder = (nodeIds: Set<string>) =>
+    draft.nodes.map((node) => node.id).filter((nodeId) => nodeIds.has(nodeId));
 
-  // Enter or Space picks the node up, the arrows move it one 16 px step, and
-  // Enter or Space drops it with a single save; Escape or leaving cancels.
-  function moveWithKeyboard(nodeId: string, event: KeyboardEvent<HTMLButtonElement>) {
+  function savedPosition(nodeId: string) {
     const index = draft.nodes.findIndex((node) => node.id === nodeId);
-    if (!canManage || index < 0) return;
-    const saved = workflowNodePosition(draft, draft.nodes[index], index);
-    const current = dragged[nodeId] ?? saved;
-    const moving = keyboardMoveId === nodeId;
-    if (event.key === " " || event.key === "Enter") {
-      event.preventDefault();
-      if (!moving) {
-        setKeyboardMoveId(nodeId);
-        return;
-      }
-      setKeyboardMoveId(null);
-      clearDragged(nodeId);
-      if (current.x !== saved.x || current.y !== saved.y)
-        onMoveNode(nodeId, savablePosition(current));
-      return;
-    }
-    if (!moving) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setKeyboardMoveId(null);
-      clearDragged(nodeId);
-      return;
-    }
-    const delta = KEYBOARD_MOVE_DELTAS[event.key];
-    if (!delta) return;
-    event.preventDefault();
-    setDragged((positions) => ({
-      ...positions,
-      [nodeId]: savablePosition({ x: current.x + delta.x, y: current.y + delta.y }),
-    }));
+    return index < 0 ? undefined : workflowNodePosition(draft, draft.nodes[index], index);
   }
 
-  function cancelKeyboardMove(nodeId: string) {
-    if (keyboardMoveId !== nodeId) return;
-    setKeyboardMoveId(null);
-    clearDragged(nodeId);
+  function changeSelection(nodeIds: string[]) {
+    const current = selectionRef.current;
+    if (nodeIds.length === current.length && nodeIds.every((id, i) => id === current[i])) return;
+    selectionRef.current = nodeIds;
+    onSelectNodes(nodeIds);
+  }
+
+  function selectNode(nodeId: string, toggle: boolean) {
+    const selection = new Set(toggle ? selectionRef.current : []);
+    if (toggle && selection.has(nodeId)) selection.delete(nodeId);
+    else selection.add(nodeId);
+    changeSelection(draftOrder(selection));
+  }
+
+  /** Saves the nodes whose position changed, all in one operation. */
+  function saveMovedNodes(moved: { id: string; position: XYPosition }[]) {
+    const positions: WorkflowCanvasPositions = {};
+    for (const { id, position } of moved) {
+      const saved = savedPosition(id);
+      const next = savablePosition(position);
+      if (saved && (next.x !== saved.x || next.y !== saved.y)) positions[id] = next;
+    }
+    if (Object.keys(positions).length > 0) onMoveNodes(positions);
+  }
+
+  function moveSelectionWithKeyboard(event: KeyboardEvent<HTMLElement>) {
+    const delta = KEYBOARD_MOVE_DELTAS[event.key];
+    // The arrows alone are left for moving the focus between nodes.
+    if (!delta || !event.shiftKey || event.defaultPrevented || !canManage) return;
+    if (selectedNodeIds.length === 0) return;
+    event.preventDefault();
+    setKeyboardMoved((current) => {
+      const next = { ...current };
+      for (const nodeId of selectedNodeIds) {
+        const from = current[nodeId] ?? savedPosition(nodeId);
+        if (from) next[nodeId] = savablePosition({ x: from.x + delta.x, y: from.y + delta.y });
+      }
+      return next;
+    });
+  }
+
+  function finishKeyboardMove() {
+    const moved = Object.entries(keyboardMoved);
+    if (moved.length === 0) return;
+    setKeyboardMoved({});
+    saveMovedNodes(moved.map(([id, position]) => ({ id, position })));
   }
 
   const nodeIds = new Set(draft.nodes.map((node) => node.id));
   const nodes: WorkflowFlowNode[] = draft.nodes.map((node, index) => ({
     id: node.id,
     type: "workflow",
-    position: dragged[node.id] ?? workflowNodePosition(draft, node, index),
+    position:
+      dragged[node.id] ?? keyboardMoved[node.id] ?? workflowNodePosition(draft, node, index),
     measured: measured[node.id],
     initialWidth: NODE_WIDTH,
     initialHeight: NODE_HEIGHT,
-    dragHandle: ".workflow-node-drag-handle",
+    selected: selectedNodeIds.includes(node.id),
     data: {
       node,
       canManage,
+      canSelect: canManageDraft,
       cycle: cycleNodeIds.includes(node.id),
-      selected: selectedNodeId === node.id,
-      moving: keyboardMoveId === node.id,
       connectionSource,
       onSelectSource,
-      onSelectNode,
+      onSelectNode: selectNode,
       onConnect,
-      onMoveKeyDown: moveWithKeyboard,
-      onMoveBlur: cancelKeyboardMove,
     },
   }));
   const edges: Edge[] = workflowCanvasEdges(draft)
@@ -516,14 +540,21 @@ function WorkflowCanvasFlow({
       sourceHandle: edge.sourcePort,
       target: edge.targetNodeId,
       targetHandle: edge.targetPort,
+      selectable: false,
       style: { stroke: "var(--muted-foreground)", strokeWidth: 2, strokeDasharray: "5 5" },
       markerEnd: { type: MarkerType.ArrowClosed, color: "var(--muted-foreground)" },
     }));
 
-  // Only sizes and in-progress drags matter here; selection and removal are off.
+  // Sizes, in-progress drags and selection matter here; removal is off.
   function handleNodesChange(changes: NodeChange<WorkflowFlowNode>[]) {
+    const selection = new Set(selectionRef.current);
+    let selectionChanged = false;
     for (const change of changes) {
-      if (change.type === "dimensions" && change.dimensions) {
+      if (change.type === "select") {
+        if (change.selected) selection.add(change.id);
+        else selection.delete(change.id);
+        selectionChanged = true;
+      } else if (change.type === "dimensions" && change.dimensions) {
         const { id, dimensions } = change;
         setMeasured((current) => ({ ...current, [id]: dimensions }));
       } else if (change.type === "position" && change.dragging && change.position) {
@@ -534,6 +565,12 @@ function WorkflowCanvasFlow({
         clearDragged(change.id);
       }
     }
+    if (selectionChanged) changeSelection(draftOrder(selection));
+  }
+
+  function saveDraggedNodes(moved: WorkflowFlowNode[]) {
+    for (const node of moved) clearDragged(node.id);
+    saveMovedNodes(moved);
   }
 
   function readPaletteNodeType(event: DragEvent<HTMLElement>) {
@@ -554,10 +591,22 @@ function WorkflowCanvasFlow({
       >
         {palette}
         <div className="min-w-0 space-y-2">
+          {/* Focusable so that Shift + arrows reach it after a click on a node. */}
           <section
             data-testid="workflow-canvas"
             aria-label="Lienzo del workflow"
-            className={`relative h-[720px] overflow-hidden rounded-lg border bg-background ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: the canvas takes keyboard shortcuts.
+            tabIndex={0}
+            className={`relative h-[720px] overflow-hidden rounded-lg border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
+            onKeyDown={moveSelectionWithKeyboard}
+            onKeyUp={(event) => {
+              if (event.key === "Shift") finishKeyboardMove();
+            }}
+            onBlur={(event) => {
+              // Leaving the canvas releases the keys too.
+              if (!event.currentTarget.contains(event.relatedTarget as Element | null))
+                finishKeyboardMove();
+            }}
             onDragOver={(event) => {
               if (!canManage || !event.dataTransfer.types.includes(PALETTE_MIME)) return;
               event.preventDefault();
@@ -573,7 +622,11 @@ function WorkflowCanvasFlow({
               const nodeType = readPaletteNodeType(event);
               if (!canManage || !nodeType) return;
               event.preventDefault();
-              const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              // The grid aligns moved nodes; a dropped node keeps its place under the pointer.
+              const position = screenToFlowPosition(
+                { x: event.clientX, y: event.clientY },
+                { snapToGrid: false },
+              );
               onDropPalette(
                 nodeType,
                 savablePosition({ x: position.x - NODE_WIDTH / 2, y: position.y - 24 }),
@@ -585,10 +638,8 @@ function WorkflowCanvasFlow({
               edges={edges}
               nodeTypes={nodeTypes}
               onNodesChange={handleNodesChange}
-              onNodeDragStop={(_, node) => {
-                clearDragged(node.id);
-                onMoveNode(node.id, savablePosition(node.position));
-              }}
+              // Also called, with every dragged node, when the selection box is dragged.
+              onNodeDragStop={(_, _node, moved) => saveDraggedNodes(moved)}
               onConnect={(connection) =>
                 onConnect({
                   sourceNodeId: connection.source,
@@ -604,10 +655,17 @@ function WorkflowCanvasFlow({
               nodesConnectable={canManage}
               nodesFocusable={false}
               edgesFocusable={false}
-              elementsSelectable={false}
+              // Shift + drag on the background draws a selection box; Ctrl or Cmd +
+              // click adds or removes a node; a click on the background clears it.
+              elementsSelectable={canManageDraft}
+              selectionKeyCode="Shift"
+              multiSelectionKeyCode={["Control", "Meta"]}
+              // The canvas moves the selection with Shift + arrows itself, so React
+              // Flow's own arrow-key moves stay off.
+              disableKeyboardA11y
+              snapToGrid={snapToGrid}
+              snapGrid={SNAP_GRID}
               deleteKeyCode={null}
-              selectionKeyCode={null}
-              multiSelectionKeyCode={null}
               // Middle button, or Space (panActivationKeyCode) + drag, pans; Ctrl + wheel
               // and trackpad pinch zoom; a plain wheel keeps scrolling the page.
               panOnDrag={[1]}
@@ -622,7 +680,20 @@ function WorkflowCanvasFlow({
                 gap={22}
                 color="color-mix(in srgb, var(--muted-foreground) 28%, transparent)"
               />
-              <CanvasNavigation draft={draft} measured={measured} />
+              <CanvasNavigation
+                draft={draft}
+                measured={measured}
+                savingPositions={savingPositions}
+                editing={
+                  canManageDraft
+                    ? {
+                        snapToGrid,
+                        onToggleSnapToGrid: () => setSnapToGrid((current) => !current),
+                        onSelectAll: () => changeSelection(draft.nodes.map((node) => node.id)),
+                      }
+                    : undefined
+                }
+              />
             </ReactFlow>
 
             {draft.nodes.length === 0 && (
@@ -667,12 +738,13 @@ function WorkflowCanvasFlow({
               Eliminar conexión
             </Button>
           )}
-          {selectedNodeId && canManage && (
+          {/* Deleting one node needs exactly one selected node. */}
+          {selectedNodeIds.length === 1 && canManage && (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => onRequestDeleteNode(selectedNodeId)}
+              onClick={() => onRequestDeleteNode(selectedNodeIds[0])}
             >
               Eliminar nodo
             </Button>
@@ -686,9 +758,13 @@ function WorkflowCanvasFlow({
 function CanvasNavigation({
   draft,
   measured,
+  savingPositions,
+  editing,
 }: {
   draft: WorkflowCanvasDraft;
   measured: MeasuredSizes;
+  savingPositions: boolean;
+  editing?: WorkflowCanvasEditControls;
 }) {
   const { setViewport, zoomTo, setCenter } = useReactFlow();
   const viewport = useViewport();
@@ -717,6 +793,8 @@ function CanvasNavigation({
           onZoomOut={() => void zoomTo(stepWorkflowCanvasZoom(viewport.zoom, -1))}
           onFit={() => void setViewport(workflowCanvasFitViewport(draft, size, measured))}
           onReset={() => void zoomTo(1)}
+          savingPositions={savingPositions}
+          editing={editing}
         />
       </Panel>
       {draft.nodes.length > 0 && (
