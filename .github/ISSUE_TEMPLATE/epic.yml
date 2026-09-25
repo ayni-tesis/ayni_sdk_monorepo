@@ -1,0 +1,36 @@
+name: Épica
+description: Crear una épica de producto o plataforma
+title: "Épica: "
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objetivo
+      description: ¿Qué resultado de producto o capacidad agrupa esta épica?
+      placeholder: Describe el resultado que se busca y para quién.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Alcance y contexto
+      description: Incluye motivación, límites y restricciones relevantes.
+      placeholder: Describe qué incluye y qué queda explícitamente fuera.
+    validations:
+      required: true
+  - type: textarea
+    id: stories
+    attributes:
+      label: Historias relacionadas
+      description: Enumera las historias que componen la épica, si ya están identificadas.
+      placeholder: "- Historia: resultado esperado"
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios de aceptación de la épica
+      description: Define cómo se reconocerá que el objetivo de la épica está satisfecho.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true

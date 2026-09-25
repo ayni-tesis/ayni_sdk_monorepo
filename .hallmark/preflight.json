@@ -1,0 +1,12 @@
+{
+  "date": "2026-09-24",
+  "framework": "Next.js App Router",
+  "frameworkSource": "apps/web/package.json",
+  "fonts": ["Geist Sans", "Geist Mono"],
+  "fontSource": "apps/web/src/app/layout.tsx",
+  "motion": "motion 13 is installed; landing page uses only restrained CSS transitions",
+  "motionSource": "apps/web/package.json",
+  "spacing": "Tailwind CSS 4; landing page defines a semantic 4pt-derived spacing scale",
+  "palette": "Existing app CSS uses Tailwind; landing page uses dedicated Cobalt OKLCH tokens",
+  "preserved": ["Geist font stack", "Next.js app shell", "existing API health check"]
+}

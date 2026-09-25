@@ -5,7 +5,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("@ayni/env/web", () => ({ env: { NEXT_PUBLIC_SERVER_URL: "http://localhost:3000" } }));
 vi.mock("next/link", async () => {
   const React = await import("react");
-  return { default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => React.createElement("a", { href, ...props }, children) };
+  return {
+    default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) =>
+      React.createElement("a", { href, ...props }, children),
+  };
 });
 vi.mock("./page.module.css", () => ({
   default: new Proxy({}, { get: (_target, name) => String(name) }),
@@ -32,9 +35,15 @@ describe("home landing page", () => {
     const Home = (await import("./page")).default;
     render(<Home />);
 
-    expect(screen.getByRole("heading", { name: /workflows that keep working offline/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /create your workspace/i }).getAttribute("href")).toBe("/register");
-    expect(screen.getByRole("link", { name: /go to dashboard/i }).getAttribute("href")).toBe("/dashboard");
+    expect(
+      screen.getByRole("heading", { name: /workflows that keep working offline/i }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /create your workspace/i }).getAttribute("href")).toBe(
+      "/register",
+    );
+    expect(screen.getByRole("link", { name: /go to dashboard/i }).getAttribute("href")).toBe(
+      "/dashboard",
+    );
     await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/connected/i));
   });
 

@@ -1,0 +1,73 @@
+name: Historia de usuario
+description: Crear una historia verificable siguiendo la convención de docs/guia-formato-historias-usuario.md
+title: "US-### — "
+body:
+  - type: input
+    id: story_id
+    attributes:
+      label: Identificador
+      description: Usa el siguiente identificador disponible en docs/resumen-tesis-sdk.md.
+      placeholder: US-124
+    validations:
+      required: true
+  - type: input
+    id: epic
+    attributes:
+      label: Épica
+      description: Nombre de la épica a la que pertenece esta historia.
+      placeholder: Página inicial para desarrolladores
+    validations:
+      required: true
+  - type: textarea
+    id: user_story
+    attributes:
+      label: Historia de usuario
+      description: Expresa el rol, la acción y el beneficio.
+      placeholder: Como <rol>, quiero <acción> para <beneficio>.
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: Interfaz
+      description: Indica ubicación, elementos y textos visibles, además de estados y mensajes pertinentes.
+      placeholder: |
+        Ubicación:
+
+        Elementos y texto visible:
+
+        Estados y mensajes (carga, vacío, éxito, error, permisos):
+    validations:
+      required: true
+  - type: textarea
+    id: happy_path
+    attributes:
+      label: Happy path
+      description: Describe el escenario exitoso en sintaxis Gherkin.
+      render: gherkin
+      placeholder: |
+        Dado que ...
+        Cuando ...
+        Entonces ...
+    validations:
+      required: true
+  - type: textarea
+    id: bad_path
+    attributes:
+      label: Bad path
+      description: Describe un escenario de error, límite o falta de permisos en sintaxis Gherkin.
+      render: gherkin
+      placeholder: |
+        Dado que ...
+        Cuando ...
+        Entonces ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Criterios de aceptación
+      description: Enumera criterios observables y verificables.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
