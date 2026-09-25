@@ -1,9 +1,9 @@
 # ADR 0001 — Construir el lienzo de workflows con `@xyflow/react`
 
-- **Estado:** propuesto
+- **Estado:** aceptado (2026-09-25, spike con US-120; ver "Resultado del spike")
 - **Fecha:** 2026-09-24
 - **HU relacionadas:** US-120 a US-132 (`docs/epicas/editor-visual-workflows/`)
-- **Condición de aprobación:** un spike técnico que se hace junto con US-120 (ver "Validación pendiente")
+- **Condición de aprobación:** un spike técnico que se hace junto con US-120 (ver "Validación pendiente"; cumplida en "Resultado del spike")
 - **Investigación:** `docs/investigacion/editor-visual-workflows.md`
 
 ## Contexto
@@ -82,3 +82,42 @@ El ADR pasa a **aceptado** solo si el spike demuestra lo siguiente:
 6. Hacer funcionar en jsdom una interacción mínima (seleccionar y mover un nodo).
 
 Si alguno falla, se reevalúa la alternativa de seguir con `@dnd-kit/react`.
+
+## Resultado del spike (2026-09-25, US-120)
+
+Los seis puntos se cumplen, así que el ADR pasa a **aceptado**.
+
+1. **Versiones.** `apps/web/package.json` fija `@xyflow/react` 12.12.0 y
+   `@dagrejs/dagre` 3.1.1, y `bun.lock` las registra. `@dnd-kit/react` se
+   retiró, porque el lienzo era su único consumidor.
+2. **zustand.** `bun.lock` anida `zustand@4.5.7` en `@xyflow/react/zustand`, y
+   la web sigue con zustand 5.
+3. **Build.** `next build` (Next 16.3.5, Turbopack) compila sin errores con
+   `@xyflow/react/dist/style.css` importado en `workflow-canvas.tsx`.
+4. **Bundle.** Se midió la ruta `/dashboard/applications/[id]/workflows/[workflowId]`
+   sumando los chunks de JS de sus manifiestos:
+   - Antes: 1662.9 KB, o 490.6 KB con gzip.
+   - Después: 1742.1 KB, o 515.5 KB con gzip.
+   - Diferencia neta: +79.2 KB, o +24.9 KB con gzip, ya descontado el retiro de dnd-kit.
+   - El CSS de React Flow sale en un chunk propio de 20.1 KB, o 3.6 KB con gzip.
+5. **Pruebas.** `application-detail-panel.test.tsx` pasa sin regresiones
+   (86/86) y conserva `Lienzo del workflow`, `Salida <puerto>`,
+   `Conectar entrada de imagen de …` y `data-testid="workflow-node-<id>"`.
+   - Para que los nodos sean visibles antes de medirse, se les da `initialWidth` e `initialHeight`, lo que evita tener que simular el DOM en esa suite.
+6. **jsdom.** `workflow-canvas-navigation.test.tsx` mueve un nodo con el ratón
+   a 50 % de zoom y comprueba la posición guardada, además del zoom, el ajuste a
+   la vista y el minimapa.
+   - Para lograrlo simula `ResizeObserver`, `DOMMatrixReadOnly`, `offsetWidth` y `offsetHeight`.
+   - También fija `event.view` en los eventos de ratón, porque d3-drag lo necesita y el constructor de jsdom no lo acepta.
+
+Decisiones de implementación en US-120:
+
+- El zoom, el desplazamiento, el arrastre de nodos y las conexiones los maneja React Flow:
+  - `minZoom` es 0.25 y `maxZoom` es 2.
+  - El botón central o `Espacio` + arrastre desplazan el lienzo.
+  - `Ctrl` + rueda y el pellizco del trackpad hacen zoom.
+  - La rueda sola desplaza la página (`preventScrolling={false}`).
+  - `nodeExtent` limita el arrastre a las coordenadas que acepta el servidor.
+- Los controles y el minimapa del lienzo son componentes propios dentro de `Panel`:
+  - `Controls` avanza de 1.2 en 1.2 y no permite centrar la entrada de imagen cuando los nodos no caben al 25 %.
+  - `MiniMap` no se puede usar con teclado, y US-120 lo exige.

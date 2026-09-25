@@ -1,9 +1,47 @@
 "use client";
 
-import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
+import "@xyflow/react/dist/style.css";
+
 import { IconGripVertical } from "@tabler/icons-react";
-import { type ReactNode, useCallback, useRef } from "react";
+import {
+  Background,
+  type Dimensions,
+  type Edge,
+  Handle,
+  MarkerType,
+  type Node,
+  type NodeChange,
+  type NodeProps,
+  Panel,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  useNodesInitialized,
+  useReactFlow,
+  useStore,
+  useViewport,
+  type XYPosition,
+} from "@xyflow/react";
+import {
+  type CSSProperties,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
+import { WorkflowCanvasControls, WorkflowCanvasMinimap } from "./workflow-canvas-navigation";
+import {
+  fitWorkflowCanvasViewport,
+  stepWorkflowCanvasZoom,
+  WORKFLOW_CANVAS_MAX_ZOOM,
+  WORKFLOW_CANVAS_MIN_ZOOM,
+  type WorkflowCanvasBox,
+  type WorkflowCanvasSize,
+  type WorkflowCanvasViewport,
+} from "./workflow-canvas-viewport";
 
 export type WorkflowCanvasPosition = { x: number; y: number };
 export type WorkflowCanvasConnection = {
@@ -60,20 +98,55 @@ export type WorkflowCanvasDraft = {
 export type WorkflowCanvasNodeType = WorkflowCanvasNode["type"];
 
 type ConnectionSource = { sourceNodeId: string; sourcePort: string } | null;
-type DragData = {
-  kind: "canvas-node" | "palette-node" | "output-port";
-  nodeId?: string;
-  nodeType?: WorkflowCanvasNodeType;
-  sourcePort?: string;
-  position?: WorkflowCanvasPosition;
-};
-type DropData = { kind: "canvas" | "image-input-port"; nodeId?: string };
 type CanvasEdge = WorkflowCanvasConnection;
+type MeasuredSizes = Record<string, Partial<Dimensions> | undefined>;
+type WorkflowFlowNodeData = {
+  node: WorkflowCanvasNode;
+  canManage: boolean;
+  cycle: boolean;
+  selected: boolean;
+  /** The move handle has picked the node up for keyboard movement. */
+  moving: boolean;
+  connectionSource: ConnectionSource;
+  onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
+  onSelectNode: (nodeId: string) => void;
+  onConnect: (connection: WorkflowCanvasConnection) => void;
+  onMoveKeyDown: (nodeId: string, event: KeyboardEvent<HTMLButtonElement>) => void;
+  onMoveBlur: (nodeId: string) => void;
+};
+type WorkflowFlowNode = Node<WorkflowFlowNodeData, "workflow">;
 
 const NODE_WIDTH = 292;
 const NODE_HEIGHT = 188;
 const NODE_GAP_X = 344;
 const NODE_GAP_Y = 244;
+const KEYBOARD_MOVE_STEP = 16;
+// The server accepts node coordinates between 0 and 100 000.
+const NODE_EXTENT: [[number, number], [number, number]] = [
+  [0, 0],
+  [100_000, 100_000],
+];
+const KEYBOARD_MOVE_DELTAS: Record<string, XYPosition> = {
+  ArrowLeft: { x: -KEYBOARD_MOVE_STEP, y: 0 },
+  ArrowRight: { x: KEYBOARD_MOVE_STEP, y: 0 },
+  ArrowUp: { x: 0, y: -KEYBOARD_MOVE_STEP },
+  ArrowDown: { x: 0, y: KEYBOARD_MOVE_STEP },
+};
+
+/** Rounds a board position and keeps the whole node inside the server's bounds. */
+function savablePosition(position: XYPosition): WorkflowCanvasPosition {
+  return {
+    x: Math.min(NODE_EXTENT[1][0] - NODE_WIDTH, Math.max(0, Math.round(position.x))),
+    y: Math.min(NODE_EXTENT[1][1] - NODE_HEIGHT, Math.max(0, Math.round(position.y))),
+  };
+}
+const PALETTE_MIME = "application/x-ayni-workflow-node";
+const PALETTE_NODE_TYPES: readonly string[] = [
+  "input.image",
+  "model.tflite",
+  "condition",
+  "output",
+];
 export const WORKFLOW_CYCLE_MESSAGE =
   "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.";
 
@@ -104,6 +177,28 @@ export function nextWorkflowCanvasPosition(draft: WorkflowCanvasDraft): Workflow
     )
       return candidate;
   }
+}
+
+function workflowNodeBoxes(
+  draft: WorkflowCanvasDraft,
+  measured: MeasuredSizes = {},
+): WorkflowCanvasBox[] {
+  return draft.nodes.map((node, index) => ({
+    ...workflowNodePosition(draft, node, index),
+    width: measured[node.id]?.width || NODE_WIDTH,
+    height: measured[node.id]?.height || NODE_HEIGHT,
+  }));
+}
+
+/** Fits every node; if they do not fit at the minimum zoom, centers the image input or the first node. */
+export function workflowCanvasFitViewport(
+  draft: WorkflowCanvasDraft,
+  size: WorkflowCanvasSize,
+  measured?: MeasuredSizes,
+): WorkflowCanvasViewport {
+  const boxes = workflowNodeBoxes(draft, measured);
+  const imageInputIndex = draft.nodes.findIndex((node) => node.type === "input.image");
+  return fitWorkflowCanvasViewport(boxes, size, boxes[Math.max(0, imageInputIndex)]);
 }
 
 export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
@@ -144,19 +239,17 @@ export function WorkflowPaletteButton({
   onClick: () => void;
   children: ReactNode;
 }) {
-  const draggable = useDraggable({
-    id: `palette:${nodeType}`,
-    type: "palette-node",
-    data: { kind: "palette-node", nodeType } satisfies DragData,
-    disabled,
-  });
   return (
     <Button
-      ref={draggable.ref}
       type="button"
       variant="outline"
       disabled={disabled}
-      className={`w-full cursor-grab justify-start active:cursor-grabbing ${draggable.isDragging ? "opacity-50" : ""}`}
+      draggable={!disabled}
+      className="w-full cursor-grab justify-start active:cursor-grabbing"
+      onDragStart={(event) => {
+        event.dataTransfer.setData(PALETTE_MIME, nodeType);
+        event.dataTransfer.effectAllowed = "copy";
+      }}
       onClick={onClick}
     >
       {children}
@@ -164,40 +257,10 @@ export function WorkflowPaletteButton({
   );
 }
 
-function WorkflowNodeCard({
-  node,
-  position,
-  canManage,
-  cycle,
-  connectionSource,
-  onSelectSource,
-  selected,
-  onSelectNode,
-  onConnect,
-}: {
-  node: WorkflowCanvasNode;
-  position: WorkflowCanvasPosition;
-  canManage: boolean;
-  cycle: boolean;
-  connectionSource: ConnectionSource;
-  onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
-  selected: boolean;
-  onSelectNode: (nodeId: string) => void;
-  onConnect: (connection: WorkflowCanvasConnection) => void;
-}) {
-  const draggable = useDraggable({
-    id: `node:${node.id}`,
-    type: "canvas-node",
-    data: { kind: "canvas-node", nodeId: node.id, position } satisfies DragData,
-    disabled: !canManage,
-  });
-  const inputDrop = useDroppable({
-    id: `input:${node.id}:image`,
-    accept: "output-port",
-    data: { kind: "image-input-port", nodeId: node.id } satisfies DropData,
-    disabled: !canManage || node.type !== "model.tflite",
-  });
+const nodeTypes = { workflow: WorkflowNodeCard };
 
+function WorkflowNodeCard({ data }: NodeProps<WorkflowFlowNode>) {
+  const { node, canManage, cycle, connectionSource, selected, moving } = data;
   const nodeTitle =
     node.type === "input.image"
       ? "Imagen de entrada"
@@ -208,24 +271,26 @@ function WorkflowNodeCard({
           : `Salida: ${node.name}`;
   const connectFromSelection = () => {
     if (node.type === "model.tflite" && connectionSource?.sourcePort === "imagen")
-      onConnect({ ...connectionSource, targetNodeId: node.id, targetPort: "image" });
+      data.onConnect({ ...connectionSource, targetNodeId: node.id, targetPort: "image" });
   };
 
   return (
     <article
-      ref={draggable.ref}
       data-testid={`workflow-node-${node.id}`}
-      className={`absolute z-10 w-[292px] rounded-lg border bg-card p-3 shadow-sm ${cycle ? "border-destructive ring-2 ring-destructive" : ""} ${draggable.isDragging ? "z-20 opacity-80 shadow-lg" : ""}`}
-      style={{ left: position.x, top: position.y }}
+      className={`w-[292px] rounded-lg border bg-card p-3 text-card-foreground shadow-sm ${cycle ? "border-destructive ring-2 ring-destructive" : ""}`}
     >
       <header className="mb-3 flex min-h-8 items-center gap-2 border-b pb-2">
         <button
-          ref={draggable.handleRef}
           type="button"
           disabled={!canManage}
           aria-label={`Mover ${nodeTitle}`}
-          title={canManage ? "Arrastra para mover este nodo" : undefined}
-          className="inline-flex size-7 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+          aria-pressed={moving}
+          title={
+            canManage ? "Arrastra para mover este nodo, o pulsa Enter y usa las flechas" : undefined
+          }
+          onKeyDown={(event) => data.onMoveKeyDown(node.id, event)}
+          onBlur={() => data.onMoveBlur(node.id)}
+          className="workflow-node-drag-handle inline-flex size-7 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
         >
           <IconGripVertical className="size-4" aria-hidden="true" />
         </button>
@@ -234,7 +299,7 @@ function WorkflowNodeCard({
           className={`min-w-0 flex-1 truncate text-left font-medium text-sm ${selected ? "text-primary" : ""}`}
           aria-pressed={selected}
           disabled={!canManage}
-          onClick={() => onSelectNode(node.id)}
+          onClick={() => data.onSelectNode(node.id)}
         >
           {nodeTitle}
         </button>
@@ -243,58 +308,76 @@ function WorkflowNodeCard({
         </span>
       </header>
 
+      {/* Each Handle sits inside the relative row of its port, so edges and
+          drag-to-connect start and end next to the port they belong to. */}
       {node.type === "input.image" && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="relative flex items-center justify-between gap-2">
           <span className="rounded bg-muted px-2 py-1 text-xs">imagen: image</span>
-          <OutputPort
-            nodeId={node.id}
-            port="imagen"
-            canManage={canManage}
-            selected={
+          <button
+            type="button"
+            disabled={!canManage}
+            aria-pressed={
               connectionSource?.sourceNodeId === node.id && connectionSource.sourcePort === "imagen"
             }
-            onSelect={() => onSelectSource({ sourceNodeId: node.id, sourcePort: "imagen" })}
-          />
+            aria-label="Salida imagen"
+            title="Selecciónala para conectar, o arrastra desde su punto de salida hasta la entrada de un modelo"
+            className="rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10"
+            onClick={() => data.onSelectSource({ sourceNodeId: node.id, sourcePort: "imagen" })}
+          >
+            Salida imagen
+          </button>
+          <Handle type="source" position={Position.Right} id="imagen" isConnectable={canManage} />
         </div>
       )}
 
       {node.type === "model.tflite" && (
         <div className="space-y-3">
-          <button
-            ref={inputDrop.ref}
-            type="button"
-            disabled={!canManage}
-            aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
-            aria-disabled={!canManage || !connectionSource}
-            className={`flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${inputDrop.isDropTarget ? "border-primary bg-primary/10" : ""}`}
-            onClick={connectFromSelection}
-          >
-            <span>Entrada de imagen</span>
-            <span className="text-muted-foreground">
-              {node.inputs.image.width}×{node.inputs.image.height}
-            </span>
-          </button>
-          <div className="flex items-center justify-between gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              disabled={!canManage}
+              aria-label={`Conectar entrada de imagen de ${node.modelName} · ${node.version}`}
+              aria-disabled={!canManage || !connectionSource}
+              className="flex w-full items-center justify-between rounded border px-2 py-1.5 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={connectFromSelection}
+            >
+              <span>Entrada de imagen</span>
+              <span className="text-muted-foreground">
+                {node.inputs.image.width}×{node.inputs.image.height}
+              </span>
+            </button>
+            <Handle type="target" position={Position.Left} id="image" isConnectable={canManage} />
+          </div>
+          <div className="relative flex items-center justify-between gap-2">
             <span className="text-muted-foreground text-xs">Resultado del modelo</span>
             <span className="rounded bg-muted px-2 py-1 text-xs">{node.outputs.result.type}</span>
+            <Handle type="source" position={Position.Right} id="result" isConnectable={false} />
           </div>
         </div>
       )}
 
       {node.type === "condition" && (
         <div className="space-y-3 text-xs">
-          <p>
+          <p className="relative">
             {node.operator} {node.threshold}
+            <Handle type="target" position={Position.Left} id="source" isConnectable={false} />
           </p>
           <div className="flex gap-2">
-            <span className="rounded bg-muted px-2 py-1">{node.branches.true}</span>
-            <span className="rounded bg-muted px-2 py-1">{node.branches.false}</span>
+            <span className="relative rounded bg-muted px-2 py-1">
+              {node.branches.true}
+              <Handle type="source" position={Position.Right} id="true" isConnectable={false} />
+            </span>
+            <span className="relative rounded bg-muted px-2 py-1">
+              {node.branches.false}
+              <Handle type="source" position={Position.Right} id="false" isConnectable={false} />
+            </span>
           </div>
         </div>
       )}
 
       {node.type === "output" && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="relative flex items-center justify-between gap-2">
+          <Handle type="target" position={Position.Left} id="source" isConnectable={false} />
           <span className="text-muted-foreground text-xs">Resultado recibido</span>
           <span className="rounded bg-muted px-2 py-1 text-xs">{node.resultType}</span>
         </div>
@@ -303,59 +386,15 @@ function WorkflowNodeCard({
   );
 }
 
-function OutputPort({
-  nodeId,
-  port,
-  canManage,
-  selected,
-  onSelect,
-}: {
-  nodeId: string;
-  port: string;
-  canManage: boolean;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const draggable = useDraggable({
-    id: `port:${nodeId}:${port}`,
-    type: "output-port",
-    data: { kind: "output-port", nodeId, sourcePort: port } satisfies DragData,
-    disabled: !canManage,
-  });
+export function WorkflowCanvas(props: WorkflowCanvasProps) {
   return (
-    <button
-      ref={draggable.ref}
-      type="button"
-      disabled={!canManage}
-      aria-pressed={selected}
-      aria-label={`Salida ${port}`}
-      title="Arrastra al puerto de entrada de un modelo o selecciónala para conectar"
-      className={`cursor-grab rounded border px-2 py-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/10 ${draggable.isDragging ? "opacity-50" : ""}`}
-      onClick={onSelect}
-    >
-      Salida {port}
-    </button>
+    <ReactFlowProvider>
+      <WorkflowCanvasFlow {...props} />
+    </ReactFlowProvider>
   );
 }
 
-export function WorkflowCanvas({
-  draft,
-  canManage,
-  selectedConnection,
-  connectionSource,
-  cycleNodeIds,
-  savingPosition,
-  palette,
-  onSelectSource,
-  selectedNodeId,
-  onSelectNode,
-  onRequestDeleteNode,
-  onSelectConnection,
-  onConnect,
-  onMoveNode,
-  onDropPalette,
-  onRemoveConnection,
-}: {
+type WorkflowCanvasProps = {
   draft: WorkflowCanvasDraft;
   canManage: boolean;
   selectedConnection: WorkflowCanvasConnection | null;
@@ -372,50 +411,137 @@ export function WorkflowCanvas({
   onMoveNode: (nodeId: string, position: WorkflowCanvasPosition) => void;
   onDropPalette: (nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) => void;
   onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
-}) {
-  const boardRef = useRef<HTMLElement | null>(null);
+};
+
+function WorkflowCanvasFlow({
+  draft,
+  canManage: canManageDraft,
+  selectedConnection,
+  connectionSource,
+  cycleNodeIds,
+  savingPosition,
+  palette,
+  onSelectSource,
+  selectedNodeId,
+  onSelectNode,
+  onRequestDeleteNode,
+  onSelectConnection,
+  onConnect,
+  onMoveNode,
+  onDropPalette,
+  onRemoveConnection,
+}: WorkflowCanvasProps) {
+  const canManage = canManageDraft && !savingPosition;
+  const { screenToFlowPosition } = useReactFlow();
+  // React Flow reports measured sizes and in-progress drag positions through
+  // `onNodesChange`; the saved positions still come only from the draft.
+  const [measured, setMeasured] = useState<MeasuredSizes>({});
+  const [dragged, setDragged] = useState<Record<string, XYPosition>>({});
+  const [keyboardMoveId, setKeyboardMoveId] = useState<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
+
+  const clearDragged = (nodeId: string) => setDragged(({ [nodeId]: _cleared, ...rest }) => rest);
+
+  // Enter or Space picks the node up, the arrows move it one 16 px step, and
+  // Enter or Space drops it with a single save; Escape or leaving cancels.
+  function moveWithKeyboard(nodeId: string, event: KeyboardEvent<HTMLButtonElement>) {
+    const index = draft.nodes.findIndex((node) => node.id === nodeId);
+    if (!canManage || index < 0) return;
+    const saved = workflowNodePosition(draft, draft.nodes[index], index);
+    const current = dragged[nodeId] ?? saved;
+    const moving = keyboardMoveId === nodeId;
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      if (!moving) {
+        setKeyboardMoveId(nodeId);
+        return;
+      }
+      setKeyboardMoveId(null);
+      clearDragged(nodeId);
+      if (current.x !== saved.x || current.y !== saved.y)
+        onMoveNode(nodeId, savablePosition(current));
+      return;
+    }
+    if (!moving) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setKeyboardMoveId(null);
+      clearDragged(nodeId);
+      return;
+    }
+    const delta = KEYBOARD_MOVE_DELTAS[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    setDragged((positions) => ({
+      ...positions,
+      [nodeId]: savablePosition({ x: current.x + delta.x, y: current.y + delta.y }),
+    }));
+  }
+
+  function cancelKeyboardMove(nodeId: string) {
+    if (keyboardMoveId !== nodeId) return;
+    setKeyboardMoveId(null);
+    clearDragged(nodeId);
+  }
+
+  const nodeIds = new Set(draft.nodes.map((node) => node.id));
+  const nodes: WorkflowFlowNode[] = draft.nodes.map((node, index) => ({
+    id: node.id,
+    type: "workflow",
+    position: dragged[node.id] ?? workflowNodePosition(draft, node, index),
+    measured: measured[node.id],
+    initialWidth: NODE_WIDTH,
+    initialHeight: NODE_HEIGHT,
+    dragHandle: ".workflow-node-drag-handle",
+    data: {
+      node,
+      canManage,
+      cycle: cycleNodeIds.includes(node.id),
+      selected: selectedNodeId === node.id,
+      moving: keyboardMoveId === node.id,
+      connectionSource,
+      onSelectSource,
+      onSelectNode,
+      onConnect,
+      onMoveKeyDown: moveWithKeyboard,
+      onMoveBlur: cancelKeyboardMove,
+    },
+  }));
+  const edges: Edge[] = workflowCanvasEdges(draft)
+    .filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId))
+    .map((edge) => ({
+      id: `${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`,
+      source: edge.sourceNodeId,
+      sourceHandle: edge.sourcePort,
+      target: edge.targetNodeId,
+      targetHandle: edge.targetPort,
+      style: { stroke: "var(--muted-foreground)", strokeWidth: 2, strokeDasharray: "5 5" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--muted-foreground)" },
+    }));
+
+  // Only sizes and in-progress drags matter here; selection and removal are off.
+  function handleNodesChange(changes: NodeChange<WorkflowFlowNode>[]) {
+    for (const change of changes) {
+      if (change.type === "dimensions" && change.dimensions) {
+        const { id, dimensions } = change;
+        setMeasured((current) => ({ ...current, [id]: dimensions }));
+      } else if (change.type === "position" && change.dragging && change.position) {
+        const { id, position } = change;
+        setDragged((current) => ({ ...current, [id]: position }));
+      } else if (change.type === "position" && change.dragging === false) {
+        // A finished or aborted drag; onNodeDragStop saves the finished one.
+        clearDragged(change.id);
+      }
+    }
+  }
+
+  function readPaletteNodeType(event: DragEvent<HTMLElement>) {
+    const nodeType = event.dataTransfer.getData(PALETTE_MIME);
+    return PALETTE_NODE_TYPES.includes(nodeType) ? (nodeType as WorkflowCanvasNodeType) : null;
+  }
 
   return (
-    <DragDropProvider
-      onDragEnd={(event) => {
-        if (event.canceled) return;
-        const source = event.operation.source;
-        const target = event.operation.target;
-        if (!source || !target) return;
-        const sourceData = source.data as DragData;
-        const targetData = target.data as DropData;
-
-        if (sourceData.kind === "output-port" && targetData.kind === "image-input-port") {
-          onConnect({
-            sourceNodeId: sourceData.nodeId ?? "",
-            sourcePort: sourceData.sourcePort ?? "",
-            targetNodeId: targetData.nodeId ?? "",
-            targetPort: "image",
-          });
-          return;
-        }
-        if (targetData.kind !== "canvas" || !boardRef.current) return;
-
-        if (sourceData.kind === "canvas-node" && sourceData.nodeId && sourceData.position) {
-          const delta = event.operation.position?.delta;
-          if (!delta) return;
-          onMoveNode(sourceData.nodeId, {
-            x: Math.max(0, Math.round(sourceData.position.x + delta.x)),
-            y: Math.max(0, Math.round(sourceData.position.y + delta.y)),
-          });
-          return;
-        }
-        if (sourceData.kind === "palette-node" && sourceData.nodeType) {
-          const bounds = boardRef.current.getBoundingClientRect();
-          const current = event.operation.position?.current;
-          if (!current) return;
-          onDropPalette(sourceData.nodeType, {
-            x: Math.max(24, Math.round(current.x - bounds.left - NODE_WIDTH / 2)),
-            y: Math.max(24, Math.round(current.y - bounds.top - 24)),
-          });
-        }
-      }}
-    >
+    <>
       {cycleNodeIds.length > 0 && (
         <p role="alert" className="mb-3 text-destructive text-sm">
           {WORKFLOW_CYCLE_MESSAGE}
@@ -426,212 +552,185 @@ export function WorkflowCanvas({
         data-testid="workflow-draft-editor"
       >
         {palette}
-        <CanvasBoard
-          draft={draft}
-          canManage={canManage && !savingPosition}
-          cycleNodeIds={cycleNodeIds}
-          selectedConnection={selectedConnection}
-          connectionSource={connectionSource}
-          selectedNodeId={selectedNodeId}
-          boardRef={boardRef}
-          onSelectSource={onSelectSource}
-          onSelectNode={onSelectNode}
-          onRequestDeleteNode={onRequestDeleteNode}
-          onSelectConnection={onSelectConnection}
-          onConnect={onConnect}
-          onRemoveConnection={onRemoveConnection}
-        />
+        <div className="min-w-0 space-y-2">
+          <section
+            data-testid="workflow-canvas"
+            aria-label="Lienzo del workflow"
+            className={`relative h-[720px] overflow-hidden rounded-lg border bg-background ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
+            onDragOver={(event) => {
+              if (!canManage || !event.dataTransfer.types.includes(PALETTE_MIME)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setDropActive(true);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Element | null))
+                setDropActive(false);
+            }}
+            onDrop={(event) => {
+              setDropActive(false);
+              const nodeType = readPaletteNodeType(event);
+              if (!canManage || !nodeType) return;
+              event.preventDefault();
+              const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              onDropPalette(
+                nodeType,
+                savablePosition({ x: position.x - NODE_WIDTH / 2, y: position.y - 24 }),
+              );
+            }}
+          >
+            <ReactFlow<WorkflowFlowNode>
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              onNodesChange={handleNodesChange}
+              onNodeDragStop={(_, node) => {
+                clearDragged(node.id);
+                onMoveNode(node.id, savablePosition(node.position));
+              }}
+              onConnect={(connection) =>
+                onConnect({
+                  sourceNodeId: connection.source,
+                  sourcePort: connection.sourceHandle ?? "",
+                  targetNodeId: connection.target,
+                  targetPort: connection.targetHandle ?? "",
+                })
+              }
+              nodeExtent={NODE_EXTENT}
+              minZoom={WORKFLOW_CANVAS_MIN_ZOOM}
+              maxZoom={WORKFLOW_CANVAS_MAX_ZOOM}
+              nodesDraggable={canManage}
+              nodesConnectable={canManage}
+              nodesFocusable={false}
+              edgesFocusable={false}
+              elementsSelectable={false}
+              deleteKeyCode={null}
+              selectionKeyCode={null}
+              multiSelectionKeyCode={null}
+              // Middle button, or Space (panActivationKeyCode) + drag, pans; Ctrl + wheel
+              // and trackpad pinch zoom; a plain wheel keeps scrolling the page.
+              panOnDrag={[1]}
+              zoomOnScroll={false}
+              zoomOnDoubleClick={false}
+              preventScrolling={false}
+              attributionPosition="top-right"
+              ariaLabelConfig={{ "handle.ariaLabel": "Puerto de conexión" }}
+              style={{ "--xy-background-color": "var(--background)" } as CSSProperties}
+            >
+              <Background
+                gap={22}
+                color="color-mix(in srgb, var(--muted-foreground) 28%, transparent)"
+              />
+              <CanvasNavigation draft={draft} measured={measured} />
+            </ReactFlow>
+
+            {draft.nodes.length === 0 && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                <div className="w-80 text-center">
+                  <p className="font-medium text-sm">Este borrador aún no tiene nodos.</p>
+                  {canManage && (
+                    <p className="mt-1 text-muted-foreground text-xs">
+                      Agrega un nodo de entrada de imagen para empezar.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+          {draft.connections?.length ? (
+            <section className="flex flex-wrap gap-2" aria-label="Conexiones del workflow">
+              {draft.connections.map((edge) => {
+                const selected = selectedConnection === edge;
+                return (
+                  <Button
+                    key={`${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "secondary" : "outline"}
+                    aria-pressed={selected}
+                    onClick={() => onSelectConnection(edge)}
+                  >
+                    {edge.sourcePort} → {edge.targetPort}
+                  </Button>
+                );
+              })}
+            </section>
+          ) : null}
+          {selectedConnection && canManage && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onRemoveConnection(selectedConnection)}
+            >
+              Eliminar conexión
+            </Button>
+          )}
+          {selectedNodeId && canManage && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onRequestDeleteNode(selectedNodeId)}
+            >
+              Eliminar nodo
+            </Button>
+          )}
+        </div>
       </div>
-    </DragDropProvider>
+    </>
   );
 }
 
-function CanvasBoard({
+function CanvasNavigation({
   draft,
-  canManage,
-  cycleNodeIds,
-  selectedConnection,
-  connectionSource,
-  selectedNodeId,
-  boardRef,
-  onSelectSource,
-  onSelectNode,
-  onRequestDeleteNode,
-  onSelectConnection,
-  onConnect,
-  onRemoveConnection,
+  measured,
 }: {
   draft: WorkflowCanvasDraft;
-  canManage: boolean;
-  cycleNodeIds: string[];
-  selectedConnection: WorkflowCanvasConnection | null;
-  connectionSource: ConnectionSource;
-  selectedNodeId: string | null;
-  boardRef: React.RefObject<HTMLElement | null>;
-  onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
-  onSelectNode: (nodeId: string) => void;
-  onRequestDeleteNode: (nodeId: string) => void;
-  onSelectConnection: (connection: WorkflowCanvasConnection) => void;
-  onConnect: (connection: WorkflowCanvasConnection) => void;
-  onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
+  measured: MeasuredSizes;
 }) {
-  const { ref, isDropTarget } = useDroppable({
-    id: "workflow-canvas",
-    accept: ["canvas-node", "palette-node"],
-    data: { kind: "canvas" } satisfies DropData,
-    disabled: !canManage,
-  });
-  const setBoardRef = useCallback(
-    (element: HTMLElement | null) => {
-      boardRef.current = element;
-      ref(element);
-    },
-    [boardRef, ref],
-  );
+  const { setViewport, zoomTo, setCenter } = useReactFlow();
+  const viewport = useViewport();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const nodesInitialized = useNodesInitialized();
+  const fittedRef = useRef(false);
+  const size = { width, height };
 
-  const positions = draft.nodes.map((node, index) => ({
-    node,
-    position: workflowNodePosition(draft, node, index),
-  }));
-  const boardWidth = Math.max(
-    1180,
-    ...positions.map(({ position }) => position.x + NODE_WIDTH + 48),
-  );
-  const boardHeight = Math.max(
-    720,
-    ...positions.map(({ position }) => position.y + NODE_HEIGHT + 48),
-  );
-  const positionById = new Map(positions.map(({ node, position }) => [node.id, position]));
-  const edges = workflowCanvasEdges(draft);
-
-  function edgePath(edge: CanvasEdge) {
-    const source = positionById.get(edge.sourceNodeId);
-    const target = positionById.get(edge.targetNodeId);
-    if (!source || !target) return "";
-    const startX = source.x + NODE_WIDTH;
-    const startY =
-      source.y + (edge.sourcePort === "true" ? 116 : edge.sourcePort === "false" ? 148 : 86);
-    const endX = target.x;
-    const endY = target.y + 86;
-    const curve = Math.max(54, Math.abs(endX - startX) / 2);
-    return `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
-  }
+  // When the draft opens, the view fits every node once they have been measured.
+  useEffect(() => {
+    if (fittedRef.current || !width || !height) return;
+    if (draft.nodes.length > 0 && !nodesInitialized) return;
+    fittedRef.current = true;
+    if (draft.nodes.length > 0)
+      void setViewport(workflowCanvasFitViewport(draft, { width, height }, measured));
+  }, [draft, measured, nodesInitialized, width, height, setViewport]);
 
   return (
-    <div className="min-w-0 space-y-2">
-      <section className="overflow-auto rounded-lg border bg-background">
-        <section
-          ref={setBoardRef}
-          data-testid="workflow-canvas"
-          aria-label="Lienzo del workflow"
-          className={`relative min-h-[720px] ${isDropTarget ? "ring-2 ring-primary/60 ring-inset" : ""}`}
-          style={{
-            width: boardWidth,
-            height: boardHeight,
-            backgroundImage:
-              "radial-gradient(circle, color-mix(in srgb, var(--muted-foreground) 28%, transparent) 1px, transparent 1.5px)",
-            backgroundSize: "22px 22px",
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-0 size-full overflow-visible"
-            width={boardWidth}
-            height={boardHeight}
-          >
-            <defs>
-              <marker
-                id="workflow-arrow"
-                markerWidth="8"
-                markerHeight="8"
-                refX="7"
-                refY="4"
-                orient="auto"
-              >
-                <path d="M0,0 L8,4 L0,8 z" fill="var(--muted-foreground)" />
-              </marker>
-            </defs>
-            {edges.map((edge) => {
-              return (
-                <path
-                  key={`${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`}
-                  d={edgePath(edge)}
-                  fill="none"
-                  stroke="var(--muted-foreground)"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                  markerEnd="url(#workflow-arrow)"
-                />
-              );
-            })}
-          </svg>
-
-          {positions.map(({ node, position }) => (
-            <WorkflowNodeCard
-              key={node.id}
-              node={node}
-              position={position}
-              canManage={canManage}
-              cycle={cycleNodeIds.includes(node.id)}
-              connectionSource={connectionSource}
-              selected={selectedNodeId === node.id}
-              onSelectSource={onSelectSource}
-              onSelectNode={onSelectNode}
-              onConnect={onConnect}
-            />
-          ))}
-
-          {positions.length === 0 && (
-            <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 text-center">
-              <p className="font-medium text-sm">Este borrador aún no tiene nodos.</p>
-              {canManage && (
-                <p className="mt-1 text-muted-foreground text-xs">
-                  Arrastra un nodo desde la paleta o selecciónalo para empezar el flujo.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
-      </section>
-      {draft.connections?.length ? (
-        <section className="flex flex-wrap gap-2" aria-label="Conexiones del workflow">
-          {draft.connections.map((edge) => {
-            const selected = selectedConnection === edge;
-            return (
-              <Button
-                key={`${edge.sourceNodeId}:${edge.sourcePort}:${edge.targetNodeId}:${edge.targetPort}`}
-                type="button"
-                size="sm"
-                variant={selected ? "secondary" : "outline"}
-                aria-pressed={selected}
-                onClick={() => onSelectConnection(edge)}
-              >
-                {edge.sourcePort} → {edge.targetPort}
-              </Button>
-            );
-          })}
-        </section>
-      ) : null}
-      {selectedConnection && canManage && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => onRemoveConnection(selectedConnection)}
-        >
-          Eliminar conexión
-        </Button>
+    <>
+      <Panel position="bottom-left" className="!m-3">
+        <WorkflowCanvasControls
+          zoom={viewport.zoom}
+          onZoomIn={() => void zoomTo(stepWorkflowCanvasZoom(viewport.zoom, 1))}
+          onZoomOut={() => void zoomTo(stepWorkflowCanvasZoom(viewport.zoom, -1))}
+          onFit={() => void setViewport(workflowCanvasFitViewport(draft, size, measured))}
+          onReset={() => void zoomTo(1)}
+        />
+      </Panel>
+      {draft.nodes.length > 0 && (
+        <Panel position="bottom-right" className="!m-3">
+          <WorkflowCanvasMinimap
+            nodeIds={draft.nodes.map((node) => node.id)}
+            boxes={workflowNodeBoxes(draft, measured)}
+            viewport={viewport}
+            size={size}
+            onCenter={(point) => void setCenter(point.x, point.y, { zoom: viewport.zoom })}
+            onPan={(dx, dy) =>
+              void setViewport({ ...viewport, x: viewport.x + dx, y: viewport.y + dy })
+            }
+          />
+        </Panel>
       )}
-      {selectedNodeId && canManage && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => onRequestDeleteNode(selectedNodeId)}
-        >
-          Eliminar nodo
-        </Button>
-      )}
-    </div>
+    </>
   );
 }

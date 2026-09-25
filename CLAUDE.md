@@ -17,6 +17,8 @@ This file provides context about the project for AI assistants.
 - CSS: tailwind
 - UI Library: shadcn-ui
 - State: zustand
+- Workflow canvas: @xyflow/react (React Flow 12), see `docs/adr/0001-lienzo-workflows-con-xyflow-react.md`
+- Workflow auto layout: @dagrejs/dagre (installed by the ADR 0001 spike; used from US-124)
 
 ### Backend
 
