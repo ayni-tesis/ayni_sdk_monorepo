@@ -1,6 +1,12 @@
 "use client";
 
-import { IconFocus2, IconZoomIn, IconZoomOut } from "@tabler/icons-react";
+import {
+  IconFocus2,
+  IconGridDots,
+  IconSelectAll,
+  IconZoomIn,
+  IconZoomOut,
+} from "@tabler/icons-react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,18 +23,29 @@ import {
 const MINIMAP_SIZE = { width: 192, height: 128 };
 const MINIMAP_KEY_STEP = 0.1;
 
+/** Selection and grid controls; only administrators who can edit the draft get them. */
+export type WorkflowCanvasEditControls = {
+  snapToGrid: boolean;
+  onToggleSnapToGrid: () => void;
+  onSelectAll: () => void;
+};
+
 export function WorkflowCanvasControls({
   zoom,
   onZoomIn,
   onZoomOut,
   onFit,
   onReset,
+  savingPositions = false,
+  editing,
 }: {
   zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
   onReset: () => void;
+  savingPositions?: boolean;
+  editing?: WorkflowCanvasEditControls;
 }) {
   const level = formatWorkflowCanvasZoom(zoom);
   return (
@@ -79,6 +96,38 @@ export function WorkflowCanvasControls({
       >
         {level}
       </Button>
+      {savingPositions && (
+        <span role="status" className="whitespace-nowrap px-2 text-muted-foreground text-xs">
+          Guardando posiciones…
+        </span>
+      )}
+      {editing && (
+        <>
+          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Alinear a la cuadrícula"
+            title="Alinear a la cuadrícula"
+            aria-pressed={editing.snapToGrid}
+            className="aria-pressed:bg-muted aria-pressed:text-foreground"
+            onClick={editing.onToggleSnapToGrid}
+          >
+            <IconGridDots aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="whitespace-nowrap"
+            onClick={editing.onSelectAll}
+          >
+            <IconSelectAll aria-hidden="true" />
+            Seleccionar todo
+          </Button>
+        </>
+      )}
     </fieldset>
   );
 }

@@ -2129,6 +2129,110 @@ describe("ApplicationDetailPanel", () => {
       ).toBeNull();
     });
   });
+
+  describe("US-121: Mover y seleccionar varios nodos", () => {
+    const draft = {
+      nodes: [
+        { id: "image-node", type: "input.image" as const, outputs: { imagen: "image" as const } },
+        {
+          id: "condition-node",
+          type: "condition" as const,
+          sourceNodeId: "model-node",
+          label: "perro",
+          operator: "gte" as const,
+          threshold: 0.8,
+          branches: { true: "Verdadero" as const, false: "Falso" as const },
+        },
+      ],
+      layout: { "image-node": { x: 48, y: 48 }, "condition-node": { x: 400, y: 48 } },
+    };
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft,
+      versions: [],
+    };
+    const nodePosition = (id: string) =>
+      (document.querySelector(`.react-flow__node[data-id="${id}"]`) as HTMLElement).style.transform;
+
+    async function moveEveryNodeRight() {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByTestId("workflow-node-image-node");
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Seleccionar todo" }));
+      fireEvent.keyDown(canvas, { key: "Shift", shiftKey: true });
+      for (let press = 0; press < 3; press += 1)
+        fireEvent.keyDown(canvas, { key: "ArrowRight", shiftKey: true });
+      fireEvent.keyUp(canvas, { key: "Shift" });
+    }
+
+    it("saves every moved node in one operation and shows the saving state", async () => {
+      let finishSave: (value: unknown) => void = () => {};
+      client.patch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+      );
+
+      await moveEveryNodeRight();
+
+      expect(client.patch).toHaveBeenCalledTimes(1);
+      expect(client.patch).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/layout", {
+        positions: { "image-node": { x: 96, y: 48 }, "condition-node": { x: 448, y: 48 } },
+      });
+      expect(screen.getByText("Guardando posiciones…")).toBeTruthy();
+      expect(nodePosition("condition-node")).toBe("translate(448px,48px)");
+
+      finishSave({ data: { positions: {} } });
+
+      await waitFor(() => expect(screen.queryByText("Guardando posiciones…")).toBeNull());
+      expect(nodePosition("condition-node")).toBe("translate(448px,48px)");
+      expect(toastMock.success).not.toHaveBeenCalled();
+      expect(toastMock.error).not.toHaveBeenCalled();
+    });
+
+    it("returns the nodes to their previous place when the positions cannot be saved", async () => {
+      client.patch.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { status: 500, data: { message: "Error interno." } },
+      });
+
+      await moveEveryNodeRight();
+
+      await waitFor(() => {
+        expect(nodePosition("image-node")).toBe("translate(48px,48px)");
+        expect(nodePosition("condition-node")).toBe("translate(400px,48px)");
+      });
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No pudimos guardar las posiciones. Se restauró la ubicación anterior.",
+      );
+      expect(screen.queryByText("Guardando posiciones…")).toBeNull();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {

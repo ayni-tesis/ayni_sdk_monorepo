@@ -20,8 +20,8 @@ import type {
   DeleteWorkflowNodeResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
-  UpdateWorkflowNodePositionInput,
-  UpdateWorkflowNodePositionResult,
+  UpdateWorkflowNodePositionsInput,
+  UpdateWorkflowNodePositionsResult,
   Workflow,
   WorkflowDetail,
   WorkflowNodePosition,
@@ -47,13 +47,20 @@ const WORKFLOW_RENAME_ARCHIVED_MESSAGE = "No puedes editar workflows en una apli
 const DUPLICATE_IMAGE_INPUT_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const WORKFLOW_POSITION_INVALID_MESSAGE = "No se pudo guardar la posición del nodo.";
+const WORKFLOW_LAYOUT_INVALID_MESSAGE = "No pudimos guardar las posiciones.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
 });
+// Nodes may sit anywhere on the board, including left of or above the first node.
 const workflowPositionSchema = z.object({
-  x: z.number().finite().min(0).max(100_000),
-  y: z.number().finite().min(0).max(100_000),
+  x: z.number().finite().min(-100_000).max(100_000),
+  y: z.number().finite().min(-100_000).max(100_000),
+});
+const workflowLayoutSchema = z.object({
+  positions: z
+    .record(z.string().min(1), workflowPositionSchema)
+    .refine((positions) => Object.keys(positions).length > 0),
 });
 const conditionNodeSchema = z.object({
   type: z.literal("condition"),
@@ -106,9 +113,9 @@ type Dependencies = {
     removeConnection: (
       input: ChangeWorkflowConnectionInput,
     ) => Promise<ChangeWorkflowConnectionResult>;
-    updateNodePosition: (
-      input: UpdateWorkflowNodePositionInput,
-    ) => Promise<UpdateWorkflowNodePositionResult>;
+    updateNodePositions: (
+      input: UpdateWorkflowNodePositionsInput,
+    ) => Promise<UpdateWorkflowNodePositionsResult>;
     deleteNode: (input: {
       applicationId: string;
       workflowId: string;
@@ -469,34 +476,31 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
   });
 
-  app.patch(
-    "/applications/:applicationId/workflows/:workflowId/nodes/:nodeId/position",
-    async (c) => {
-      const session = await getSession(c.req.raw.headers);
-      if (!session) return c.json({ message: "Authentication required" }, 401);
-      const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
-      if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-      const parsed = workflowPositionSchema.safeParse(await c.req.json().catch(() => null));
-      if (!parsed.success) return c.json({ message: WORKFLOW_POSITION_INVALID_MESSAGE }, 400);
-      const result = await workflows.updateNodePosition({
-        ...parsed.data,
-        applicationId: application.id,
-        workflowId: c.req.param("workflowId"),
-        nodeId: c.req.param("nodeId"),
-        userId: session.user.id,
-      });
-      if (result.ok) return c.json({ position: result.position });
-      if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
-      if (result.reason === "archived")
-        return c.json(
-          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
-          409,
-        );
-      if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
-        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
-      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    },
-  );
+  // Saves the positions of every moved node together, or none of them.
+  app.patch("/applications/:applicationId/workflows/:workflowId/layout", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const parsed = workflowLayoutSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ message: WORKFLOW_LAYOUT_INVALID_MESSAGE }, 400);
+    const result = await workflows.updateNodePositions({
+      positions: parsed.data.positions,
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ positions: result.positions });
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+  });
 
   app.delete("/applications/:applicationId/workflows/:workflowId/nodes/:nodeId", async (c) => {
     const session = await getSession(c.req.raw.headers);

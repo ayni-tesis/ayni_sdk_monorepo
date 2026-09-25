@@ -64,7 +64,7 @@ import {
   listWorkflows,
   removeWorkflowConnection,
   renameWorkflow,
-  updateWorkflowNodePosition,
+  updateWorkflowNodePositions,
 } from "./workflow-store";
 import { publishWorkflowVersion } from "./workflow-version-store";
 import { createWorkflowsApp } from "./workflows";
@@ -213,8 +213,8 @@ const workflows = {
   removeConnection(input: Parameters<typeof removeWorkflowConnection>[1]) {
     return removeWorkflowConnection(db, input);
   },
-  updateNodePosition(input: Parameters<typeof updateWorkflowNodePosition>[1]) {
-    return updateWorkflowNodePosition(db, input);
+  updateNodePositions(input: Parameters<typeof updateWorkflowNodePositions>[1]) {
+    return updateWorkflowNodePositions(db, input);
   },
   deleteNode(input: Parameters<typeof deleteWorkflowNode>[1]) {
     return deleteWorkflowNode(db, input);

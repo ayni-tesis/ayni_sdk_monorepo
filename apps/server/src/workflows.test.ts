@@ -19,7 +19,7 @@ import {
   type RenameWorkflowResult,
   renameWorkflow,
   type TransactionExecutor,
-  updateWorkflowNodePosition,
+  updateWorkflowNodePositions,
   type Workflow,
   type WorkflowDatabase,
   type WorkflowDetail,
@@ -135,9 +135,11 @@ function makeApp({
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
   addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
-  updateNodePosition = async ({ x, y }: { x: number; y: number }) => ({
+  updateNodePositions = async ({
+    positions,
+  }: import("./workflow-store").UpdateWorkflowNodePositionsInput) => ({
     ok: true as const,
-    position: { x, y },
+    positions,
   }),
   deleteNode = async (): Promise<DeleteWorkflowNodeResult> => ({
     ok: true,
@@ -173,9 +175,9 @@ function makeApp({
   addOutputNode?: (
     input: import("./workflow-store").AddOutputNodeInput,
   ) => Promise<import("./workflow-store").AddOutputNodeResult>;
-  updateNodePosition?: (
-    input: import("./workflow-store").UpdateWorkflowNodePositionInput,
-  ) => Promise<import("./workflow-store").UpdateWorkflowNodePositionResult>;
+  updateNodePositions?: (
+    input: import("./workflow-store").UpdateWorkflowNodePositionsInput,
+  ) => Promise<import("./workflow-store").UpdateWorkflowNodePositionsResult>;
   deleteNode?: (
     input: import("./workflow-store").DeleteWorkflowNodeInput,
   ) => Promise<DeleteWorkflowNodeResult>;
@@ -200,7 +202,7 @@ function makeApp({
     ok: false as const,
     reason: "connectionNotFound" as const,
   }));
-  const updateNodePositionMock = vi.fn(updateNodePosition);
+  const updateNodePositionsMock = vi.fn(updateNodePositions);
   const deleteNodeMock = vi.fn(deleteNode);
   const publishVersionMock = vi.fn(publishVersion);
   return {
@@ -215,7 +217,7 @@ function makeApp({
     addOutputNode: addOutputNodeMock,
     addConnection: addConnectionMock,
     removeConnection: removeConnectionMock,
-    updateNodePosition: updateNodePositionMock,
+    updateNodePositions: updateNodePositionsMock,
     deleteNode: deleteNodeMock,
     publishVersion: publishVersionMock,
     request: createWorkflowsApp({
@@ -236,7 +238,7 @@ function makeApp({
         addOutputNode: addOutputNodeMock,
         addConnection: addConnectionMock,
         removeConnection: removeConnectionMock,
-        updateNodePosition: updateNodePositionMock,
+        updateNodePositions: updateNodePositionsMock,
         deleteNode: deleteNodeMock,
         publishVersion: publishVersionMock,
       },
@@ -264,56 +266,72 @@ function patchWorkflow(
   });
 }
 
-function patchWorkflowNodePosition(
-  request: ReturnType<typeof makeApp>["request"],
-  body: unknown,
-  nodeId = "node-1",
-) {
-  return request.request(`/applications/app-1/workflows/workflow-1/nodes/${nodeId}/position`, {
+function patchWorkflowLayout(request: ReturnType<typeof makeApp>["request"], body: unknown) {
+  return request.request("/applications/app-1/workflows/workflow-1/layout", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-describe("PATCH /applications/:applicationId/workflows/:workflowId/nodes/:nodeId/position", () => {
-  it("persists a finite node position", async () => {
+describe("PATCH /applications/:applicationId/workflows/:workflowId/layout", () => {
+  it("saves the positions of every moved node in one operation", async () => {
     const app = makeApp();
-    const response = await patchWorkflowNodePosition(app.request, { x: 264, y: 512 });
+    const positions = { "node-1": { x: 264, y: 512 }, "node-2": { x: -48, y: -16 } };
+    const response = await patchWorkflowLayout(app.request, { positions });
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ position: { x: 264, y: 512 } });
-    expect(app.updateNodePosition).toHaveBeenCalledWith({
+    await expect(response.json()).resolves.toEqual({ positions });
+    expect(app.updateNodePositions).toHaveBeenCalledTimes(1);
+    expect(app.updateNodePositions).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
-      nodeId: "node-1",
       userId: "admin",
-      x: 264,
-      y: 512,
+      positions,
     });
   });
 
   it.each([
-    { x: -1, y: 0 },
-    { x: 0, y: 100_001 },
-    { x: Number.NaN, y: 2 },
-  ])("rejects invalid coordinates without updating", async (position) => {
+    { positions: {} },
+    { positions: { "node-1": { x: -100_001, y: 0 } } },
+    { positions: { "node-1": { x: 0, y: 100_001 } } },
+    { positions: { "node-1": { x: 0, y: 0 }, "node-2": { x: "1", y: 2 } } },
+    { x: 10, y: 20 },
+  ])("rejects an invalid layout without saving any position", async (body) => {
     const app = makeApp();
-    const response = await patchWorkflowNodePosition(app.request, position);
+    const response = await patchWorkflowLayout(app.request, body);
 
     expect(response.status).toBe(400);
-    expect(app.updateNodePosition).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      message: "No pudimos guardar las posiciones.",
+    });
+    expect(app.updateNodePositions).not.toHaveBeenCalled();
   });
 
   it("keeps node positions administrator-only", async () => {
     const app = makeApp({
       membershipRole: "member",
-      updateNodePosition: async () => ({ ok: false, reason: "forbidden" }),
+      updateNodePositions: async () => ({ ok: false, reason: "forbidden" }),
     });
-    const response = await patchWorkflowNodePosition(app.request, { x: 10, y: 20 });
+    const response = await patchWorkflowLayout(app.request, {
+      positions: { "node-1": { x: 10, y: 20 } },
+    });
 
     expect(response.status).toBe(403);
-    expect(app.updateNodePosition).toHaveBeenCalledTimes(1);
+    expect(app.updateNodePositions).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["archived", 409],
+    ["nodeNotFound", 404],
+    ["workflowNotFound", 404],
+  ] as const)("maps %s to %i", async (reason, status) => {
+    const app = makeApp({ updateNodePositions: async () => ({ ok: false, reason }) });
+    const response = await patchWorkflowLayout(app.request, {
+      positions: { "node-1": { x: 10, y: 20 } },
+    });
+
+    expect(response.status).toBe(status);
   });
 });
 
@@ -777,7 +795,7 @@ describe("GET /applications/:applicationId/workflows/:workflowId/validation", ()
       app.addOutputNode,
       app.addConnection,
       app.removeConnection,
-      app.updateNodePosition,
+      app.updateNodePositions,
     ])
       expect(write).not.toHaveBeenCalled();
   });
@@ -2416,53 +2434,76 @@ describe("getWorkflow", () => {
   });
 });
 
-describe("updateWorkflowNodePosition", () => {
-  it("persists layout metadata without changing nodes or connections", async () => {
-    const draft = {
-      nodes: [
-        { id: "node-1", type: "input.image" as const, outputs: { imagen: "image" as const } },
-      ],
-      connections: [
-        {
-          sourceNodeId: "node-1",
-          sourcePort: "imagen",
-          targetNodeId: "node-2",
-          targetPort: "image",
-        },
-      ],
-      layout: { "node-2": { x: 320, y: 48 } },
-    };
-    const store = makeWorkflowPositionStoreDb(draft);
-    const result = await updateWorkflowNodePosition(store.db, {
+describe("updateWorkflowNodePositions", () => {
+  const positionedDraft = {
+    nodes: [
+      { id: "node-1", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      {
+        id: "node-2",
+        type: "condition" as const,
+        sourceNodeId: "node-1",
+        label: "perro",
+        operator: "gte" as const,
+        threshold: 0.8,
+        branches: { true: "Verdadero" as const, false: "Falso" as const },
+      },
+      {
+        id: "node-3",
+        type: "output" as const,
+        name: "Resultado",
+        sourceNodeId: "node-2",
+        sourcePort: "true",
+        resultType: "boolean" as const,
+      },
+    ],
+    connections: [
+      {
+        sourceNodeId: "node-1",
+        sourcePort: "imagen",
+        targetNodeId: "node-2",
+        targetPort: "image",
+      },
+    ],
+    layout: { "node-2": { x: 320, y: 48 }, "node-3": { x: 640, y: 48 } },
+  };
+
+  it("saves every moved node in one write without changing nodes or connections", async () => {
+    const store = makeWorkflowPositionStoreDb(positionedDraft);
+    const result = await updateWorkflowNodePositions(store.db, {
       applicationId: "app-1",
       workflowId: "workflow-1",
-      nodeId: "node-1",
       userId: "admin",
-      x: 128,
-      y: 256,
+      positions: { "node-1": { x: -64, y: -32 }, "node-2": { x: 128, y: 256 } },
     });
 
-    expect(result).toEqual({ ok: true, position: { x: 128, y: 256 } });
+    expect(result).toEqual({
+      ok: true,
+      positions: { "node-1": { x: -64, y: -32 }, "node-2": { x: 128, y: 256 } },
+    });
+    expect(store.writes).toBe(1);
     expect(store.reload()).toEqual({
-      ...draft,
-      layout: { "node-1": { x: 128, y: 256 }, "node-2": { x: 320, y: 48 } },
+      ...positionedDraft,
+      layout: {
+        "node-1": { x: -64, y: -32 },
+        "node-2": { x: 128, y: 256 },
+        "node-3": { x: 640, y: 48 },
+      },
     });
     expect(store.lockedTables).toContain(workflow);
   });
 
-  it("does not write a position for a missing node", async () => {
-    const store = makeWorkflowPositionStoreDb({ nodes: [] });
-    const result = await updateWorkflowNodePosition(store.db, {
+  it("saves no position when one of the moved nodes no longer exists", async () => {
+    const store = makeWorkflowPositionStoreDb(positionedDraft);
+    const result = await updateWorkflowNodePositions(store.db, {
       applicationId: "app-1",
       workflowId: "workflow-1",
-      nodeId: "missing-node",
       userId: "admin",
-      x: 128,
-      y: 256,
+      positions: { "node-1": { x: 16, y: 16 }, "missing-node": { x: 128, y: 256 } },
     });
 
     expect(result).toEqual({ ok: false, reason: "nodeNotFound" });
     expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(positionedDraft);
   });
 });
 

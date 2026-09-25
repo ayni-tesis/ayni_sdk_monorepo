@@ -223,14 +223,15 @@ export async function removeWorkflowConnection(
   return changeWorkflowConnection(database, input, false);
 }
 
-export type UpdateWorkflowNodePositionInput = WorkflowNodePosition & {
+export type WorkflowNodePositions = Record<string, WorkflowNodePosition>;
+export type UpdateWorkflowNodePositionsInput = {
   applicationId: string;
   workflowId: string;
-  nodeId: string;
   userId: string;
+  positions: WorkflowNodePositions;
 };
-export type UpdateWorkflowNodePositionResult =
-  | { ok: true; position: WorkflowNodePosition }
+export type UpdateWorkflowNodePositionsResult =
+  | { ok: true; positions: WorkflowNodePositions }
   | {
       ok: false;
       reason: "forbidden" | "notFound" | "archived" | "workflowNotFound" | "nodeNotFound";
@@ -329,10 +330,11 @@ export async function deleteWorkflowNode(
     : { ok: false, reason: result.value.kind };
 }
 
-export async function updateWorkflowNodePosition(
+/** Saves every moved node's position in one write, or none if any node is missing. */
+export async function updateWorkflowNodePositions(
   database: WorkflowDatabase,
-  { applicationId, workflowId, nodeId, userId, x, y }: UpdateWorkflowNodePositionInput,
-): Promise<UpdateWorkflowNodePositionResult> {
+  { applicationId, workflowId, userId, positions }: UpdateWorkflowNodePositionsInput,
+): Promise<UpdateWorkflowNodePositionsResult> {
   const result = await executeApplicationAction(
     database,
     { applicationId, userId },
@@ -356,24 +358,23 @@ export async function updateWorkflowNodePosition(
         .for("update");
       const draft = rows[0]?.draft;
       if (!draft) return { kind: "workflowNotFound" as const };
-      if (!draft.nodes.some((node) => node.id === nodeId)) return { kind: "nodeNotFound" as const };
+      const nodeIds = new Set(draft.nodes.map((node) => node.id));
+      if (!Object.keys(positions).every((nodeId) => nodeIds.has(nodeId)))
+        return { kind: "nodeNotFound" as const };
 
-      const position = { x, y };
-      const updatedDraft = { ...draft, layout: { ...draft.layout, [nodeId]: position } };
+      const updatedDraft = { ...draft, layout: { ...draft.layout, ...positions } };
       const updater = tx as WorkflowUpdateExecutor;
       const updated = (await updater
         .update(workflow)
         .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
         .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
         .returning()) as WorkflowRow[];
-      return updated[0]
-        ? { kind: "updated" as const, position }
-        : { kind: "workflowNotFound" as const };
+      return updated[0] ? { kind: "updated" as const } : { kind: "workflowNotFound" as const };
     },
   );
   if (!result.ok) return result;
   return result.value.kind === "updated"
-    ? { ok: true, position: result.value.position }
+    ? { ok: true, positions }
     : { ok: false, reason: result.value.kind };
 }
 
