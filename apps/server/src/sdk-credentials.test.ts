@@ -1019,17 +1019,32 @@ describe("regenerateSdkCredential", () => {
 });
 
 describe("useSdkCredential", () => {
-  function makeUseDb(rows: Record<string, unknown>[], applicationIsActive = true) {
+  function includesValue(value: unknown, expected: string, visited = new Set<object>()): boolean {
+    if (value === expected) return true;
+    if (!value || typeof value !== "object" || visited.has(value)) return false;
+    visited.add(value);
+    return Object.values(value).some((item) => includesValue(item, expected, visited));
+  }
+
+  function makeUseDb(
+    rows: Record<string, unknown>[],
+    applicationStatus: "active" | "archived" = "active",
+  ) {
     const lastUses: Record<string, unknown>[] = [];
     let selectCount = 0;
     const tx = {
       select: () => ({
         from: () => ({
-          where: () => ({
+          where: (condition: unknown) => ({
             limit: () => ({
               for: async () => {
                 selectCount += 1;
-                return selectCount === 1 ? rows : applicationIsActive ? [{ id: "app-1" }] : [];
+                if (selectCount === 1) return rows;
+                const filtersActiveStatus =
+                  includesValue(condition, "status") && includesValue(condition, "active");
+                return applicationStatus === "archived" && filtersActiveStatus
+                  ? []
+                  : [{ id: "app-1" }];
               },
             }),
           }),
@@ -1084,7 +1099,7 @@ describe("useSdkCredential", () => {
           revokedAt: null,
         },
       ],
-      false,
+      "archived",
     );
 
     await expect(useSdkCredential(database, secret)).resolves.toMatchObject({
