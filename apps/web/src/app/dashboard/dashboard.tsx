@@ -35,13 +35,14 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
   models: "models",
   credentials: "credentials",
   privacy: "privacy",
+  collection: "collection",
   settings: "settings",
 };
 
 export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (pathname === "/dashboard/members") return { kind: "members" };
   const match = pathname?.match(
-    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|credentials|privacy|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
+    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|credentials|privacy|collection|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
   );
   if (match) {
     const section = (match[2] ?? match[4] ?? "overview") as ApplicationSection;

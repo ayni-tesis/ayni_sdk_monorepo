@@ -11,6 +11,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { type Application, createApp, toApplication } from "./applications";
+import { createCollectionPolicyApp } from "./collection-policy";
+import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
 import {
   type AcceptResult,
   type CreatedInvitation,
@@ -245,6 +247,15 @@ const telemetryPolicies = {
   },
   update(input: Parameters<typeof updateTelemetryPolicy>[1]) {
     return updateTelemetryPolicy(db, input);
+  },
+};
+
+const collectionPolicies = {
+  get(applicationId: string) {
+    return getCollectionPolicy(db, applicationId);
+  },
+  update(input: Parameters<typeof updateCollectionPolicy>[1]) {
+    return updateCollectionPolicy(db, input);
   },
 };
 
@@ -628,6 +639,14 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     telemetryPolicies,
+  }),
+);
+app.route(
+  "/",
+  createCollectionPolicyApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    collectionPolicies,
   }),
 );
 app.route(

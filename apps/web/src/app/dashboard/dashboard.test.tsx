@@ -148,6 +148,14 @@ describe("parseDashboardRoute", () => {
     });
   });
 
+  it("reads the Privacidad y recolección section route (US-063)", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/collection")).toEqual({
+      kind: "app",
+      id: "app-1",
+      section: "collection",
+    });
+  });
+
   it("falls back to the list route instead of throwing on a malformed workflow id", () => {
     expect(parseDashboardRoute("/dashboard/applications/app-1/workflows/wf%zz")).toEqual({
       kind: "list",
