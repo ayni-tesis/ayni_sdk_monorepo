@@ -122,9 +122,10 @@ void main() {
   });
 
   test(
-    'downloads a new workflow version during sync and exposes its progress',
+    'downloads an unvalidated workflow version again without advancing the inventory',
     () async {
-      responseBody = '{"workflows":[{"workflowVersionId":"workflow-version-1","name":"Clasificar hoja"}],"models":[]}';
+      responseBody =
+          '{"workflows":[{"workflowVersionId":"workflow-version-1","name":"Clasificar hoja"}],"models":[]}';
       final messages = <String>[];
       final downloads = <WorkflowVersionDownloadResult>[];
       final client = AyniSdk(
@@ -149,6 +150,21 @@ void main() {
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1',
       ]);
+      expect(
+        await File(
+          '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+        ).exists(),
+        isFalse,
+      );
+
+      expect(await client.sync(), SyncStatus.updated);
+      expect(downloads, hasLength(2));
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1',
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1',
+      ]);
     },
   );
 
@@ -158,7 +174,8 @@ void main() {
       final client = sdk();
       final inventory = await seedInventory(client);
       final before = await inventory.readAsString();
-      responseBody = '{"workflows":[{"workflowVersionId":"workflow-version-1","name":"Clasificar hoja"}],"models":[]}';
+      responseBody =
+          '{"workflows":[{"workflowVersionId":"workflow-version-1","name":"Clasificar hoja"}],"models":[]}';
       final downloads = <WorkflowVersionDownloadResult>[];
       workflowStatusCode = HttpStatus.notFound;
 

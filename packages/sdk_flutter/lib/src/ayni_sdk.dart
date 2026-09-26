@@ -92,29 +92,35 @@ class AyniSdk {
       return SyncStatus.upToDate;
     }
 
-    if (!await _downloadNewWorkflowVersions(
+    final downloadOutcome = await _downloadNewWorkflowVersions(
       decoded,
       inventoryFile,
       client,
       deadline,
-    )) {
+    );
+    if (downloadOutcome == _WorkflowDownloadOutcome.failed) {
       return SyncStatus.error;
     }
+    // US-042 validates and installs the temporary definition. Until then this
+    // manifest must stay uncommitted so the SDK retries the unvalidated version.
+    if (downloadOutcome == _WorkflowDownloadOutcome.downloaded)
+      return SyncStatus.updated;
 
     return await _persistInventory(inventoryFile, inventory, deadline)
         ? SyncStatus.updated
         : SyncStatus.error;
   }
 
-  Future<bool> _downloadNewWorkflowVersions(
+  Future<_WorkflowDownloadOutcome> _downloadNewWorkflowVersions(
     Object inventory,
     File inventoryFile,
     HttpClient client,
     _SyncDeadline deadline,
   ) async {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
+    var downloaded = false;
     for (final workflow in _workflows(inventory)) {
-      if (deadline.expired) return false;
+      if (deadline.expired) return _WorkflowDownloadOutcome.failed;
       if (localVersionIds.contains(workflow.versionId)) continue;
 
       final temporaryDefinition = File(
@@ -134,20 +140,24 @@ class AyniSdk {
       try {
         onWorkflowDownload?.call(result);
       } catch (_) {
-        return false;
+        return _WorkflowDownloadOutcome.failed;
       }
       if (result.status != WorkflowVersionDownloadStatus.downloaded)
-        return false;
+        return _WorkflowDownloadOutcome.failed;
+      downloaded = true;
     }
-    return !deadline.expired;
+    if (deadline.expired) return _WorkflowDownloadOutcome.failed;
+    return downloaded
+        ? _WorkflowDownloadOutcome.downloaded
+        : _WorkflowDownloadOutcome.unchanged;
   }
 
   Future<Set<String>> _localWorkflowVersionIds(File inventoryFile) async {
     if (!await inventoryFile.exists()) return {};
     try {
-      return _workflows(jsonDecode(await inventoryFile.readAsString()))
-          .map((workflow) => workflow.versionId)
-          .toSet();
+      return _workflows(
+        jsonDecode(await inventoryFile.readAsString()),
+      ).map((workflow) => workflow.versionId).toSet();
     } on FormatException {
       return {};
     }
@@ -227,3 +237,5 @@ class _WorkflowManifestEntry {
   final String versionId;
   final String name;
 }
+
+enum _WorkflowDownloadOutcome { unchanged, downloaded, failed }
