@@ -137,6 +137,7 @@ void main() {
       SyncResourceStatus.updated,
       SyncResourceStatus.upToDate,
     ]);
+    expect(result.resources.first.resourceVersionId, 'workflow-version-2.0.0');
   });
 
   test(

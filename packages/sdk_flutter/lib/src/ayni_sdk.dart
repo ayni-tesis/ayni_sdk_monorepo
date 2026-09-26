@@ -12,13 +12,13 @@ class SyncResourceResult {
   const SyncResourceResult({
     required this.type,
     required this.status,
-    this.id,
+    this.resourceVersionId,
     this.version,
   });
 
   final SyncResourceType type;
   final SyncResourceStatus status;
-  final String? id;
+  final String? resourceVersionId;
   final String? version;
 
   String? get message => status == SyncResourceStatus.invalidRemoteResource
@@ -169,7 +169,7 @@ class AyniSdk {
         SyncResourceResult(
           type: SyncResourceType.workflow,
           status: status,
-          id: workflow.id,
+          resourceVersionId: workflow.workflowVersionId,
           version: workflow.version,
         ),
       );
@@ -190,7 +190,7 @@ class AyniSdk {
         SyncResourceResult(
           type: SyncResourceType.model,
           status: status,
-          id: model.id,
+          resourceVersionId: model.id,
           version: model.version,
         ),
       );
@@ -208,13 +208,13 @@ class AyniSdk {
 
   SyncResourceResult _invalidResource(SyncResourceType type, Object? item) {
     final json = item is Map ? item : const <Object?, Object?>{};
-    final id = type == SyncResourceType.workflow
-        ? json['workflowId']
+    final resourceVersionId = type == SyncResourceType.workflow
+        ? json['workflowVersionId']
         : json['modelVersionId'];
     return SyncResourceResult(
       type: type,
       status: SyncResourceStatus.invalidRemoteResource,
-      id: id is String ? id : null,
+      resourceVersionId: resourceVersionId is String ? resourceVersionId : null,
       version: json['version'] is String ? json['version'] as String : null,
     );
   }
