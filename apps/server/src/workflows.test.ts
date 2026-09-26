@@ -9,16 +9,19 @@ import {
   addConditionNode,
   addImageInputNode,
   addModelNode,
+  addOutputNode,
   addWorkflowConnection,
   archiveWorkflow,
+  type ChangeWorkflowConnectionInput,
+  type ChangeWorkflowConnectionResult,
   type CreateWorkflowResult,
   createWorkflow,
   type DeleteWorkflowNodeResult,
   deleteWorkflowNode,
-  findWorkflowCycle,
   getWorkflow,
   listWorkflows,
   type RenameWorkflowResult,
+  removeWorkflowConnection,
   renameWorkflow,
   type TransactionExecutor,
   type UpdateWorkflowNodeInput,
@@ -28,7 +31,6 @@ import {
   type Workflow,
   type WorkflowDatabase,
   type WorkflowDetail,
-  type WorkflowNode,
 } from "./workflow-store";
 import type { WorkflowValidationResult } from "./workflow-validation";
 import type {
@@ -36,34 +38,6 @@ import type {
   PublishWorkflowVersionResult,
 } from "./workflow-version-store";
 import { createWorkflowsApp } from "./workflows";
-
-describe("findWorkflowCycle", () => {
-  const candidate = {
-    sourceNodeId: "b",
-    sourcePort: "result",
-    targetNodeId: "a",
-    targetPort: "image",
-  };
-
-  it("detects direct and indirect cycles and leaves acyclic additions alone", () => {
-    const edge = (sourceNodeId: string, targetNodeId: string) => ({
-      sourceNodeId,
-      sourcePort: "result",
-      targetNodeId,
-      targetPort: "image",
-    });
-    expect(findWorkflowCycle({ nodes: [], connections: [edge("a", "b")] }, candidate)).toEqual([
-      "b",
-      "a",
-    ]);
-    expect(
-      findWorkflowCycle({ nodes: [], connections: [edge("a", "c"), edge("c", "b")] }, candidate),
-    ).toEqual(["b", "a", "c"]);
-    expect(findWorkflowCycle({ nodes: [], connections: [edge("a", "c")] }, candidate)).toBe(
-      undefined,
-    );
-  });
-});
 
 const activeApplication: Application = {
   id: "app-1",
@@ -84,13 +58,25 @@ const sampleWorkflow: Workflow = {
 const sampleDetail: WorkflowDetail = {
   workflow: sampleWorkflow,
   draft: { nodes: [] },
+  draftRevision: 0,
   versions: [],
 };
+
+// The draft revision the request helpers send, and the one a saved change leaves (US-130).
+const BASE_REVISION = 4;
+const NEXT_REVISION = 5;
+
+/** Adds the draft revision a canvas change is based on, unless the body names one. */
+function withDraftRevision(body: unknown) {
+  return body && typeof body === "object" && !Array.isArray(body)
+    ? { draftRevision: BASE_REVISION, ...body }
+    : body;
+}
 
 type CreateInput = { applicationId: string; userId: string; name: string };
 type RenameInput = { applicationId: string; workflowId: string; userId: string; name: string };
 type ArchiveInput = { applicationId: string; workflowId: string; userId: string };
-type AddImageInputInput = { applicationId: string; workflowId: string; userId: string };
+type AddImageInputInput = import("./workflow-store").AddImageInputInput;
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -136,6 +122,7 @@ function makeApp({
   addImageInput = async (): Promise<AddImageInputResult> => ({
     ok: true,
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+    draftRevision: NEXT_REVISION,
   }),
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
@@ -145,14 +132,17 @@ function makeApp({
   }: import("./workflow-store").UpdateWorkflowNodePositionsInput) => ({
     ok: true as const,
     positions,
+    draftRevision: NEXT_REVISION,
   }),
   deleteNode = async (): Promise<DeleteWorkflowNodeResult> => ({
     ok: true,
     draft: { nodes: [] },
+    draftRevision: NEXT_REVISION,
   }),
   updateNode = async (): Promise<UpdateWorkflowNodeResult> => ({
     ok: true,
     draft: { nodes: [] },
+    draftRevision: NEXT_REVISION,
   }),
   publishVersion = async ({
     workflowId,
@@ -160,6 +150,14 @@ function makeApp({
   }: PublishWorkflowVersionInput): Promise<PublishWorkflowVersionResult> => ({
     ok: true,
     version: { id: "version-1", workflowId, version, createdAt: "2026-09-24T12:00:00.000Z" },
+  }),
+  addConnection = async (): Promise<ChangeWorkflowConnectionResult> => ({
+    ok: false,
+    reason: "incompatible",
+  }),
+  removeConnection = async (): Promise<ChangeWorkflowConnectionResult> => ({
+    ok: false,
+    reason: "connectionNotFound",
   }),
 }: {
   session?: { user: { id: string } } | null;
@@ -193,6 +191,10 @@ function makeApp({
   ) => Promise<DeleteWorkflowNodeResult>;
   updateNode?: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
   publishVersion?: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
+  addConnection?: (input: ChangeWorkflowConnectionInput) => Promise<ChangeWorkflowConnectionResult>;
+  removeConnection?: (
+    input: ChangeWorkflowConnectionInput,
+  ) => Promise<ChangeWorkflowConnectionResult>;
 } = {}) {
   const createMock = vi.fn(create);
   const listMock = vi.fn(async (_applicationId: string) => listedWorkflows ?? [sampleWorkflow]);
@@ -205,14 +207,8 @@ function makeApp({
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
   const addOutputNodeMock = vi.fn(addOutputNode);
-  const addConnectionMock = vi.fn(async () => ({
-    ok: false as const,
-    reason: "incompatible" as const,
-  }));
-  const removeConnectionMock = vi.fn(async () => ({
-    ok: false as const,
-    reason: "connectionNotFound" as const,
-  }));
+  const addConnectionMock = vi.fn(addConnection);
+  const removeConnectionMock = vi.fn(removeConnection);
   const updateNodePositionsMock = vi.fn(updateNodePositions);
   const deleteNodeMock = vi.fn(deleteNode);
   const updateNodeMock = vi.fn(updateNode);
@@ -284,7 +280,7 @@ function patchWorkflowLayout(request: ReturnType<typeof makeApp>["request"], bod
   return request.request("/applications/app-1/workflows/workflow-1/layout", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withDraftRevision(body)),
   });
 }
 
@@ -295,13 +291,14 @@ describe("PATCH /applications/:applicationId/workflows/:workflowId/layout", () =
     const response = await patchWorkflowLayout(app.request, { positions });
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ positions });
+    await expect(response.json()).resolves.toEqual({ positions, draftRevision: NEXT_REVISION });
     expect(app.updateNodePositions).toHaveBeenCalledTimes(1);
     expect(app.updateNodePositions).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
       userId: "admin",
       positions,
+      draftRevision: BASE_REVISION,
     });
   });
 
@@ -352,18 +349,27 @@ describe("PATCH /applications/:applicationId/workflows/:workflowId/layout", () =
 describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes/:nodeId", () => {
   it("deletes a draft node and returns the updated draft", async () => {
     const draft = { nodes: [] };
-    const deleteNode = vi.fn(async () => ({ ok: true as const, draft }));
+    const deleteNode = vi.fn(async () => ({
+      ok: true as const,
+      draft,
+      draftRevision: NEXT_REVISION,
+    }));
     const { request } = makeApp({ deleteNode });
     const response = await request.request(
       "/applications/app-1/workflows/workflow-1/nodes/node-1",
-      { method: "DELETE" },
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftRevision: BASE_REVISION }),
+      },
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ draft });
+    await expect(response.json()).resolves.toEqual({ draft, draftRevision: NEXT_REVISION });
     expect(deleteNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       nodeId: "node-1",
       userId: "admin",
     });
@@ -376,7 +382,11 @@ describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes/:nodeI
     });
     const response = await request.request(
       "/applications/app-1/workflows/workflow-1/nodes/node-1",
-      { method: "DELETE" },
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftRevision: BASE_REVISION }),
+      },
     );
 
     expect(response.status).toBe(403);
@@ -395,7 +405,7 @@ function patchWorkflowNode(
   return request.request(`/applications/app-1/workflows/workflow-1/nodes/${nodeId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withDraftRevision(body)),
   });
 }
 
@@ -404,15 +414,20 @@ describe("PATCH /applications/:applicationId/workflows/:workflowId/nodes/:nodeId
 
   it("saves a condition's configuration and returns the updated draft", async () => {
     const draft = { nodes: [] };
-    const updateNode = vi.fn(async () => ({ ok: true as const, draft }));
+    const updateNode = vi.fn(async () => ({
+      ok: true as const,
+      draft,
+      draftRevision: NEXT_REVISION,
+    }));
     const { request } = makeApp({ updateNode });
     const response = await patchWorkflowNode(request, conditionChanges);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ draft });
+    await expect(response.json()).resolves.toEqual({ draft, draftRevision: NEXT_REVISION });
     expect(updateNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       nodeId: "condition-1",
       userId: "admin",
       changes: { type: "condition", label: "roya", operator: "lt", threshold: 0.3 },
@@ -505,13 +520,17 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
   return request.request("/applications/app-1/workflows/workflow-1/nodes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withDraftRevision(body)),
   });
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
   it("validates and dispatches a typed classification condition", async () => {
-    const addConditionNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const addConditionNode = vi.fn(async () => ({
+      ok: true as const,
+      draft: { nodes: [] },
+      draftRevision: NEXT_REVISION,
+    }));
     const { request } = makeApp({ addConditionNode });
     const response = await postWorkflowNode(request, {
       type: "condition",
@@ -524,6 +543,7 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(addConditionNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       userId: "admin",
       sourceNodeId: "model-node",
       label: "roya",
@@ -583,6 +603,7 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(addOutputNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       userId: "admin",
       name: "resultado",
       sourceNodeId: "condition-node",
@@ -610,7 +631,11 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
   });
 
   it("dispatches model nodes with the selected version id", async () => {
-    const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const addModelNode = vi.fn(async () => ({
+      ok: true as const,
+      draft: { nodes: [] },
+      draftRevision: NEXT_REVISION,
+    }));
     const { request } = makeApp({ addModelNode });
 
     const response = await postWorkflowNode(request, {
@@ -622,13 +647,18 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(addModelNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       userId: "admin",
       modelVersionId: "mv-1",
     });
   });
 
   it("dispatches a model node with the output port it is added after (US-128)", async () => {
-    const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const addModelNode = vi.fn(async () => ({
+      ok: true as const,
+      draft: { nodes: [] },
+      draftRevision: NEXT_REVISION,
+    }));
     const { request } = makeApp({ addModelNode });
 
     const response = await postWorkflowNode(request, {
@@ -643,6 +673,7 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(addModelNode).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       userId: "admin",
       modelVersionId: "mv-1",
       position: { x: 400, y: 0 },
@@ -725,11 +756,13 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
         async (_input: AddImageInputInput): Promise<AddImageInputResult> => ({
           ok: true,
           draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+          draftRevision: NEXT_REVISION,
         }),
       )
       .mockResolvedValueOnce({
         ok: true,
         draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+        draftRevision: NEXT_REVISION,
       })
       .mockResolvedValueOnce({ ok: false, reason: "duplicate" });
     const { request } = makeApp({ addImageInput });
@@ -738,6 +771,7 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(created.status).toBe(200);
     await expect(created.json()).resolves.toEqual({
       draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
+      draftRevision: NEXT_REVISION,
     });
     const duplicate = await postWorkflowNode(request, { type: "input.image" });
     expect(duplicate.status).toBe(409);
@@ -756,6 +790,7 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     expect(addImageInput).toHaveBeenCalledWith({
       applicationId: "app-1",
       workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
       userId: "admin",
     });
   });
@@ -844,6 +879,7 @@ describe("GET /applications/:applicationId/workflows/:workflowId", () => {
     await expect(response.json()).resolves.toEqual({
       workflow: sampleWorkflow,
       draft: { nodes: [] },
+      draftRevision: 0,
       versions: [],
     });
     expect(get).toHaveBeenCalledWith("app-1", "workflow-1");
@@ -2228,79 +2264,12 @@ function toQuery(fragment: unknown) {
   return { sql, params };
 }
 
-function makeImageInputStoreDb(nodes: WorkflowNode[] = []) {
-  const storedWorkflow = {
-    id: "workflow-1",
-    applicationId: "app-1",
-    name: "DiagnÃ³stico",
-    status: "draft",
-    createdAt: new Date("2026-09-21T15:00:00.000Z"),
-    updatedAt: new Date("2026-09-21T16:00:00.000Z"),
-    draft: { nodes: structuredClone(nodes) },
-  };
-  const writes: unknown[] = [];
-  const cloneWorkflow = () => structuredClone(storedWorkflow);
-
-  const executor = {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: () => {
-            const rows =
-              table === application
-                ? [{ id: "app-1", organizationId: "org-1", name: "CÃ¡mara", status: "active" }]
-                : table === member
-                  ? [{ role: "admin" }]
-                  : table === workflow
-                    ? [cloneWorkflow()]
-                    : [];
-            const result = Promise.resolve(rows);
-            return table === workflow ? result : { for: async () => rows };
-          },
-          orderBy: async () => [],
-        }),
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: (values: Record<string, unknown>) => ({
-        where: (condition: unknown) => ({
-          returning: async () => {
-            expect(table).toBe(workflow);
-            const whereQuery = toQuery(condition);
-            expect(whereQuery.params).toEqual(["workflow-1", "app-1"]);
-
-            const draftQuery = toQuery(values.draft);
-            const serializedNode = draftQuery.params.find(
-              (value): value is string =>
-                typeof value === "string" &&
-                (value.includes('"type":"input.image"') || value.includes('"type":"condition"')),
-            );
-            if (!serializedNode) throw new Error("Workflow node was not added to the SQL update");
-            if (serializedNode.includes('"type":"input.image"')) {
-              expect(whereQuery.sql).toContain("jsonb_path_exists");
-              if (storedWorkflow.draft.nodes.some((node) => node.type === "input.image")) return [];
-            }
-            const node = JSON.parse(serializedNode) as (typeof storedWorkflow.draft.nodes)[number];
-            storedWorkflow.draft.nodes.push(node);
-            writes.push(values);
-            return [cloneWorkflow()];
-          },
-        }),
-      }),
-    }),
-  };
-
-  const db: WorkflowDatabase = {
-    transaction: (callback) => callback(executor),
-  };
-  return { db, writes, reload: () => cloneWorkflow().draft };
-}
-
 describe("addConditionNode source validation", () => {
   const input = {
     applicationId: "app-1",
     workflowId: "workflow-1",
     userId: "admin",
+    draftRevision: 0,
     label: "roya",
     operator: "gte" as const,
     threshold: 0.7,
@@ -2348,16 +2317,16 @@ describe("addConditionNode source validation", () => {
       modelNode.id,
     ],
   ])("rejects a %s without persisting a node", async (_caseName, nodes, sourceNodeId) => {
-    const store = makeImageInputStoreDb(nodes);
+    const store = makeWorkflowPositionStoreDb({ nodes });
     const originalDraft = store.reload();
     const result = await addConditionNode(store.db, { ...input, sourceNodeId });
     expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
     expect(store.reload()).toEqual(originalDraft);
-    expect(store.writes).toHaveLength(0);
+    expect(store.writes).toBe(0);
   });
 
   it("persists and reloads a condition with its typed source and branches", async () => {
-    const store = makeImageInputStoreDb([modelNode]);
+    const store = makeWorkflowPositionStoreDb({ nodes: [modelNode] });
     const result = await addConditionNode(store.db, {
       ...input,
       sourceNodeId: modelNode.id,
@@ -2378,35 +2347,36 @@ describe("addConditionNode source validation", () => {
           },
         ],
       },
+      draftRevision: 1,
     });
     const savedCondition = result.ok ? result.draft.nodes[1] : undefined;
     const reloadedCondition = store.reload().nodes[1];
     expect(reloadedCondition).toEqual(savedCondition);
-    expect(store.writes).toHaveLength(1);
+    expect(store.writes).toBe(1);
   });
 });
 
 describe("addImageInputNode", () => {
   it("persists one image input, rejects a duplicate, and reloads the unchanged draft", async () => {
-    const store = makeImageInputStoreDb();
+    const store = makeWorkflowPositionStoreDb({ nodes: [] });
     const input = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
 
-    const first = await addImageInputNode(store.db, input);
+    const first = await addImageInputNode(store.db, { ...input, draftRevision: 0 });
     expect(first).toEqual({
       ok: true,
       draft: {
         nodes: [{ id: expect.any(String), type: "input.image", outputs: { imagen: "image" } }],
       },
+      draftRevision: 1,
     });
-    const savedDraft = (await getWorkflow(store.db, "app-1", "workflow-1"))?.draft;
+    const savedDraft = store.reload();
     expect(savedDraft).toEqual(first.ok ? first.draft : undefined);
 
-    const duplicate = await addImageInputNode(store.db, input);
-    const reloadedDraft = (await getWorkflow(store.db, "app-1", "workflow-1"))?.draft;
+    const duplicate = await addImageInputNode(store.db, { ...input, draftRevision: 1 });
     expect(duplicate).toEqual({ ok: false, reason: "duplicate" });
-    expect(reloadedDraft).toEqual(savedDraft);
     expect(store.reload()).toEqual(savedDraft);
-    expect(store.writes).toHaveLength(1);
+    expect(store.writes).toBe(1);
+    expect(store.lockedTables).toContain(workflow);
   });
 });
 
@@ -2546,6 +2516,7 @@ describe("getWorkflow", () => {
         status: "draft",
         createdAt: new Date("2026-09-21T15:00:00.000Z"),
         updatedAt: "2026-09-21T16:00:00.000Z",
+        draftRevision: 7,
       },
     ]);
 
@@ -2554,6 +2525,7 @@ describe("getWorkflow", () => {
     expect(detail).toEqual({
       workflow: sampleWorkflow,
       draft: { nodes: [] },
+      draftRevision: 7,
       versions: [],
     });
   });
@@ -2660,12 +2632,14 @@ describe("updateWorkflowNodePositions", () => {
       applicationId: "app-1",
       workflowId: "workflow-1",
       userId: "admin",
+      draftRevision: 0,
       positions: { "node-1": { x: -64, y: -32 }, "node-2": { x: 128, y: 256 } },
     });
 
     expect(result).toEqual({
       ok: true,
       positions: { "node-1": { x: -64, y: -32 }, "node-2": { x: 128, y: 256 } },
+      draftRevision: 1,
     });
     expect(store.writes).toBe(1);
     expect(store.reload()).toEqual({
@@ -2685,6 +2659,7 @@ describe("updateWorkflowNodePositions", () => {
       applicationId: "app-1",
       workflowId: "workflow-1",
       userId: "admin",
+      draftRevision: 0,
       positions: { "node-1": { x: 16, y: 16 }, "missing-node": { x: 128, y: 256 } },
     });
 
@@ -2730,6 +2705,7 @@ describe("addWorkflowConnection", () => {
     applicationId: "app-1",
     workflowId: "workflow-1",
     userId: "admin",
+    draftRevision: 0,
     sourcePort: "imagen",
     targetNodeId: "model",
     targetPort: "image",
@@ -2805,6 +2781,7 @@ describe("addModelNode after an output port (US-128)", () => {
     applicationId: "app-1",
     workflowId: "workflow-1",
     userId: "admin",
+    draftRevision: 0,
     modelVersionId: "version-1",
     position: { x: 344, y: 0 },
   };
@@ -2987,6 +2964,7 @@ describe("deleteWorkflowNode", () => {
       workflowId: "workflow-1",
       nodeId: "model",
       userId: "admin",
+      draftRevision: 0,
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -3061,7 +3039,12 @@ describe("updateWorkflowNode", () => {
     ],
     layout: { model: { x: 320, y: 48 }, condition: { x: 640, y: 48 }, output: { x: 960, y: 48 } },
   };
-  const nodeInput = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+  const nodeInput = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    draftRevision: 0,
+  };
 
   it("saves a condition's new threshold, keeping its id, source, position, and connections", async () => {
     const store = makeWorkflowPositionStoreDb(editableDraft);
@@ -3080,7 +3063,7 @@ describe("updateWorkflowNode", () => {
         outputNode,
       ],
     };
-    expect(result).toEqual({ ok: true, draft: expectedDraft });
+    expect(result).toEqual({ ok: true, draft: expectedDraft, draftRevision: 1 });
     expect(store.reload()).toEqual(expectedDraft);
     expect(store.writes).toBe(1);
     expect(store.lockedTables).toContain(workflow);
@@ -3138,12 +3121,337 @@ describe("updateWorkflowNode", () => {
   });
 });
 
+describe("draft revisions (US-130)", () => {
+  const contract = {
+    input: {
+      type: "image" as const,
+      width: 224,
+      height: 224,
+      channels: 3 as const,
+      normalization: "none" as const,
+    },
+    output: { type: "classification" as const, labels: ["roya", "sana"] },
+  };
+  const model = (id: string) => ({
+    id,
+    type: "model.tflite" as const,
+    modelVersionId: "version-1",
+    modelName: "Hoja",
+    version: "1.0.0",
+    inputs: { image: contract.input },
+    outputs: { result: contract.output },
+  });
+  const condition = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "model-a",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.5,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const connection = {
+    sourceNodeId: "image",
+    sourcePort: "imagen",
+    targetNodeId: "model-a",
+    targetPort: "image",
+  };
+  // Every change below would be accepted on the current revision.
+  const draft = {
+    nodes: [model("model-a"), model("model-b"), condition],
+    connections: [connection],
+    layout: { "model-a": { x: 0, y: 0 } },
+  };
+  const draftWithImage = {
+    ...draft,
+    nodes: [
+      { id: "image", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      ...draft.nodes,
+    ],
+  };
+  const versions = [{ id: "version-1", version: "1.0.0", contract, modelName: "Hoja" }];
+  const target = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+  const changes = [
+    [
+      "adding an image input",
+      draft,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        addImageInputNode(db, { ...target, draftRevision }),
+    ],
+    [
+      "adding a model",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        addModelNode(db, { ...target, draftRevision, modelVersionId: "version-1" }),
+    ],
+    [
+      "adding a condition",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        addConditionNode(db, {
+          ...target,
+          draftRevision,
+          sourceNodeId: "model-b",
+          label: "sana",
+          operator: "lt",
+          threshold: 0.3,
+        }),
+    ],
+    [
+      "adding an output",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        addOutputNode(db, {
+          ...target,
+          draftRevision,
+          name: "Con roya",
+          sourceNodeId: "condition",
+          sourcePort: "true",
+          resultType: "boolean",
+        }),
+    ],
+    [
+      "connecting two nodes",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        addWorkflowConnection(db, {
+          ...target,
+          ...connection,
+          targetNodeId: "model-b",
+          draftRevision,
+        }),
+    ],
+    [
+      "removing a connection",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        removeWorkflowConnection(db, { ...target, ...connection, draftRevision }),
+    ],
+    [
+      "moving nodes",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        updateWorkflowNodePositions(db, {
+          ...target,
+          draftRevision,
+          positions: { "model-a": { x: 16, y: 16 }, "model-b": { x: 320, y: 0 } },
+        }),
+    ],
+    [
+      "editing a node",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        updateWorkflowNode(db, {
+          ...target,
+          draftRevision,
+          nodeId: "condition",
+          changes: { type: "condition", label: "sana", operator: "lt", threshold: 0.2 },
+        }),
+    ],
+    [
+      "deleting a node",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        deleteWorkflowNode(db, { ...target, draftRevision, nodeId: "model-b" }),
+    ],
+  ] as const;
+
+  it.each(changes)(
+    "rejects %s based on an older revision without changing the draft",
+    async (_change, stored, apply) => {
+      const store = makeWorkflowPositionStoreDb(stored, versions, 3);
+
+      const result = await apply(store.db, 2);
+
+      expect(result).toEqual({ ok: false, reason: "draftConflict" });
+      expect(store.writes).toBe(0);
+      expect(store.reload()).toEqual(stored);
+      expect(store.draftRevision).toBe(3);
+      expect(store.lockedTables).toContain(workflow);
+    },
+  );
+
+  it.each(changes)(
+    "saves %s on the current revision as the next revision",
+    async (_change, stored, apply) => {
+      const store = makeWorkflowPositionStoreDb(stored, versions, 3);
+
+      const result = await apply(store.db, 3);
+
+      expect(result).toMatchObject({ ok: true, draftRevision: 4 });
+      expect(store.writes).toBe(1);
+      expect(store.draftRevision).toBe(4);
+    },
+  );
+
+  it("rejects a connection made on the view from before someone else moved a node", async () => {
+    const store = makeWorkflowPositionStoreDb(draftWithImage, versions, 3);
+    // The first administrator moves a node on revision 3.
+    const moved = await updateWorkflowNodePositions(store.db, {
+      ...target,
+      draftRevision: 3,
+      positions: { "model-a": { x: 480, y: 96 } },
+    });
+    expect(moved).toEqual({
+      ok: true,
+      positions: { "model-a": { x: 480, y: 96 } },
+      draftRevision: 4,
+    });
+    const afterMove = store.reload();
+
+    // The second administrator still sees revision 3.
+    const connected = await addWorkflowConnection(store.db, {
+      ...target,
+      ...connection,
+      targetNodeId: "model-b",
+      draftRevision: 3,
+    });
+
+    expect(connected).toEqual({ ok: false, reason: "draftConflict" });
+    expect(store.reload()).toEqual(afterMove);
+    expect(store.reload().layout).toEqual({ "model-a": { x: 480, y: 96 } });
+    expect(store.draftRevision).toBe(4);
+  });
+
+  it("reports a missing workflow before comparing revisions", async () => {
+    const store = makeWorkflowPositionStoreDb(draft, [], 3, false);
+
+    const result = await deleteWorkflowNode(store.db, {
+      ...target,
+      draftRevision: 2,
+      nodeId: "model-b",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "workflowNotFound" });
+    expect(store.writes).toBe(0);
+  });
+});
+
+describe("draft revisions in the routes (US-130)", () => {
+  const conflict = async () => ({ ok: false as const, reason: "draftConflict" as const });
+  const connection = {
+    sourceNodeId: "image",
+    sourcePort: "imagen",
+    targetNodeId: "model",
+    targetPort: "image",
+  };
+  const routes = [
+    {
+      name: "POST …/nodes",
+      path: "/nodes",
+      method: "POST",
+      body: { type: "input.image" },
+      store: "addImageInput",
+      app: () => makeApp({ addImageInput: conflict }),
+    },
+    {
+      name: "POST …/connections",
+      path: "/connections",
+      method: "POST",
+      body: connection,
+      store: "addConnection",
+      app: () => makeApp({ addConnection: conflict }),
+    },
+    {
+      name: "DELETE …/connections",
+      path: "/connections",
+      method: "DELETE",
+      body: connection,
+      store: "removeConnection",
+      app: () => makeApp({ removeConnection: conflict }),
+    },
+    {
+      name: "PATCH …/layout",
+      path: "/layout",
+      method: "PATCH",
+      body: { positions: { model: { x: 16, y: 32 } } },
+      store: "updateNodePositions",
+      app: () => makeApp({ updateNodePositions: conflict }),
+    },
+    {
+      name: "PATCH …/nodes/:nodeId",
+      path: "/nodes/output-1",
+      method: "PATCH",
+      body: { type: "output", name: "Salida" },
+      store: "updateNode",
+      app: () => makeApp({ updateNode: conflict }),
+    },
+    {
+      name: "DELETE …/nodes/:nodeId",
+      path: "/nodes/node-1",
+      method: "DELETE",
+      body: {},
+      store: "deleteNode",
+      app: () => makeApp({ deleteNode: conflict }),
+    },
+  ] as const;
+  const send = (app: ReturnType<typeof makeApp>, route: (typeof routes)[number], body: unknown) =>
+    app.request.request(`/applications/app-1/workflows/workflow-1${route.path}`, {
+      method: route.method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it.each(routes)(
+    "$name answers 409 draftConflict when the draft changed since it was loaded",
+    async (route) => {
+      const app = route.app();
+
+      const response = await send(app, route, { ...route.body, draftRevision: BASE_REVISION });
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        message: "Otra persona modificó este borrador. Recarga para ver los cambios.",
+        code: "draftConflict",
+      });
+      expect(app[route.store]).toHaveBeenCalledWith(
+        expect.objectContaining({ draftRevision: BASE_REVISION }),
+      );
+    },
+  );
+
+  it.each(routes)("$name rejects a change that names no valid revision", async (route) => {
+    for (const draftRevision of [undefined, -1, 1.5, "4"]) {
+      const app = route.app();
+
+      const response = await send(app, route, { ...route.body, draftRevision });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        message: "Recarga el borrador e inténtalo nuevamente.",
+      });
+      expect(app[route.store]).not.toHaveBeenCalled();
+    }
+  });
+
+  it("answers the new revision with every saved change", async () => {
+    const saved = { nodes: [] };
+    const { request } = makeApp({
+      addConnection: async () => ({ ok: true, draft: saved, draftRevision: NEXT_REVISION }),
+    });
+
+    const response = await request.request("/applications/app-1/workflows/workflow-1/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...connection, draftRevision: BASE_REVISION }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft: saved, draftRevision: NEXT_REVISION });
+  });
+});
+
 function makeWorkflowPositionStoreDb(
   draft: import("./workflow-store").WorkflowDraft,
   // The model versions a model node lookup finds.
   modelVersions: Record<string, unknown>[] = [],
+  // The stored draft revision (US-130).
+  draftRevision = 0,
+  // Whether the application has the workflow at all.
+  workflowExists = true,
 ) {
   let storedDraft = structuredClone(draft);
+  let storedRevision = draftRevision;
   let writes = 0;
   const lockedTables: unknown[] = [];
   const executor = {
@@ -3159,7 +3467,10 @@ function makeWorkflowPositionStoreDb(
               if (table === application)
                 return [{ id: "app-1", organizationId: "org-1", name: "Cámara", status: "active" }];
               if (table === member) return [{ role: "admin" }];
-              if (table === workflow) return [{ draft: structuredClone(storedDraft) }];
+              if (table === workflow)
+                return workflowExists
+                  ? [{ draft: structuredClone(storedDraft), draftRevision: storedRevision }]
+                  : [];
               return [];
             },
           }),
@@ -3176,8 +3487,11 @@ function makeWorkflowPositionStoreDb(
             if (typeof serializedDraft !== "string")
               throw new Error("Updated draft was not serialized");
             storedDraft = JSON.parse(serializedDraft) as typeof storedDraft;
+            if (typeof values.draftRevision !== "number")
+              throw new Error("Updated draft has no revision");
+            storedRevision = values.draftRevision;
             writes += 1;
-            return [{ draft: structuredClone(storedDraft) }];
+            return [{ draft: structuredClone(storedDraft), draftRevision: storedRevision }];
           },
         }),
       }),
@@ -3191,6 +3505,9 @@ function makeWorkflowPositionStoreDb(
     lockedTables,
     get writes() {
       return writes;
+    },
+    get draftRevision() {
+      return storedRevision;
     },
     reload: () => structuredClone(storedDraft),
   };

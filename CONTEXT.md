@@ -36,6 +36,10 @@ _Avoid_: Checkpoint, build, snapshot, weights file, release
 A directed acyclic graph (DAG) of inference steps owned by exactly one Application. A Workflow is created by a workspace administrator as an empty `draft` with no nodes and no published version; creating one in an archived Application is rejected with `applicationArchived`.
 _Avoid_: Pipeline, flow, chain
 
+**Draft Revision**:
+A counter on a Workflow's draft that grows by one with every accepted draft change. Each change from the canvas names the revision it was based on; a change based on an older revision is rejected with `draftConflict` and changes nothing, so nobody overwrites another administrator's work with a stale view. Published versions never carry it.
+_Avoid_: Draft version (a published Workflow version is a different thing), ETag
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

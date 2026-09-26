@@ -1,8 +1,8 @@
+import { workflowEdges } from "@ayni/api/workflow-graph";
 import { describe, expect, it } from "vitest";
 import {
   defaultWorkflowCanvasPosition,
   type WorkflowCanvasDraft,
-  workflowCanvasEdges,
   workflowCanvasFitViewport,
   workflowConditionRule,
   workflowNodePosition,
@@ -51,7 +51,7 @@ describe("workflow canvas layout", () => {
       ],
     };
 
-    expect(workflowCanvasEdges(draft)).toEqual([
+    expect(workflowEdges(draft)).toEqual([
       ...(draft.connections ?? []),
       {
         sourceNodeId: "model",
