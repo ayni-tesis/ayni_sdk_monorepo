@@ -1,4 +1,4 @@
-import { model, modelVersion, workflow, workflowVersion } from "@ayni/db/schema/index";
+import { application, model, modelVersion, workflow, workflowVersion } from "@ayni/db/schema/index";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 
 export type SdkSyncWorkflow = {
@@ -68,6 +68,13 @@ export async function getSdkSyncManifest(
   database: SyncManifestDatabase,
   applicationId: string,
 ): Promise<SdkSyncManifest> {
+  const applications = await database
+    .select({ status: application.status })
+    .from(application)
+    .where(eq(application.id, applicationId))
+    .orderBy(application.id);
+  if (applications[0]?.status !== "active") return { workflows: [], models: [] };
+
   const workflows = (await database
     .select({ id: workflow.id, name: workflow.name })
     .from(workflow)
@@ -127,8 +134,9 @@ export async function getSdkSyncManifest(
     .where(eq(model.applicationId, applicationId))
     .orderBy(model.createdAt)) as ModelRow[];
   if (models.length === 0) {
+    const ready = selected.filter(({ modelVersionIds }) => modelVersionIds.length === 0);
     return {
-      workflows: selected.map(({ workflow: item, version }) => ({
+      workflows: ready.map(({ workflow: item, version }) => ({
         workflowId: item.id,
         workflowVersionId: version.id,
         name: item.name,
@@ -158,19 +166,25 @@ export async function getSdkSyncManifest(
     )
     .orderBy(modelVersion.createdAt)) as ModelVersionRow[];
   const availableDependencyIds = new Set(modelVersions.map(({ id }) => id));
+  const ready = selected.filter(({ modelVersionIds }) =>
+    modelVersionIds.every((id) => availableDependencyIds.has(id)),
+  );
+  const requiredDependencyIds = new Set(ready.flatMap(({ modelVersionIds }) => modelVersionIds));
 
   return {
-    workflows: selected.map(({ workflow: item, version, modelVersionIds }) => ({
+    workflows: ready.map(({ workflow: item, version, modelVersionIds }) => ({
       workflowId: item.id,
       workflowVersionId: version.id,
       name: item.name,
       version: version.version,
-      modelVersionIds: modelVersionIds.filter((id) => availableDependencyIds.has(id)),
+      modelVersionIds,
     })),
-    models: modelVersions.map(({ id, version, sha256 }) => ({
-      modelVersionId: id,
-      version,
-      sha256,
-    })),
+    models: modelVersions
+      .filter(({ id }) => requiredDependencyIds.has(id))
+      .map(({ id, version, sha256 }) => ({
+        modelVersionId: id,
+        version,
+        sha256,
+      })),
   };
 }

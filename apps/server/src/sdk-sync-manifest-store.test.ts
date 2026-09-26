@@ -19,6 +19,7 @@ describe("getSdkSyncManifest", () => {
   it("uses the latest published version of each non-archived workflow and its own model dependencies", async () => {
     const manifest = await getSdkSyncManifest(
       makeDatabase([
+        [{ status: "active" }],
         [{ id: "workflow-1", name: "Clasificar hoja" }],
         [
           {
@@ -69,8 +70,11 @@ describe("getSdkSyncManifest", () => {
     });
   });
 
-  it("does not return draft-only, archived, or foreign workflows", async () => {
-    const manifest = await getSdkSyncManifest(makeDatabase([[]]), "application-1");
+  it("does not return resources for an archived application", async () => {
+    const manifest = await getSdkSyncManifest(
+      makeDatabase([[{ status: "archived" }]]),
+      "application-1",
+    );
 
     expect(manifest).toEqual({ workflows: [], models: [] });
   });
@@ -78,6 +82,7 @@ describe("getSdkSyncManifest", () => {
   it("keeps a published workflow without model nodes while skipping model queries", async () => {
     const manifest = await getSdkSyncManifest(
       makeDatabase([
+        [{ status: "active" }],
         [{ id: "workflow-1", name: "Validar imagen" }],
         [
           {
@@ -105,4 +110,51 @@ describe("getSdkSyncManifest", () => {
       models: [],
     });
   });
+
+  it.each(["missing-model-version", "foreign-model-version"])(
+    "omits a workflow whose dependency is unavailable to the application (%s)",
+    async (modelVersionId) => {
+      const manifest = await getSdkSyncManifest(
+        makeDatabase([
+          [{ status: "active" }],
+          [
+            { id: "workflow-with-model", name: "Clasificar hoja" },
+            { id: "workflow-without-model", name: "Validar imagen" },
+          ],
+          [
+            {
+              id: "workflow-version-with-model",
+              workflowId: "workflow-with-model",
+              version: "1.0.0",
+              createdAt: new Date("2026-09-20"),
+              definition: { nodes: [{ type: "model.tflite", modelVersionId }] },
+            },
+            {
+              id: "workflow-version-without-model",
+              workflowId: "workflow-without-model",
+              version: "1.0.0",
+              createdAt: new Date("2026-09-20"),
+              definition: { nodes: [{ type: "input.image" }, { type: "output" }] },
+            },
+          ],
+          [{ id: "owned-model" }],
+          [],
+        ]),
+        "application-1",
+      );
+
+      expect(manifest).toEqual({
+        workflows: [
+          {
+            workflowId: "workflow-without-model",
+            workflowVersionId: "workflow-version-without-model",
+            name: "Validar imagen",
+            version: "1.0.0",
+            modelVersionIds: [],
+          },
+        ],
+        models: [],
+      });
+    },
+  );
 });
