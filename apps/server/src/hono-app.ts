@@ -193,13 +193,7 @@ const workflows = {
   addImageInput(input: Parameters<typeof addImageInputNode>[1]) {
     return addImageInputNode(db, input);
   },
-  addModelNode(input: {
-    applicationId: string;
-    workflowId: string;
-    userId: string;
-    modelVersionId: string;
-    position?: { x: number; y: number };
-  }) {
+  addModelNode(input: Parameters<typeof addModelNode>[1]) {
     return addModelNode(db, input);
   },
   addConditionNode(input: Parameters<typeof addConditionNode>[1]) {

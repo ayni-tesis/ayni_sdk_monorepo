@@ -3556,6 +3556,272 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-128: Agregar un nodo conectado desde un puerto de salida", () => {
+    stubWorkflowCanvasLayout();
+
+    const contract = {
+      input: { type: "image", width: 224, height: 224, channels: 3, normalization: "zero_to_one" },
+      output: { type: "classification", labels: ["roya", "sana"] },
+    };
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite",
+      modelVersionId: "leaf-1",
+      modelName: "Clasificador de hojas",
+      version: "1.0.0",
+      inputs: { image: contract.input },
+      outputs: { result: contract.output },
+    };
+    const conditionNode = {
+      id: "condition-node",
+      type: "condition",
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+      branches: { true: "Verdadero", false: "Falso" },
+    };
+    const outputNode = {
+      id: "output-node",
+      type: "output",
+      name: "Diagnóstico",
+      sourceNodeId: "model-node",
+      sourcePort: "result",
+      resultType: "classification",
+    };
+    const connections = [
+      {
+        sourceNodeId: "image-node",
+        sourcePort: "imagen",
+        targetNodeId: "model-node",
+        targetPort: "image",
+      },
+    ];
+    const layout = {
+      "image-node": { x: 0, y: 0 },
+      "model-node": { x: 400, y: 0 },
+      "condition-node": { x: 800, y: 0 },
+      "output-node": { x: 800, y: 400 },
+    };
+    const workflow = {
+      id: "workflow-1",
+      applicationId: "app-1",
+      name: "Diagnóstico de hoja de café",
+      status: "draft",
+      createdAt: "2026-09-21T15:00:00.000Z",
+      updatedAt: "2026-09-21T16:00:00.000Z",
+    };
+    const leafModel = {
+      id: "leaf",
+      name: "Clasificador de hojas",
+      versions: [
+        { id: "leaf-1", version: "1.0.0", contract },
+        { id: "leaf-2", version: "2.0.0", contract: null },
+      ],
+    };
+
+    async function openWorkflow({
+      nodes = [imageNode, modelNode, conditionNode] as unknown[],
+      applicationModels = [leafModel],
+      canManage = true,
+    } = {}) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return { data: { workflow, draft: { nodes, connections, layout }, versions: [] } };
+        if (url === "/applications/app-1/models")
+          return { data: { models: applicationModels.map(({ id, name }) => ({ id, name })) } };
+        const model = applicationModels.find((item) => url.endsWith(`/models/${item.id}/versions`));
+        return { data: { versions: model?.versions ?? [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+    }
+
+    async function addAfter(nodeId: string, portLabel: string) {
+      fireEvent.click(
+        within(screen.getByTestId(`workflow-node-${nodeId}`)).getByRole("button", {
+          name: `Agregar nodo después de ${portLabel}`,
+        }),
+      );
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
+      await waitFor(() => expect(within(panel).queryByText("Cargando modelos…")).toBeNull());
+      return panel;
+    }
+
+    const panelItems = (panel: HTMLElement) =>
+      within(panel)
+        .queryAllByRole("region")
+        .flatMap((category) => within(category).queryAllByRole("button"))
+        .map((item) =>
+          (item.getAttribute("aria-labelledby") ?? "")
+            .split(" ")
+            .map((id) => document.getElementById(id)?.textContent ?? "")
+            .join(" "),
+        );
+
+    it("adds a boolean output connected to a condition's Verdadero branch, right of the condition", async () => {
+      await openWorkflow();
+      const saved = {
+        id: "true-output",
+        type: "output",
+        name: "Con roya",
+        sourceNodeId: "condition-node",
+        sourcePort: "true",
+        resultType: "boolean",
+      };
+      client.post.mockResolvedValueOnce({
+        data: {
+          draft: {
+            nodes: [imageNode, modelNode, conditionNode, saved],
+            connections,
+            layout: { ...layout, "true-output": { x: 1140, y: 0 } },
+          },
+        },
+      });
+
+      const panel = await addAfter("condition-node", "Verdadero");
+      expect(within(panel).getByText("Después de Verdadero de Condición: roya")).toBeTruthy();
+      expect(panelItems(panel)).toEqual(["Salida"]);
+      fireEvent.click(within(panel).getByRole("button", { name: "Salida" }));
+      // The result type follows from the port.
+      const resultType = within(panel).getByLabelText("Tipo de resultado") as HTMLSelectElement;
+      expect(resultType.disabled).toBe(true);
+      expect(resultType.value).toBe("condition-node:true");
+      fireEvent.change(within(panel).getByLabelText("Nombre de salida"), {
+        target: { value: "Con roya" },
+      });
+      fireEvent.click(within(panel).getByRole("button", { name: "Agregar salida" }));
+
+      // Right of the 292 px condition at x 800, where nothing else is.
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        {
+          type: "output",
+          name: "Con roya",
+          sourceNodeId: "condition-node",
+          sourcePort: "true",
+          resultType: "boolean",
+          position: { x: 1140, y: 0 },
+        },
+      );
+      expect(await screen.findByTestId("workflow-node-true-output")).toBeTruthy();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado y conectado.");
+      expect(screen.queryByRole("complementary", { name: "Agregar nodo" })).toBeNull();
+    });
+
+    it("opens a second branch from a classification result that already feeds an output", async () => {
+      await openWorkflow({ nodes: [imageNode, modelNode, outputNode] });
+      const saved = { ...conditionNode, id: "new-condition", label: "sana" };
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode, modelNode, outputNode, saved], connections, layout } },
+      });
+
+      const panel = await addAfter("model-node", "Resultado");
+      expect(panelItems(panel)).toEqual(["Condición", "Salida"]);
+      fireEvent.click(within(panel).getByRole("button", { name: "Condición" }));
+      const source = within(panel).getByLabelText("Resultado de origen") as HTMLSelectElement;
+      expect(source.disabled).toBe(true);
+      expect(source.value).toBe("model-node");
+      fireEvent.change(within(panel).getByLabelText("Etiqueta"), { target: { value: "sana" } });
+      fireEvent.click(within(panel).getByRole("button", { name: "Agregar condición" }));
+
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
+        type: "condition",
+        sourceNodeId: "model-node",
+        label: "sana",
+        operator: "gte",
+        threshold: 0.5,
+        position: { x: 740, y: 0 },
+      });
+      expect(await screen.findByTestId("workflow-node-new-condition")).toBeTruthy();
+      // The output keeps its connection to the model's result.
+      expect(screen.getByTestId("workflow-node-output-node")).toBeTruthy();
+      expect(
+        document.querySelector('.react-flow__edge[data-id="model-node:result:output-node:source"]'),
+      ).not.toBeNull();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado y conectado.");
+    });
+
+    it("adds a model connected to the image, below the model already there", async () => {
+      await openWorkflow({ nodes: [imageNode, modelNode] });
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode, modelNode], connections, layout } },
+      });
+
+      const panel = await addAfter("image-node", "imagen");
+      // Only contracted versions; an image input or a condition cannot follow the image.
+      expect(panelItems(panel)).toEqual(["Clasificador de hojas · 1.0.0"]);
+      fireEvent.click(within(panel).getByRole("button", { name: "Clasificador de hojas · 1.0.0" }));
+
+      // Right of the image input the model at x 400 takes the place, so it goes below.
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
+        type: "model.tflite",
+        modelVersionId: "leaf-1",
+        sourceNodeId: "image-node",
+        sourcePort: "imagen",
+        position: { x: 340, y: 212 },
+      });
+      await waitFor(() =>
+        expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado y conectado."),
+      );
+    });
+
+    it("keeps the canvas unchanged when the connected node cannot be saved", async () => {
+      await openWorkflow();
+      // Whatever the server answers, the message is the story's.
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { message: "El resultado seleccionado no es compatible con la salida." },
+        },
+      });
+
+      const panel = await addAfter("condition-node", "Falso");
+      fireEvent.click(within(panel).getByRole("button", { name: "Salida" }));
+      fireEvent.change(within(panel).getByLabelText("Nombre de salida"), {
+        target: { value: "Sin roya" },
+      });
+      fireEvent.click(within(panel).getByRole("button", { name: "Agregar salida" }));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No pudimos agregar el nodo."),
+      );
+      expect(toastMock.success).not.toHaveBeenCalled();
+      expect(document.querySelectorAll(".react-flow__node")).toHaveLength(3);
+      expect(screen.getByRole("complementary", { name: "Agregar nodo" })).toBeTruthy();
+    });
+
+    it("says when no type is compatible with the output", async () => {
+      await openWorkflow({ applicationModels: [] });
+
+      const panel = await addAfter("image-node", "imagen");
+
+      expect(within(panel).getByText("No hay nodos compatibles con esta salida.")).toBeTruthy();
+      expect(panelItems(panel)).toEqual([]);
+    });
+
+    it("does not offer + to a member", async () => {
+      await openWorkflow({ canManage: false });
+
+      expect(screen.queryByRole("button", { name: /Agregar nodo después de/ })).toBeNull();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { WorkflowCanvasDraft, WorkflowCanvasNode } from "./workflow-canvas";
 import { workflowCanvasEdges } from "./workflow-canvas";
-import { arrangeWorkflowNodes } from "./workflow-canvas-layout";
+import {
+  arrangeWorkflowNodes,
+  placeWorkflowNodeAfter,
+  WORKFLOW_LAYOUT_LEVEL_GAP,
+  WORKFLOW_LAYOUT_NODE_GAP,
+} from "./workflow-canvas-layout";
 import type { WorkflowCanvasSize } from "./workflow-canvas-viewport";
 
 const image: WorkflowCanvasNode = {
@@ -190,5 +195,49 @@ describe("arrangeWorkflowNodes", () => {
     const first = arrange(diagnosis);
 
     expect(arrange({ ...diagnosis, layout: first })).toEqual(first);
+  });
+});
+
+describe("placeWorkflowNodeAfter", () => {
+  const card = { width: 292, height: 188 };
+  const box = (x: number, y: number) => ({ x, y, ...card });
+
+  it("places the node right of its source, level with it", () => {
+    expect(placeWorkflowNodeAfter("source", { source: box(100, 40) }, card)).toEqual({
+      x: 100 + 292 + WORKFLOW_LAYOUT_LEVEL_GAP,
+      y: 40,
+    });
+  });
+
+  it("moves down to the first free place when nodes take that place", () => {
+    const right = 100 + 292 + WORKFLOW_LAYOUT_LEVEL_GAP;
+    const boxes = {
+      source: box(100, 40),
+      // The source's first branch, and a second node just below it.
+      first: box(right, 40),
+      second: box(right + 100, 40 + 188 + WORKFLOW_LAYOUT_NODE_GAP),
+      // Far below, leaving a free place in between.
+      far: box(right, 2000),
+    };
+
+    const position = placeWorkflowNodeAfter("source", boxes, card);
+
+    expect(position).toEqual({ x: right, y: 40 + 2 * (188 + WORKFLOW_LAYOUT_NODE_GAP) });
+    for (const other of Object.values(boxes))
+      expect(
+        position.x < other.x + other.width &&
+          position.x + card.width > other.x &&
+          position.y < other.y + other.height &&
+          position.y + card.height > other.y,
+      ).toBe(false);
+  });
+
+  it("keeps a gap from a node that only nearly touches that place", () => {
+    const right = 100 + 292 + WORKFLOW_LAYOUT_LEVEL_GAP;
+    const boxes = { source: box(100, 40), near: box(right, 40 + 188 + 10) };
+
+    expect(placeWorkflowNodeAfter("source", boxes, card).y).toBe(
+      40 + 188 + 10 + 188 + WORKFLOW_LAYOUT_NODE_GAP,
+    );
   });
 });

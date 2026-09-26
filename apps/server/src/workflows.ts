@@ -100,6 +100,10 @@ const workflowVersionSchema = z.object({
     .trim()
     .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/),
 });
+const modelSourceSchema = z.object({
+  sourceNodeId: z.string().min(1),
+  sourcePort: z.string().min(1),
+});
 const connectionSchema = z.object({
   sourceNodeId: z.string().min(1),
   sourcePort: z.string().min(1),
@@ -410,6 +414,16 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
       return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     }
+    let source: { nodeId: string; port: string } | undefined;
+    if (nodeType === "model.tflite") {
+      // A model added after an output port (US-128) names that port; both or neither.
+      const { sourceNodeId, sourcePort } = body as { sourceNodeId?: unknown; sourcePort?: unknown };
+      if (sourceNodeId !== undefined || sourcePort !== undefined) {
+        const parsedSource = modelSourceSchema.safeParse({ sourceNodeId, sourcePort });
+        if (!parsedSource.success) return c.json({ message: "Selecciona puertos válidos." }, 400);
+        source = { nodeId: parsedSource.data.sourceNodeId, port: parsedSource.data.sourcePort };
+      }
+    }
     const result =
       nodeType === "model.tflite"
         ? await workflows.addModelNode({
@@ -419,6 +433,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
                 ? (body as { modelVersionId: string }).modelVersionId
                 : "",
             position,
+            source,
           })
         : await workflows.addImageInput({ ...workflowInput, position });
     if (result.ok) return c.json({ draft: result.draft });
@@ -436,6 +451,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         { message: "Esta versión necesita un contrato antes de usarse en un workflow." },
         409,
       );
+    if (result.reason === "incompatibleSource")
+      return c.json({ message: "Estos puertos no son compatibles." }, 409);
     if (result.reason === "modelVersionNotFound")
       return c.json(
         { message: "No encontramos esta versión de modelo.", code: "modelVersionNotFound" },
