@@ -153,28 +153,6 @@ class AyniSdk {
     final models = {...local.models};
     final resources = <SyncResourceResult>[];
 
-    for (final item in remote['workflows'] as List) {
-      final workflow = _Workflow.fromJson(item);
-      if (workflow == null) {
-        resources.add(_invalidResource(SyncResourceType.workflow, item));
-        continue;
-      }
-      final previous = workflows[workflow.id];
-      final status = previous?.version == workflow.version
-          ? SyncResourceStatus.upToDate
-          : SyncResourceStatus.updated;
-      if (status == SyncResourceStatus.updated)
-        workflows[workflow.id] = workflow;
-      resources.add(
-        SyncResourceResult(
-          type: SyncResourceType.workflow,
-          status: status,
-          resourceVersionId: workflow.workflowVersionId,
-          version: workflow.version,
-        ),
-      );
-    }
-
     for (final item in remote['models'] as List) {
       final model = _Model.fromJson(item);
       if (model == null) {
@@ -192,6 +170,29 @@ class AyniSdk {
           status: status,
           resourceVersionId: model.id,
           version: model.version,
+        ),
+      );
+    }
+
+    for (final item in remote['workflows'] as List) {
+      final workflow = _Workflow.fromJson(item);
+      if (workflow == null ||
+          !workflow.modelVersionIds.every(models.containsKey)) {
+        resources.add(_invalidResource(SyncResourceType.workflow, item));
+        continue;
+      }
+      final previous = workflows[workflow.id];
+      final status = previous?.version == workflow.version
+          ? SyncResourceStatus.upToDate
+          : SyncResourceStatus.updated;
+      if (status == SyncResourceStatus.updated)
+        workflows[workflow.id] = workflow;
+      resources.add(
+        SyncResourceResult(
+          type: SyncResourceType.workflow,
+          status: status,
+          resourceVersionId: workflow.workflowVersionId,
+          version: workflow.version,
         ),
       );
     }

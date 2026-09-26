@@ -134,11 +134,47 @@ void main() {
 
     expect(result.status, SyncStatus.updated);
     expect(result.resources.map((resource) => resource.status), [
-      SyncResourceStatus.updated,
       SyncResourceStatus.upToDate,
+      SyncResourceStatus.updated,
     ]);
-    expect(result.resources.first.resourceVersionId, 'workflow-version-2.0.0');
+    expect(result.resources.last.resourceVersionId, 'workflow-version-2.0.0');
   });
+
+  test(
+    'keeps a valid workflow when its remote model dependency is invalid',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      final before = await inventory.readAsString();
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-2.0.0',
+            'name': 'Clasificar hoja',
+            'version': '2.0.0',
+            'modelVersionIds': ['model-version-2'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-2',
+            'version': '1.0.0',
+            'sha256': 'invalid',
+          },
+        ],
+      });
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.invalidRemoteResource,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(await inventory.readAsString(), before);
+    },
+  );
 
   test(
     'keeps a valid local resource when its remote update is invalid',
@@ -165,11 +201,11 @@ void main() {
 
       expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((resource) => resource.status), [
-        SyncResourceStatus.upToDate,
         SyncResourceStatus.invalidRemoteResource,
+        SyncResourceStatus.upToDate,
       ]);
       expect(
-        result.resources.last.message,
+        result.resources.first.message,
         'Se mantuvo la versión local porque la actualización no es válida.',
       );
       expect(await inventory.readAsString(), before);
