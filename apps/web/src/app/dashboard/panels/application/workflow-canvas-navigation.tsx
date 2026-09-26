@@ -7,6 +7,7 @@ import {
   IconPlus,
   IconSelectAll,
   IconSitemap,
+  IconTrash,
   IconZoomIn,
   IconZoomOut,
 } from "@tabler/icons-react";
@@ -38,6 +39,8 @@ export type WorkflowCanvasEditControls = {
   /** Without nodes, Ordenar nodos is disabled and says why. */
   hasNodes: boolean;
   onArrangeNodes: () => void;
+  /** Opens Eliminar nodos; only given while two or more nodes are selected (US-132). */
+  onDeleteNodes?: () => void;
 };
 
 /** The Agregar nodo button; only administrators who can edit the draft get it. */
@@ -184,6 +187,20 @@ export function WorkflowCanvasControls({
             <IconSitemap aria-hidden="true" />
             Ordenar nodos
           </Button>
+          {editing.onDeleteNodes && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="whitespace-nowrap text-destructive hover:text-destructive"
+              aria-keyshortcuts="Delete Backspace"
+              disabled={savingPositions || arrangingNodes}
+              onClick={editing.onDeleteNodes}
+            >
+              <IconTrash aria-hidden="true" />
+              Eliminar nodos
+            </Button>
+          )}
         </>
       )}
       {onShowShortcuts && (

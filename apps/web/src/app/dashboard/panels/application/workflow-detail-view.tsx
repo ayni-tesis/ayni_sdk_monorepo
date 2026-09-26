@@ -5,6 +5,7 @@ import {
   type WorkflowSourcedNode,
   withWorkflowSource,
   workflowEdges,
+  workflowNodesToDelete,
   workflowPortCompatibility,
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
@@ -135,6 +136,26 @@ class DraftChangeDropped extends Error {}
 function isDraftConflict(error: unknown) {
   return (
     axios.isAxiosError<{ code?: string }>(error) && error.response?.data?.code === "draftConflict"
+  );
+}
+
+/** What Eliminar nodos removes: the selected nodes and, when any, the dependents they take along. */
+function DeleteNodesSummary({ selected, total }: { selected: number; total: number }) {
+  const dependents = total - selected;
+  return (
+    <DialogHeader>
+      <DialogTitle>¿Eliminar {selected} nodos?</DialogTitle>
+      <DialogDescription>
+        También se eliminarán sus conexiones y las condiciones o salidas que dependen de ellos.
+      </DialogDescription>
+      {dependents > 0 && (
+        <p className="text-muted-foreground text-sm">
+          {dependents === 1
+            ? `Además se eliminará 1 nodo dependiente: ${total} nodos en total.`
+            : `Además se eliminarán ${dependents} nodos dependientes: ${total} nodos en total.`}
+        </p>
+      )}
+    </DialogHeader>
   );
 }
 
@@ -347,6 +368,9 @@ export function WorkflowDetailView({
   const selectedNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] : null;
   const [deleteNodeDialogOpen, setDeleteNodeDialogOpen] = useState(false);
   const [deletingNode, setDeletingNode] = useState(false);
+  // The nodes Eliminar nodos asks about, or `null` while its dialog is closed (US-132).
+  const [nodesToDelete, setNodesToDelete] = useState<string[] | null>(null);
+  const [deletingNodes, setDeletingNodes] = useState(false);
   // The node whose Detalles del nodo panel is open.
   const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null);
   const [savingNodeDetails, setSavingNodeDetails] = useState(false);
@@ -1077,6 +1101,45 @@ export function WorkflowDetailView({
     }
   }
 
+  // Shows the draft a deletion left, dropping what referred to the deleted nodes.
+  function showDraftAfterDeletion(nextDraft: WorkflowCanvasDraft) {
+    setDetail((current) => (current ? { ...current, draft: nextDraft } : current));
+    setSelectedNodeIds([]);
+    setSelectedConnection((current) =>
+      current
+        ? (workflowEdges(nextDraft).find((edge) => sameWorkflowConnection(edge, current)) ?? null)
+        : null,
+    );
+    setConnectionSource((current) =>
+      current && nextDraft.nodes.some((node) => node.id === current.sourceNodeId) ? current : null,
+    );
+    const remainingNodeIds = new Set(nextDraft.nodes.map((node) => node.id));
+    setCycleNodeIds((current) => current.filter((nodeId) => remainingNodeIds.has(nodeId)));
+  }
+
+  // Every node goes, with its dependents and connections, or none does; after a
+  // failure the canvas and the selection stay as they were (US-132).
+  async function deleteNodes(nodeIds: string[]) {
+    if (deletingNodes) return;
+    setDeletingNodes(true);
+    try {
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.delete<DraftChanged>(`${detailUrl}/nodes`, {
+          data: { nodeIds, draftRevision },
+        }),
+      );
+      showDraftAfterDeletion(data.draft);
+      setNodesToDelete(null);
+      toast.success("Nodos eliminados.");
+    } catch (deleteError) {
+      setNodesToDelete(null);
+      if (staleDraftChange(deleteError)) return;
+      toast.error("No pudimos eliminar los nodos.");
+    } finally {
+      setDeletingNodes(false);
+    }
+  }
+
   async function deleteSelectedNode() {
     if (!selectedNodeId || deletingNode) return;
     setDeletingNode(true);
@@ -1085,21 +1148,7 @@ export function WorkflowDetailView({
       const data = await sendDraftChange((draftRevision) =>
         httpClient.delete<DraftChanged>(nodeUrl, { data: { draftRevision } }),
       );
-      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      setSelectedNodeIds([]);
-      setSelectedConnection((current) =>
-        current
-          ? (workflowEdges(data.draft).find((edge) => sameWorkflowConnection(edge, current)) ??
-            null)
-          : null,
-      );
-      setConnectionSource((current) =>
-        current && data.draft.nodes.some((node) => node.id === current.sourceNodeId)
-          ? current
-          : null,
-      );
-      const remainingNodeIds = new Set(data.draft.nodes.map((node) => node.id));
-      setCycleNodeIds((current) => current.filter((nodeId) => remainingNodeIds.has(nodeId)));
+      showDraftAfterDeletion(data.draft);
       setDeleteNodeDialogOpen(false);
       toast.success("Nodo eliminado.");
     } catch (deleteError) {
@@ -1290,6 +1339,7 @@ export function WorkflowDetailView({
               setSelectedNodeIds([nodeId]);
               setDeleteNodeDialogOpen(true);
             }}
+            onRequestDeleteNodes={setNodesToDelete}
             onSelectConnection={setSelectedConnection}
             onConnect={(connection) => void changeConnection(connection)}
             onMoveNodes={(positions) => void moveWorkflowNodes(positions)}
@@ -1404,6 +1454,39 @@ export function WorkflowDetailView({
                   onClick={() => void deleteSelectedNode()}
                 >
                   Eliminar nodo
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog
+            open={nodesToDelete !== null}
+            onOpenChange={(open) => {
+              if (!open && !deletingNodes) setNodesToDelete(null);
+            }}
+          >
+            <DialogContent>
+              {nodesToDelete && (
+                <DeleteNodesSummary
+                  selected={nodesToDelete.length}
+                  total={workflowNodesToDelete(draft, nodesToDelete).length}
+                />
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={deletingNodes}
+                  onClick={() => setNodesToDelete(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={deletingNodes}
+                  onClick={() => nodesToDelete && void deleteNodes(nodesToDelete)}
+                >
+                  {deletingNodes ? "Eliminando nodos…" : "Eliminar nodos"}
                 </Button>
               </DialogFooter>
             </DialogContent>

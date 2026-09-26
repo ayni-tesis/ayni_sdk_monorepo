@@ -18,6 +18,7 @@ import {
   createWorkflow,
   type DeleteWorkflowNodeResult,
   deleteWorkflowNode,
+  deleteWorkflowNodes,
   getWorkflow,
   listWorkflows,
   type RenameWorkflowResult,
@@ -139,6 +140,11 @@ function makeApp({
     draft: { nodes: [] },
     draftRevision: NEXT_REVISION,
   }),
+  deleteNodes = async (): Promise<DeleteWorkflowNodeResult> => ({
+    ok: true,
+    draft: { nodes: [] },
+    draftRevision: NEXT_REVISION,
+  }),
   updateNode = async (): Promise<UpdateWorkflowNodeResult> => ({
     ok: true,
     draft: { nodes: [] },
@@ -189,6 +195,9 @@ function makeApp({
   deleteNode?: (
     input: import("./workflow-store").DeleteWorkflowNodeInput,
   ) => Promise<DeleteWorkflowNodeResult>;
+  deleteNodes?: (
+    input: import("./workflow-store").DeleteWorkflowNodesInput,
+  ) => Promise<DeleteWorkflowNodeResult>;
   updateNode?: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
   publishVersion?: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   addConnection?: (input: ChangeWorkflowConnectionInput) => Promise<ChangeWorkflowConnectionResult>;
@@ -211,6 +220,7 @@ function makeApp({
   const removeConnectionMock = vi.fn(removeConnection);
   const updateNodePositionsMock = vi.fn(updateNodePositions);
   const deleteNodeMock = vi.fn(deleteNode);
+  const deleteNodesMock = vi.fn(deleteNodes);
   const updateNodeMock = vi.fn(updateNode);
   const publishVersionMock = vi.fn(publishVersion);
   return {
@@ -227,6 +237,7 @@ function makeApp({
     removeConnection: removeConnectionMock,
     updateNodePositions: updateNodePositionsMock,
     deleteNode: deleteNodeMock,
+    deleteNodes: deleteNodesMock,
     updateNode: updateNodeMock,
     publishVersion: publishVersionMock,
     request: createWorkflowsApp({
@@ -249,6 +260,7 @@ function makeApp({
         removeConnection: removeConnectionMock,
         updateNodePositions: updateNodePositionsMock,
         deleteNode: deleteNodeMock,
+        deleteNodes: deleteNodesMock,
         updateNode: updateNodeMock,
         publishVersion: publishVersionMock,
       },
@@ -394,6 +406,77 @@ describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes/:nodeI
       message: "No tienes permiso para editar este workflow.",
     });
     expect(deleteNode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes (US-132)", () => {
+  const deleteNodes = (request: ReturnType<typeof makeApp>["request"], body: unknown) =>
+    request.request("/applications/app-1/workflows/workflow-1/nodes", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("deletes the selected nodes together and returns the updated draft", async () => {
+    const draft = { nodes: [] };
+    const app = makeApp({
+      deleteNodes: async () => ({ ok: true as const, draft, draftRevision: NEXT_REVISION }),
+    });
+
+    const response = await deleteNodes(app.request, {
+      nodeIds: ["model-a", "model-b"],
+      draftRevision: BASE_REVISION,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft, draftRevision: NEXT_REVISION });
+    expect(app.deleteNodes).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
+      nodeIds: ["model-a", "model-b"],
+      userId: "admin",
+    });
+  });
+
+  it.each([
+    ["no node ids", { draftRevision: BASE_REVISION }],
+    ["an empty list", { nodeIds: [], draftRevision: BASE_REVISION }],
+    ["an empty id", { nodeIds: ["model-a", ""], draftRevision: BASE_REVISION }],
+  ])("rejects %s without deleting anything", async (_case, body) => {
+    const app = makeApp();
+
+    const response = await deleteNodes(app.request, body);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      message: "Selecciona los nodos que quieres eliminar.",
+    });
+    expect(app.deleteNodes).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["forbidden", 403, { message: "No tienes permiso para editar este workflow." }],
+    [
+      "archived",
+      409,
+      {
+        message: "No puedes editar workflows en una aplicación archivada.",
+        code: "applicationArchived",
+      },
+    ],
+    ["nodeNotFound", 404, { message: "No encontramos este workflow.", code: "notFound" }],
+    ["workflowNotFound", 404, { message: "No encontramos este workflow.", code: "notFound" }],
+  ] as const)("answers %s with %i", async (reason, status, body) => {
+    const app = makeApp({ deleteNodes: async () => ({ ok: false as const, reason }) });
+
+    const response = await deleteNodes(app.request, {
+      nodeIds: ["model-a", "model-b"],
+      draftRevision: BASE_REVISION,
+    });
+
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toEqual(body);
   });
 });
 
@@ -3180,6 +3263,103 @@ describe("deleteWorkflowNode", () => {
   });
 });
 
+describe("deleteWorkflowNodes (US-132)", () => {
+  const contract = {
+    input: {
+      type: "image" as const,
+      width: 224,
+      height: 224,
+      channels: 3 as const,
+      normalization: "none" as const,
+    },
+    output: { type: "classification" as const, labels: ["roya", "sana"] },
+  };
+  const model = (id: string) => ({
+    id,
+    type: "model.tflite" as const,
+    modelVersionId: `${id}-version`,
+    modelName: "Hoja",
+    version: "1.0.0",
+    inputs: { image: contract.input },
+    outputs: { result: contract.output },
+  });
+  const image = {
+    id: "image",
+    type: "input.image" as const,
+    outputs: { imagen: "image" as const },
+  };
+  const condition = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "model-a",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.5,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const output = {
+    id: "output",
+    type: "output" as const,
+    name: "Con roya",
+    sourceNodeId: "condition",
+    sourcePort: "true",
+    resultType: "boolean" as const,
+  };
+  const toModel = (id: string) => ({
+    sourceNodeId: "image",
+    sourcePort: "imagen",
+    targetNodeId: id,
+    targetPort: "image",
+  });
+  const draft = {
+    nodes: [image, model("model-a"), model("model-b"), model("model-c"), condition, output],
+    connections: [toModel("model-a"), toModel("model-b"), toModel("model-c")],
+    layout: {
+      image: { x: 0, y: 0 },
+      "model-a": { x: 200, y: 0 },
+      "model-b": { x: 200, y: 160 },
+      "model-c": { x: 200, y: 320 },
+      condition: { x: 400, y: 0 },
+      output: { x: 600, y: 0 },
+    },
+  };
+  const target = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+
+  it("deletes the selected nodes, their dependents, and their connections in one write", async () => {
+    const store = makeWorkflowPositionStoreDb(draft, [], 5);
+
+    const result = await deleteWorkflowNodes(store.db, {
+      ...target,
+      draftRevision: 5,
+      nodeIds: ["model-a", "model-b"],
+    });
+
+    const remaining = {
+      nodes: [image, model("model-c")],
+      connections: [toModel("model-c")],
+      layout: { image: { x: 0, y: 0 }, "model-c": { x: 200, y: 320 } },
+    };
+    expect(result).toEqual({ ok: true, draft: remaining, draftRevision: 6 });
+    expect(store.writes).toBe(1);
+    expect(store.reload()).toEqual(remaining);
+  });
+
+  it("deletes none of the nodes when one of them is missing", async () => {
+    const store = makeWorkflowPositionStoreDb(draft, [], 5);
+
+    const result = await deleteWorkflowNodes(store.db, {
+      ...target,
+      draftRevision: 5,
+      nodeIds: ["model-a", "deleted-meanwhile"],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "nodeNotFound" });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(draft);
+    expect(store.draftRevision).toBe(5);
+  });
+});
+
 describe("updateWorkflowNode", () => {
   const modelNode = {
     id: "model",
@@ -3442,6 +3622,12 @@ describe("draft revisions (US-130)", () => {
       (db: WorkflowDatabase, draftRevision: number) =>
         deleteWorkflowNode(db, { ...target, draftRevision, nodeId: "model-b" }),
     ],
+    [
+      "deleting several nodes",
+      draftWithImage,
+      (db: WorkflowDatabase, draftRevision: number) =>
+        deleteWorkflowNodes(db, { ...target, draftRevision, nodeIds: ["model-a", "model-b"] }),
+    ],
   ] as const;
 
   it.each(changes)(
@@ -3571,6 +3757,14 @@ describe("draft revisions in the routes (US-130)", () => {
       body: {},
       store: "deleteNode",
       app: () => makeApp({ deleteNode: conflict }),
+    },
+    {
+      name: "DELETE …/nodes",
+      path: "/nodes",
+      method: "DELETE",
+      body: { nodeIds: ["model-a", "model-b"] },
+      store: "deleteNodes",
+      app: () => makeApp({ deleteNodes: conflict }),
     },
   ] as const;
   const send = (app: ReturnType<typeof makeApp>, route: (typeof routes)[number], body: unknown) =>

@@ -6,6 +6,7 @@ import {
   type WorkflowPortDraft,
   type WorkflowPortNode,
   workflowEdges,
+  workflowNodesToDelete,
   workflowPortCompatibility,
   workflowSourceTarget,
 } from "./workflow-graph";
@@ -270,5 +271,44 @@ describe("reassigning the Origen of a condition or an output", () => {
     expect(workflowSourceTarget(draft, connect("model-b", "result", "missing", "source"))).toBe(
       undefined,
     );
+  });
+});
+
+describe("workflowNodesToDelete", () => {
+  const draft: WorkflowGraphDraft = {
+    nodes: [
+      { id: "image", type: "input.image" },
+      { id: "model-a", type: "model.tflite" },
+      { id: "model-b", type: "model.tflite" },
+      { id: "model-c", type: "model.tflite" },
+      { id: "condition", type: "condition", sourceNodeId: "model-a" },
+      { id: "branch-output", type: "output", sourceNodeId: "condition", sourcePort: "true" },
+      { id: "c-output", type: "output", sourceNodeId: "model-c", sourcePort: "result" },
+    ],
+    connections: [
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model-a", targetPort: "image" },
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model-b", targetPort: "image" },
+    ],
+  };
+
+  it("adds the conditions and outputs that depend on the selected nodes, in draft order", () => {
+    expect(workflowNodesToDelete(draft, ["model-b", "model-a"])).toEqual([
+      "model-a",
+      "model-b",
+      "condition",
+      "branch-output",
+    ]);
+  });
+
+  it("keeps the nodes a connection reaches, since only their connection goes", () => {
+    expect(workflowNodesToDelete(draft, ["image"])).toEqual(["image"]);
+  });
+
+  it("counts a selected dependent once and ignores ids missing from the draft", () => {
+    expect(workflowNodesToDelete(draft, ["condition", "model-a", "missing"])).toEqual([
+      "model-a",
+      "condition",
+      "branch-output",
+    ]);
   });
 });

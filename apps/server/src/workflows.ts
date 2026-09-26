@@ -19,6 +19,8 @@ import type {
   CreateWorkflowResult,
   DeleteWorkflowNodeInput,
   DeleteWorkflowNodeResult,
+  DeleteWorkflowNodesInput,
+  DeleteWorkflowNodesResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
   UpdateWorkflowNodeInput,
@@ -53,6 +55,7 @@ const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const WORKFLOW_POSITION_INVALID_MESSAGE = "No se pudo guardar la posición del nodo.";
 const WORKFLOW_LAYOUT_INVALID_MESSAGE = "No pudimos guardar las posiciones.";
 const NODE_NOT_EDITABLE_MESSAGE = "Este nodo no se puede editar.";
+const DELETE_NODES_INVALID_MESSAGE = "Selecciona los nodos que quieres eliminar.";
 const CONDITION_INVALID_MESSAGE = "Ingresa una condición válida.";
 const OUTPUT_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para la salida.";
 const CONDITION_INCOMPATIBLE_MESSAGE =
@@ -114,6 +117,7 @@ const connectionSchema = z.object({
   targetNodeId: z.string().min(1),
   targetPort: z.string().min(1),
 });
+const deleteNodesSchema = z.object({ nodeIds: z.array(z.string().min(1)).min(1) });
 const draftRevisionSchema = z.number().int().min(0);
 
 /** The draft revision a change was based on (US-130), or `undefined` when the body lacks it. */
@@ -150,6 +154,7 @@ type Dependencies = {
       input: UpdateWorkflowNodePositionsInput,
     ) => Promise<UpdateWorkflowNodePositionsResult>;
     deleteNode: (input: DeleteWorkflowNodeInput) => Promise<DeleteWorkflowNodeResult>;
+    deleteNodes: (input: DeleteWorkflowNodesInput) => Promise<DeleteWorkflowNodesResult>;
     updateNode: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
     publishVersion: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   };
@@ -585,6 +590,37 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       nodeId: c.req.param("nodeId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+  });
+
+  // Deletes several nodes, their dependents, and their connections together, or none (US-132).
+  app.delete("/applications/:applicationId/workflows/:workflowId/nodes", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = deleteNodesSchema.safeParse(body);
+    if (!parsed.success) return c.json({ message: DELETE_NODES_INVALID_MESSAGE }, 400);
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
+    const result = await workflows.deleteNodes({
+      draftRevision,
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      nodeIds: parsed.data.nodeIds,
       userId: session.user.id,
     });
     if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });

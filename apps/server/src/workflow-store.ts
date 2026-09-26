@@ -4,6 +4,7 @@ import {
   isConditionSourceCompatible,
   isOutputSourceCompatible,
   withWorkflowSource,
+  workflowNodesToDelete,
   workflowPortCompatibility,
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
@@ -240,23 +241,26 @@ export async function deleteWorkflowNode(
   database: WorkflowDatabase,
   { nodeId, ...input }: DeleteWorkflowNodeInput,
 ): Promise<DeleteWorkflowNodeResult> {
+  return deleteWorkflowNodes(database, { ...input, nodeIds: [nodeId] });
+}
+
+export type DeleteWorkflowNodesInput = WorkflowDraftChangeInput & { nodeIds: string[] };
+export type DeleteWorkflowNodesResult = DeleteWorkflowNodeResult;
+
+/**
+ * Deletes the nodes, the conditions and outputs that depend on them, their
+ * connections, and their positions in one write, or nothing if any node is
+ * missing (US-132).
+ */
+export async function deleteWorkflowNodes(
+  database: WorkflowDatabase,
+  { nodeIds, ...input }: DeleteWorkflowNodesInput,
+): Promise<DeleteWorkflowNodesResult> {
   return changeWorkflowDraft<NodeNotFound>(database, input, async (draft) => {
-    if (!draft.nodes.some((node) => node.id === nodeId)) return { reason: "nodeNotFound" as const };
-    const removedNodeIds = new Set([nodeId]);
-    let addedDependency = true;
-    while (addedDependency) {
-      addedDependency = false;
-      for (const node of draft.nodes) {
-        if (
-          (node.type === "condition" || node.type === "output") &&
-          removedNodeIds.has(node.sourceNodeId) &&
-          !removedNodeIds.has(node.id)
-        ) {
-          removedNodeIds.add(node.id);
-          addedDependency = true;
-        }
-      }
-    }
+    const draftNodeIds = new Set(draft.nodes.map((node) => node.id));
+    if (!nodeIds.every((nodeId) => draftNodeIds.has(nodeId)))
+      return { reason: "nodeNotFound" as const };
+    const removedNodeIds = new Set(workflowNodesToDelete(draft, nodeIds));
     return {
       draft: {
         ...draft,
