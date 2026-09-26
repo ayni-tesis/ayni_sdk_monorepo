@@ -64,6 +64,7 @@ import {
   listWorkflows,
   removeWorkflowConnection,
   renameWorkflow,
+  updateWorkflowNode,
   updateWorkflowNodePositions,
 } from "./workflow-store";
 import { publishWorkflowVersion } from "./workflow-version-store";
@@ -218,6 +219,9 @@ const workflows = {
   },
   deleteNode(input: Parameters<typeof deleteWorkflowNode>[1]) {
     return deleteWorkflowNode(db, input);
+  },
+  updateNode(input: Parameters<typeof updateWorkflowNode>[1]) {
+    return updateWorkflowNode(db, input);
   },
   publishVersion(input: Parameters<typeof publishWorkflowVersion>[1]) {
     return publishWorkflowVersion(db, input);

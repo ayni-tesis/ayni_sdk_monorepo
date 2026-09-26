@@ -20,10 +20,13 @@ import type {
   DeleteWorkflowNodeResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
+  UpdateWorkflowNodeInput,
   UpdateWorkflowNodePositionsInput,
   UpdateWorkflowNodePositionsResult,
+  UpdateWorkflowNodeResult,
   Workflow,
   WorkflowDetail,
+  WorkflowNodeChanges,
   WorkflowNodePosition,
 } from "./workflow-store";
 import { validateWorkflowDraft } from "./workflow-validation";
@@ -48,6 +51,11 @@ const DUPLICATE_IMAGE_INPUT_MESSAGE = "Este workflow ya tiene una entrada de ima
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const WORKFLOW_POSITION_INVALID_MESSAGE = "No se pudo guardar la posición del nodo.";
 const WORKFLOW_LAYOUT_INVALID_MESSAGE = "No pudimos guardar las posiciones.";
+const NODE_NOT_EDITABLE_MESSAGE = "Este nodo no se puede editar.";
+const CONDITION_INVALID_MESSAGE = "Ingresa una condición válida.";
+const OUTPUT_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para la salida.";
+const CONDITION_INCOMPATIBLE_MESSAGE =
+  "Esta condición no es compatible con la salida seleccionada.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
@@ -78,6 +86,14 @@ const outputNodeSchema = z.object({
   resultType: z.enum(["classification", "detection", "boolean"]),
   position: workflowPositionSchema.optional(),
 });
+// A node keeps its source when edited, so only its own settings may change.
+const conditionChangesSchema = conditionNodeSchema.pick({
+  type: true,
+  label: true,
+  operator: true,
+  threshold: true,
+});
+const outputChangesSchema = outputNodeSchema.pick({ type: true, name: true });
 const workflowVersionSchema = z.object({
   version: z
     .string()
@@ -122,6 +138,7 @@ type Dependencies = {
       nodeId: string;
       userId: string;
     }) => Promise<DeleteWorkflowNodeResult>;
+    updateNode: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
     publishVersion: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   };
 };
@@ -349,7 +366,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       if (!parsed.success) {
         const paths = parsed.error.issues.map((issue) => issue.path[0]);
         const message = paths.includes("name")
-          ? "Ingresa un nombre para la salida."
+          ? OUTPUT_NAME_REQUIRED_MESSAGE
           : paths.some((path) => path === "resultType" || path === "sourcePort")
             ? "Selecciona un tipo de resultado para la salida."
             : "Selecciona un resultado compatible para la salida.";
@@ -376,7 +393,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     }
     if (nodeType === "condition") {
       const parsed = conditionNodeSchema.safeParse(body);
-      if (!parsed.success) return c.json({ message: "Ingresa una condición válida." }, 400);
+      if (!parsed.success) return c.json({ message: CONDITION_INVALID_MESSAGE }, 400);
       const { type: _type, ...condition } = parsed.data;
       const result = await workflows.addConditionNode({ ...workflowInput, ...condition, position });
       if (result.ok) return c.json({ draft: result.draft });
@@ -388,10 +405,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
           409,
         );
       if (result.reason === "incompatibleSource")
-        return c.json(
-          { message: "Esta condición no es compatible con la salida seleccionada." },
-          409,
-        );
+        return c.json({ message: CONDITION_INCOMPATIBLE_MESSAGE }, 409);
       if (result.reason === "workflowNotFound")
         return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
       return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
@@ -520,6 +534,46 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
         { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
         409,
       );
+    if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
+      return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+  });
+
+  // Edits a condition's or an output's configuration with the rules used to add it.
+  app.patch("/applications/:applicationId/workflows/:workflowId/nodes/:nodeId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+    const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const body: unknown = await c.req.json().catch(() => null);
+    const nodeType = (body as { type?: unknown } | null)?.type;
+    let changes: WorkflowNodeChanges;
+    if (nodeType === "condition") {
+      const parsed = conditionChangesSchema.safeParse(body);
+      if (!parsed.success) return c.json({ message: CONDITION_INVALID_MESSAGE }, 400);
+      changes = parsed.data;
+    } else if (nodeType === "output") {
+      const parsed = outputChangesSchema.safeParse(body);
+      if (!parsed.success) return c.json({ message: OUTPUT_NAME_REQUIRED_MESSAGE }, 400);
+      changes = parsed.data;
+    } else return c.json({ message: NODE_NOT_EDITABLE_MESSAGE }, 400);
+    const result = await workflows.updateNode({
+      applicationId: application.id,
+      workflowId: c.req.param("workflowId"),
+      nodeId: c.req.param("nodeId"),
+      userId: session.user.id,
+      changes,
+    });
+    if (result.ok) return c.json({ draft: result.draft });
+    if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
+    if (result.reason === "archived")
+      return c.json(
+        { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+        409,
+      );
+    if (result.reason === "incompatibleSource")
+      return c.json({ message: CONDITION_INCOMPATIBLE_MESSAGE }, 409);
+    if (result.reason === "notEditable") return c.json({ message: NODE_NOT_EDITABLE_MESSAGE }, 409);
     if (result.reason === "workflowNotFound" || result.reason === "nodeNotFound")
       return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
     return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);

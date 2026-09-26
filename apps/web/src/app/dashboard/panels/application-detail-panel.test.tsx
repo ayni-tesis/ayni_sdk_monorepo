@@ -2883,6 +2883,223 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-126: Editar un nodo desde el panel de detalles", () => {
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite" as const,
+      modelVersionId: "model-version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image" as const,
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one" as const,
+        },
+      },
+      outputs: { result: { type: "classification" as const, labels: ["roya", "sana"] } },
+    };
+    const conditionNode = {
+      id: "condition-node",
+      type: "condition" as const,
+      sourceNodeId: "model-node",
+      label: "roya",
+      operator: "gte" as const,
+      threshold: 0.5,
+      branches: { true: "Verdadero" as const, false: "Falso" as const },
+    };
+    const outputNode = {
+      id: "output-node",
+      type: "output" as const,
+      name: "Con roya",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "boolean" as const,
+    };
+    const draft = {
+      nodes: [modelNode, conditionNode, outputNode],
+      connections: [],
+      layout: {
+        "model-node": { x: 0, y: 0 },
+        "condition-node": { x: 400, y: 0 },
+        "output-node": { x: 800, y: 0 },
+      },
+    };
+    const workflowDetail = {
+      workflow: {
+        id: "workflow-1",
+        applicationId: "app-1",
+        name: "Diagnóstico de hoja de café",
+        status: "draft",
+        createdAt: "2026-09-21T15:00:00.000Z",
+        updatedAt: "2026-09-21T16:00:00.000Z",
+      },
+      draft,
+      versions: [],
+    };
+
+    async function openWorkflow(canManage = true) {
+      client.get.mockImplementation(async (url: string) =>
+        url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
+      );
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByTestId("workflow-node-condition-node");
+    }
+
+    function openDetails(nodeId: string) {
+      fireEvent.doubleClick(
+        document.querySelector(`.react-flow__node[data-id="${nodeId}"]`) as HTMLElement,
+      );
+      return screen.getByRole("complementary", { name: "Detalles del nodo" });
+    }
+
+    it("saves a condition's new threshold and shows it on the canvas", async () => {
+      await openWorkflow();
+      let resolvePatch: (value: unknown) => void = () => {};
+      client.patch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+      );
+
+      const panel = openDetails("condition-node");
+      fireEvent.change(within(panel).getByLabelText("Umbral"), { target: { value: "0.8" } });
+      fireEvent.click(within(panel).getByRole("button", { name: "Guardar cambios del nodo" }));
+
+      expect(client.patch).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1/nodes/condition-node",
+        { type: "condition", label: "roya", operator: "gte", threshold: 0.8 },
+      );
+      expect(within(panel).getByRole("button", { name: "Guardando cambios…" })).toBeTruthy();
+      await act(async () =>
+        resolvePatch({
+          data: {
+            draft: {
+              ...draft,
+              nodes: [modelNode, { ...conditionNode, threshold: 0.8 }, outputNode],
+            },
+          },
+        }),
+      );
+
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo actualizado.");
+      expect(
+        within(screen.getByTestId("workflow-node-condition-node")).getByText("roya ≥ 0,8"),
+      ).toBeTruthy();
+      expect(screen.getByRole("complementary", { name: "Detalles del nodo" })).toBeTruthy();
+    });
+
+    it.each([
+      [
+        {
+          status: 409,
+          data: { message: "Esta condición no es compatible con la salida seleccionada." },
+        },
+        "Esta condición no es compatible con la salida seleccionada.",
+      ],
+      [{ status: 500, data: {} }, "No pudimos guardar los cambios del nodo."],
+    ])("keeps the previous condition when saving fails (%j)", async (response, message) => {
+      await openWorkflow();
+      client.patch.mockRejectedValueOnce({ isAxiosError: true, response });
+
+      const panel = openDetails("condition-node");
+      fireEvent.change(within(panel).getByLabelText("Etiqueta"), { target: { value: "sana" } });
+      fireEvent.click(within(panel).getByRole("button", { name: "Guardar cambios del nodo" }));
+
+      await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(message));
+      expect(
+        within(screen.getByTestId("workflow-node-condition-node")).getByText("roya ≥ 0,5"),
+      ).toBeTruthy();
+      expect((within(panel).getByLabelText("Etiqueta") as HTMLSelectElement).value).toBe("sana");
+    });
+
+    it("renames an output from its details", async () => {
+      await openWorkflow();
+      client.patch.mockResolvedValueOnce({
+        data: {
+          draft: {
+            ...draft,
+            nodes: [modelNode, conditionNode, { ...outputNode, name: "Enferma" }],
+          },
+        },
+      });
+
+      const panel = openDetails("output-node");
+      fireEvent.change(within(panel).getByLabelText("Nombre de salida"), {
+        target: { value: "Enferma" },
+      });
+      fireEvent.click(within(panel).getByRole("button", { name: "Guardar cambios del nodo" }));
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId("workflow-node-output-node")).getByText("Enferma"),
+        ).toBeTruthy(),
+      );
+      expect(client.patch).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1/nodes/output-node",
+        { type: "output", name: "Enferma" },
+      );
+    });
+
+    it("shows a member the node's configuration read-only", async () => {
+      await openWorkflow(false);
+
+      const panel = openDetails("condition-node");
+
+      expect(within(panel).getByText("Solo lectura")).toBeTruthy();
+      expect(within(panel).getByLabelText("Umbral").hasAttribute("disabled")).toBe(true);
+      expect(within(panel).queryByRole("button", { name: "Guardar cambios del nodo" })).toBeNull();
+    });
+
+    it("asks before discarding unsaved changes, when closing or opening another node", async () => {
+      await openWorkflow();
+      const panel = openDetails("condition-node");
+      fireEvent.change(within(panel).getByLabelText("Umbral"), { target: { value: "0.9" } });
+
+      fireEvent.click(within(panel).getByRole("button", { name: "Cancelar" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "¿Descartar los cambios del nodo?",
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Seguir editando" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect((within(panel).getByLabelText("Umbral") as HTMLInputElement).value).toBe("0.9");
+
+      openDetails("output-node");
+      const switching = await screen.findByRole("dialog", {
+        name: "¿Descartar los cambios del nodo?",
+      });
+      fireEvent.click(within(switching).getByRole("button", { name: "Descartar cambios" }));
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole("complementary", { name: "Detalles del nodo" })).getByLabelText(
+            "Nombre de salida",
+          ),
+        ).toBeTruthy(),
+      );
+
+      // Without changes, the panel closes at once.
+      fireEvent.click(screen.getByRole("button", { name: "Cerrar detalles del nodo" }));
+      expect(screen.queryByRole("complementary", { name: "Detalles del nodo" })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(client.patch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {

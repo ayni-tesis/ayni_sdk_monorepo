@@ -20,6 +20,9 @@ import {
   type RenameWorkflowResult,
   renameWorkflow,
   type TransactionExecutor,
+  type UpdateWorkflowNodeInput,
+  type UpdateWorkflowNodeResult,
+  updateWorkflowNode,
   updateWorkflowNodePositions,
   type Workflow,
   type WorkflowDatabase,
@@ -146,6 +149,10 @@ function makeApp({
     ok: true,
     draft: { nodes: [] },
   }),
+  updateNode = async (): Promise<UpdateWorkflowNodeResult> => ({
+    ok: true,
+    draft: { nodes: [] },
+  }),
   publishVersion = async ({
     workflowId,
     version,
@@ -182,6 +189,7 @@ function makeApp({
   deleteNode?: (
     input: import("./workflow-store").DeleteWorkflowNodeInput,
   ) => Promise<DeleteWorkflowNodeResult>;
+  updateNode?: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
   publishVersion?: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
 } = {}) {
   const createMock = vi.fn(create);
@@ -205,6 +213,7 @@ function makeApp({
   }));
   const updateNodePositionsMock = vi.fn(updateNodePositions);
   const deleteNodeMock = vi.fn(deleteNode);
+  const updateNodeMock = vi.fn(updateNode);
   const publishVersionMock = vi.fn(publishVersion);
   return {
     create: createMock,
@@ -220,6 +229,7 @@ function makeApp({
     removeConnection: removeConnectionMock,
     updateNodePositions: updateNodePositionsMock,
     deleteNode: deleteNodeMock,
+    updateNode: updateNodeMock,
     publishVersion: publishVersionMock,
     request: createWorkflowsApp({
       getSession: async () => session,
@@ -241,6 +251,7 @@ function makeApp({
         removeConnection: removeConnectionMock,
         updateNodePositions: updateNodePositionsMock,
         deleteNode: deleteNodeMock,
+        updateNode: updateNodeMock,
         publishVersion: publishVersionMock,
       },
     }),
@@ -371,6 +382,120 @@ describe("DELETE /applications/:applicationId/workflows/:workflowId/nodes/:nodeI
       message: "No tienes permiso para editar este workflow.",
     });
     expect(deleteNode).toHaveBeenCalledTimes(1);
+  });
+});
+
+function patchWorkflowNode(
+  request: ReturnType<typeof makeApp>["request"],
+  body: unknown,
+  nodeId = "condition-1",
+) {
+  return request.request(`/applications/app-1/workflows/workflow-1/nodes/${nodeId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("PATCH /applications/:applicationId/workflows/:workflowId/nodes/:nodeId", () => {
+  const conditionChanges = { type: "condition", label: " roya ", operator: "lt", threshold: 0.3 };
+
+  it("saves a condition's configuration and returns the updated draft", async () => {
+    const draft = { nodes: [] };
+    const updateNode = vi.fn(async () => ({ ok: true as const, draft }));
+    const { request } = makeApp({ updateNode });
+    const response = await patchWorkflowNode(request, conditionChanges);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft });
+    expect(updateNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      nodeId: "condition-1",
+      userId: "admin",
+      changes: { type: "condition", label: "roya", operator: "lt", threshold: 0.3 },
+    });
+  });
+
+  it("saves an output's trimmed name", async () => {
+    const { request, updateNode } = makeApp();
+    const response = await patchWorkflowNode(
+      request,
+      { type: "output", name: " Hoja sana " },
+      "output-1",
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateNode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: "output-1",
+        changes: { type: "output", name: "Hoja sana" },
+      }),
+    );
+  });
+
+  it.each([
+    [{ ...conditionChanges, operator: "eval" }, "Ingresa una condición válida."],
+    [{ ...conditionChanges, threshold: 1.2 }, "Ingresa una condición válida."],
+    [{ ...conditionChanges, label: " " }, "Ingresa una condición válida."],
+    [{ type: "output", name: "  " }, "Ingresa un nombre para la salida."],
+    [{ type: "model.tflite", modelVersionId: "version-2" }, "Este nodo no se puede editar."],
+    [null, "Este nodo no se puede editar."],
+  ])("rejects %j with 400 without saving", async (body, message) => {
+    const { request, updateNode } = makeApp();
+    const response = await patchWorkflowNode(request, body);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ message });
+    expect(updateNode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a label the source model does not produce with the condition message", async () => {
+    const { request } = makeApp({
+      updateNode: async () => ({ ok: false, reason: "incompatibleSource" }),
+    });
+    const response = await patchWorkflowNode(request, conditionChanges);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Esta condición no es compatible con la salida seleccionada.",
+    });
+  });
+
+  it("keeps editing a node administrator-only", async () => {
+    const { request, updateNode } = makeApp({
+      membershipRole: "member",
+      updateNode: async () => ({ ok: false, reason: "forbidden" }),
+    });
+    const response = await patchWorkflowNode(request, conditionChanges);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para editar este workflow.",
+    });
+    expect(updateNode).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["archived", 409],
+    ["notEditable", 409],
+    ["nodeNotFound", 404],
+    ["workflowNotFound", 404],
+    ["notFound", 404],
+  ] as const)("maps %s to %i", async (reason, status) => {
+    const { request } = makeApp({ updateNode: async () => ({ ok: false, reason }) });
+    const response = await patchWorkflowNode(request, conditionChanges);
+
+    expect(response.status).toBe(status);
+  });
+
+  it("answers a non-member exactly like a missing application, without saving", async () => {
+    const { request, updateNode } = makeApp({ membershipRole: null });
+    const response = await patchWorkflowNode(request, conditionChanges);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ message: "No encontramos esta aplicación." });
+    expect(updateNode).not.toHaveBeenCalled();
   });
 });
 
@@ -2714,6 +2839,130 @@ describe("deleteWorkflowNode", () => {
           : [],
       );
     expect(danglingDerivedEdges).toEqual([]);
+  });
+});
+
+describe("updateWorkflowNode", () => {
+  const modelNode = {
+    id: "model",
+    type: "model.tflite" as const,
+    modelVersionId: "version-1",
+    modelName: "Classifier",
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 224,
+        height: 224,
+        channels: 3 as const,
+        normalization: "none" as const,
+      },
+    },
+    outputs: { result: { type: "classification" as const, labels: ["roya", "sana"] } },
+  };
+  const conditionNode = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "model",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.5,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const outputNode = {
+    id: "output",
+    type: "output" as const,
+    name: "Con roya",
+    sourceNodeId: "condition",
+    sourcePort: "true",
+    resultType: "boolean" as const,
+  };
+  const editableDraft = {
+    nodes: [
+      { id: "image", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      modelNode,
+      conditionNode,
+      outputNode,
+    ],
+    connections: [
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model", targetPort: "image" },
+    ],
+    layout: { model: { x: 320, y: 48 }, condition: { x: 640, y: 48 }, output: { x: 960, y: 48 } },
+  };
+  const nodeInput = { applicationId: "app-1", workflowId: "workflow-1", userId: "admin" };
+
+  it("saves a condition's new threshold, keeping its id, source, position, and connections", async () => {
+    const store = makeWorkflowPositionStoreDb(editableDraft);
+    const result = await updateWorkflowNode(store.db, {
+      ...nodeInput,
+      nodeId: "condition",
+      changes: { type: "condition", label: "sana", operator: "lt", threshold: 0.75 },
+    });
+
+    const expectedDraft = {
+      ...editableDraft,
+      nodes: [
+        editableDraft.nodes[0],
+        modelNode,
+        { ...conditionNode, label: "sana", operator: "lt", threshold: 0.75 },
+        outputNode,
+      ],
+    };
+    expect(result).toEqual({ ok: true, draft: expectedDraft });
+    expect(store.reload()).toEqual(expectedDraft);
+    expect(store.writes).toBe(1);
+    expect(store.lockedTables).toContain(workflow);
+  });
+
+  it("renames an output without changing its source", async () => {
+    const store = makeWorkflowPositionStoreDb(editableDraft);
+    const result = await updateWorkflowNode(store.db, {
+      ...nodeInput,
+      nodeId: "output",
+      changes: { type: "output", name: "Hoja enferma" },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(store.reload()).toEqual({
+      ...editableDraft,
+      nodes: [...editableDraft.nodes.slice(0, 3), { ...outputNode, name: "Hoja enferma" }],
+    });
+  });
+
+  it("rejects a label the source model does not produce and keeps the previous condition", async () => {
+    const store = makeWorkflowPositionStoreDb(editableDraft);
+    const result = await updateWorkflowNode(store.db, {
+      ...nodeInput,
+      nodeId: "condition",
+      changes: { type: "condition", label: "mancha", operator: "gte", threshold: 0.9 },
+    });
+
+    expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(editableDraft);
+  });
+
+  it.each([
+    ["a missing node", "missing", { type: "output" as const, name: "Salida" }, "nodeNotFound"],
+    [
+      "a model node",
+      "model",
+      { type: "condition" as const, label: "roya", operator: "gte" as const, threshold: 0.5 },
+      "notEditable",
+    ],
+    [
+      "a node of another type",
+      "condition",
+      { type: "output" as const, name: "Salida" },
+      "notEditable",
+    ],
+  ] as const)("rejects editing %s without writing", async (_case, nodeId, changes, reason) => {
+    const store = makeWorkflowPositionStoreDb(editableDraft);
+    const result = await updateWorkflowNode(store.db, { ...nodeInput, nodeId, changes });
+
+    expect(result).toEqual({ ok: false, reason });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(editableDraft);
   });
 });
 
