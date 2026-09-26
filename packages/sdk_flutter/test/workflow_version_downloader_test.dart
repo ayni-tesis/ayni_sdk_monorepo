@@ -99,6 +99,36 @@ void main() {
       expect(await staleDefinition.readAsString(), '{"previous":true}');
     },
   );
+
+  test('rejects insecure remote URLs before sending the credential', () async {
+    await expectLater(
+      WorkflowVersionDownloader().download(
+        serverUrl: Uri.parse('http://example.invalid'),
+        credential: 'ayni_sk_test',
+        workflowVersionId: 'workflow-version-1',
+        workflowName: 'Clasificar hoja',
+        temporaryDefinition: File('${temporaryDirectory.path}/workflow.part'),
+      ),
+      throwsArgumentError,
+    );
+    expect(requests, isEmpty);
+  });
+
+  test('allows HTTP loopback only when explicitly enabled', () async {
+    final result = await WorkflowVersionDownloader().download(
+      serverUrl: Uri.parse(
+        'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+      ),
+      credential: 'ayni_sk_test',
+      workflowVersionId: 'workflow-version-1',
+      workflowName: 'Clasificar hoja',
+      temporaryDefinition: File('${temporaryDirectory.path}/workflow.part'),
+      allowInsecureLoopback: true,
+    );
+
+    expect(result.status, WorkflowVersionDownloadStatus.downloaded);
+    expect(requests, hasLength(1));
+  });
 }
 
 class _RewritingHttpClient implements HttpClient {

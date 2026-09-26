@@ -189,30 +189,36 @@ const publishedDefinition: SdkWorkflowVersionDefinition = {
   connections: [],
 };
 
-function makeSdkDefinitionDatabase(
-  rows: Map<unknown, Record<string, unknown>[]>,
-) {
+function makeSdkDefinitionDatabase(rows: Map<unknown, Record<string, unknown>[]>) {
   const queriedTables: unknown[] = [];
-  return {
-    queriedTables,
-    db: {
-      select: () => ({
-        from: (table: unknown) => ({
-          where: () => ({
-            limit: async () => {
+  const lockedTables: unknown[] = [];
+  const executor = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => ({
+            for: async () => {
               queriedTables.push(table);
+              lockedTables.push(table);
               return rows.get(table) ?? [];
             },
           }),
         }),
       }),
+    }),
+  };
+  return {
+    queriedTables,
+    lockedTables,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
     },
   };
 }
 
 describe("getSdkWorkflowVersionDefinition", () => {
   it("returns only a published definition owned by an available workflow and application", async () => {
-    const { db } = makeSdkDefinitionDatabase(
+    const { db, lockedTables } = makeSdkDefinitionDatabase(
       new Map<unknown, Record<string, unknown>[]>([
         [workflowVersion, [{ workflowId: "workflow-1", definition: publishedDefinition }]],
         [workflow, [{ id: "workflow-1" }]],
@@ -224,6 +230,7 @@ describe("getSdkWorkflowVersionDefinition", () => {
       ok: true,
       definition: publishedDefinition,
     });
+    expect(lockedTables).toEqual([application, workflowVersion, workflow]);
   });
 
   it.each([

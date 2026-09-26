@@ -28,11 +28,20 @@ class WorkflowVersionDownloader {
     required String workflowVersionId,
     required String workflowName,
     required File temporaryDefinition,
+    bool allowInsecureLoopback = false,
     void Function(String message)? onProgress,
     HttpClient? httpClient,
   }) async {
+    if (!_canSendCredentialTo(serverUrl, allowInsecureLoopback)) {
+      throw ArgumentError.value(
+        serverUrl,
+        'serverUrl',
+        'La credencial solo se puede enviar por HTTPS o HTTP loopback autorizado.',
+      );
+    }
     final client = httpClient ?? HttpClient();
     final ownsClient = httpClient == null;
+    if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
     final attemptDefinition = File(
       '${temporaryDefinition.path}.${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}.part',
     );
@@ -105,4 +114,11 @@ class WorkflowVersionDownloader {
       if (ownsClient) client.close(force: true);
     }
   }
+
+  bool _canSendCredentialTo(Uri url, bool allowInsecureLoopback) =>
+      url.scheme == 'https' ||
+      (allowInsecureLoopback &&
+          url.scheme == 'http' &&
+          (url.host == 'localhost' ||
+              InternetAddress.tryParse(url.host)?.isLoopback == true));
 }

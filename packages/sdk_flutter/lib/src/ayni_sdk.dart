@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'workflow_version_downloader.dart';
+
 enum SyncStatus { updated, upToDate, offline, error }
 
 class AyniSdk {
@@ -12,14 +14,26 @@ class AyniSdk {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onBeforeInventoryPersist,
-  }) : _credential = credential;
+    this.onProgress,
+    this.onWorkflowDownload,
+    WorkflowVersionDownloader? workflowVersionDownloader,
+  }) : _credential = credential,
+       _workflowVersionDownloader =
+           workflowVersionDownloader ?? WorkflowVersionDownloader();
 
   final Uri serverUrl;
   final Directory storageDirectory;
   final Duration syncTimeout;
   final bool allowInsecureLoopback;
   final Future<void> Function()? onBeforeInventoryPersist;
+
+  /// Reports SDK activity, including `Descargando workflow <nombre>…`.
+  final void Function(String message)? onProgress;
+
+  /// Receives each downloaded or unavailable workflow definition during sync.
+  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
   final String _credential;
+  final WorkflowVersionDownloader _workflowVersionDownloader;
 
   Future<SyncStatus> sync() async {
     if (!_canSendCredentialTo(serverUrl)) return SyncStatus.error;
@@ -78,9 +92,76 @@ class AyniSdk {
       return SyncStatus.upToDate;
     }
 
+    if (!await _downloadNewWorkflowVersions(
+      decoded,
+      inventoryFile,
+      client,
+      deadline,
+    )) {
+      return SyncStatus.error;
+    }
+
     return await _persistInventory(inventoryFile, inventory, deadline)
         ? SyncStatus.updated
         : SyncStatus.error;
+  }
+
+  Future<bool> _downloadNewWorkflowVersions(
+    Object inventory,
+    File inventoryFile,
+    HttpClient client,
+    _SyncDeadline deadline,
+  ) async {
+    final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
+    for (final workflow in _workflows(inventory)) {
+      if (deadline.expired) return false;
+      if (localVersionIds.contains(workflow.versionId)) continue;
+
+      final temporaryDefinition = File(
+        '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
+        '${Platform.pathSeparator}${base64Url.encode(utf8.encode(workflow.versionId))}.json',
+      );
+      final result = await _workflowVersionDownloader.download(
+        serverUrl: serverUrl,
+        credential: _credential,
+        workflowVersionId: workflow.versionId,
+        workflowName: workflow.name,
+        temporaryDefinition: temporaryDefinition,
+        allowInsecureLoopback: allowInsecureLoopback,
+        onProgress: onProgress,
+        httpClient: client,
+      );
+      try {
+        onWorkflowDownload?.call(result);
+      } catch (_) {
+        return false;
+      }
+      if (result.status != WorkflowVersionDownloadStatus.downloaded)
+        return false;
+    }
+    return !deadline.expired;
+  }
+
+  Future<Set<String>> _localWorkflowVersionIds(File inventoryFile) async {
+    if (!await inventoryFile.exists()) return {};
+    try {
+      return _workflows(jsonDecode(await inventoryFile.readAsString()))
+          .map((workflow) => workflow.versionId)
+          .toSet();
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Iterable<_WorkflowManifestEntry> _workflows(Object inventory) {
+    if (inventory is! Map || inventory['workflows'] is! List) return const [];
+    return (inventory['workflows'] as List).whereType<Map>().expand((workflow) {
+      final versionId = workflow['workflowVersionId'];
+      final name = workflow['name'];
+      return versionId is String && name is String
+          ? [_WorkflowManifestEntry(versionId, name)]
+          : const <_WorkflowManifestEntry>[];
+    });
   }
 
   bool _canSendCredentialTo(Uri url) =>
@@ -138,4 +219,11 @@ class _SyncDeadline {
   var expired = false;
 
   void expire() => expired = true;
+}
+
+class _WorkflowManifestEntry {
+  const _WorkflowManifestEntry(this.versionId, this.name);
+
+  final String versionId;
+  final String name;
 }

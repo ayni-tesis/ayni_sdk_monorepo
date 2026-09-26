@@ -99,10 +99,16 @@ export type GetSdkWorkflowVersionDefinitionResult =
   | { ok: false; reason: "notFound" };
 
 type SdkWorkflowVersionQueryDatabase = {
+  transaction: <T>(callback: (tx: unknown) => Promise<T>) => Promise<T>;
+};
+
+type SdkWorkflowVersionQueryExecutor = {
   select(fields: Record<string, unknown>): {
     from(table: unknown): {
       where(condition: unknown): {
-        limit(count: number): Promise<Record<string, unknown>[]>;
+        limit(count: number): {
+          for(strength: "update"): Promise<Record<string, unknown>[]>;
+        };
       };
     };
   };
@@ -119,33 +125,41 @@ export async function getSdkWorkflowVersionDefinition(
   applicationId: string,
   workflowVersionId: string,
 ): Promise<GetSdkWorkflowVersionDefinitionResult> {
-  const versionRows = (await database
-    .select({ workflowId: workflowVersion.workflowId, definition: workflowVersion.definition })
-    .from(workflowVersion)
-    .where(eq(workflowVersion.id, workflowVersionId))
-    .limit(1)) as { workflowId: string; definition: SdkWorkflowVersionDefinition }[];
-  const found = versionRows[0];
-  if (!found) return { ok: false, reason: "notFound" };
+  return database.transaction(async (transaction) => {
+    const tx = transaction as SdkWorkflowVersionQueryExecutor;
+    // archiveWorkflow takes this application lock before it writes the workflow,
+    // so this availability check cannot race its status transition.
+    const applicationRows = (await tx
+      .select({ id: application.id })
+      .from(application)
+      .where(and(eq(application.id, applicationId), eq(application.status, "active")))
+      .limit(1)
+      .for("update")) as { id: string }[];
+    if (!applicationRows[0]) return { ok: false, reason: "notFound" } as const;
 
-  const workflowRows = await database
-    .select({ id: workflow.id })
-    .from(workflow)
-    .where(
-      and(
-        eq(workflow.id, found.workflowId),
-        eq(workflow.applicationId, applicationId),
-        ne(workflow.status, "archived"),
-      ),
-    )
-    .limit(1);
-  if (!workflowRows[0]) return { ok: false, reason: "notFound" };
+    const versionRows = (await tx
+      .select({ workflowId: workflowVersion.workflowId, definition: workflowVersion.definition })
+      .from(workflowVersion)
+      .where(eq(workflowVersion.id, workflowVersionId))
+      .limit(1)
+      .for("update")) as { workflowId: string; definition: SdkWorkflowVersionDefinition }[];
+    const found = versionRows[0];
+    if (!found) return { ok: false, reason: "notFound" } as const;
 
-  const applicationRows = (await database
-    .select({ id: application.id })
-    .from(application)
-    .where(and(eq(application.id, applicationId), eq(application.status, "active")))
-    .limit(1)) as { id: string }[];
-  if (!applicationRows[0]) return { ok: false, reason: "notFound" };
+    const workflowRows = await tx
+      .select({ id: workflow.id })
+      .from(workflow)
+      .where(
+        and(
+          eq(workflow.id, found.workflowId),
+          eq(workflow.applicationId, applicationId),
+          ne(workflow.status, "archived"),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!workflowRows[0]) return { ok: false, reason: "notFound" } as const;
 
-  return { ok: true, definition: found.definition };
+    return { ok: true, definition: found.definition } as const;
+  });
 }
