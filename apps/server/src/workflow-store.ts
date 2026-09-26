@@ -330,6 +330,106 @@ export async function deleteWorkflowNode(
     : { ok: false, reason: result.value.kind };
 }
 
+/** The editable configuration of a condition or an output; their source is not part of it. */
+export type WorkflowNodeChanges =
+  | {
+      type: "condition";
+      label: string;
+      operator: "gte" | "gt" | "lte" | "lt";
+      threshold: number;
+    }
+  | { type: "output"; name: string };
+export type UpdateWorkflowNodeInput = {
+  applicationId: string;
+  workflowId: string;
+  nodeId: string;
+  userId: string;
+  changes: WorkflowNodeChanges;
+};
+export type UpdateWorkflowNodeResult =
+  | { ok: true; draft: WorkflowDraft }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "notFound"
+        | "archived"
+        | "workflowNotFound"
+        | "nodeNotFound"
+        | "notEditable"
+        | "incompatibleSource";
+    };
+
+/**
+ * Changes a condition's or an output's configuration in the draft, keeping its
+ * id, source, position, and connections. A condition is checked against its
+ * source with the same rule as when it is added.
+ */
+export async function updateWorkflowNode(
+  database: WorkflowDatabase,
+  { applicationId, workflowId, nodeId, userId, changes }: UpdateWorkflowNodeInput,
+): Promise<UpdateWorkflowNodeResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId, userId },
+    async (tx, application) => {
+      const reader = tx as unknown as {
+        select: (fields: Record<string, unknown>) => {
+          from: (table: unknown) => {
+            where: (condition: unknown) => {
+              limit: (count: number) => {
+                for: (lock: "update") => Promise<{ draft: WorkflowDraft }[]>;
+              };
+            };
+          };
+        };
+      };
+      const rows = await reader
+        .select({ draft: workflow.draft })
+        .from(workflow)
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .limit(1)
+        .for("update");
+      if (!rows[0]) return { kind: "workflowNotFound" as const };
+      const draft = rows[0].draft ?? { nodes: [] };
+      const node = draft.nodes.find((item) => item.id === nodeId);
+      if (!node) return { kind: "nodeNotFound" as const };
+      let updatedNode: WorkflowNode;
+      if (node.type === "condition" && changes.type === "condition") {
+        const source = draft.nodes.find((item) => item.id === node.sourceNodeId);
+        if (!isConditionSourceCompatible(source, changes.label))
+          return { kind: "incompatibleSource" as const };
+        updatedNode = {
+          ...node,
+          label: changes.label,
+          operator: changes.operator,
+          threshold: changes.threshold,
+        };
+      } else if (node.type === "output" && changes.type === "output") {
+        updatedNode = { ...node, name: changes.name };
+      } else return { kind: "notEditable" as const };
+
+      const updatedDraft: WorkflowDraft = {
+        ...draft,
+        nodes: draft.nodes.map((item) => (item.id === nodeId ? updatedNode : item)),
+      };
+      const updater = tx as WorkflowUpdateExecutor;
+      const updated = (await updater
+        .update(workflow)
+        .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
+        .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+        .returning()) as WorkflowRow[];
+      return updated[0]
+        ? { kind: "updated" as const, draft: updated[0].draft ?? updatedDraft }
+        : { kind: "workflowNotFound" as const };
+    },
+  );
+  if (!result.ok) return result;
+  return result.value.kind === "updated"
+    ? { ok: true, draft: result.value.draft }
+    : { ok: false, reason: result.value.kind };
+}
+
 /** Saves every moved node's position in one write, or none if any node is missing. */
 export async function updateWorkflowNodePositions(
   database: WorkflowDatabase,

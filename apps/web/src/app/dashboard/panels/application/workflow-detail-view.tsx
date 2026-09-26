@@ -55,6 +55,7 @@ import {
   WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
   workflowPortCompatibility,
 } from "./workflow-canvas-ports";
+import { type WorkflowNodeChanges, WorkflowNodeDetailsPanel } from "./workflow-node-details-panel";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
 export type WorkflowVersionItem = {
@@ -356,6 +357,18 @@ export function WorkflowDetailView({
   const selectedNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] : null;
   const [deleteNodeDialogOpen, setDeleteNodeDialogOpen] = useState(false);
   const [deletingNode, setDeletingNode] = useState(false);
+  // The node whose Detalles del nodo panel is open.
+  const [detailsNodeId, setDetailsNodeId] = useState<string | null>(null);
+  const [savingNodeDetails, setSavingNodeDetails] = useState(false);
+  // Where to go once unsaved node changes are discarded: another node, or `null` to close.
+  const [discardNodeChanges, setDiscardNodeChanges] = useState<{ nodeId: string | null } | null>(
+    null,
+  );
+  // Whether the open panel holds unsaved changes; read when a node or close is requested.
+  const nodeDetailsDirtyRef = useRef(false);
+  const reportNodeDetailsDirty = useCallback((dirty: boolean) => {
+    nodeDetailsDirtyRef.current = dirty;
+  }, []);
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameName, setRenameName] = useState("");
@@ -740,6 +753,8 @@ export function WorkflowDetailView({
   }
 
   const { workflow, draft, versions } = detail;
+  // The panel closes by itself once its node leaves the draft.
+  const detailsNode = draft.nodes.find((node) => node.id === detailsNodeId);
   const validationResult = validation?.draft === draft ? validation.result : null;
   // Errors that belong to a node also show on it, with the panel's messages.
   const nodeErrors: Record<string, string[]> = {};
@@ -1009,6 +1024,38 @@ export function WorkflowDetailView({
     }
   }
 
+  // Leaving a panel with unsaved changes, for another node or none, asks first.
+  function openNodeDetails(nodeId: string | null) {
+    if (nodeId === detailsNodeId) return;
+    if (detailsNode && nodeDetailsDirtyRef.current) setDiscardNodeChanges({ nodeId });
+    else setDetailsNodeId(nodeId);
+  }
+
+  function confirmDiscardNodeChanges() {
+    if (!discardNodeChanges) return;
+    nodeDetailsDirtyRef.current = false;
+    setDetailsNodeId(discardNodeChanges.nodeId);
+    setDiscardNodeChanges(null);
+  }
+
+  // The canvas shows the node as saved: nothing changes there until the server accepts it.
+  async function saveNodeDetails(nodeId: string, changes: WorkflowNodeChanges) {
+    if (savingNodeDetails) return;
+    setSavingNodeDetails(true);
+    try {
+      const { data } = await httpClient.patch<{ draft: WorkflowDetailItem["draft"] }>(
+        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}`,
+        changes,
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      toast.success("Nodo actualizado.");
+    } catch (saveError) {
+      toast.error(errorMessage(saveError, "No pudimos guardar los cambios del nodo."));
+    } finally {
+      setSavingNodeDetails(false);
+    }
+  }
+
   async function deleteSelectedNode() {
     if (!selectedNodeId || deletingNode) return;
     setDeletingNode(true);
@@ -1205,6 +1252,21 @@ export function WorkflowDetailView({
             onArrangeNodes={arrangeNodes}
             onDropPalette={dropPaletteNode}
             onRemoveConnection={(connection) => void removeConnection(connection)}
+            onOpenNodeDetails={openNodeDetails}
+            details={
+              detailsNode ? (
+                <WorkflowNodeDetailsPanel
+                  key={detailsNode.id}
+                  node={detailsNode}
+                  draft={draft}
+                  canManage={canManage && application.status === "active"}
+                  saving={savingNodeDetails}
+                  onSave={(changes) => void saveNodeDetails(detailsNode.id, changes)}
+                  onClose={() => openNodeDetails(null)}
+                  onDirtyChange={reportNodeDetailsDirty}
+                />
+              ) : null
+            }
             palette={
               canManage && application.status === "active" ? (
                 <aside
@@ -1448,6 +1510,27 @@ export function WorkflowDetailView({
               ) : null
             }
           />
+          <Dialog
+            open={discardNodeChanges !== null}
+            onOpenChange={(open) => {
+              if (!open) setDiscardNodeChanges(null);
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>¿Descartar los cambios del nodo?</DialogTitle>
+                <DialogDescription>Los cambios sin guardar se perderán.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setDiscardNodeChanges(null)}>
+                  Seguir editando
+                </Button>
+                <Button type="button" variant="destructive" onClick={confirmDiscardNodeChanges}>
+                  Descartar cambios
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={deleteNodeDialogOpen} onOpenChange={setDeleteNodeDialogOpen}>
             <DialogContent>
               <DialogHeader>

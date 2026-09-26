@@ -141,6 +141,7 @@ type WorkflowFlowNodeData = {
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
   /** Selects only this node, or adds or removes it when `toggle` is set. */
   onSelectNode: (nodeId: string, toggle: boolean) => void;
+  onOpenDetails: (nodeId: string) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
 };
 type WorkflowFlowNode = Node<WorkflowFlowNodeData, "workflow">;
@@ -297,8 +298,8 @@ const WORKFLOW_NODE_TYPES: Record<
   condition: { label: "Condición", Icon: IconGitBranch },
   output: { label: "Salida", Icon: IconFlag },
 };
-const CONDITION_OPERATOR_SYMBOLS = { gte: "≥", gt: ">", lte: "≤", lt: "<" } as const;
-const RESULT_TYPE_LABELS = {
+export const CONDITION_OPERATOR_SYMBOLS = { gte: "≥", gt: ">", lte: "≤", lt: "<" } as const;
+export const WORKFLOW_RESULT_TYPE_LABELS = {
   classification: "Clasificación",
   detection: "Detección",
   boolean: "Booleano",
@@ -496,7 +497,7 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
           {node.name}
         </p>
         <p className="text-muted-foreground text-xs">
-          Tipo de resultado: {RESULT_TYPE_LABELS[node.resultType]}
+          Tipo de resultado: {WORKFLOW_RESULT_TYPE_LABELS[node.resultType]}
         </p>
       </>
     ) : null;
@@ -521,6 +522,14 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
             // The card would otherwise select the node a second time.
             event.stopPropagation();
             data.onSelectNode(node.id, event.ctrlKey || event.metaKey);
+          }}
+          onKeyDown={(event) => {
+            // Enter selects the node first, like a click; once it is selected,
+            // Enter opens its details.
+            if (event.key !== "Enter" || !selected) return;
+            event.preventDefault();
+            event.stopPropagation();
+            data.onOpenDetails(node.id);
           }}
         >
           <TypeIcon aria-hidden className="size-4 shrink-0" />
@@ -699,6 +708,10 @@ type WorkflowCanvasProps = {
   /** True while Ordenar nodos saves the new positions. */
   arrangingNodes: boolean;
   palette: ReactNode;
+  /** The Detalles del nodo panel, shown right of the canvas. */
+  details?: ReactNode;
+  /** Opens Detalles del nodo, on a double click or Enter with one node selected. */
+  onOpenNodeDetails?: (nodeId: string) => void;
   /** Picks the output to connect from; `null` when Escape cancels it. */
   onSelectSource: (source: ConnectionSource) => void;
   /** The selected nodes, in draft order. */
@@ -726,6 +739,8 @@ function WorkflowCanvasFlow({
   savingPositions,
   arrangingNodes,
   palette,
+  details,
+  onOpenNodeDetails,
   onSelectSource,
   selectedNodeIds,
   onSelectNodes,
@@ -803,6 +818,10 @@ function WorkflowCanvasFlow({
     changeSelection(draftOrder(selection));
   }
 
+  function openNodeDetails(nodeId: string) {
+    onOpenNodeDetails?.(nodeId);
+  }
+
   /** Saves the nodes whose position changed, all in one operation. */
   function saveMovedNodes(moved: { id: string; position: XYPosition }[]) {
     const positions: WorkflowCanvasPositions = {};
@@ -874,6 +893,7 @@ function WorkflowCanvasFlow({
       pendingSource: canManage ? (draggedSource ?? connectionSource) : null,
       onSelectSource,
       onSelectNode: selectNode,
+      onOpenDetails: openNodeDetails,
       onConnect,
     },
   }));
@@ -966,7 +986,15 @@ function WorkflowCanvasFlow({
         </p>
       )}
       <div
-        className={`grid gap-4 ${palette ? "lg:grid-cols-[17rem_minmax(0,1fr)]" : "grid-cols-1"}`}
+        className={`grid gap-4 ${
+          palette && details
+            ? "lg:grid-cols-[17rem_minmax(0,1fr)_20rem]"
+            : palette
+              ? "lg:grid-cols-[17rem_minmax(0,1fr)]"
+              : details
+                ? "lg:grid-cols-[minmax(0,1fr)_20rem]"
+                : "grid-cols-1"
+        }`}
         data-testid="workflow-draft-editor"
       >
         {palette}
@@ -984,6 +1012,16 @@ function WorkflowCanvasFlow({
               if (event.shiftKey && event.altKey && event.code === "KeyT") {
                 event.preventDefault();
                 if (canManageDraft) void arrangeNodes();
+                return;
+              }
+              // Enter on the canvas itself opens the details of the one selected node.
+              if (
+                event.key === "Enter" &&
+                event.target === event.currentTarget &&
+                selectedNodeIds.length === 1
+              ) {
+                event.preventDefault();
+                openNodeDetails(selectedNodeIds[0]);
                 return;
               }
               // Supr deletes the selected connection, without a dialog.
@@ -1035,6 +1073,8 @@ function WorkflowCanvasFlow({
               edgeTypes={edgeTypes}
               onNodesChange={handleNodesChange}
               onEdgesChange={handleEdgesChange}
+              // Members may open a node's details too, read-only.
+              onNodeDoubleClick={(_, node) => openNodeDetails(node.id)}
               onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
               onEdgeMouseLeave={(_, edge) =>
                 setHoveredEdgeId((current) => (current === edge.id ? null : current))
@@ -1149,6 +1189,7 @@ function WorkflowCanvasFlow({
             </Button>
           )}
         </div>
+        {details}
       </div>
     </>
   );
