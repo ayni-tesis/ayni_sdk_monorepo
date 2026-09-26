@@ -52,6 +52,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { arrangeWorkflowNodes } from "./workflow-canvas-layout";
 import {
+  type WorkflowCanvasAddNodeControl,
   WorkflowCanvasControls,
   type WorkflowCanvasEditControls,
   WorkflowCanvasMinimap,
@@ -120,6 +121,10 @@ export type WorkflowCanvasDraft = {
   layout?: Record<string, WorkflowCanvasPosition>;
 };
 export type WorkflowCanvasNodeType = WorkflowCanvasNode["type"];
+/** A node that needs no settings, so it can be dragged from Agregar nodo onto the canvas. */
+export type WorkflowPaletteNode =
+  | { type: "input.image" }
+  | { type: "model.tflite"; modelVersionId: string };
 
 export type WorkflowCanvasPositions = Record<string, WorkflowCanvasPosition>;
 
@@ -192,12 +197,6 @@ function savablePosition(position: XYPosition): WorkflowCanvasPosition {
   };
 }
 const PALETTE_MIME = "application/x-ayni-workflow-node";
-const PALETTE_NODE_TYPES: readonly string[] = [
-  "input.image",
-  "model.tflite",
-  "condition",
-  "output",
-];
 export const WORKFLOW_CYCLE_MESSAGE =
   "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.";
 export const WORKFLOW_REQUIRED_CONNECTION_MESSAGE =
@@ -215,23 +214,6 @@ export function workflowNodePosition(
   index: number,
 ): WorkflowCanvasPosition {
   return draft.layout?.[node.id] ?? defaultWorkflowCanvasPosition(index);
-}
-
-export function nextWorkflowCanvasPosition(draft: WorkflowCanvasDraft): WorkflowCanvasPosition {
-  const existing = draft.nodes.map((node, index) => workflowNodePosition(draft, node, index));
-  for (let index = 0; ; index += 1) {
-    const candidate = defaultWorkflowCanvasPosition(index);
-    if (
-      existing.every(
-        (position) =>
-          position.x + NODE_WIDTH + 24 <= candidate.x ||
-          candidate.x + NODE_WIDTH + 24 <= position.x ||
-          position.y + NODE_HEIGHT + 24 <= candidate.y ||
-          candidate.y + NODE_HEIGHT + 24 <= position.y,
-      )
-    )
-      return candidate;
-  }
 }
 
 /** The card's size on screen, or its initial size until React Flow measures it. */
@@ -356,33 +338,23 @@ export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
   ];
 }
 
-export function WorkflowPaletteButton({
-  nodeType,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  nodeType: WorkflowCanvasNodeType;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      disabled={disabled}
-      draggable={!disabled}
-      className="w-full cursor-grab justify-start active:cursor-grabbing"
-      onDragStart={(event) => {
-        event.dataTransfer.setData(PALETTE_MIME, nodeType);
-        event.dataTransfer.effectAllowed = "copy";
-      }}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
-  );
+/** Starts dragging a node from Agregar nodo; the canvas adds it where it is dropped. */
+export function setWorkflowPaletteDragData(dataTransfer: DataTransfer, node: WorkflowPaletteNode) {
+  dataTransfer.setData(PALETTE_MIME, JSON.stringify(node));
+  dataTransfer.effectAllowed = "copy";
+}
+
+/** The dragged node, or `null` for anything else dropped on the canvas. */
+function readPaletteNode(event: DragEvent<HTMLElement>): WorkflowPaletteNode | null {
+  try {
+    const node = JSON.parse(event.dataTransfer.getData(PALETTE_MIME));
+    if (node?.type === "input.image") return { type: "input.image" };
+    if (node?.type === "model.tflite" && typeof node.modelVersionId === "string")
+      return { type: "model.tflite", modelVersionId: node.modelVersionId };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 const nodeTypes = { workflow: WorkflowNodeCard };
@@ -696,6 +668,21 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
   );
 }
 
+/** Where the Agregar nodo panel places a node chosen without dragging it. */
+export type WorkflowCanvasPlacement = {
+  /** The position that centers a new card in the visible area of the canvas. */
+  visibleCenter: () => WorkflowCanvasPosition;
+};
+
+/** The Agregar nodo panel; only administrators who can edit the draft get it. */
+export type WorkflowCanvasAddNode = {
+  open: boolean;
+  /** The bar's Agregar nodo button, or Tab while the canvas has the focus. */
+  onToggle: () => void;
+  /** The panel, shown left of the canvas while it is open. */
+  panel: (placement: WorkflowCanvasPlacement) => ReactNode;
+};
+
 type WorkflowCanvasProps = {
   draft: WorkflowCanvasDraft;
   canManage: boolean;
@@ -707,7 +694,7 @@ type WorkflowCanvasProps = {
   savingPositions: boolean;
   /** True while Ordenar nodos saves the new positions. */
   arrangingNodes: boolean;
-  palette: ReactNode;
+  addNode?: WorkflowCanvasAddNode;
   /** The Detalles del nodo panel, shown right of the canvas. */
   details?: ReactNode;
   /** Opens Detalles del nodo, on a double click or Enter with one node selected. */
@@ -725,7 +712,8 @@ type WorkflowCanvasProps = {
   onMoveNodes: (positions: WorkflowCanvasPositions) => void;
   /** Saves the arranged position of every node in one operation; resolves whether it was saved. */
   onArrangeNodes: (positions: WorkflowCanvasPositions) => Promise<boolean>;
-  onDropPalette: (nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) => void;
+  /** Adds a node dragged from Agregar nodo where it was dropped. */
+  onDropPalette: (node: WorkflowPaletteNode, position: WorkflowCanvasPosition) => void;
   onRemoveConnection: (connection: WorkflowCanvasConnection) => void;
 };
 
@@ -738,7 +726,7 @@ function WorkflowCanvasFlow({
   nodeErrors,
   savingPositions,
   arrangingNodes,
-  palette,
+  addNode,
   details,
   onOpenNodeDetails,
   onSelectSource,
@@ -778,6 +766,32 @@ function WorkflowCanvasFlow({
   // React Flow may report several selection changes before the next render.
   const selectionRef = useRef(selectedNodeIds);
   selectionRef.current = selectedNodeIds;
+  const canvasRef = useRef<HTMLElement>(null);
+
+  // Closing Agregar nodo unmounts the control that had the focus, so the canvas takes it back.
+  const addNodeOpen = addNode?.open ?? false;
+  const addNodeWasOpenRef = useRef(addNodeOpen);
+  useEffect(() => {
+    const closed = addNodeWasOpenRef.current && !addNodeOpen;
+    addNodeWasOpenRef.current = addNodeOpen;
+    if (closed && (!document.activeElement || document.activeElement === document.body))
+      canvasRef.current?.focus();
+  }, [addNodeOpen]);
+
+  const placement: WorkflowCanvasPlacement = {
+    visibleCenter() {
+      const {
+        width,
+        height,
+        transform: [x, y, zoom],
+      } = store.getState();
+      return savablePosition({
+        x: (width / 2 - x) / zoom - NODE_WIDTH / 2,
+        y: (height / 2 - y) / zoom - NODE_HEIGHT / 2,
+      });
+    },
+  };
+  const addNodePanel = addNode?.open ? addNode.panel(placement) : null;
 
   // Escape cancels the connection being dragged, or else the output picked with Salida.
   const connecting = draggedSource !== null || connectionSource !== null;
@@ -973,11 +987,6 @@ function WorkflowCanvasFlow({
     saveMovedNodes(moved);
   }
 
-  function readPaletteNodeType(event: DragEvent<HTMLElement>) {
-    const nodeType = event.dataTransfer.getData(PALETTE_MIME);
-    return PALETTE_NODE_TYPES.includes(nodeType) ? (nodeType as WorkflowCanvasNodeType) : null;
-  }
-
   return (
     <>
       {cycleNodeIds.length > 0 && (
@@ -987,9 +996,9 @@ function WorkflowCanvasFlow({
       )}
       <div
         className={`grid gap-4 ${
-          palette && details
+          addNodePanel && details
             ? "lg:grid-cols-[17rem_minmax(0,1fr)_20rem]"
-            : palette
+            : addNodePanel
               ? "lg:grid-cols-[17rem_minmax(0,1fr)]"
               : details
                 ? "lg:grid-cols-[minmax(0,1fr)_20rem]"
@@ -997,10 +1006,11 @@ function WorkflowCanvasFlow({
         }`}
         data-testid="workflow-draft-editor"
       >
-        {palette}
+        {addNodePanel}
         <div className="min-w-0 space-y-2">
           {/* Focusable so that Shift + arrows reach it after a click on a node. */}
           <section
+            ref={canvasRef}
             data-testid="workflow-canvas"
             aria-label="Lienzo del workflow"
             // biome-ignore lint/a11y/noNoninteractiveTabindex: the canvas takes keyboard shortcuts.
@@ -1012,6 +1022,22 @@ function WorkflowCanvasFlow({
               if (event.shiftKey && event.altKey && event.code === "KeyT") {
                 event.preventDefault();
                 if (canManageDraft) void arrangeNodes();
+                return;
+              }
+              // Tab on the canvas itself opens Agregar nodo; once it is open, and
+              // from the nodes' own buttons, Tab moves the focus as usual.
+              if (
+                event.key === "Tab" &&
+                !event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                event.target === event.currentTarget &&
+                addNode &&
+                !addNode.open
+              ) {
+                event.preventDefault();
+                addNode.onToggle();
                 return;
               }
               // Enter on the canvas itself opens the details of the one selected node.
@@ -1052,8 +1078,8 @@ function WorkflowCanvasFlow({
             }}
             onDrop={(event) => {
               setDropActive(false);
-              const nodeType = readPaletteNodeType(event);
-              if (!canManage || !nodeType) return;
+              const paletteNode = readPaletteNode(event);
+              if (!canManage || !paletteNode) return;
               event.preventDefault();
               // The grid aligns moved nodes; a dropped node keeps its place under the pointer.
               const position = screenToFlowPosition(
@@ -1061,7 +1087,7 @@ function WorkflowCanvasFlow({
                 { snapToGrid: false },
               );
               onDropPalette(
-                nodeType,
+                paletteNode,
                 savablePosition({ x: position.x - NODE_WIDTH / 2, y: position.y - 24 }),
               );
             }}
@@ -1150,6 +1176,7 @@ function WorkflowCanvasFlow({
                 measured={measured}
                 savingPositions={savingPositions}
                 arrangingNodes={arrangingNodes}
+                addNode={addNode ? { open: addNode.open, onToggle: addNode.onToggle } : undefined}
                 editing={
                   canManageDraft
                     ? {
@@ -1200,12 +1227,14 @@ function CanvasNavigation({
   measured,
   savingPositions,
   arrangingNodes,
+  addNode,
   editing,
 }: {
   draft: WorkflowCanvasDraft;
   measured: MeasuredSizes;
   savingPositions: boolean;
   arrangingNodes: boolean;
+  addNode?: WorkflowCanvasAddNodeControl;
   editing?: WorkflowCanvasEditControls;
 }) {
   const { setViewport, zoomTo, setCenter } = useReactFlow();
@@ -1237,6 +1266,7 @@ function CanvasNavigation({
           onReset={() => void zoomTo(1)}
           savingPositions={savingPositions}
           arrangingNodes={arrangingNodes}
+          addNode={addNode}
           editing={editing}
         />
       </Panel>

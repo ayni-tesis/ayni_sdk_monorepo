@@ -57,7 +57,6 @@ function renderCanvas({
       cycleNodeIds={[]}
       savingPositions={false}
       arrangingNodes={arrangingNodes}
-      palette={null}
       selectedNodeIds={[]}
       onSelectSource={vi.fn()}
       onSelectNodes={vi.fn()}

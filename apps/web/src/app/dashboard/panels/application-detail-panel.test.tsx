@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatLongDateEs } from "@/lib/format-date";
 import type { Application } from "../types";
-import { stubWorkflowCanvasLayout } from "./application/workflow-canvas-test-utils";
+import { canvasViewport, stubWorkflowCanvasLayout } from "./application/workflow-canvas-test-utils";
 import { findWorkflowCycleNodeIds } from "./application/workflow-detail-view";
 import { ApplicationDetailPanel } from "./application-detail-panel";
 
@@ -1351,21 +1360,6 @@ describe("ApplicationDetailPanel", () => {
       );
     });
 
-    it("explains that a classification model must be added before configuring a condition", async () => {
-      client.get.mockImplementation(async () => ({ data: workflowDetail }));
-
-      render(workflowDetailPanel({ canManage: true }));
-
-      expect(
-        await screen.findByText(
-          "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
-        ),
-      ).toBeTruthy();
-      expect((screen.getByLabelText("Resultado de origen") as HTMLSelectElement).disabled).toBe(
-        true,
-      );
-    });
-
     it("keeps contracted versions when another model's versions fail to load", async () => {
       client.get.mockImplementation(async (url: string) => {
         if (url === "/applications/app-1/workflows/workflow-1") return { data: workflowDetail };
@@ -1403,8 +1397,15 @@ describe("ApplicationDetailPanel", () => {
       });
 
       render(workflowDetailPanel({ canManage: true }));
+      fireEvent.click(await screen.findByRole("button", { name: "Agregar nodo" }));
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
 
-      expect(await screen.findByRole("option", { name: "Clasificador · 1.0.0" })).toBeTruthy();
+      expect(
+        await within(panel).findByRole("button", { name: "Clasificador · 1.0.0" }),
+      ).toBeTruthy();
+      expect(
+        within(panel).getByText("No pudimos cargar las versiones de todos los modelos."),
+      ).toBeTruthy();
     });
 
     it("shows the route Workflows / <nombre> and returns to the list from Workflows", async () => {
@@ -1508,21 +1509,21 @@ describe("ApplicationDetailPanel", () => {
       });
 
       render(workflowDetailPanel({ canManage: true }));
+      fireEvent.click(await screen.findByRole("button", { name: "Agregar nodo" }));
 
-      const button = (await screen.findByRole("button", {
-        name: "Entrada de imagen",
-      })) as HTMLButtonElement;
-      fireEvent.click(button);
-      expect(button.disabled).toBe(true);
+      const imageInput = () => screen.getByRole("button", { name: "Entrada de imagen" });
+      fireEvent.click(imageInput());
+      expect(imageInput().getAttribute("aria-disabled")).toBe("true");
+      // A second click or a drop while the first request runs adds nothing.
+      fireEvent.click(imageInput());
       fireEvent.drop(screen.getByRole("region", { name: "Lienzo del workflow" }), {
-        dataTransfer: { getData: () => "input.image" },
+        dataTransfer: { getData: () => JSON.stringify({ type: "input.image" }) },
       });
       expect(client.post).toHaveBeenCalledTimes(1);
 
       expect(await screen.findByText("Imagen de entrada")).toBeTruthy();
-      expect(
-        (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
-      ).toBe(true);
+      expect(imageInput().getAttribute("aria-disabled")).toBe("true");
+      expect(screen.getByText("Este workflow ya tiene una entrada de imagen.")).toBeTruthy();
       expect(client.post).toHaveBeenCalledTimes(1);
     });
 
@@ -1539,17 +1540,12 @@ describe("ApplicationDetailPanel", () => {
         });
 
       render(workflowDetailPanel({ canManage: true }));
-      const button = (await screen.findByRole("button", {
-        name: "Entrada de imagen",
-      })) as HTMLButtonElement;
-      fireEvent.click(button);
-      expect(button.disabled).toBe(true);
-      await waitFor(() =>
-        expect(
-          (screen.getByRole("button", { name: "Entrada de imagen" }) as HTMLButtonElement).disabled,
-        ).toBe(false),
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Entrada de imagen" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Agregar nodo" }));
+      const imageInput = () => screen.getByRole("button", { name: "Entrada de imagen" });
+      fireEvent.click(imageInput());
+      expect(imageInput().getAttribute("aria-disabled")).toBe("true");
+      await waitFor(() => expect(imageInput().getAttribute("aria-disabled")).toBe("false"));
+      fireEvent.click(imageInput());
       expect(await screen.findByText("Imagen de entrada")).toBeTruthy();
       expect(client.post).toHaveBeenCalledTimes(2);
     });
@@ -2039,6 +2035,8 @@ describe("ApplicationDetailPanel", () => {
 
       render(workflowDetailPanel());
       await screen.findByTestId("workflow-node-model-node");
+      fireEvent.click(screen.getByRole("button", { name: "Agregar nodo" }));
+      fireEvent.click(screen.getByRole("button", { name: "Condición" }));
       fireEvent.change(screen.getByLabelText("Resultado de origen"), {
         target: { value: "model-node" },
       });
@@ -3097,6 +3095,443 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByRole("complementary", { name: "Detalles del nodo" })).toBeNull();
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(client.patch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("US-127: Agregar nodos desde un buscador", () => {
+    // The center of the visible area needs a measured canvas.
+    stubWorkflowCanvasLayout();
+
+    const contract = (labels: string[]) => ({
+      input: { type: "image", width: 224, height: 224, channels: 3, normalization: "zero_to_one" },
+      output: { type: "classification", labels },
+    });
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const modelNode = {
+      id: "model-node",
+      type: "model.tflite",
+      modelVersionId: "leaf-1",
+      modelName: "Clasificador de hojas",
+      version: "1.0.0",
+      inputs: {
+        image: {
+          type: "image",
+          width: 224,
+          height: 224,
+          channels: 3,
+          normalization: "zero_to_one",
+        },
+      },
+      outputs: { result: { type: "classification", labels: ["roya", "sana"] } },
+    };
+    const workflow = {
+      id: "workflow-1",
+      applicationId: "app-1",
+      name: "Diagnóstico de hoja de café",
+      status: "draft",
+      createdAt: "2026-09-21T15:00:00.000Z",
+      updatedAt: "2026-09-21T16:00:00.000Z",
+    };
+    type Model = { id: string; name: string; versions: unknown[] };
+    const models: Model[] = [
+      {
+        id: "leaf",
+        name: "Clasificador de hojas",
+        versions: [
+          { id: "leaf-1", version: "1.0.0", contract: contract(["roya", "sana"]) },
+          { id: "leaf-2", version: "2.0.0", contract: contract(["roya", "sana", "ojo"]) },
+        ],
+      },
+      {
+        id: "pests",
+        name: "Detector de plagas",
+        versions: [{ id: "pests-1", version: "0.1.0", contract: null }],
+      },
+    ];
+
+    async function openWorkflow({
+      nodes = [imageNode] as unknown[],
+      applicationModels = models,
+      canManage = true,
+      application = activeApp,
+    } = {}) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: { workflow, draft: { nodes, connections: [], layout: {} }, versions: [] },
+          };
+        if (url === "/applications/app-1/models")
+          return { data: { models: applicationModels.map(({ id, name }) => ({ id, name })) } };
+        const model = applicationModels.find((item) => url.endsWith(`/models/${item.id}/versions`));
+        return { data: { versions: model?.versions ?? [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={application}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+    }
+
+    async function openAddNode() {
+      fireEvent.click(screen.getByRole("button", { name: "Agregar nodo" }));
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
+      // The model versions load along with the workflow.
+      await waitFor(() => expect(within(panel).queryByText("Cargando modelos…")).toBeNull());
+      return panel;
+    }
+
+    // An item is named after its type or its model and version; its description
+    // and any reason it is disabled describe it.
+    const accessibleName = (element: Element) =>
+      (element.getAttribute("aria-labelledby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ");
+    const panelItems = (panel: HTMLElement) =>
+      within(panel)
+        .queryAllByRole("region")
+        .flatMap((category) => within(category).queryAllByRole("button"))
+        .map(accessibleName);
+
+    const added = (node: unknown) => ({
+      data: { draft: { nodes: [imageNode, node], connections: [], layout: {} } },
+    });
+
+    it("adds a model version found by its name in the visible area of the canvas", async () => {
+      await openWorkflow();
+      client.post.mockResolvedValueOnce(
+        added({ ...modelNode, id: "new-model", modelVersionId: "leaf-2", version: "2.0.0" }),
+      );
+
+      const panel = await openAddNode();
+      fireEvent.change(within(panel).getByRole("searchbox", { name: "Buscar nodos" }), {
+        target: { value: "clasificador" },
+      });
+      expect(within(panel).queryByRole("button", { name: /Entrada de imagen/ })).toBeNull();
+      fireEvent.click(
+        within(panel).getByRole("button", { name: /Clasificador de hojas · 2\.0\.0/ }),
+      );
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        expect.objectContaining({ type: "model.tflite", modelVersionId: "leaf-2" }),
+      );
+      // The new card fits in the 1000 × 600 visible area.
+      const { position } = client.post.mock.calls[0][1];
+      const view = canvasViewport();
+      const left = position.x * view.zoom + view.x;
+      const top = position.y * view.zoom + view.y;
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(left + 292 * view.zoom).toBeLessThanOrEqual(1000);
+      expect(top + 188 * view.zoom).toBeLessThanOrEqual(600);
+
+      expect(await screen.findByTestId("workflow-node-new-model")).toBeTruthy();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo de modelo agregado.");
+      expect(screen.queryByRole("complementary", { name: "Agregar nodo" })).toBeNull();
+    });
+
+    it("shows a second image input disabled and explains why", async () => {
+      await openWorkflow();
+
+      const panel = await openAddNode();
+      const imageInput = within(panel).getByRole("button", { name: "Entrada de imagen" });
+      expect(imageInput.getAttribute("aria-disabled")).toBe("true");
+      expect(imageInput.getAttribute("draggable")).toBe("false");
+      expect(
+        within(imageInput).getByText("Este workflow ya tiene una entrada de imagen."),
+      ).toBeTruthy();
+      fireEvent.click(imageInput);
+
+      expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it("adds an image input to an empty draft with its own message", async () => {
+      await openWorkflow({ nodes: [] });
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode], connections: [], layout: {} } },
+      });
+
+      const panel = await openAddNode();
+      fireEvent.click(within(panel).getByRole("button", { name: "Entrada de imagen" }));
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        expect.objectContaining({ type: "input.image" }),
+      );
+      expect(await screen.findByTestId("workflow-node-image-node")).toBeTruthy();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado.");
+    });
+
+    it("keeps the panel open with the node's own message when it cannot be added", async () => {
+      await openWorkflow({ nodes: [] });
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { status: 500, data: {} },
+      });
+
+      const panel = await openAddNode();
+      fireEvent.click(within(panel).getByRole("button", { name: "Entrada de imagen" }));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No pudimos agregar el nodo."),
+      );
+      expect(screen.getByRole("complementary", { name: "Agregar nodo" })).toBeTruthy();
+      expect(screen.queryByTestId("workflow-node-image-node")).toBeNull();
+    });
+
+    it("asks for a condition's source and settings inside the panel before adding it", async () => {
+      await openWorkflow({ nodes: [imageNode, modelNode] });
+      client.post.mockResolvedValueOnce(
+        added({
+          id: "condition-node",
+          type: "condition",
+          sourceNodeId: "model-node",
+          label: "roya",
+          operator: "gt",
+          threshold: 0.8,
+          branches: { true: "Verdadero", false: "Falso" },
+        }),
+      );
+
+      const panel = await openAddNode();
+      fireEvent.click(within(panel).getByRole("button", { name: "Condición" }));
+      const submit = within(panel).getByRole("button", { name: "Agregar condición" });
+      expect((submit as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(within(panel).getByLabelText("Resultado de origen"), {
+        target: { value: "model-node" },
+      });
+      fireEvent.change(within(panel).getByLabelText("Etiqueta"), { target: { value: "roya" } });
+      fireEvent.change(within(panel).getByLabelText("Operador"), { target: { value: "gt" } });
+      fireEvent.change(within(panel).getByLabelText("Umbral"), { target: { value: "1.5" } });
+      expect((submit as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(within(panel).getByLabelText("Umbral"), { target: { value: "0.8" } });
+      fireEvent.click(submit);
+
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
+        type: "condition",
+        sourceNodeId: "model-node",
+        label: "roya",
+        operator: "gt",
+        threshold: 0.8,
+        position: expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+      });
+      expect(await screen.findByTestId("workflow-node-condition-node")).toBeTruthy();
+      expect(toastMock.success).toHaveBeenCalledWith("Condición agregada.");
+    });
+
+    it("asks for an output's name and result before adding it", async () => {
+      await openWorkflow({ nodes: [imageNode, modelNode] });
+      client.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { status: 409, data: {} },
+      });
+
+      const panel = await openAddNode();
+      fireEvent.click(within(panel).getByRole("button", { name: "Salida" }));
+      fireEvent.change(within(panel).getByLabelText("Nombre de salida"), {
+        target: { value: " Diagnóstico " },
+      });
+      fireEvent.click(within(panel).getByRole("button", { name: "Agregar salida" }));
+      expect(
+        within(panel).getByText("Selecciona un tipo de resultado para la salida."),
+      ).toBeTruthy();
+      expect(client.post).not.toHaveBeenCalled();
+
+      fireEvent.change(within(panel).getByLabelText("Tipo de resultado"), {
+        target: { value: "model-node:result" },
+      });
+      fireEvent.click(within(panel).getByRole("button", { name: "Agregar salida" }));
+
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
+        type: "output",
+        name: "Diagnóstico",
+        sourceNodeId: "model-node",
+        sourcePort: "result",
+        resultType: "classification",
+        position: expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+      });
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith("No pudimos agregar la salida."),
+      );
+      // The typed settings stay, so the output can be added again.
+      expect((within(panel).getByLabelText("Nombre de salida") as HTMLInputElement).value).toBe(
+        " Diagnóstico ",
+      );
+    });
+
+    it("explains why a condition or an output cannot be added yet", async () => {
+      await openWorkflow();
+
+      const panel = await openAddNode();
+
+      expect(
+        within(within(panel).getByRole("button", { name: "Condición" })).getByText(
+          "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
+        ),
+      ).toBeTruthy();
+      expect(
+        within(within(panel).getByRole("button", { name: "Salida" })).getByText(
+          "Agrega primero al lienzo un modelo o una condición.",
+        ),
+      ).toBeTruthy();
+      fireEvent.click(within(panel).getByRole("button", { name: "Condición" }));
+      expect(within(panel).queryByLabelText("Resultado de origen")).toBeNull();
+    });
+
+    it("lists only the contracted versions and notes that the others cannot be added", async () => {
+      await openWorkflow();
+
+      const panel = await openAddNode();
+      const modelsSection = within(panel).getByRole("region", { name: "Modelos" });
+
+      expect(within(modelsSection).getAllByRole("button").map(accessibleName)).toEqual([
+        "Clasificador de hojas · 1.0.0",
+        "Clasificador de hojas · 2.0.0",
+      ]);
+      expect(
+        within(modelsSection).getByText(
+          "Las versiones sin contrato no se pueden agregar al workflow.",
+        ),
+      ).toBeTruthy();
+      for (const title of ["Entrada", "Lógica", "Salida"])
+        expect(within(panel).getByRole("region", { name: title })).toBeTruthy();
+
+      // A search result lists only what matches; the note is about the whole application.
+      fireEvent.change(within(panel).getByRole("searchbox", { name: "Buscar nodos" }), {
+        target: { value: "clasificador" },
+      });
+      expect(panelItems(panel)).toEqual([
+        "Clasificador de hojas · 1.0.0",
+        "Clasificador de hojas · 2.0.0",
+      ]);
+      expect(
+        within(panel).queryByText("Las versiones sin contrato no se pueden agregar al workflow."),
+      ).toBeNull();
+    });
+
+    it.each([
+      [[], ["No hay modelos registrados"]],
+      [
+        [models[1]],
+        [
+          "No hay versiones con contrato",
+          "Registra una versión y configura su contrato para usar ese modelo en el workflow.",
+        ],
+      ],
+    ])("explains why no model can be added (%#)", async (applicationModels, messages) => {
+      await openWorkflow({ applicationModels });
+
+      const panel = await openAddNode();
+      const modelsSection = within(panel).getByRole("region", { name: "Modelos" });
+
+      expect(within(modelsSection).queryByRole("button")).toBeNull();
+      for (const message of messages) expect(within(modelsSection).getByText(message)).toBeTruthy();
+    });
+
+    it("searches without case or accents and says when nothing matches", async () => {
+      await openWorkflow({ nodes: [] });
+
+      const panel = await openAddNode();
+      const search = within(panel).getByRole("searchbox", { name: "Buscar nodos" });
+      expect(search.getAttribute("placeholder")).toBe("Buscar nodos…");
+      fireEvent.change(search, { target: { value: "CONDICION" } });
+      expect(panelItems(panel)).toEqual(["Condición"]);
+      expect(within(panel).queryByRole("region", { name: "Entrada" })).toBeNull();
+
+      fireEvent.change(search, { target: { value: "cámara térmica" } });
+      expect(
+        within(panel).getByText('No hay nodos que coincidan con "cámara térmica".'),
+      ).toBeTruthy();
+    });
+
+    it("can be opened, searched, and used with the keyboard only", async () => {
+      await openWorkflow({ nodes: [] });
+      client.post.mockResolvedValueOnce({
+        data: { draft: { nodes: [imageNode], connections: [], layout: {} } },
+      });
+      const user = userEvent.setup();
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+
+      canvas.focus();
+      await user.keyboard("{Tab}");
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
+      await waitFor(() => expect(within(panel).queryByText("Cargando modelos…")).toBeNull());
+      expect(document.activeElement).toBe(
+        within(panel).getByRole("searchbox", { name: "Buscar nodos" }),
+      );
+
+      // Escape closes it and gives the focus back to the canvas.
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("complementary", { name: "Agregar nodo" })).toBeNull();
+      expect(document.activeElement).toBe(canvas);
+
+      await user.keyboard("{Tab}");
+      await user.keyboard("imagen");
+      await user.keyboard("{ArrowDown}");
+      expect(accessibleName(document.activeElement as HTMLElement)).toBe("Entrada de imagen");
+      await user.keyboard("{Enter}");
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        expect.objectContaining({ type: "input.image" }),
+      );
+      await waitFor(() => expect(document.activeElement).toBe(canvas));
+    });
+
+    it("adds a node where it is dropped when it is dragged onto the canvas", async () => {
+      await openWorkflow();
+      client.post.mockResolvedValueOnce(added({ ...modelNode, id: "new-model" }));
+      const dragged = new Map<string, string>();
+      const dataTransfer = {
+        setData: (type: string, value: string) => dragged.set(type, value),
+        getData: (type: string) => dragged.get(type) ?? "",
+        get types() {
+          return [...dragged.keys()];
+        },
+      };
+
+      const panel = await openAddNode();
+      fireEvent.dragStart(
+        within(panel).getByRole("button", { name: "Clasificador de hojas · 1.0.0" }),
+        { dataTransfer },
+      );
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+      // jsdom has no DragEvent, so the pointer position is set on a plain event.
+      const drop = createEvent.drop(canvas, { dataTransfer });
+      Object.defineProperties(drop, { clientX: { value: 400 }, clientY: { value: 200 } });
+      fireEvent(canvas, drop);
+
+      // Where exactly it lands under the pointer is covered by the canvas's own tests.
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
+        type: "model.tflite",
+        modelVersionId: "leaf-1",
+        position: { x: expect.any(Number), y: expect.any(Number) },
+      });
+      expect(await screen.findByTestId("workflow-node-new-model")).toBeTruthy();
+    });
+
+    it.each([
+      ["a member", { canManage: false }],
+      ["an archived application", { application: archivedApp }],
+    ])("does not offer Agregar nodo to %s", async (_who, options) => {
+      await openWorkflow(options);
+
+      expect(screen.queryByRole("button", { name: "Agregar nodo" })).toBeNull();
+      fireEvent.keyDown(screen.getByRole("region", { name: "Lienzo del workflow" }), {
+        key: "Tab",
+      });
+      expect(screen.queryByRole("complementary", { name: "Agregar nodo" })).toBeNull();
     });
   });
 

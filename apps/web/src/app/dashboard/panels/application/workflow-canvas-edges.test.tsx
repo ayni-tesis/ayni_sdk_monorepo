@@ -80,7 +80,6 @@ function renderCanvas({
       cycleNodeIds={[]}
       savingPositions={false}
       arrangingNodes={false}
-      palette={null}
       selectedNodeIds={[]}
       {...handlers}
     />,
@@ -211,7 +210,6 @@ describe("deleting the selected connection", () => {
         cycleNodeIds={[]}
         savingPositions={false}
         arrangingNodes={false}
-        palette={null}
         selectedNodeIds={[]}
         {...handlers}
       />,
