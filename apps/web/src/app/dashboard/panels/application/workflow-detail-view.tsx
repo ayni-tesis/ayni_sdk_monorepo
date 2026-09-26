@@ -1113,6 +1113,7 @@ export function WorkflowDetailView({
             onDropPalette={(node, position) => void addNode(node, position)}
             onRemoveConnection={(connection) => void removeConnection(connection)}
             onOpenNodeDetails={openNodeDetails}
+            onCloseNodeDetails={() => openNodeDetails(null)}
             details={
               detailsNode ? (
                 <WorkflowNodeDetailsPanel

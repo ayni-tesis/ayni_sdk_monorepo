@@ -3096,6 +3096,43 @@ describe("ApplicationDetailPanel", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(client.patch).not.toHaveBeenCalled();
     });
+
+    // US-129: the canvas shortcuts leave the panel's fields alone.
+    it("keeps Retroceso for a field of the panel and deletes the node with Supr on the canvas", async () => {
+      await openWorkflow();
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-condition-node")).getAllByRole("button")[0],
+      );
+      const panel = openDetails("condition-node");
+      const threshold = within(panel).getByLabelText("Umbral");
+      threshold.focus();
+
+      fireEvent.keyDown(threshold, { key: "Backspace" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      fireEvent.keyDown(screen.getByRole("region", { name: "Lienzo del workflow" }), {
+        key: "Delete",
+      });
+      const dialog = await screen.findByRole("dialog", { name: /^¿Eliminar "Condición: / });
+      expect(within(dialog).getByText("También se eliminarán sus conexiones.")).toBeTruthy();
+      expect(client.delete).not.toHaveBeenCalled();
+    });
+
+    it("closes the panel and clears the selection with Esc on the canvas (US-129)", async () => {
+      await openWorkflow();
+      const select = within(screen.getByTestId("workflow-node-condition-node")).getAllByRole(
+        "button",
+      )[0];
+      fireEvent.click(select);
+      openDetails("condition-node");
+
+      fireEvent.keyDown(screen.getByRole("region", { name: "Lienzo del workflow" }), {
+        key: "Escape",
+      });
+
+      expect(screen.queryByRole("complementary", { name: "Detalles del nodo" })).toBeNull();
+      expect(select.getAttribute("aria-pressed")).toBe("false");
+    });
   });
 
   describe("US-127: Agregar nodos desde un buscador", () => {

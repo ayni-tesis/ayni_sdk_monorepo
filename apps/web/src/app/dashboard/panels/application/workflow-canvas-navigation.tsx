@@ -3,6 +3,7 @@
 import {
   IconFocus2,
   IconGridDots,
+  IconKeyboard,
   IconPlus,
   IconSelectAll,
   IconSitemap,
@@ -48,6 +49,7 @@ export function WorkflowCanvasControls({
   onZoomOut,
   onFit,
   onReset,
+  onShowShortcuts,
   savingPositions = false,
   arrangingNodes = false,
   addNode,
@@ -58,6 +60,8 @@ export function WorkflowCanvasControls({
   onZoomOut: () => void;
   onFit: () => void;
   onReset: () => void;
+  /** Opens the Atajos de teclado panel, like ? on the canvas. */
+  onShowShortcuts?: () => void;
   savingPositions?: boolean;
   arrangingNodes?: boolean;
   addNode?: WorkflowCanvasAddNodeControl;
@@ -75,6 +79,7 @@ export function WorkflowCanvasControls({
         variant="ghost"
         aria-label="Acercar"
         title="Acercar"
+        aria-keyshortcuts="+"
         disabled={zoom >= WORKFLOW_CANVAS_MAX_ZOOM}
         onClick={onZoomIn}
       >
@@ -86,6 +91,7 @@ export function WorkflowCanvasControls({
         variant="ghost"
         aria-label="Alejar"
         title="Alejar"
+        aria-keyshortcuts="-"
         disabled={zoom <= WORKFLOW_CANVAS_MIN_ZOOM}
         onClick={onZoomOut}
       >
@@ -97,6 +103,7 @@ export function WorkflowCanvasControls({
         variant="ghost"
         aria-label="Ajustar a la vista"
         title="Ajustar a la vista"
+        aria-keyshortcuts="1"
         onClick={onFit}
       >
         <IconFocus2 aria-hidden="true" />
@@ -107,6 +114,7 @@ export function WorkflowCanvasControls({
         variant="ghost"
         aria-label={`Restablecer zoom (${level})`}
         title="Restablecer zoom"
+        aria-keyshortcuts="0"
         className="min-w-16 whitespace-nowrap tabular-nums"
         onClick={onReset}
       >
@@ -155,6 +163,7 @@ export function WorkflowCanvasControls({
             size="sm"
             variant="ghost"
             className="whitespace-nowrap"
+            aria-keyshortcuts="Control+A Meta+A"
             onClick={editing.onSelectAll}
           >
             <IconSelectAll aria-hidden="true" />
@@ -174,6 +183,22 @@ export function WorkflowCanvasControls({
           >
             <IconSitemap aria-hidden="true" />
             Ordenar nodos
+          </Button>
+        </>
+      )}
+      {onShowShortcuts && (
+        <>
+          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Atajos de teclado"
+            title="Atajos de teclado (?)"
+            aria-keyshortcuts="?"
+            onClick={onShowShortcuts}
+          >
+            <IconKeyboard aria-hidden="true" />
           </Button>
         </>
       )}
