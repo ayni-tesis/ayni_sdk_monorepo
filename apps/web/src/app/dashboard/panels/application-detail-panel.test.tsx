@@ -3351,6 +3351,15 @@ describe("ApplicationDetailPanel", () => {
       fireEvent.change(within(panel).getByLabelText("Tipo de resultado"), {
         target: { value: "model-node:result" },
       });
+      // The reload after the failure stays pending until the test lets it finish.
+      const loadWorkflow = client.get.getMockImplementation();
+      let finishReload: () => void = () => {};
+      client.get.mockImplementationOnce(
+        (url: string) =>
+          new Promise((resolve) => {
+            finishReload = () => resolve(loadWorkflow?.(url));
+          }),
+      );
       fireEvent.click(within(panel).getByRole("button", { name: "Agregar salida" }));
 
       expect(client.post).toHaveBeenCalledWith("/applications/app-1/workflows/workflow-1/nodes", {
@@ -3364,10 +3373,22 @@ describe("ApplicationDetailPanel", () => {
       await waitFor(() =>
         expect(toastMock.error).toHaveBeenCalledWith("No pudimos agregar la salida."),
       );
-      // The typed settings stay, so the output can be added again.
-      expect((within(panel).getByLabelText("Nombre de salida") as HTMLInputElement).value).toBe(
+      // The failure reloads the draft; meanwhile the panel stays mounted and
+      // nothing can be added, and afterwards it still holds the typed settings.
+      expect(screen.getByRole("complementary", { name: "Agregar nodo" })).toBe(panel);
+      expect(
+        (within(panel).getByRole("button", { name: "Agregar salida" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      await act(async () => finishReload());
+      const reloaded = screen.getByRole("complementary", { name: "Agregar nodo" });
+      expect(reloaded).toBe(panel);
+      expect((within(reloaded).getByLabelText("Nombre de salida") as HTMLInputElement).value).toBe(
         " Diagnóstico ",
       );
+      expect(
+        (within(reloaded).getByLabelText("Tipo de resultado") as HTMLSelectElement).value,
+      ).toBe("model-node:result");
     });
 
     it("explains why a condition or an output cannot be added yet", async () => {

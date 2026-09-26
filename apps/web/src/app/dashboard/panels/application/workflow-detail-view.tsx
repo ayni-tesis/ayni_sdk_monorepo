@@ -641,7 +641,9 @@ export function WorkflowDetailView({
     }
   }
 
-  if (loading) {
+  // A reload after a failed edit keeps the draft on screen, so open panels keep
+  // what was typed; only the first load shows the loading state.
+  if (loading && !detail) {
     return (
       <p data-testid="workflow-detail-loading" className="text-muted-foreground text-sm">
         Cargando workflow…
@@ -1121,7 +1123,7 @@ export function WorkflowDetailView({
                         modelsLoading={modelOptionsLoading}
                         modelsError={modelOptionsError}
                         onRetryModels={() => setModelOptionsReload((value) => value + 1)}
-                        busy={addingNode || savingPositions || arrangingNodes}
+                        busy={loading || addingNode || savingPositions || arrangingNodes}
                         onAdd={(node) => void addNode(node, placement.visibleCenter())}
                         onClose={() => setAddNodeOpen(false)}
                       />
