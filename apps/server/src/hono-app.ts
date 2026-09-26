@@ -7,13 +7,12 @@ import {
   invitationLink,
   member,
   organization,
-  sdkCredential,
   user,
 } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
-import { and, asc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -51,6 +50,8 @@ import {
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
+import { createSdkSyncApp } from "./sdk-sync";
+import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import {
   addConditionNode,
   addImageInputNode,
@@ -235,46 +236,6 @@ const sdkCredentials = {
   regenerate(input: { applicationId: string; credentialId: string; userId: string }) {
     return regenerateSdkCredential(db, input);
   },
-  async authenticate(secret: string) {
-    const secretHash = createHash("sha256").update(secret).digest("hex");
-    const [candidate] = await db
-      .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
-      .from(sdkCredential)
-      .where(eq(sdkCredential.secretHash, secretHash))
-      .limit(1);
-    if (!candidate) return false;
-
-    return db.transaction(async (tx) => {
-      const [foundApplication] = await tx
-        .select({ status: application.status })
-        .from(application)
-        .where(eq(application.id, candidate.applicationId))
-        .limit(1)
-        .for("update");
-      if (foundApplication?.status !== "active") return false;
-
-      const [credential] = await tx
-        .select({ id: sdkCredential.id, applicationId: sdkCredential.applicationId })
-        .from(sdkCredential)
-        .where(
-          and(
-            eq(sdkCredential.id, candidate.id),
-            eq(sdkCredential.secretHash, secretHash),
-            isNull(sdkCredential.revokedAt),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      if (!credential) return false;
-
-      const [updated] = await tx
-        .update(sdkCredential)
-        .set({ lastUsedAt: new Date() })
-        .where(and(eq(sdkCredential.id, credential.id), isNull(sdkCredential.revokedAt)))
-        .returning({ id: sdkCredential.id });
-      return Boolean(updated);
-    });
-  },
 };
 
 const sdkModelVersions = {
@@ -283,6 +244,15 @@ const sdkModelVersions = {
   },
   getManifest(applicationId: string, modelVersionId: string) {
     return getSdkModelVersionManifest(db, r2ModelVersionStorage, applicationId, modelVersionId);
+  },
+};
+
+const sdkSync = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  getManifest(applicationId: string) {
+    return getSdkSyncManifest(db, applicationId);
   },
 };
 
@@ -664,6 +634,7 @@ app.route(
     modelVersions: sdkModelVersions,
   }),
 );
+app.route("/", createSdkSyncApp({ credentials: sdkSync, sync: sdkSync }));
 
 const openApiApp = new OpenAPIHono();
 
