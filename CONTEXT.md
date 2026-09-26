@@ -40,6 +40,10 @@ _Avoid_: Pipeline, flow, chain
 A counter on a Workflow's draft that grows by one with every accepted draft change. Each change from the canvas names the revision it was based on; a change based on an older revision is rejected with `draftConflict` and changes nothing, so nobody overwrites another administrator's work with a stale view. Published versions never carry it.
 _Avoid_: Draft version (a published Workflow version is a different thing), ETag
 
+**Telemetry Policy**:
+The per-Application setting that says whether the SDK may send technical telemetry and how many days its traces are kept. Only administrators change it. Without a saved policy, telemetry is disabled. It never authorizes collecting images or raw inputs.
+_Avoid_: Tracking settings, analytics consent
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

@@ -5,6 +5,7 @@ export * from "./model";
 export * from "./model-version";
 export * from "./sdk-credential";
 export * from "./task";
+export * from "./telemetry-policy";
 export * from "./workflow";
 export * from "./workflow-version";
 

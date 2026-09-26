@@ -47,6 +47,8 @@ import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
+import { createTelemetryPolicyApp } from "./telemetry-policy";
+import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
 import {
   addConditionNode,
   addImageInputNode,
@@ -234,6 +236,15 @@ const sdkCredentials = {
   },
   regenerate(input: { applicationId: string; credentialId: string; userId: string }) {
     return regenerateSdkCredential(db, input);
+  },
+};
+
+const telemetryPolicies = {
+  get(applicationId: string) {
+    return getTelemetryPolicy(db, applicationId);
+  },
+  update(input: Parameters<typeof updateTelemetryPolicy>[1]) {
+    return updateTelemetryPolicy(db, input);
   },
 };
 
@@ -609,6 +620,14 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     credentials: sdkCredentials,
+  }),
+);
+app.route(
+  "/",
+  createTelemetryPolicyApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    telemetryPolicies,
   }),
 );
 app.route(

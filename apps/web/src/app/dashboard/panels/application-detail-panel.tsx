@@ -6,6 +6,7 @@ import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
 import { SettingsView } from "./application/settings-view";
+import { TelemetryPolicyView } from "./application/telemetry-policy-view";
 import { WorkflowDetailView } from "./application/workflow-detail-view";
 import { WorkflowsView } from "./application/workflows-view";
 
@@ -139,6 +140,10 @@ export function ApplicationDetailPanel({
 
       {activeSection === "credentials" && (
         <CredentialsView application={application} canManage={canManage} />
+      )}
+
+      {activeSection === "privacy" && (
+        <TelemetryPolicyView key={application.id} application={application} canManage={canManage} />
       )}
     </section>
   );

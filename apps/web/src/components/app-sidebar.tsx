@@ -7,6 +7,7 @@ import {
   IconKey,
   IconLayoutDashboard,
   IconSettings,
+  IconShieldLock,
   IconUsers,
 } from "@tabler/icons-react";
 import type { Application, DashboardView, WorkspaceItem } from "@/app/dashboard/types";
@@ -134,6 +135,16 @@ export function AppSidebar({
                   >
                     <IconKey />
                     <span>Credenciales SDK</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeView === "privacy"}
+                    tooltip="Privacidad y telemetría"
+                    onClick={() => onViewChange?.("privacy")}
+                  >
+                    <IconShieldLock />
+                    <span>Privacidad y telemetría</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
