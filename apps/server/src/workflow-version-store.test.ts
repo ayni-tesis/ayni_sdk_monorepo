@@ -214,9 +214,9 @@ function makeSdkDefinitionDatabase({
               if (table === workflowVersion) return versionRow ? [versionRow] : [];
               if (table === workflow) {
                 return workflowRow &&
-                    workflowRow.id === versionRow?.workflowId &&
-                    workflowRow.applicationId === "app-1" &&
-                    workflowRow.status !== "archived"
+                  workflowRow.id === versionRow?.workflowId &&
+                  workflowRow.applicationId === "app-1" &&
+                  workflowRow.status !== "archived"
                   ? [workflowRow]
                   : [];
               }
@@ -260,10 +260,7 @@ describe("getSdkWorkflowVersionDefinition", () => {
       "belongs to an archived workflow",
       { workflowRow: { id: "workflow-1", applicationId: "app-1", status: "archived" } },
     ],
-    [
-      "belongs to an archived application",
-      { applicationRow: { id: "app-1", status: "archived" } },
-    ],
+    ["belongs to an archived application", { applicationRow: { id: "app-1", status: "archived" } }],
   ])("does not expose a definition that %s", async (_description, rows) => {
     const { db } = makeSdkDefinitionDatabase(rows);
 
