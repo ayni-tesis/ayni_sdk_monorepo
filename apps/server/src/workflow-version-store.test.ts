@@ -2,7 +2,11 @@ import { application, member, workflow, workflowVersion } from "@ayni/db/schema/
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowDatabase, WorkflowDraft } from "./workflow-store";
-import { publishWorkflowVersion } from "./workflow-version-store";
+import {
+  getSdkWorkflowVersionDefinition,
+  publishWorkflowVersion,
+  type SdkWorkflowVersionDefinition,
+} from "./workflow-version-store";
 
 const publishableDraft: WorkflowDraft = {
   nodes: [
@@ -177,5 +181,81 @@ describe("publishWorkflowVersion", () => {
       reason: "workflowNotFound",
     });
     expect(store.inserted).toHaveLength(0);
+  });
+});
+
+const publishedDefinition: SdkWorkflowVersionDefinition = {
+  nodes: [{ id: "input", type: "input.image" }],
+  connections: [],
+};
+
+function makeSdkDefinitionDatabase(
+  rows: Map<unknown, Record<string, unknown>[]>,
+) {
+  const queriedTables: unknown[] = [];
+  return {
+    queriedTables,
+    db: {
+      select: () => ({
+        from: (table: unknown) => ({
+          where: () => ({
+            limit: async () => {
+              queriedTables.push(table);
+              return rows.get(table) ?? [];
+            },
+          }),
+        }),
+      }),
+    },
+  };
+}
+
+describe("getSdkWorkflowVersionDefinition", () => {
+  it("returns only a published definition owned by an available workflow and application", async () => {
+    const { db } = makeSdkDefinitionDatabase(
+      new Map<unknown, Record<string, unknown>[]>([
+        [workflowVersion, [{ workflowId: "workflow-1", definition: publishedDefinition }]],
+        [workflow, [{ id: "workflow-1" }]],
+        [application, [{ id: "app-1" }]],
+      ]),
+    );
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: true,
+      definition: publishedDefinition,
+    });
+  });
+
+  it.each([
+    ["is missing", new Map<unknown, Record<string, unknown>[]>()],
+    [
+      "belongs to another application",
+      new Map<unknown, Record<string, unknown>[]>([
+        [workflowVersion, [{ workflowId: "workflow-1", definition: publishedDefinition }]],
+        [workflow, []],
+      ]),
+    ],
+    [
+      "belongs to an archived workflow",
+      new Map<unknown, Record<string, unknown>[]>([
+        [workflowVersion, [{ workflowId: "workflow-1", definition: publishedDefinition }]],
+        [workflow, []],
+      ]),
+    ],
+    [
+      "belongs to an archived application",
+      new Map<unknown, Record<string, unknown>[]>([
+        [workflowVersion, [{ workflowId: "workflow-1", definition: publishedDefinition }]],
+        [workflow, [{ id: "workflow-1" }]],
+        [application, []],
+      ]),
+    ],
+  ])("does not expose a definition that %s", async (_description, rows) => {
+    const { db } = makeSdkDefinitionDatabase(rows);
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: false,
+      reason: "notFound",
+    });
   });
 });
