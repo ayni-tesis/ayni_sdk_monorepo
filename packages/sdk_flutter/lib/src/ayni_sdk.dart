@@ -6,6 +6,35 @@ import 'workflow_version_downloader.dart';
 
 enum SyncStatus { updated, upToDate, offline, error }
 
+enum SyncResourceStatus { updated, upToDate, invalidRemoteResource }
+
+enum SyncResourceType { workflow, model }
+
+class SyncResourceResult {
+  const SyncResourceResult({
+    required this.type,
+    required this.status,
+    this.resourceVersionId,
+    this.version,
+  });
+
+  final SyncResourceType type;
+  final SyncResourceStatus status;
+  final String? resourceVersionId;
+  final String? version;
+
+  String? get message => status == SyncResourceStatus.invalidRemoteResource
+      ? 'Se mantuvo la versión local porque la actualización no es válida.'
+      : null;
+}
+
+class SyncResult {
+  const SyncResult(this.status, [this.resources = const []]);
+
+  final SyncStatus status;
+  final List<SyncResourceResult> resources;
+}
+
 class AyniSdk {
   AyniSdk({
     required this.serverUrl,
@@ -35,8 +64,9 @@ class AyniSdk {
   final String _credential;
   final WorkflowVersionDownloader _workflowVersionDownloader;
 
-  Future<SyncStatus> sync() async {
-    if (!_canSendCredentialTo(serverUrl)) return SyncStatus.error;
+  Future<SyncResult> sync() async {
+    if (!_canSendCredentialTo(serverUrl))
+      return const SyncResult(SyncStatus.error);
 
     final client = HttpClient();
     if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
@@ -47,49 +77,49 @@ class AyniSdk {
         onTimeout: () {
           deadline.expire();
           client.close(force: true);
-          return SyncStatus.error;
+          return const SyncResult(SyncStatus.error);
         },
       );
     } on TimeoutException {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     } on SocketException {
-      return SyncStatus.offline;
+      return const SyncResult(SyncStatus.offline);
     } on FileSystemException {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     } on IOException {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     } on FormatException {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     } finally {
       client.close(force: true);
     }
   }
 
-  Future<SyncStatus> _sync(HttpClient client, _SyncDeadline deadline) async {
+  Future<SyncResult> _sync(HttpClient client, _SyncDeadline deadline) async {
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
     request.followRedirects = false;
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
     final response = await request.close();
     final body = await utf8.decoder.bind(response).join();
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     }
 
     final decoded = jsonDecode(body);
     if (!_isInventory(decoded)) {
       return _isAuthenticationAcknowledgement(decoded)
-          ? SyncStatus.upToDate
-          : SyncStatus.error;
+          ? const SyncResult(SyncStatus.upToDate)
+          : const SyncResult(SyncStatus.error);
     }
-    if (deadline.expired) return SyncStatus.error;
+    if (deadline.expired) return const SyncResult(SyncStatus.error);
 
-    final inventory = jsonEncode(decoded);
     final inventoryFile = File(
       '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
     );
-    if (await inventoryFile.exists() &&
-        await inventoryFile.readAsString() == inventory) {
-      return SyncStatus.upToDate;
+    final local = await _readInventory(inventoryFile);
+    final comparison = _compareInventories(local, decoded as Map);
+    if (!comparison.changed) {
+      return SyncResult(SyncStatus.upToDate, comparison.resources);
     }
 
     final downloadOutcome = await _downloadNewWorkflowVersions(
@@ -99,16 +129,19 @@ class AyniSdk {
       deadline,
     );
     if (downloadOutcome == _WorkflowDownloadOutcome.failed) {
-      return SyncStatus.error;
+      return const SyncResult(SyncStatus.error);
     }
     // US-042 validates and installs the temporary definition. Until then this
     // manifest must stay uncommitted so the SDK retries the unvalidated version.
-    if (downloadOutcome == _WorkflowDownloadOutcome.downloaded)
-      return SyncStatus.updated;
-
-    return await _persistInventory(inventoryFile, inventory, deadline)
-        ? SyncStatus.updated
-        : SyncStatus.error;
+    return await _persistInventory(
+          inventoryFile,
+          downloadOutcome == _WorkflowDownloadOutcome.downloaded
+              ? _Inventory(local.workflows, comparison.inventory.models)
+              : comparison.inventory,
+          deadline,
+        )
+        ? SyncResult(SyncStatus.updated, comparison.resources)
+        : const SyncResult(SyncStatus.error);
   }
 
   Future<_WorkflowDownloadOutcome> _downloadNewWorkflowVersions(
@@ -165,13 +198,13 @@ class AyniSdk {
 
   Iterable<_WorkflowManifestEntry> _workflows(Object inventory) {
     if (inventory is! Map || inventory['workflows'] is! List) return const [];
-    return (inventory['workflows'] as List).whereType<Map>().expand((workflow) {
-      final versionId = workflow['workflowVersionId'];
-      final name = workflow['name'];
-      return versionId is String && name is String
-          ? [_WorkflowManifestEntry(versionId, name)]
-          : const <_WorkflowManifestEntry>[];
-    });
+    return (inventory['workflows'] as List)
+        .map(_Workflow.fromJson)
+        .whereType<_Workflow>()
+        .map(
+          (workflow) =>
+              _WorkflowManifestEntry(workflow.workflowVersionId, workflow.name),
+        );
   }
 
   bool _canSendCredentialTo(Uri url) =>
@@ -185,9 +218,7 @@ class AyniSdk {
       value is Map &&
       value.keys.every((key) => key == 'workflows' || key == 'models') &&
       value['workflows'] is List &&
-      value['models'] is List &&
-      (value['workflows'] as List).every((item) => item is Map) &&
-      (value['models'] as List).every((item) => item is Map);
+      value['models'] is List;
 
   bool _isAuthenticationAcknowledgement(Object? value) =>
       value is Map &&
@@ -195,9 +226,93 @@ class AyniSdk {
       !value.containsKey('workflows') &&
       !value.containsKey('models');
 
+  Future<_Inventory> _readInventory(File file) async {
+    if (!await file.exists()) return const _Inventory.empty();
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      return _isInventory(decoded)
+          ? _Inventory.fromJson(decoded as Map)
+          : const _Inventory.empty();
+    } on FormatException {
+      return const _Inventory.empty();
+    }
+  }
+
+  _Comparison _compareInventories(_Inventory local, Map remote) {
+    final workflows = {...local.workflows};
+    final models = {...local.models};
+    final resources = <SyncResourceResult>[];
+
+    for (final item in remote['models'] as List) {
+      final model = _Model.fromJson(item);
+      if (model == null) {
+        resources.add(_invalidResource(SyncResourceType.model, item));
+        continue;
+      }
+      final previous = models[model.id];
+      final status = previous?.version == model.version
+          ? SyncResourceStatus.upToDate
+          : SyncResourceStatus.updated;
+      if (status == SyncResourceStatus.updated) models[model.id] = model;
+      resources.add(
+        SyncResourceResult(
+          type: SyncResourceType.model,
+          status: status,
+          resourceVersionId: model.id,
+          version: model.version,
+        ),
+      );
+    }
+
+    for (final item in remote['workflows'] as List) {
+      final workflow = _Workflow.fromJson(item);
+      if (workflow == null ||
+          !workflow.modelVersionIds.every(models.containsKey)) {
+        resources.add(_invalidResource(SyncResourceType.workflow, item));
+        continue;
+      }
+      final previous = workflows[workflow.id];
+      final status = previous?.version == workflow.version
+          ? SyncResourceStatus.upToDate
+          : SyncResourceStatus.updated;
+      if (status == SyncResourceStatus.updated)
+        workflows[workflow.id] = workflow;
+      resources.add(
+        SyncResourceResult(
+          type: SyncResourceType.workflow,
+          status: status,
+          resourceVersionId: workflow.workflowVersionId,
+          version: workflow.version,
+        ),
+      );
+    }
+
+    final inventory = _Inventory(workflows, models);
+    return _Comparison(
+      inventory,
+      resources,
+      resources.any(
+        (resource) => resource.status == SyncResourceStatus.updated,
+      ),
+    );
+  }
+
+  SyncResourceResult _invalidResource(SyncResourceType type, Object? item) {
+    final json = item is Map ? item : const <Object?, Object?>{};
+    final resourceVersionId = type == SyncResourceType.workflow
+        ? json['workflowVersionId']
+        : json['modelVersionId'];
+    return SyncResourceResult(
+      type: type,
+      status: SyncResourceStatus.invalidRemoteResource,
+      resourceVersionId: resourceVersionId is String ? resourceVersionId : null,
+      version: json['version'] is String ? json['version'] as String : null,
+    );
+  }
+
   Future<bool> _persistInventory(
     File inventoryFile,
-    String inventory,
+    _Inventory inventory,
     _SyncDeadline deadline,
   ) async {
     if (deadline.expired) return false;
@@ -213,7 +328,10 @@ class AyniSdk {
       '${inventoryFile.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
     );
     try {
-      await temporaryFile.writeAsString(inventory, flush: true);
+      await temporaryFile.writeAsString(
+        jsonEncode(inventory.toJson()),
+        flush: true,
+      );
       if (deadline.expired) return false;
       await temporaryFile.rename(inventoryFile.path);
       return !deadline.expired;
@@ -223,6 +341,120 @@ class AyniSdk {
       if (await temporaryFile.exists()) await temporaryFile.delete();
     }
   }
+}
+
+class _Inventory {
+  const _Inventory(this.workflows, this.models);
+
+  const _Inventory.empty() : workflows = const {}, models = const {};
+
+  final Map<String, _Workflow> workflows;
+  final Map<String, _Model> models;
+
+  factory _Inventory.fromJson(Map json) {
+    final workflows = <String, _Workflow>{};
+    final models = <String, _Model>{};
+    for (final item in json['workflows'] as List) {
+      final workflow = _Workflow.fromJson(item);
+      if (workflow != null) workflows[workflow.id] = workflow;
+    }
+    for (final item in json['models'] as List) {
+      final model = _Model.fromJson(item);
+      if (model != null) models[model.id] = model;
+    }
+    return _Inventory(workflows, models);
+  }
+
+  Map<String, Object> toJson() => {
+    'workflows': workflows.values.map((workflow) => workflow.toJson()).toList(),
+    'models': models.values.map((model) => model.toJson()).toList(),
+  };
+}
+
+class _Workflow {
+  const _Workflow({
+    required this.id,
+    required this.workflowVersionId,
+    required this.name,
+    required this.version,
+    required this.modelVersionIds,
+  });
+
+  final String id;
+  final String workflowVersionId;
+  final String name;
+  final String version;
+  final List<String> modelVersionIds;
+
+  static _Workflow? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['workflowId'];
+    final workflowVersionId = value['workflowVersionId'];
+    final name = value['name'];
+    final version = value['version'];
+    final modelVersionIds = value['modelVersionIds'];
+    if (!_isNonEmptyString(id) ||
+        !_isNonEmptyString(workflowVersionId) ||
+        !_isNonEmptyString(name) ||
+        !_isNonEmptyString(version) ||
+        modelVersionIds is! List ||
+        !modelVersionIds.every(_isNonEmptyString)) {
+      return null;
+    }
+    return _Workflow(
+      id: id,
+      workflowVersionId: workflowVersionId,
+      name: name,
+      version: version,
+      modelVersionIds: List<String>.from(modelVersionIds),
+    );
+  }
+
+  Map<String, Object> toJson() => {
+    'workflowId': id,
+    'workflowVersionId': workflowVersionId,
+    'name': name,
+    'version': version,
+    'modelVersionIds': modelVersionIds,
+  };
+}
+
+class _Model {
+  const _Model({required this.id, required this.version, required this.sha256});
+
+  final String id;
+  final String version;
+  final String sha256;
+
+  static _Model? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['modelVersionId'];
+    final version = value['version'];
+    final sha256 = value['sha256'];
+    if (!_isNonEmptyString(id) ||
+        !_isNonEmptyString(version) ||
+        sha256 is! String ||
+        !RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(sha256)) {
+      return null;
+    }
+    return _Model(id: id, version: version, sha256: sha256);
+  }
+
+  Map<String, String> toJson() => {
+    'modelVersionId': id,
+    'version': version,
+    'sha256': sha256,
+  };
+}
+
+bool _isNonEmptyString(Object? value) => value is String && value.isNotEmpty;
+
+class _Comparison {
+  const _Comparison(this.inventory, this.resources, this.changed);
+
+  final _Inventory inventory;
+  final List<SyncResourceResult> resources;
+  final bool changed;
 }
 
 class _SyncDeadline {

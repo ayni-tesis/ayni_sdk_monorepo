@@ -107,7 +107,7 @@ type SdkWorkflowVersionQueryExecutor = {
     from(table: unknown): {
       where(condition: unknown): {
         limit(count: number): {
-          for(strength: "update"): Promise<Record<string, unknown>[]>;
+          for(strength: "update" | "share"): Promise<Record<string, unknown>[]>;
         };
       };
     };
@@ -134,7 +134,7 @@ export async function getSdkWorkflowVersionDefinition(
       .from(application)
       .where(and(eq(application.id, applicationId), eq(application.status, "active")))
       .limit(1)
-      .for("update")) as { id: string }[];
+      .for("share")) as { id: string }[];
     if (!applicationRows[0]) return { ok: false, reason: "notFound" } as const;
 
     const versionRows = (await tx
@@ -142,7 +142,7 @@ export async function getSdkWorkflowVersionDefinition(
       .from(workflowVersion)
       .where(eq(workflowVersion.id, workflowVersionId))
       .limit(1)
-      .for("update")) as { workflowId: string; definition: SdkWorkflowVersionDefinition }[];
+      .for("share")) as { workflowId: string; definition: SdkWorkflowVersionDefinition }[];
     const found = versionRows[0];
     if (!found) return { ok: false, reason: "notFound" } as const;
 
@@ -157,7 +157,7 @@ export async function getSdkWorkflowVersionDefinition(
         ),
       )
       .limit(1)
-      .for("update");
+      .for("share");
     if (!workflowRows[0]) return { ok: false, reason: "notFound" } as const;
 
     return { ok: true, definition: found.definition } as const;
