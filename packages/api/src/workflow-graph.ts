@@ -54,6 +54,33 @@ export function workflowEdges(draft: WorkflowGraphDraft): WorkflowEdge[] {
   ];
 }
 
+/**
+ * The nodes deleting `nodeIds` removes, in draft order: those nodes plus every
+ * condition and output whose source goes with them, transitively, since neither
+ * can stay without a source. Nodes a removed node only connects to stay.
+ */
+export function workflowNodesToDelete(
+  draft: WorkflowGraphDraft,
+  nodeIds: Iterable<string>,
+): string[] {
+  const removed = new Set(nodeIds);
+  let addedDependent = true;
+  while (addedDependent) {
+    addedDependent = false;
+    for (const node of draft.nodes) {
+      if (
+        (node.type === "condition" || node.type === "output") &&
+        removed.has(node.sourceNodeId) &&
+        !removed.has(node.id)
+      ) {
+        removed.add(node.id);
+        addedDependent = true;
+      }
+    }
+  }
+  return draft.nodes.filter((node) => removed.has(node.id)).map((node) => node.id);
+}
+
 /** What the port rules read from a node; server and dashboard nodes both fit it. */
 export type WorkflowPortNode =
   | { id: string; type: "input.image" }

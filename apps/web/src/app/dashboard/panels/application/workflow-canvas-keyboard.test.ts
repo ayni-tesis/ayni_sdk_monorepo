@@ -195,7 +195,7 @@ describe("workflowCanvasShortcutHelp", () => {
       "?",
     ]);
     expect(rows.find((row) => row.keys === "Supr o Retroceso")?.equivalent).toBe(
-      "Eliminar nodo o Eliminar conexión",
+      "Eliminar nodo, Eliminar nodos o Eliminar conexión",
     );
     expect(rows.find((row) => row.keys === "Ctrl + A")?.equivalent).toBe("Seleccionar todo");
     expect(rows.find((row) => row.keys === "Enter")?.equivalent).toBe("Doble clic sobre el nodo");

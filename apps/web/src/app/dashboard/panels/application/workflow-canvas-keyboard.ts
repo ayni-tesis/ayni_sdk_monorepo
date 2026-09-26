@@ -158,12 +158,11 @@ export function workflowCanvasShortcutHelp({
   mac: boolean;
   canManage: boolean;
 }): WorkflowCanvasShortcutHelp[] {
-  // TODO(US-132): with several nodes selected, Supr opens Eliminar nodos.
   const rows: WorkflowCanvasShortcutHelp[] = [
     {
       keys: "Supr o Retroceso",
-      action: "Elimina el nodo o la conexión seleccionados",
-      equivalent: "Eliminar nodo o Eliminar conexión",
+      action: "Elimina los nodos o la conexión seleccionados",
+      equivalent: "Eliminar nodo, Eliminar nodos o Eliminar conexión",
       editing: true,
     },
     {

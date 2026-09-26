@@ -282,7 +282,9 @@ describe("workflow canvas keyboard shortcuts", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Atajos de teclado" });
     expect(within(dialog).getByText("Ordenar nodos")).toBeTruthy();
-    expect(within(dialog).getByText("Eliminar nodo o Eliminar conexión")).toBeTruthy();
+    expect(
+      within(dialog).getByText("Eliminar nodo, Eliminar nodos o Eliminar conexión"),
+    ).toBeTruthy();
   });
 
   describe("for a member without edit permission", () => {
@@ -329,7 +331,9 @@ describe("workflow canvas keyboard shortcuts", () => {
       const dialog = screen.getByRole("dialog", { name: "Atajos de teclado" });
       expect(within(dialog).getByText("Ajustar a la vista")).toBeTruthy();
       expect(within(dialog).queryByText("Seleccionar todo")).toBeNull();
-      expect(within(dialog).queryByText("Eliminar nodo o Eliminar conexión")).toBeNull();
+      expect(
+        within(dialog).queryByText("Eliminar nodo, Eliminar nodos o Eliminar conexión"),
+      ).toBeNull();
     });
   });
 });

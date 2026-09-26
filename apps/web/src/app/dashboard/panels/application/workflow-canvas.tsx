@@ -756,6 +756,8 @@ type WorkflowCanvasProps = {
   selectedNodeIds: string[];
   onSelectNodes: (nodeIds: string[]) => void;
   onRequestDeleteNode: (nodeId: string) => void;
+  /** Opens Eliminar nodos for two or more selected nodes (US-132). */
+  onRequestDeleteNodes?: (nodeIds: string[]) => void;
   /** Selects the clicked edge; `null` when a click elsewhere clears it. */
   onSelectConnection: (connection: WorkflowCanvasConnection | null) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
@@ -786,6 +788,7 @@ function WorkflowCanvasFlow({
   selectedNodeIds,
   onSelectNodes,
   onRequestDeleteNode,
+  onRequestDeleteNodes,
   onSelectConnection,
   onConnect,
   onMoveNodes,
@@ -1003,10 +1006,11 @@ function WorkflowCanvasFlow({
         openNodeDetails(selectedNodeIds[0]);
         return true;
       case "delete":
-        // One node asks first, like Eliminar nodo; a connection goes at once, like
-        // Eliminar conexión. TODO(US-132): several nodes open Eliminar nodos. The
-        // key is used either way, so Retroceso never takes the browser back.
+        // Nodes ask first, like Eliminar nodo and Eliminar nodos; a connection goes
+        // at once, like Eliminar conexión. The key is used either way, so Retroceso
+        // never takes the browser back.
         if (selectedNodeIds.length === 1 && canManage) onRequestDeleteNode(selectedNodeIds[0]);
+        else if (selectedNodeIds.length > 1 && canManage) onRequestDeleteNodes?.(selectedNodeIds);
         else if (selectedNodeIds.length === 0 && removableSelection)
           onRemoveConnection(removableSelection);
         return true;
@@ -1354,6 +1358,10 @@ function WorkflowCanvasFlow({
                         onSelectAll: () => changeSelection(draft.nodes.map((node) => node.id)),
                         hasNodes: draft.nodes.length > 0,
                         onArrangeNodes: () => void arrangeNodes(),
+                        onDeleteNodes:
+                          selectedNodeIds.length > 1 && onRequestDeleteNodes
+                            ? () => onRequestDeleteNodes(selectedNodeIds)
+                            : undefined,
                       }
                     : undefined
                 }
