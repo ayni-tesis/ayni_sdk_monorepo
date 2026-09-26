@@ -1019,14 +1019,33 @@ describe("regenerateSdkCredential", () => {
 });
 
 describe("useSdkCredential", () => {
-  function makeUseDb(rows: Record<string, unknown>[]) {
+  function includesValue(value: unknown, expected: string, visited = new Set<object>()): boolean {
+    if (value === expected) return true;
+    if (!value || typeof value !== "object" || visited.has(value)) return false;
+    visited.add(value);
+    return Object.values(value).some((item) => includesValue(item, expected, visited));
+  }
+
+  function makeUseDb(
+    rows: Record<string, unknown>[],
+    applicationStatus: "active" | "archived" = "active",
+  ) {
     const lastUses: Record<string, unknown>[] = [];
+    let selectCount = 0;
     const tx = {
       select: () => ({
         from: () => ({
-          where: () => ({
+          where: (condition: unknown) => ({
             limit: () => ({
-              for: async () => rows,
+              for: async () => {
+                selectCount += 1;
+                if (selectCount === 1) return rows;
+                const filtersActiveStatus =
+                  includesValue(condition, "status") && includesValue(condition, "active");
+                return applicationStatus === "archived" && filtersActiveStatus
+                  ? []
+                  : [{ id: "app-1" }];
+              },
             }),
           }),
         }),
@@ -1067,6 +1086,27 @@ describe("useSdkCredential", () => {
     });
     expect(lastUses).toHaveLength(1);
     expect(lastUses[0]?.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects a credential for an archived application without recording use", async () => {
+    const secret = generateSdkCredentialSecret();
+    const { database, lastUses } = makeUseDb(
+      [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          secretHash: hashSdkCredentialSecret(secret),
+          revokedAt: null,
+        },
+      ],
+      "archived",
+    );
+
+    await expect(useSdkCredential(database, secret)).resolves.toMatchObject({
+      ok: false,
+      code: "invalidCredential",
+    });
+    expect(lastUses).toHaveLength(0);
   });
 
   it("rejects a revoked credential with the credentialRevoked state without recording use", async () => {

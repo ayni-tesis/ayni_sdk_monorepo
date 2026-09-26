@@ -136,11 +136,6 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
   `ApplicationDetailPanel`, and the server, so only the type-check covers that
   glue. Add a `Dashboard`-level test (deep link renders the detail; clicking a row
   pushes `/dashboard/applications/:id/workflows/:workflowId`) if it regresses.
-- **Archived workflows and sync (US-037 → US-039/US-041)**: no SDK sync endpoint
-  exists yet, so "an archived workflow is not delivered in new synchronizations"
-  is only recorded as `workflow.status = 'archived'`. The sync manifest (US-039)
-  and version download (US-041) must exclude workflows whose status is
-  `archived`.
 - **Editing an archived workflow (US-037, spec silent)**: archiving blocks no
   other action. Administrators can still rename, edit the draft, and publish
   versions of an archived workflow, and there is no unarchive. Decide whether an
