@@ -110,6 +110,12 @@ class AyniSdk {
     _SyncDeadline deadline,
   ) async {
     if (deadline.expired) return false;
+    try {
+      await onBeforeInventoryPersist?.call();
+    } catch (_) {
+      return false;
+    }
+    if (deadline.expired) return false;
     await storageDirectory.create(recursive: true);
     if (deadline.expired) return false;
     final temporaryFile = File(
@@ -117,7 +123,6 @@ class AyniSdk {
     );
     try {
       await temporaryFile.writeAsString(inventory, flush: true);
-      await onBeforeInventoryPersist?.call();
       if (deadline.expired) return false;
       await temporaryFile.rename(inventoryFile.path);
       return !deadline.expired;

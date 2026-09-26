@@ -194,9 +194,9 @@ void main() {
       createHttpClient: (_) => recordingClient,
     );
 
-    expect(recordingClient.findProxy, isNotNull);
+    expect(recordingClient.recordedFindProxy, isNotNull);
     expect(
-      recordingClient.findProxy!(
+      recordingClient.recordedFindProxy!(
         Uri.parse(
           'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
         ),
@@ -228,14 +228,14 @@ void main() {
       final startedPersisting = Completer<void>();
       final releasePersistence = Completer<void>();
       final client = sdk(
-        timeout: const Duration(milliseconds: 10),
+        timeout: const Duration(seconds: 1),
         onBeforeInventoryPersist: () {
           startedPersisting.complete();
           return releasePersistence.future;
         },
       );
       final sync = client.sync();
-      await startedPersisting.future;
+      await startedPersisting.future.timeout(const Duration(seconds: 2));
 
       expect(await sync, SyncStatus.error);
       releasePersistence.complete();
@@ -243,6 +243,29 @@ void main() {
       expect(await inventory.readAsString(), before);
     },
   );
+
+  test('keeps inventory when the persistence callback fails', () async {
+    final inventory = await seedInventory(sdk());
+    final before = await inventory.readAsString();
+    responseBody =
+        '{"workflows":[{"id":"workflow-2"}],"models":[{"id":"model-2"}]}';
+
+    expect(
+      await sdk(
+        onBeforeInventoryPersist: () =>
+            Future<void>.error(StateError('persistence callback failed')),
+      ).sync(),
+      SyncStatus.error,
+    );
+    expect(await inventory.readAsString(), before);
+    expect(
+      await storageDirectory
+          .list()
+          .where((entry) => entry.path.endsWith('.tmp'))
+          .isEmpty,
+      isTrue,
+    );
+  });
 
   test('reports an invalid HTTP response as an error', () async {
     final invalidServer = await ServerSocket.bind(
@@ -276,7 +299,7 @@ class _RecordingHttpClient implements HttpClient {
   _RecordingHttpClient(this._delegate);
 
   final HttpClient _delegate;
-  String Function(Uri uri)? findProxy;
+  String Function(Uri uri)? recordedFindProxy;
 
   @override
   Future<HttpClientRequest> postUrl(Uri url) => _delegate.postUrl(url);
@@ -289,7 +312,7 @@ class _RecordingHttpClient implements HttpClient {
     if (invocation.memberName == const Symbol('findProxy=')) {
       final finder =
           invocation.positionalArguments.single as String Function(Uri);
-      findProxy = finder;
+      recordedFindProxy = finder;
       _delegate.findProxy = finder;
       return null;
     }
