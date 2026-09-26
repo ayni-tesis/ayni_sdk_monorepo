@@ -10,6 +10,7 @@ import {
   IconFlag,
   IconGitBranch,
   IconPhoto,
+  IconPlus,
 } from "@tabler/icons-react";
 import {
   Background,
@@ -50,7 +51,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { arrangeWorkflowNodes } from "./workflow-canvas-layout";
+import { arrangeWorkflowNodes, placeWorkflowNodeAfter } from "./workflow-canvas-layout";
 import {
   type WorkflowCanvasAddNodeControl,
   WorkflowCanvasControls,
@@ -148,6 +149,8 @@ type WorkflowFlowNodeData = {
   onSelectNode: (nodeId: string, toggle: boolean) => void;
   onOpenDetails: (nodeId: string) => void;
   onConnect: (connection: WorkflowCanvasConnection) => void;
+  /** Opens Agregar nodo after an output; only for those who may add nodes. */
+  onAddAfter?: (source: Exclude<ConnectionSource, null>) => void;
 };
 type WorkflowFlowNode = Node<WorkflowFlowNodeData, "workflow">;
 type WorkflowFlowEdgeData = {
@@ -357,6 +360,17 @@ function readPaletteNode(event: DragEvent<HTMLElement>): WorkflowPaletteNode | n
   }
 }
 
+/** Whether the pointer was released over the empty board, not over a card or a control. */
+function droppedOnBackground(event: MouseEvent | TouchEvent) {
+  const point = "changedTouches" in event ? event.changedTouches[0] : event;
+  if (!point) return false;
+  // Like React Flow, ask for the element under the pointer: a released drag
+  // reports the element it started from as its target. The pane also holds the
+  // cards, so only the pane itself is the background.
+  const element = document.elementFromPoint(point.clientX, point.clientY);
+  return element?.classList.contains("react-flow__pane") ?? false;
+}
+
 const nodeTypes = { workflow: WorkflowNodeCard };
 const edgeTypes = { workflow: WorkflowEdge };
 
@@ -561,6 +575,20 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
             state={portState(data, port.id, "output")}
             align="end"
           >
+            {data.onAddAfter && (
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="outline"
+                className="nodrag"
+                disabled={!canManage}
+                aria-label={`Agregar nodo después de ${port.label}`}
+                title="Agrega el siguiente paso conectado a esta salida"
+                onClick={() => data.onAddAfter?.({ sourceNodeId: node.id, sourcePort: port.id })}
+              >
+                <IconPlus aria-hidden />
+              </Button>
+            )}
             <button
               type="button"
               disabled={!canManage}
@@ -672,6 +700,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
 export type WorkflowCanvasPlacement = {
   /** The position that centers a new card in the visible area of the canvas. */
   visibleCenter: () => WorkflowCanvasPosition;
+  /** Right of the node, or lower down at the first place free of other cards (US-128). */
+  after: (sourceNodeId: string) => WorkflowCanvasPosition;
 };
 
 /** The Agregar nodo panel; only administrators who can edit the draft get it. */
@@ -679,6 +709,8 @@ export type WorkflowCanvasAddNode = {
   open: boolean;
   /** The bar's Agregar nodo button, or Tab while the canvas has the focus. */
   onToggle: () => void;
+  /** An output's + button, or a connection dropped from it on the background (US-128). */
+  onAddAfter?: (source: Exclude<ConnectionSource, null>) => void;
   /** The panel, shown left of the canvas while it is open. */
   panel: (placement: WorkflowCanvasPlacement) => ReactNode;
 };
@@ -789,6 +821,18 @@ function WorkflowCanvasFlow({
         x: (width / 2 - x) / zoom - NODE_WIDTH / 2,
         y: (height / 2 - y) / zoom - NODE_HEIGHT / 2,
       });
+    },
+    after(sourceNodeId) {
+      // A source deleted meanwhile leaves nothing to place the node next to.
+      if (!draft.nodes.some((node) => node.id === sourceNodeId)) return placement.visibleCenter();
+      const boxes = workflowNodeBoxes(draft, measured);
+      return savablePosition(
+        placeWorkflowNodeAfter(
+          sourceNodeId,
+          Object.fromEntries(draft.nodes.map((node, index) => [node.id, boxes[index]])),
+          { width: NODE_WIDTH, height: NODE_HEIGHT },
+        ),
+      );
     },
   };
   const addNodePanel = addNode?.open ? addNode.panel(placement) : null;
@@ -909,6 +953,7 @@ function WorkflowCanvasFlow({
       onSelectNode: selectNode,
       onOpenDetails: openNodeDetails,
       onConnect,
+      onAddAfter: addNode?.onAddAfter,
     },
   }));
   const edges: WorkflowFlowEdge[] = workflowCanvasEdges(draft)
@@ -1119,10 +1164,18 @@ function WorkflowCanvasFlow({
                 if (!connectionCancelledRef.current) onConnect(toCanvasConnection(connection));
               }}
               // A drop on an incompatible port is reported too, so it can be
-              // rejected with its reason. A drop on the background does nothing
-              // until US-128 opens Agregar nodo there.
-              onConnectEnd={(_, { isValid, fromHandle, toHandle }) => {
-                if (connectionCancelledRef.current || isValid || !fromHandle || !toHandle) return;
+              // rejected with its reason. A drop on the background opens Agregar
+              // nodo after the output the connection started from.
+              onConnectEnd={(event, { isValid, fromHandle, toHandle }) => {
+                if (connectionCancelledRef.current || isValid || !fromHandle) return;
+                if (!toHandle) {
+                  if (addNode?.onAddAfter && droppedOnBackground(event))
+                    addNode.onAddAfter({
+                      sourceNodeId: fromHandle.nodeId,
+                      sourcePort: fromHandle.id ?? "",
+                    });
+                  return;
+                }
                 if (
                   toHandle.nodeId === fromHandle.nodeId &&
                   toHandle.id === fromHandle.id &&

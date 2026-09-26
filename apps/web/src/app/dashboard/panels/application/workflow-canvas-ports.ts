@@ -38,7 +38,8 @@ export function workflowNodePorts(node: WorkflowCanvasNode): {
   }
 }
 
-function outputType(node: WorkflowCanvasNode | undefined, sourcePort: string) {
+/** The type of what an output port produces, or `undefined` if the node has no such output. */
+export function workflowOutputPortType(node: WorkflowCanvasNode | undefined, sourcePort: string) {
   if (node?.type === "input.image" && sourcePort === "imagen") return "image";
   if (node?.type === "model.tflite" && sourcePort === "result") return node.outputs.result.type;
   if (node?.type === "condition" && (sourcePort === "true" || sourcePort === "false"))
@@ -75,7 +76,7 @@ export function workflowPortCompatibility(
   if (connection.sourceNodeId === connection.targetNodeId) return "incompatible";
   const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
   const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
-  const type = outputType(source, connection.sourcePort);
+  const type = workflowOutputPortType(source, connection.sourcePort);
   if (!type || type !== inputType(target, connection.targetPort)) return "incompatible";
   const inputTaken = connections.some(
     (edge) =>

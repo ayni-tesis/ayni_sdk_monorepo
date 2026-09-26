@@ -8,7 +8,9 @@ import {
   CONDITION_OPERATOR_SYMBOLS,
   setWorkflowPaletteDragData,
   type WorkflowCanvasDraft,
+  workflowNodeTitle,
 } from "./workflow-canvas";
+import { WORKFLOW_PORT_LABELS, workflowOutputPortType } from "./workflow-canvas-ports";
 import {
   CONDITION_SOURCE_MISSING_MESSAGE,
   searchWorkflowNodeCatalog,
@@ -16,6 +18,7 @@ import {
   type WorkflowNewNode,
   type WorkflowNodeCatalogCategory,
   type WorkflowNodeCatalogItem,
+  type WorkflowNodeOrigin,
   workflowConditionSources,
   workflowNodeCatalog,
   workflowOutputSources,
@@ -30,6 +33,7 @@ const CATEGORIES: { id: WorkflowNodeCatalogCategory; title: string }[] = [
   { id: "output", title: "Salida" },
 ];
 const OUTPUT_SOURCE_REQUIRED_MESSAGE = "Selecciona un tipo de resultado para la salida.";
+const NO_COMPATIBLE_NODES_MESSAGE = "No hay nodos compatibles con esta salida.";
 const selectClassName =
   "w-full rounded-md border bg-background px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50";
 // The search field and every item, in order, for the arrow keys.
@@ -44,6 +48,8 @@ export type WorkflowAddNodePanelProps = {
   onRetryModels: () => void;
   /** True while a node is being added or positions save or arrange: nothing can be added. */
   busy: boolean;
+  /** The output the node is added after (US-128): only compatible types, with it as their source. */
+  origin?: WorkflowNodeOrigin;
   onAdd: (node: WorkflowNewNode) => void;
   onClose: () => void;
 };
@@ -55,6 +61,7 @@ export function WorkflowAddNodePanel({
   modelsError,
   onRetryModels,
   busy,
+  origin,
   onAdd,
   onClose,
 }: WorkflowAddNodePanelProps) {
@@ -64,13 +71,20 @@ export function WorkflowAddNodePanel({
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
 
-  const catalog = workflowNodeCatalog(draft, models);
+  const catalog = workflowNodeCatalog(draft, models, origin);
   const found = searchWorkflowNodeCatalog(catalog, query);
   const searching = query.trim() !== "";
+  const originNode = origin && draft.nodes.find((node) => node.id === origin.sourceNodeId);
+  // Models load separately; they matter everywhere except after a port that cannot feed them.
+  const offersModels = !origin || workflowOutputPortType(originNode, origin.sourcePort) === "image";
+  const noneCompatible =
+    origin && catalog.length === 0 && !(offersModels && (modelsLoading || modelsError));
 
   function choose(item: WorkflowNodeCatalogItem) {
     if (item.disabledReason || busy) return;
-    if (item.node) onAdd(item.node);
+    // A model added after the image is connected to it as it is saved.
+    if (item.node)
+      onAdd(origin && item.node.type === "model.tflite" ? { ...item.node, ...origin } : item.node);
     else if (item.configure) setForm(item.configure);
   }
 
@@ -114,11 +128,33 @@ export function WorkflowAddNodePanel({
           <IconX aria-hidden className="size-4" />
         </Button>
       </header>
+      {origin && (
+        <p className="text-muted-foreground text-xs">
+          Después de {WORKFLOW_PORT_LABELS[origin.sourcePort] ?? origin.sourcePort}
+          {originNode ? ` de ${workflowNodeTitle(originNode)}` : ""}
+        </p>
+      )}
 
       {form === "condition" ? (
-        <ConditionForm draft={draft} busy={busy} onAdd={onAdd} onBack={() => setForm(null)} />
+        <ConditionForm
+          draft={draft}
+          busy={busy}
+          origin={origin}
+          onAdd={onAdd}
+          onBack={() => setForm(null)}
+        />
       ) : form === "output" ? (
-        <OutputForm draft={draft} busy={busy} onAdd={onAdd} onBack={() => setForm(null)} />
+        <OutputForm
+          draft={draft}
+          busy={busy}
+          origin={origin}
+          onAdd={onAdd}
+          onBack={() => setForm(null)}
+        />
+      ) : noneCompatible ? (
+        <p role="status" className="text-muted-foreground text-sm">
+          {NO_COMPATIBLE_NODES_MESSAGE}
+        </p>
       ) : (
         <>
           <Input
@@ -138,7 +174,7 @@ export function WorkflowAddNodePanel({
             CATEGORIES.map((category) => {
               const items = found.filter((item) => item.category === category.id);
               const modelState =
-                category.id === "models" ? (
+                category.id === "models" && offersModels ? (
                   <ModelState
                     models={models}
                     loading={modelsLoading}
@@ -152,7 +188,14 @@ export function WorkflowAddNodePanel({
               return (
                 <CatalogCategory key={category.id} title={category.title}>
                   {items.map((item) => (
-                    <CatalogItem key={item.key} item={item} busy={busy} onChoose={choose} />
+                    <CatalogItem
+                      key={item.key}
+                      item={item}
+                      busy={busy}
+                      // Dropped elsewhere, a node would lose its connection to the port.
+                      draggable={!origin}
+                      onChoose={choose}
+                    />
                   ))}
                   {modelState}
                 </CatalogCategory>
@@ -181,16 +224,18 @@ function CatalogCategory({ title, children }: { title: string; children: ReactNo
 function CatalogItem({
   item,
   busy,
+  draggable,
   onChoose,
 }: {
   item: WorkflowNodeCatalogItem;
   busy: boolean;
+  draggable: boolean;
   onChoose: (item: WorkflowNodeCatalogItem) => void;
 }) {
   const id = useId();
   const disabled = Boolean(item.disabledReason) || busy;
   // Only types without settings can be dragged onto the canvas.
-  const paletteNode = disabled ? undefined : item.node;
+  const paletteNode = disabled || !draggable ? undefined : item.node;
   return (
     <li>
       <button
@@ -304,15 +349,17 @@ function FormHeader({ title, onBack }: { title: string; onBack: () => void }) {
 type FormProps = {
   draft: WorkflowCanvasDraft;
   busy: boolean;
+  /** The output port the node is added after; it fixes the node's source. */
+  origin?: WorkflowNodeOrigin;
   onAdd: (node: WorkflowNewNode) => void;
   onBack: () => void;
 };
 
 // The same fields and rules as the condition form before US-127.
-function ConditionForm({ draft, busy, onAdd, onBack }: FormProps) {
+function ConditionForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
   const fieldId = useId();
   const sources = workflowConditionSources(draft);
-  const [sourceId, setSourceId] = useState("");
+  const [sourceId, setSourceId] = useState(origin?.sourceNodeId ?? "");
   const [label, setLabel] = useState("");
   const [operator, setOperator] = useState<ConditionOperator>("gte");
   const [threshold, setThreshold] = useState("0.5");
@@ -355,7 +402,7 @@ function ConditionForm({ draft, busy, onAdd, onBack }: FormProps) {
         autoFocus
         className={selectClassName}
         value={source ? sourceId : ""}
-        disabled={sources.length === 0}
+        disabled={sources.length === 0 || Boolean(origin)}
         onChange={(event) => {
           setSourceId(event.target.value);
           setLabel("");
@@ -378,6 +425,8 @@ function ConditionForm({ draft, busy, onAdd, onBack }: FormProps) {
       </label>
       <select
         id={`${fieldId}-label`}
+        // biome-ignore lint/a11y/noAutofocus: after a port the source is set, so the label comes first.
+        autoFocus={Boolean(origin)}
         className={selectClassName}
         value={selectedLabel}
         disabled={!source}
@@ -425,11 +474,14 @@ function ConditionForm({ draft, busy, onAdd, onBack }: FormProps) {
 }
 
 // The same fields and rules as the output form before US-127.
-function OutputForm({ draft, busy, onAdd, onBack }: FormProps) {
+function OutputForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
   const fieldId = useId();
   const sources = workflowOutputSources(draft);
   const [name, setName] = useState("");
-  const [sourceKey, setSourceKey] = useState("");
+  // After a port, the result type follows from it.
+  const [sourceKey, setSourceKey] = useState(
+    origin ? `${origin.sourceNodeId}:${origin.sourcePort}` : "",
+  );
   const [sourceError, setSourceError] = useState("");
   const source = sources.find((option) => `${option.id}:${option.port}` === sourceKey);
 
@@ -470,6 +522,7 @@ function OutputForm({ draft, busy, onAdd, onBack }: FormProps) {
         id={`${fieldId}-source`}
         className={selectClassName}
         value={source ? sourceKey : ""}
+        disabled={Boolean(origin)}
         aria-invalid={Boolean(sourceError)}
         aria-describedby={sourceError ? `${fieldId}-source-error` : undefined}
         onChange={(event) => {

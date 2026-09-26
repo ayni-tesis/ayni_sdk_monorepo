@@ -688,6 +688,8 @@ export type AddModelNodeInput = {
   userId: string;
   modelVersionId: string;
   position?: WorkflowNodePosition;
+  /** The output the model is added after; its image input is connected to it in the same write. */
+  source?: { nodeId: string; port: string };
 };
 
 export type AddModelNodeResult =
@@ -700,7 +702,8 @@ export type AddModelNodeResult =
         | "archived"
         | "workflowNotFound"
         | "modelVersionNotFound"
-        | "contractRequired";
+        | "contractRequired"
+        | "incompatibleSource";
     };
 
 type ModelVersionLookupExecutor = {
@@ -720,7 +723,7 @@ type ModelVersionLookupExecutor = {
 
 export async function addModelNode(
   database: WorkflowDatabase,
-  { applicationId, workflowId, userId, modelVersionId, position }: AddModelNodeInput,
+  { applicationId, workflowId, userId, modelVersionId, position, source }: AddModelNodeInput,
 ): Promise<AddModelNodeResult> {
   const result = await executeApplicationAction(
     database,
@@ -757,6 +760,51 @@ export async function addModelNode(
         outputs: { result: selected.contract.output },
       };
       const updater = tx as WorkflowUpdateExecutor;
+      if (source) {
+        // The node and the connection from its source are saved together or not at all.
+        const reader = tx as unknown as {
+          select: (fields: Record<string, unknown>) => {
+            from: (table: unknown) => {
+              where: (condition: unknown) => {
+                limit: (count: number) => {
+                  for: (lock: "update") => Promise<{ draft: WorkflowDraft }[]>;
+                };
+              };
+            };
+          };
+        };
+        const locked = await reader
+          .select({ draft: workflow.draft })
+          .from(workflow)
+          .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+          .limit(1)
+          .for("update");
+        if (!locked[0]) return { kind: "workflowNotFound" as const };
+        const draft = locked[0].draft ?? { nodes: [] };
+        const connection: WorkflowConnection = {
+          sourceNodeId: source.nodeId,
+          sourcePort: source.port,
+          targetNodeId: node.id,
+          targetPort: "image",
+        };
+        const updatedDraft = appendWorkflowNode(
+          { ...draft, connections: [...(draft.connections ?? []), connection] },
+          node,
+          position,
+        );
+        // The new model's image input is still free and has no outgoing edges,
+        // so only the port types can make it incompatible, never a cycle.
+        if (!areWorkflowPortsCompatible(updatedDraft, connection))
+          return { kind: "incompatibleSource" as const };
+        const updated = (await updater
+          .update(workflow)
+          .set({ draft: sql`${JSON.stringify(updatedDraft)}::jsonb` })
+          .where(and(eq(workflow.id, workflowId), eq(workflow.applicationId, application.id)))
+          .returning()) as WorkflowRow[];
+        return updated[0]
+          ? { kind: "added" as const, draft: updated[0].draft ?? updatedDraft }
+          : { kind: "workflowNotFound" as const };
+      }
       const rows = (await updater
         .update(workflow)
         .set({

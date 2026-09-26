@@ -8,6 +8,7 @@ import {
   type ArchiveWorkflowResult,
   addConditionNode,
   addImageInputNode,
+  addModelNode,
   addWorkflowConnection,
   archiveWorkflow,
   type CreateWorkflowResult,
@@ -176,6 +177,7 @@ function makeApp({
     userId: string;
     modelVersionId: string;
     position?: { x: number; y: number };
+    source?: { nodeId: string; port: string };
   }) => Promise<import("./workflow-store").AddModelNodeResult>;
   addConditionNode?: (
     input: import("./workflow-store").AddConditionNodeInput,
@@ -622,6 +624,65 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
       workflowId: "workflow-1",
       userId: "admin",
       modelVersionId: "mv-1",
+    });
+  });
+
+  it("dispatches a model node with the output port it is added after (US-128)", async () => {
+    const addModelNode = vi.fn(async () => ({ ok: true as const, draft: { nodes: [] } }));
+    const { request } = makeApp({ addModelNode });
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-1",
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      position: { x: 400, y: 0 },
+    });
+
+    expect(response.status).toBe(200);
+    expect(addModelNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      modelVersionId: "mv-1",
+      position: { x: 400, y: 0 },
+      source: { nodeId: "image-node", port: "imagen" },
+    });
+  });
+
+  it.each([
+    ["only a source node", { sourceNodeId: "image-node" }],
+    ["only a source port", { sourcePort: "imagen" }],
+    ["an empty source", { sourceNodeId: "", sourcePort: "imagen" }],
+  ])("rejects a model node with %s without adding it", async (_case, source) => {
+    const { request, addModelNode } = makeApp();
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-1",
+      ...source,
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ message: "Selecciona puertos válidos." });
+    expect(addModelNode).not.toHaveBeenCalled();
+  });
+
+  it("maps a model source port that cannot feed it to HTTP 409", async () => {
+    const { request } = makeApp({
+      addModelNode: async () => ({ ok: false, reason: "incompatibleSource" }),
+    });
+
+    const response = await postWorkflowNode(request, {
+      type: "model.tflite",
+      modelVersionId: "mv-1",
+      sourceNodeId: "model-node",
+      sourcePort: "result",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Estos puertos no son compatibles.",
     });
   });
 
@@ -2698,6 +2759,117 @@ describe("addWorkflowConnection", () => {
   });
 });
 
+describe("addModelNode after an output port (US-128)", () => {
+  const contract = {
+    input: {
+      type: "image" as const,
+      width: 224,
+      height: 224,
+      channels: 3 as const,
+      normalization: "none" as const,
+    },
+    output: { type: "classification" as const, labels: ["roya", "sana"] },
+  };
+  const imageNode = {
+    id: "image",
+    type: "input.image" as const,
+    outputs: { imagen: "image" as const },
+  };
+  const existingModel = {
+    id: "model-a",
+    type: "model.tflite" as const,
+    modelVersionId: "version-a",
+    modelName: "Hoja",
+    version: "0.9.0",
+    inputs: { image: contract.input },
+    outputs: { result: contract.output },
+  };
+  const condition = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "model-a",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.5,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const draft = {
+    nodes: [imageNode, existingModel, condition],
+    connections: [
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model-a", targetPort: "image" },
+    ],
+    layout: { image: { x: 0, y: 0 } },
+  };
+  const versions = [{ id: "version-1", version: "1.0.0", contract, modelName: "Clasificador" }];
+  const input = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    modelVersionId: "version-1",
+    position: { x: 344, y: 0 },
+  };
+
+  it("saves the model and its connection together, keeping the port's other branches", async () => {
+    const store = makeWorkflowPositionStoreDb(draft, versions);
+
+    const result = await addModelNode(store.db, {
+      ...input,
+      source: { nodeId: "image", port: "imagen" },
+    });
+
+    if (!result.ok) throw new Error(`Expected the model to be added, got ${result.reason}`);
+    const added = result.draft.nodes[3];
+    if (!added) throw new Error("Expected the model node in the draft");
+    expect(added).toEqual({
+      id: expect.any(String),
+      type: "model.tflite",
+      modelVersionId: "version-1",
+      modelName: "Clasificador",
+      version: "1.0.0",
+      inputs: { image: contract.input },
+      outputs: { result: contract.output },
+    });
+    expect(result.draft.connections).toEqual([
+      ...draft.connections,
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: added.id, targetPort: "image" },
+    ]);
+    expect(result.draft.layout).toEqual({ ...draft.layout, [added.id]: input.position });
+    expect(store.writes).toBe(1);
+    expect(store.lockedTables).toContain(workflow);
+    expect(store.reload()).toEqual(result.draft);
+  });
+
+  it.each([
+    ["a missing node", "missing", "imagen"],
+    ["a model result", "model-a", "result"],
+    ["a condition branch", "condition", "true"],
+    ["an unknown port of the image input", "image", "result"],
+  ])(
+    "rejects %s as its source without saving the node or the connection",
+    async (_case, nodeId, port) => {
+      const store = makeWorkflowPositionStoreDb(draft, versions);
+
+      const result = await addModelNode(store.db, { ...input, source: { nodeId, port } });
+
+      expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+      expect(store.writes).toBe(0);
+      expect(store.reload()).toEqual(draft);
+    },
+  );
+
+  it("still reports a version without a contract before looking at the source", async () => {
+    const store = makeWorkflowPositionStoreDb(draft, [{ ...versions[0], contract: null }]);
+
+    const result = await addModelNode(store.db, {
+      ...input,
+      source: { nodeId: "image", port: "imagen" },
+    });
+
+    expect(result).toEqual({ ok: false, reason: "contractRequired" });
+    expect(store.writes).toBe(0);
+  });
+});
+
 describe("deleteWorkflowNode", () => {
   it("removes the selected node, incident connections, and saved layout", async () => {
     const draft = {
@@ -2966,13 +3138,20 @@ describe("updateWorkflowNode", () => {
   });
 });
 
-function makeWorkflowPositionStoreDb(draft: import("./workflow-store").WorkflowDraft) {
+function makeWorkflowPositionStoreDb(
+  draft: import("./workflow-store").WorkflowDraft,
+  // The model versions a model node lookup finds.
+  modelVersions: Record<string, unknown>[] = [],
+) {
   let storedDraft = structuredClone(draft);
   let writes = 0;
   const lockedTables: unknown[] = [];
   const executor = {
     select: () => ({
       from: (table: unknown) => ({
+        innerJoin: () => ({
+          where: () => ({ limit: async () => structuredClone(modelVersions) }),
+        }),
         where: () => ({
           limit: () => ({
             for: async () => {

@@ -2,10 +2,11 @@ import dagre from "@dagrejs/dagre";
 import type {
   WorkflowCanvasConnection,
   WorkflowCanvasNode,
+  WorkflowCanvasPosition,
   WorkflowCanvasPositions,
 } from "./workflow-canvas";
 import { workflowNodePorts } from "./workflow-canvas-ports";
-import type { WorkflowCanvasSize } from "./workflow-canvas-viewport";
+import type { WorkflowCanvasBox, WorkflowCanvasSize } from "./workflow-canvas-viewport";
 
 /** Minimum space between the cards of two consecutive levels. */
 export const WORKFLOW_LAYOUT_LEVEL_GAP = 48;
@@ -61,6 +62,34 @@ export function arrangeWorkflowNodes(
     x += Math.ceil(sizes[node.id].width) + WORKFLOW_LAYOUT_LEVEL_GAP;
   }
   return positions;
+}
+
+/**
+ * Where a node added after an output of `sourceNodeId` goes: one level right of
+ * its source and level with it, or else lower down, at the first place where it
+ * keeps the usual gaps from every other card. The source must be in `boxes`.
+ */
+export function placeWorkflowNodeAfter(
+  sourceNodeId: string,
+  boxes: Record<string, WorkflowCanvasBox>,
+  size: WorkflowCanvasSize,
+): WorkflowCanvasPosition {
+  const source = boxes[sourceNodeId];
+  const x = Math.round(source.x + source.width + WORKFLOW_LAYOUT_LEVEL_GAP);
+  let y = Math.round(source.y);
+  const gap = WORKFLOW_LAYOUT_NODE_GAP;
+  // Each overlap moves the node below that card, so y only grows and this ends.
+  for (;;) {
+    const blocking = Object.values(boxes).filter(
+      (box) =>
+        x < box.x + box.width + gap &&
+        x + size.width + gap > box.x &&
+        y < box.y + box.height + gap &&
+        y + size.height + gap > box.y,
+    );
+    if (blocking.length === 0) return { x, y };
+    y = Math.ceil(Math.max(...blocking.map((box) => box.y + box.height + gap)));
+  }
 }
 
 /** Lays out the nodes the image input reaches with dagre (ADR 0001). */

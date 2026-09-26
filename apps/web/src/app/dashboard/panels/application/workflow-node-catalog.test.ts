@@ -114,6 +114,60 @@ describe("workflowNodeCatalog", () => {
   });
 });
 
+describe("workflowNodeCatalog after an output port (US-128)", () => {
+  const condition: WorkflowCanvasNode = {
+    id: "condition",
+    type: "condition",
+    sourceNodeId: "leaf",
+    label: "sana",
+    operator: "gte",
+    threshold: 0.5,
+    branches: { true: "Verdadero", false: "Falso" },
+  };
+  const draft: WorkflowCanvasDraft = {
+    nodes: [image, modelNode("leaf", classification), modelNode("pests", detection), condition],
+  };
+  const models = [
+    {
+      id: "leaf-model",
+      name: "Clasificador de hojas",
+      versions: [
+        { id: "leaf-1", version: "1.0.0", contract: classification },
+        { id: "leaf-2", version: "2.0.0", contract: null },
+      ],
+    },
+  ];
+  const after = (sourceNodeId: string, sourcePort: string) =>
+    workflowNodeCatalog(draft, models, { sourceNodeId, sourcePort }).map((item) => ({
+      key: item.key,
+      disabledReason: item.disabledReason,
+    }));
+
+  it("offers only the contracted model versions after the image", () => {
+    expect(after("image", "imagen")).toEqual([{ key: "model:leaf-1", disabledReason: undefined }]);
+  });
+
+  it("offers conditions and outputs after a classification result", () => {
+    expect(after("leaf", "result")).toEqual([
+      { key: "condition", disabledReason: undefined },
+      { key: "output", disabledReason: undefined },
+    ]);
+  });
+
+  it.each([
+    ["a detection result", "pests", "result"],
+    ["Verdadero", "condition", "true"],
+    ["Falso", "condition", "false"],
+  ])("offers only outputs after %s", (_port, sourceNodeId, sourcePort) => {
+    expect(after(sourceNodeId, sourcePort)).toEqual([{ key: "output", disabledReason: undefined }]);
+  });
+
+  it("offers nothing after a port or node that is not on the canvas", () => {
+    expect(after("image", "result")).toEqual([]);
+    expect(after("deleted", "result")).toEqual([]);
+  });
+});
+
 describe("searchWorkflowNodeCatalog", () => {
   const catalog = workflowNodeCatalog(empty, [
     {

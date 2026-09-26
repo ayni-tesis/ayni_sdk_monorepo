@@ -56,6 +56,7 @@ import type {
   WorkflowModelOption,
   WorkflowModelVersionContract,
   WorkflowNewNode,
+  WorkflowNodeOrigin,
 } from "./workflow-node-catalog";
 import { type WorkflowNodeChanges, WorkflowNodeDetailsPanel } from "./workflow-node-details-panel";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
@@ -133,6 +134,11 @@ const ADD_NODE_MESSAGES: Record<WorkflowNewNode["type"], { success: string; fail
   "model.tflite": { success: "Nodo de modelo agregado.", failure: "No pudimos agregar el nodo." },
   condition: { success: "Condición agregada.", failure: "No pudimos agregar la condición." },
   output: { success: "Nodo de salida agregado.", failure: "No pudimos agregar la salida." },
+};
+// Any type added after an output port (US-128).
+const ADD_CONNECTED_NODE_MESSAGES = {
+  success: "Nodo agregado y conectado.",
+  failure: "No pudimos agregar el nodo.",
 };
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
 const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
@@ -370,6 +376,8 @@ export function WorkflowDetailView({
   const [publishError, setPublishError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [addNodeOpen, setAddNodeOpen] = useState(false);
+  // The output port Agregar nodo was opened from, or `null` when opened from the bar.
+  const [addNodeOrigin, setAddNodeOrigin] = useState<WorkflowNodeOrigin | null>(null);
   const [addingNode, setAddingNode] = useState(false);
   const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
@@ -546,12 +554,18 @@ export function WorkflowDetailView({
   }
 
   // Agregar nodo closes once the node is saved; after a failure it stays open, with
-  // the settings typed, over the draft reloaded from the server.
-  async function addNode(node: WorkflowNewNode, position: WorkflowCanvasPosition) {
+  // the settings typed, over the draft reloaded from the server. A node added
+  // after an output port is saved with its connection, so the canvas changes
+  // only once both are.
+  async function addNode(
+    node: WorkflowNewNode,
+    position: WorkflowCanvasPosition,
+    connected = false,
+  ) {
     if (addingNodeRef.current) return;
     addingNodeRef.current = true;
     setAddingNode(true);
-    const messages = ADD_NODE_MESSAGES[node.type];
+    const messages = connected ? ADD_CONNECTED_NODE_MESSAGES : ADD_NODE_MESSAGES[node.type];
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
@@ -559,9 +573,11 @@ export function WorkflowDetailView({
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setAddNodeOpen(false);
+      setAddNodeOrigin(null);
       toast.success(messages.success);
     } catch (addError) {
-      toast.error(errorMessage(addError, messages.failure));
+      // US-128 names a single failure message for a node added after a port.
+      toast.error(connected ? messages.failure : errorMessage(addError, messages.failure));
       void loadDetail(application.id, workflowId);
     } finally {
       addingNodeRef.current = false;
@@ -1115,17 +1131,38 @@ export function WorkflowDetailView({
               canManage && application.status === "active"
                 ? {
                     open: addNodeOpen,
-                    onToggle: () => setAddNodeOpen((open) => !open),
+                    onToggle: () => {
+                      setAddNodeOrigin(null);
+                      setAddNodeOpen((open) => !open);
+                    },
+                    onAddAfter: (origin) => {
+                      setAddNodeOrigin(origin);
+                      setAddNodeOpen(true);
+                    },
                     panel: (placement) => (
                       <WorkflowAddNodePanel
+                        // Another port starts over, without the previous search or form.
+                        key={
+                          addNodeOrigin
+                            ? `${addNodeOrigin.sourceNodeId}:${addNodeOrigin.sourcePort}`
+                            : "all"
+                        }
                         draft={draft}
                         models={modelOptions}
                         modelsLoading={modelOptionsLoading}
                         modelsError={modelOptionsError}
                         onRetryModels={() => setModelOptionsReload((value) => value + 1)}
                         busy={loading || addingNode || savingPositions || arrangingNodes}
-                        onAdd={(node) => void addNode(node, placement.visibleCenter())}
-                        onClose={() => setAddNodeOpen(false)}
+                        origin={addNodeOrigin ?? undefined}
+                        onAdd={(node) =>
+                          void (addNodeOrigin
+                            ? addNode(node, placement.after(addNodeOrigin.sourceNodeId), true)
+                            : addNode(node, placement.visibleCenter()))
+                        }
+                        onClose={() => {
+                          setAddNodeOpen(false);
+                          setAddNodeOrigin(null);
+                        }}
                       />
                     ),
                   }
