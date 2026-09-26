@@ -2464,6 +2464,35 @@ describe("ApplicationDetailPanel", () => {
       expect(imageToModelEdge()).toBeNull();
     });
 
+    it("does not restore the connection when a change still being saved moves the draft on", async () => {
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
+      let finishMove: (value: unknown) => void = () => {};
+      client.patch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishMove = resolve;
+        }),
+      );
+      await deleteImageToModel();
+      await waitFor(() => expect(imageToModelEdge()).toBeNull());
+
+      // Deshacer runs while a move made after the deletion is still being saved.
+      const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
+      fireEvent.click(screen.getByRole("button", { name: "Imagen de entrada" }));
+      fireEvent.keyDown(canvas, { key: "ArrowRight", shiftKey: true });
+      fireEvent.keyUp(canvas, { key: "Shift" });
+      await waitFor(() => expect(client.patch).toHaveBeenCalledTimes(1));
+      await undoLastNotice();
+      await act(async () => finishMove({ data: { positions: {}, draftRevision: 5 } }));
+
+      await waitFor(() =>
+        expect(toastMock.error).toHaveBeenCalledWith(
+          "No pudimos restaurar la conexión porque el borrador cambió.",
+        ),
+      );
+      expect(client.post).not.toHaveBeenCalled();
+      expect(imageToModelEdge()).toBeNull();
+    });
+
     it("reloads the draft when the connection cannot be restored", async () => {
       client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
       client.post.mockRejectedValueOnce(new Error("network"));

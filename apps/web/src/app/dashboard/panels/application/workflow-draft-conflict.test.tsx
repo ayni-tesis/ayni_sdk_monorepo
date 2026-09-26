@@ -240,6 +240,45 @@ describe("US-130: editing a draft someone else changed", () => {
     );
   });
 
+  it("never sends a change made on the old view once Recargar borrador reloads the draft", async () => {
+    const saved = detail(8, {
+      layout: { "image-node": { x: 48, y: 48 }, "model-node": { x: 720, y: 240 } },
+    });
+    serve(detail(7));
+    // A first rejected move shows the notice.
+    client.patch.mockRejectedValueOnce(conflict);
+    await renderDetail();
+    moveEveryNodeRight();
+    await waitFor(() => expect(conflictNotice()).not.toBeNull());
+    await waitFor(() => expect(screen.queryByText("Guardando posiciones…")).toBeNull());
+    client.patch.mockClear();
+
+    // Still on the old view: a connection is being sent and a move waits behind it.
+    let rejectConnection: (reason: unknown) => void = () => {};
+    client.post.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectConnection = reject;
+      }),
+    );
+    connectImageToModel();
+    moveEveryNodeRight();
+    expect(client.patch).not.toHaveBeenCalled();
+
+    client.get.mockResolvedValueOnce({ data: saved });
+    fireEvent.click(screen.getByRole("button", { name: "Recargar borrador" }));
+    // The reload waits for the connection already sent.
+    await act(async () => {});
+    expect(client.get.mock.calls.filter(([url]) => url === detailUrl)).toHaveLength(1);
+
+    await act(async () => rejectConnection(conflict));
+
+    await waitFor(() => expect(conflictNotice()).toBeNull());
+    expect(client.get.mock.calls.filter(([url]) => url === detailUrl)).toHaveLength(2);
+    // The move made on the old view never went out, and the saved draft shows.
+    expect(client.patch).not.toHaveBeenCalled();
+    expect(nodePosition("model-node")).toBe("translate(720px,240px)");
+  });
+
   it("keeps the notice with the load error when the reload fails", async () => {
     serve(detail(7));
     client.post.mockRejectedValueOnce(conflict);

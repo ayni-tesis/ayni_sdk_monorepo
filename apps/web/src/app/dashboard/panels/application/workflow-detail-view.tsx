@@ -120,6 +120,9 @@ const ADD_CONNECTED_NODE_MESSAGES = {
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
 const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
+/** A draft change that never went out: the draft it was made on is no longer the one on screen. */
+class DraftChangeDropped extends Error {}
+
 /** Whether the server refused a draft change because someone else changed the draft first. */
 function isDraftConflict(error: unknown) {
   return (
@@ -392,6 +395,8 @@ export function WorkflowDetailView({
   // changes go out one at a time, each on the revision the previous one left.
   const draftRevisionRef = useRef(0);
   const draftChangesRef = useRef<Promise<void> | null>(null);
+  // While Recargar borrador runs, changes made on the old view are dropped, not sent.
+  const reloadingDraftRef = useRef(false);
   // Set once someone else changed the draft; Recargar borrador clears it.
   const [draftConflict, setDraftConflict] = useState<"stale" | "reloading" | "failed" | null>(null);
 
@@ -552,6 +557,7 @@ export function WorkflowDetailView({
     send: (draftRevision: number) => Promise<{ data: T }>,
   ): Promise<T> {
     const run = async () => {
+      if (reloadingDraftRef.current) throw new DraftChangeDropped();
       const { data } = await send(draftRevisionRef.current);
       draftRevisionRef.current = data.draftRevision;
       return data;
@@ -577,7 +583,9 @@ export function WorkflowDetailView({
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setDraftConflict("reloading");
+    reloadingDraftRef.current = true;
     try {
+      await draftChangesRef.current;
       const { data } = await httpClient.get<WorkflowDetailItem>(detailUrl, {
         signal: controller.signal,
       });
@@ -592,7 +600,18 @@ export function WorkflowDetailView({
       setDraftConflict(null);
     } catch {
       if (!controller.signal.aborted) setDraftConflict("failed");
+    } finally {
+      reloadingDraftRef.current = false;
     }
+  }
+
+  // Whether a change failed because the draft changed under it. A rejected change
+  // shows the notice, unless a reload is already replacing the view.
+  function staleDraftChange(error: unknown) {
+    if (error instanceof DraftChangeDropped) return true;
+    if (!isDraftConflict(error)) return false;
+    setDraftConflict((current) => current ?? "stale");
+    return true;
   }
 
   // Agregar nodo closes once the node is saved; after a failure it stays open, with
@@ -621,10 +640,7 @@ export function WorkflowDetailView({
       setAddNodeOrigin(null);
       toast.success(messages.success);
     } catch (addError) {
-      if (isDraftConflict(addError)) {
-        setDraftConflict("stale");
-        return;
-      }
+      if (staleDraftChange(addError)) return;
       // US-128 names a single failure message for a node added after a port.
       toast.error(connected ? messages.failure : errorMessage(addError, messages.failure));
       void loadDetail(application.id, workflowId);
@@ -789,8 +805,7 @@ export function WorkflowDetailView({
         return { ...current, draft: { ...current.draft, layout } };
       });
       // Unlike other edits, a failed move always reads the same: the nodes were restored.
-      if (isDraftConflict(moveError)) setDraftConflict("stale");
-      else toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
+      if (!staleDraftChange(moveError)) toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
     } finally {
       savingLayoutRef.current = false;
       setSavingPositions(false);
@@ -813,8 +828,7 @@ export function WorkflowDetailView({
         httpClient.patch<PositionsSaved>(layoutUrl, { positions, draftRevision }),
       );
     } catch (arrangeError) {
-      if (isDraftConflict(arrangeError)) setDraftConflict("stale");
-      else toast.error(WORKFLOW_ARRANGE_ERROR);
+      if (!staleDraftChange(arrangeError)) toast.error(WORKFLOW_ARRANGE_ERROR);
       return false;
     } finally {
       savingLayoutRef.current = false;
@@ -846,8 +860,8 @@ export function WorkflowDetailView({
       showPositions(positions);
       toast.success("Posiciones restauradas.");
     } catch (restoreError) {
-      if (isDraftConflict(restoreError)) setDraftConflict("stale");
-      else toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
+      if (!staleDraftChange(restoreError))
+        toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
     } finally {
       savingLayoutRef.current = false;
       setSavingPositions(false);
@@ -885,10 +899,7 @@ export function WorkflowDetailView({
       setConnectionSource(null);
       toast.success("Conexión creada.");
     } catch (connectionError) {
-      if (isDraftConflict(connectionError)) {
-        setDraftConflict("stale");
-        return;
-      }
+      if (staleDraftChange(connectionError)) return;
       if (
         axios.isAxiosError(connectionError) &&
         connectionError.response?.data?.code === "workflowCycle"
@@ -921,10 +932,7 @@ export function WorkflowDetailView({
         },
       });
     } catch (removeError) {
-      if (isDraftConflict(removeError)) {
-        setDraftConflict("stale");
-        return;
-      }
+      if (staleDraftChange(removeError)) return;
       toast.error(errorMessage(removeError, "No pudimos eliminar la conexión."));
       void loadDetail(application.id, workflowId);
     } finally {
@@ -942,15 +950,19 @@ export function WorkflowDetailView({
     }
     try {
       const data = await sendDraftChange((draftRevision) =>
-        httpClient.post<DraftChanged>(connectionsUrl, { ...connection, draftRevision }),
+        // A change still being saved when Deshacer was pressed may have moved the draft on.
+        draftRevision === revisionAfterRemoval
+          ? httpClient.post<DraftChanged>(connectionsUrl, { ...connection, draftRevision })
+          : Promise.reject(new DraftChangeDropped()),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Conexión restaurada.");
     } catch (restoreError) {
-      if (isDraftConflict(restoreError)) {
-        setDraftConflict("stale");
+      if (restoreError instanceof DraftChangeDropped) {
+        toast.error(WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE);
         return;
       }
+      if (staleDraftChange(restoreError)) return;
       toast.error(errorMessage(restoreError, "No pudimos restaurar la conexión."));
       void loadDetail(application.id, workflowId);
     }
@@ -984,10 +996,7 @@ export function WorkflowDetailView({
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Nodo actualizado.");
     } catch (saveError) {
-      if (isDraftConflict(saveError)) {
-        setDraftConflict("stale");
-        return;
-      }
+      if (staleDraftChange(saveError)) return;
       toast.error(errorMessage(saveError, "No pudimos guardar los cambios del nodo."));
     } finally {
       setSavingNodeDetails(false);
@@ -1022,10 +1031,7 @@ export function WorkflowDetailView({
     } catch (deleteError) {
       setDeleteNodeDialogOpen(false);
       setSelectedNodeIds([]);
-      if (isDraftConflict(deleteError)) {
-        setDraftConflict("stale");
-        return;
-      }
+      if (staleDraftChange(deleteError)) return;
       toast.error(errorMessage(deleteError, "No pudimos eliminar el nodo."));
       void loadDetail(application.id, workflowId);
     } finally {
