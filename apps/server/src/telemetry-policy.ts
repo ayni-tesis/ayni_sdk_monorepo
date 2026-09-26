@@ -13,7 +13,7 @@ const NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const INVALID_POLICY_MESSAGE = "La política de telemetría no es válida.";
 const RETENTION_MESSAGE = "Selecciona un periodo de retención válido.";
 const ENABLED_MESSAGE = "Indica si se permite la telemetría técnica.";
-const NO_RAW_DATA_MESSAGE = "La telemetría no incluye imágenes ni entradas crudas.";
+const EXTRA_FIELD_MESSAGE = "La política de telemetría solo define la habilitación y la retención.";
 
 // Strict: the policy only enables telemetry and sets its retention, so any
 // other field (such as one asking for images or raw inputs) is refused.
@@ -77,7 +77,7 @@ export function createTelemetryPolicyApp({
       const issue = parsed.error.issues[0];
       const message =
         issue?.code === "unrecognized_keys"
-          ? NO_RAW_DATA_MESSAGE
+          ? EXTRA_FIELD_MESSAGE
           : (issue?.message ?? INVALID_POLICY_MESSAGE);
       return c.json({ message }, 400);
     }

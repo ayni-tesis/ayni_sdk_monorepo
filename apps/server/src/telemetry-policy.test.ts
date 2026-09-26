@@ -200,7 +200,23 @@ describe("PATCH /applications/:applicationId/telemetry-policy", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      message: "La telemetría no incluye imágenes ni entradas crudas.",
+      message: "La política de telemetría solo define la habilitación y la retención.",
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuses any other extra field with the same message", async () => {
+    const { request, update } = makeApp();
+
+    const response = await patchPolicy(request, {
+      enabled: true,
+      retentionDays: 30,
+      retentionDay: 7,
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      message: "La política de telemetría solo define la habilitación y la retención.",
     });
     expect(update).not.toHaveBeenCalled();
   });
