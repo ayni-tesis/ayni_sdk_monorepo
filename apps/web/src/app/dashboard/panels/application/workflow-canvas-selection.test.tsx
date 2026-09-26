@@ -62,7 +62,6 @@ function Canvas({
       cycleNodeIds={[]}
       savingPositions={savingPositions}
       arrangingNodes={false}
-      palette={null}
       {...handlers}
       selectedNodeIds={selectedNodeIds}
       onSelectNodes={(nodeIds) => {

@@ -65,7 +65,6 @@ function renderCanvas({
       cycleNodeIds={[]}
       savingPositions={false}
       arrangingNodes={false}
-      palette={null}
       selectedNodeIds={[]}
       {...handlers}
     />,

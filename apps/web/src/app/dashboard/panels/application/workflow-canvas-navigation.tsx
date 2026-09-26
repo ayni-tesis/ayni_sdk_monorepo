@@ -3,6 +3,7 @@
 import {
   IconFocus2,
   IconGridDots,
+  IconPlus,
   IconSelectAll,
   IconSitemap,
   IconZoomIn,
@@ -25,6 +26,7 @@ const MINIMAP_SIZE = { width: 192, height: 128 };
 const MINIMAP_KEY_STEP = 0.1;
 
 export const WORKFLOW_ARRANGE_SHORTCUT = "Shift+Alt+T";
+const WORKFLOW_ADD_NODE_SHORTCUT = "Tab";
 const NO_NODES_TO_ARRANGE_MESSAGE = "No hay nodos para ordenar.";
 
 /** Selection, grid and arrangement controls; only administrators who can edit the draft get them. */
@@ -37,6 +39,9 @@ export type WorkflowCanvasEditControls = {
   onArrangeNodes: () => void;
 };
 
+/** The Agregar nodo button; only administrators who can edit the draft get it. */
+export type WorkflowCanvasAddNodeControl = { open: boolean; onToggle: () => void };
+
 export function WorkflowCanvasControls({
   zoom,
   onZoomIn,
@@ -45,6 +50,7 @@ export function WorkflowCanvasControls({
   onReset,
   savingPositions = false,
   arrangingNodes = false,
+  addNode,
   editing,
 }: {
   zoom: number;
@@ -54,6 +60,7 @@ export function WorkflowCanvasControls({
   onReset: () => void;
   savingPositions?: boolean;
   arrangingNodes?: boolean;
+  addNode?: WorkflowCanvasAddNodeControl;
   editing?: WorkflowCanvasEditControls;
 }) {
   const level = formatWorkflowCanvasZoom(zoom);
@@ -109,6 +116,24 @@ export function WorkflowCanvasControls({
         <span role="status" className="whitespace-nowrap px-2 text-muted-foreground text-xs">
           {arrangingNodes ? "Ordenando nodos…" : "Guardando posiciones…"}
         </span>
+      )}
+      {addNode && (
+        <>
+          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="whitespace-nowrap aria-expanded:bg-muted aria-expanded:text-foreground"
+            aria-expanded={addNode.open}
+            aria-keyshortcuts={WORKFLOW_ADD_NODE_SHORTCUT}
+            title="Agregar nodo (Tab)"
+            onClick={addNode.onToggle}
+          >
+            <IconPlus aria-hidden="true" />
+            Agregar nodo
+          </Button>
+        </>
       )}
       {editing && (
         <>

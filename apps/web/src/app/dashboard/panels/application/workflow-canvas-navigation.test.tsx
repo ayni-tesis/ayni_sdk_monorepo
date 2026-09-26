@@ -1,13 +1,5 @@
 // @vitest-environment jsdom
-import {
-  act,
-  cleanup,
-  createEvent,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowCanvas, type WorkflowCanvasDraft } from "./workflow-canvas";
 import {
@@ -55,7 +47,6 @@ function renderCanvas(draft: WorkflowCanvasDraft = wideDraft, canManage = false)
       cycleNodeIds={[]}
       savingPositions={false}
       arrangingNodes={false}
-      palette={null}
       selectedNodeIds={[]}
       {...handlers}
     />,
@@ -211,21 +202,5 @@ describe("workflow canvas navigation", () => {
     expect(screen.getByText("Este borrador aún no tiene nodos.")).toBeTruthy();
     expect(screen.queryByText("Agrega un nodo de entrada de imagen para empezar.")).toBeNull();
     expect(control("Acercar")).toBeTruthy();
-  });
-
-  it("adds a palette node where it is dropped", () => {
-    renderCanvas({ nodes: [] }, true);
-
-    const canvas = screen.getByRole("region", { name: "Lienzo del workflow" });
-    // jsdom has no DragEvent, so the pointer position is set on a plain event.
-    const drop = createEvent.drop(canvas, {
-      dataTransfer: {
-        getData: (type: string) => (type === "application/x-ayni-workflow-node" ? "output" : ""),
-      },
-    });
-    Object.defineProperties(drop, { clientX: { value: 400 }, clientY: { value: 200 } });
-    fireEvent(canvas, drop);
-
-    expect(handlers.onDropPalette).toHaveBeenCalledWith("output", { x: 254, y: 176 });
   });
 });

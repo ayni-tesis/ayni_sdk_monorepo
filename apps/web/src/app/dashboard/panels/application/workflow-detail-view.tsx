@@ -33,18 +33,15 @@ import { errorMessage } from "@/lib/api-error";
 import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { WorkflowAddNodePanel } from "./workflow-add-node-panel";
 import {
-  nextWorkflowCanvasPosition,
   sameWorkflowConnection,
   WORKFLOW_CYCLE_MESSAGE,
   WorkflowCanvas,
   type WorkflowCanvasDraft,
-  type WorkflowCanvasNodeType,
   type WorkflowCanvasPosition,
   type WorkflowCanvasPositions,
   type WorkflowCanvasConnection as WorkflowConnectionItem,
-  type WorkflowCanvasNode as WorkflowNodeItem,
-  WorkflowPaletteButton,
   workflowCanvasEdges,
   workflowNodePosition,
   workflowNodeTitle,
@@ -55,6 +52,11 @@ import {
   WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
   workflowPortCompatibility,
 } from "./workflow-canvas-ports";
+import type {
+  WorkflowModelOption,
+  WorkflowModelVersionContract,
+  WorkflowNewNode,
+} from "./workflow-node-catalog";
 import { type WorkflowNodeChanges, WorkflowNodeDetailsPanel } from "./workflow-node-details-panel";
 import { WORKFLOW_STATUS_LABELS, type WorkflowItem } from "./workflows-view";
 
@@ -102,25 +104,6 @@ export function findWorkflowCycleNodeIds(
   }
 }
 
-type ModelVersionContract = {
-  input: { type: "image"; width: number; height: number; channels: number; normalization: string };
-  output:
-    | { type: "classification"; labels: string[] }
-    | { type: "detection"; labels: string[]; scoreThreshold: number };
-};
-
-type WorkflowModelOption = {
-  id: string;
-  name: string;
-  versions: { id: string; version: string; contract: ModelVersionContract | null }[];
-};
-type WorkflowOutputOption = {
-  id: string;
-  port: "result" | "true" | "false";
-  type: "classification" | "detection" | "boolean";
-  label: string;
-};
-
 type WorkflowValidationResult = {
   publishable: boolean;
   errors: {
@@ -144,7 +127,13 @@ const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuev
 const WORKFLOW_NOT_FOUND_MESSAGE = "No encontramos este workflow.";
 const NO_VERSIONS_MESSAGE = "Aún no hay versiones publicadas.";
 const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
-const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
+// Each node type keeps the messages it had before Agregar nodo.
+const ADD_NODE_MESSAGES: Record<WorkflowNewNode["type"], { success: string; failure: string }> = {
+  "input.image": { success: "Nodo agregado.", failure: "No pudimos agregar el nodo." },
+  "model.tflite": { success: "Nodo de modelo agregado.", failure: "No pudimos agregar el nodo." },
+  condition: { success: "Condición agregada.", failure: "No pudimos agregar la condición." },
+  output: { success: "Nodo de salida agregado.", failure: "No pudimos agregar la salida." },
+};
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
 const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
@@ -380,22 +369,12 @@ export function WorkflowDetailView({
   const [publishVersion, setPublishVersion] = useState("");
   const [publishError, setPublishError] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [addingImageInput, setAddingImageInput] = useState(false);
+  const [addNodeOpen, setAddNodeOpen] = useState(false);
+  const [addingNode, setAddingNode] = useState(false);
   const [modelOptions, setModelOptions] = useState<WorkflowModelOption[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
   const [modelOptionsError, setModelOptionsError] = useState("");
   const [modelOptionsReload, setModelOptionsReload] = useState(0);
-  const [selectedModelVersionId, setSelectedModelVersionId] = useState("");
-  const [addingModel, setAddingModel] = useState(false);
-  const [conditionSourceId, setConditionSourceId] = useState("");
-  const [conditionLabel, setConditionLabel] = useState("");
-  const [conditionOperator, setConditionOperator] = useState<"gte" | "gt" | "lte" | "lt">("gte");
-  const [conditionThreshold, setConditionThreshold] = useState("0.5");
-  const [addingCondition, setAddingCondition] = useState(false);
-  const [outputName, setOutputName] = useState("");
-  const [outputSource, setOutputSource] = useState("");
-  const [outputTypeError, setOutputTypeError] = useState("");
-  const [addingOutput, setAddingOutput] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
   const [connectionSource, setConnectionSource] = useState<{
     sourceNodeId: string;
@@ -408,7 +387,8 @@ export function WorkflowDetailView({
     draft: WorkflowCanvasDraft;
     result: WorkflowValidationResult;
   } | null>(null);
-  const addingImageInputRef = useRef(false);
+  // Set at once, unlike state, so a double click or a click and a drop add one node.
+  const addingNodeRef = useRef(false);
   const removingConnectionRef = useRef(false);
   // Moving, arranging and undoing an arrangement all write the layout; set at
   // once, unlike state, so a Deshacer run from an older notice sees it too.
@@ -476,7 +456,11 @@ export function WorkflowDetailView({
         const versionResults = await Promise.allSettled(
           data.models.map(async (item) => {
             const response = await httpClient.get<{
-              versions: { id: string; version: string; contract: ModelVersionContract | null }[];
+              versions: {
+                id: string;
+                version: string;
+                contract: WorkflowModelVersionContract | null;
+              }[];
             }>(`/applications/${application.id}/models/${encodeURIComponent(item.id)}/versions`);
             return { ...item, versions: response.data.versions };
           }),
@@ -510,10 +494,6 @@ export function WorkflowDetailView({
     setRenameName(currentName);
     setRenameError("");
     setRenameDialogOpen(true);
-  }
-
-  function newNodePosition(position?: WorkflowCanvasPosition) {
-    return position ?? (detail ? nextWorkflowCanvasPosition(detail.draft) : undefined);
   }
 
   async function handleRenameWorkflow(event: React.FormEvent<HTMLFormElement>) {
@@ -565,82 +545,27 @@ export function WorkflowDetailView({
     }
   }
 
-  async function addImageInput(position?: WorkflowCanvasPosition) {
-    if (addingImageInputRef.current) return;
-    addingImageInputRef.current = true;
-    setAddingImageInput(true);
+  // Agregar nodo closes once the node is saved; after a failure it stays open, with
+  // the settings typed, over the draft reloaded from the server.
+  async function addNode(node: WorkflowNewNode, position: WorkflowCanvasPosition) {
+    if (addingNodeRef.current) return;
+    addingNodeRef.current = true;
+    setAddingNode(true);
+    const messages = ADD_NODE_MESSAGES[node.type];
     try {
       const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
         `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        { type: "input.image", position: newNodePosition(position) },
+        { ...node, position },
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      toast.success("Nodo agregado.");
+      setAddNodeOpen(false);
+      toast.success(messages.success);
     } catch (addError) {
-      toast.error(errorMessage(addError, "No pudimos agregar el nodo."));
+      toast.error(errorMessage(addError, messages.failure));
       void loadDetail(application.id, workflowId);
     } finally {
-      addingImageInputRef.current = false;
-      setAddingImageInput(false);
-    }
-  }
-
-  async function addModelNode(position?: WorkflowCanvasPosition) {
-    if (!selectedModelVersionId || addingModel) return;
-    setAddingModel(true);
-    try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        {
-          type: "model.tflite",
-          modelVersionId: selectedModelVersionId,
-          position: newNodePosition(position),
-        },
-      );
-      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      toast.success("Nodo de modelo agregado.");
-    } catch (addError) {
-      toast.error(errorMessage(addError, "No pudimos agregar el nodo."));
-      void loadDetail(application.id, workflowId);
-    } finally {
-      setAddingModel(false);
-    }
-  }
-
-  async function addConditionNode(position?: WorkflowCanvasPosition) {
-    if (!conditionThreshold.trim()) return;
-    const threshold = Number(conditionThreshold);
-    if (
-      !detail ||
-      !conditionSourceId ||
-      !conditionLabel.trim() ||
-      !Number.isFinite(threshold) ||
-      threshold < 0 ||
-      threshold > 1 ||
-      addingCondition
-    )
-      return;
-    setAddingCondition(true);
-    try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        {
-          type: "condition",
-          sourceNodeId: conditionSourceId,
-          label: conditionLabel.trim(),
-          operator: conditionOperator,
-          threshold,
-          position: newNodePosition(position),
-        },
-      );
-      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      setConditionLabel("");
-      toast.success("Condición agregada.");
-    } catch (addError) {
-      toast.error(errorMessage(addError, "No pudimos agregar la condición."));
-      void loadDetail(application.id, workflowId);
-    } finally {
-      setAddingCondition(false);
+      addingNodeRef.current = false;
+      setAddingNode(false);
     }
   }
 
@@ -716,7 +641,9 @@ export function WorkflowDetailView({
     }
   }
 
-  if (loading) {
+  // A reload after a failed edit keeps the draft on screen, so open panels keep
+  // what was typed; only the first load shows the loading state.
+  if (loading && !detail) {
     return (
       <p data-testid="workflow-detail-loading" className="text-muted-foreground text-sm">
         Cargando workflow…
@@ -761,78 +688,6 @@ export function WorkflowDetailView({
   for (const { nodeId, message } of validationResult?.errors ?? []) {
     if (nodeId) nodeErrors[nodeId] = [...(nodeErrors[nodeId] ?? []), message];
   }
-  const classificationNodes = draft.nodes.filter(
-    (node): node is Extract<WorkflowNodeItem, { type: "model.tflite" }> =>
-      node.type === "model.tflite" && node.outputs.result.type === "classification",
-  );
-  const contractedModelVersionCount = modelOptions.reduce(
-    (count, item) => count + item.versions.filter((version) => version.contract).length,
-    0,
-  );
-  const outputOptions: WorkflowOutputOption[] = draft.nodes.flatMap(
-    (node): WorkflowOutputOption[] => {
-      if (node.type === "model.tflite")
-        return [
-          {
-            id: node.id,
-            port: "result",
-            type: node.outputs.result.type,
-            label: `${node.modelName} · ${node.version} · ${node.outputs.result.type}`,
-          },
-        ];
-      if (node.type === "condition")
-        return [
-          {
-            id: node.id,
-            port: "true",
-            type: "boolean" as const,
-            label: `Condición: ${node.label} · Verdadero`,
-          },
-          {
-            id: node.id,
-            port: "false",
-            type: "boolean" as const,
-            label: `Condición: ${node.label} · Falso`,
-          },
-        ];
-      return [];
-    },
-  );
-
-  async function addOutputNode(position?: WorkflowCanvasPosition) {
-    const name = outputName.trim();
-    const selected = outputOptions.find(
-      (option) => `${option.id}:${option.port ?? "result"}` === outputSource,
-    );
-    if (!name || addingOutput) return;
-    if (!selected) {
-      setOutputTypeError("Selecciona un tipo de resultado para la salida.");
-      return;
-    }
-    setAddingOutput(true);
-    try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        {
-          type: "output",
-          name,
-          sourceNodeId: selected.id,
-          sourcePort: selected.port ?? "result",
-          resultType: selected.type,
-          position: newNodePosition(position),
-        },
-      );
-      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
-      setOutputName("");
-      toast.success("Nodo de salida agregado.");
-    } catch (addError) {
-      toast.error(errorMessage(addError, "No pudimos agregar la salida."));
-      void loadDetail(application.id, workflowId);
-    } finally {
-      setAddingOutput(false);
-    }
-  }
-
   const layoutUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/layout`;
 
   function showPositions(positions: WorkflowCanvasPositions) {
@@ -923,13 +778,6 @@ export function WorkflowDetailView({
       savingLayoutRef.current = false;
       setSavingPositions(false);
     }
-  }
-
-  function dropPaletteNode(nodeType: WorkflowCanvasNodeType, position: WorkflowCanvasPosition) {
-    if (nodeType === "input.image") void addImageInput(position);
-    else if (nodeType === "model.tflite") void addModelNode(position);
-    else if (nodeType === "condition") void addConditionNode(position);
-    else void addOutputNode(position);
   }
 
   const connectionsUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/connections`;
@@ -1079,10 +927,6 @@ export function WorkflowDetailView({
       );
       const remainingNodeIds = new Set(data.draft.nodes.map((node) => node.id));
       setCycleNodeIds((current) => current.filter((nodeId) => remainingNodeIds.has(nodeId)));
-      if (conditionSourceId && !remainingNodeIds.has(conditionSourceId)) {
-        setConditionSourceId("");
-        setConditionLabel("");
-      }
       setDeleteNodeDialogOpen(false);
       toast.success("Nodo eliminado.");
     } catch (deleteError) {
@@ -1250,7 +1094,7 @@ export function WorkflowDetailView({
             onConnect={(connection) => void changeConnection(connection)}
             onMoveNodes={(positions) => void moveWorkflowNodes(positions)}
             onArrangeNodes={arrangeNodes}
-            onDropPalette={dropPaletteNode}
+            onDropPalette={(node, position) => void addNode(node, position)}
             onRemoveConnection={(connection) => void removeConnection(connection)}
             onOpenNodeDetails={openNodeDetails}
             details={
@@ -1267,247 +1111,25 @@ export function WorkflowDetailView({
                 />
               ) : null
             }
-            palette={
-              canManage && application.status === "active" ? (
-                <aside
-                  aria-label="Nodos"
-                  className="max-h-[720px] space-y-3 overflow-y-auto rounded-lg border bg-card p-3"
-                >
-                  <h3 className="font-medium text-sm">Nodos disponibles</h3>
-                  <WorkflowPaletteButton
-                    nodeType="input.image"
-                    disabled={
-                      savingPositions ||
-                      addingImageInput ||
-                      draft.nodes.some((node) => node.type === "input.image")
-                    }
-                    onClick={() => void addImageInput()}
-                  >
-                    Entrada de imagen
-                  </WorkflowPaletteButton>
-                  {draft.nodes.some((node) => node.type === "input.image") && (
-                    <p className="text-muted-foreground text-xs">{IMAGE_INPUT_EXISTS_MESSAGE}</p>
-                  )}
-
-                  <div className="space-y-2 border-t pt-3">
-                    <label htmlFor="workflow-model-version" className="block font-medium text-sm">
-                      Modelo
-                    </label>
-                    <select
-                      id="workflow-model-version"
-                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={selectedModelVersionId}
-                      onChange={(event) => setSelectedModelVersionId(event.target.value)}
-                    >
-                      <option value="">
-                        {modelOptionsLoading
-                          ? "Cargando modelos…"
-                          : contractedModelVersionCount
-                            ? "Selecciona una versión"
-                            : modelOptionsError
-                              ? "No se pudieron cargar los modelos"
-                              : modelOptions.length === 0
-                                ? "No hay modelos registrados"
-                                : "No hay versiones con contrato"}
-                      </option>
-                      {modelOptions.flatMap((item) =>
-                        item.versions
-                          .filter((version) => version.contract)
-                          .map((version) => (
-                            <option key={version.id} value={version.id}>
-                              {item.name} · {version.version}
-                            </option>
-                          )),
-                      )}
-                    </select>
-                    {modelOptionsLoading && (
-                      <p role="status" className="text-muted-foreground text-xs">
-                        Cargando modelos y versiones…
-                      </p>
-                    )}
-                    {modelOptionsError && (
-                      <div role="alert" className="space-y-2">
-                        <p className="text-destructive text-xs">{modelOptionsError}</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setModelOptionsReload((value) => value + 1)}
-                        >
-                          <IconRefresh className="mr-1 size-4" />
-                          Reintentar
-                        </Button>
-                      </div>
-                    )}
-                    {!modelOptionsLoading &&
-                      !modelOptionsError &&
-                      modelOptions.length > 0 &&
-                      contractedModelVersionCount === 0 && (
-                        <p className="text-muted-foreground text-xs">
-                          Registra una versión y configura su contrato para usar ese modelo en el
-                          workflow.
-                        </p>
-                      )}
-                    {contractedModelVersionCount > 0 &&
-                      modelOptions.some((item) =>
-                        item.versions.some((version) => !version.contract),
-                      ) && (
-                        <p className="text-muted-foreground text-xs">
-                          Las versiones sin contrato no se pueden agregar al workflow.
-                        </p>
-                      )}
-                    <WorkflowPaletteButton
-                      nodeType="model.tflite"
-                      disabled={savingPositions || !selectedModelVersionId || addingModel}
-                      onClick={() => void addModelNode()}
-                    >
-                      {addingModel ? "Agregando…" : "Agregar modelo"}
-                    </WorkflowPaletteButton>
-                  </div>
-
-                  <div className="space-y-2 border-t pt-3">
-                    <h4 className="font-medium text-sm">Condición</h4>
-                    <label htmlFor="condition-source" className="block text-sm">
-                      Resultado de origen
-                    </label>
-                    <select
-                      id="condition-source"
-                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={conditionSourceId}
-                      disabled={classificationNodes.length === 0}
-                      onChange={(event) => {
-                        setConditionSourceId(event.target.value);
-                        setConditionLabel("");
-                      }}
-                    >
-                      <option value="">Selecciona una clasificación</option>
-                      {classificationNodes.map((node) => (
-                        <option key={node.id} value={node.id}>
-                          {node.modelName} · {node.version}
-                        </option>
-                      ))}
-                    </select>
-                    {classificationNodes.length === 0 && (
-                      <p role="status" className="text-muted-foreground text-xs">
-                        Agrega primero al lienzo una versión contratada de un modelo de
-                        clasificación.
-                      </p>
-                    )}
-                    <label htmlFor="condition-label" className="block text-sm">
-                      Etiqueta
-                    </label>
-                    <select
-                      id="condition-label"
-                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={conditionLabel}
-                      disabled={!conditionSourceId}
-                      onChange={(event) => setConditionLabel(event.target.value)}
-                    >
-                      <option value="">Selecciona una etiqueta</option>
-                      {classificationNodes
-                        .find((node) => node.id === conditionSourceId)
-                        ?.outputs.result.labels.map((label) => (
-                          <option key={label} value={label}>
-                            {label}
-                          </option>
-                        ))}
-                    </select>
-                    <label htmlFor="condition-operator" className="block text-sm">
-                      Operador
-                    </label>
-                    <select
-                      id="condition-operator"
-                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={conditionOperator}
-                      onChange={(event) =>
-                        setConditionOperator(event.target.value as typeof conditionOperator)
-                      }
-                    >
-                      <option value="gte">≥</option>
-                      <option value="gt">&gt;</option>
-                      <option value="lte">≤</option>
-                      <option value="lt">&lt;</option>
-                    </select>
-                    <label htmlFor="condition-threshold" className="block text-sm">
-                      Umbral
-                    </label>
-                    <Input
-                      id="condition-threshold"
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={conditionThreshold}
-                      onChange={(event) => setConditionThreshold(event.target.value)}
-                    />
-                    <WorkflowPaletteButton
-                      nodeType="condition"
-                      disabled={
-                        savingPositions || !conditionSourceId || !conditionLabel || addingCondition
-                      }
-                      onClick={() => void addConditionNode()}
-                    >
-                      {addingCondition ? "Guardando…" : "Agregar condición"}
-                    </WorkflowPaletteButton>
-                  </div>
-
-                  <div className="space-y-2 border-t pt-3">
-                    <h4 className="font-medium text-sm">Salida</h4>
-                    <label htmlFor="workflow-output-name" className="block text-sm">
-                      Nombre de salida
-                    </label>
-                    <Input
-                      id="workflow-output-name"
-                      value={outputName}
-                      onChange={(event) => setOutputName(event.target.value)}
-                    />
-                    <label htmlFor="workflow-output-type" className="block text-sm">
-                      Tipo de resultado
-                    </label>
-                    <select
-                      id="workflow-output-type"
-                      className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-                      value={outputSource}
-                      aria-invalid={Boolean(outputTypeError)}
-                      aria-describedby={outputTypeError ? "workflow-output-type-error" : undefined}
-                      onChange={(event) => {
-                        setOutputSource(event.target.value);
-                        if (outputTypeError) setOutputTypeError("");
-                      }}
-                    >
-                      <option value="">Selecciona un tipo de resultado</option>
-                      {outputOptions.map((option) => (
-                        <option
-                          key={`${option.id}:${option.port}`}
-                          value={`${option.id}:${option.port}`}
-                        >
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {outputTypeError && (
-                      <p
-                        id="workflow-output-type-error"
-                        className="text-destructive text-sm"
-                        role="alert"
-                      >
-                        {outputTypeError}
-                      </p>
-                    )}
-                    <WorkflowPaletteButton
-                      nodeType="output"
-                      disabled={savingPositions || !outputName.trim() || addingOutput}
-                      onClick={() => void addOutputNode()}
-                    >
-                      {addingOutput ? "Agregando…" : "Agregar salida"}
-                    </WorkflowPaletteButton>
-                  </div>
-                  <p className="text-muted-foreground text-xs">
-                    Arrastra un botón al lienzo para colocarlo; también puedes seleccionarlo para
-                    usar su ubicación sugerida.
-                  </p>
-                </aside>
-              ) : null
+            addNode={
+              canManage && application.status === "active"
+                ? {
+                    open: addNodeOpen,
+                    onToggle: () => setAddNodeOpen((open) => !open),
+                    panel: (placement) => (
+                      <WorkflowAddNodePanel
+                        draft={draft}
+                        models={modelOptions}
+                        modelsLoading={modelOptionsLoading}
+                        modelsError={modelOptionsError}
+                        onRetryModels={() => setModelOptionsReload((value) => value + 1)}
+                        busy={loading || addingNode || savingPositions || arrangingNodes}
+                        onAdd={(node) => void addNode(node, placement.visibleCenter())}
+                        onClose={() => setAddNodeOpen(false)}
+                      />
+                    ),
+                  }
+                : undefined
             }
           />
           <Dialog

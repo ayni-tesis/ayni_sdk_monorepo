@@ -73,7 +73,6 @@ function renderCanvas({
       nodeErrors={nodeErrors}
       savingPositions={false}
       arrangingNodes={false}
-      palette={null}
       selectedNodeIds={[]}
       {...handlers}
     />,

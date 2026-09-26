@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultWorkflowCanvasPosition,
-  nextWorkflowCanvasPosition,
   type WorkflowCanvasDraft,
   workflowCanvasEdges,
   workflowCanvasFitViewport,
@@ -23,15 +22,6 @@ describe("workflow canvas layout", () => {
     expect(workflowNodePosition(draft, draft.nodes[1], 1)).toEqual(
       defaultWorkflowCanvasPosition(1),
     );
-  });
-
-  it("chooses the first grid position that does not overlap a moved node", () => {
-    const draft: WorkflowCanvasDraft = {
-      nodes: [{ id: "moved", type: "input.image", outputs: { imagen: "image" } }],
-      layout: { moved: defaultWorkflowCanvasPosition(0) },
-    };
-
-    expect(nextWorkflowCanvasPosition(draft)).toEqual(defaultWorkflowCanvasPosition(1));
   });
 
   it("draws explicit connections and source references from conditions and outputs", () => {
