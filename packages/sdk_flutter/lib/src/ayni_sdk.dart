@@ -123,7 +123,7 @@ class AyniSdk {
     }
 
     final downloadOutcome = await _downloadNewWorkflowVersions(
-      decoded,
+      comparison.acceptedWorkflows,
       inventoryFile,
       client,
       deadline,
@@ -145,25 +145,25 @@ class AyniSdk {
   }
 
   Future<_WorkflowDownloadOutcome> _downloadNewWorkflowVersions(
-    Object inventory,
+    Iterable<_Workflow> workflows,
     File inventoryFile,
     HttpClient client,
     _SyncDeadline deadline,
   ) async {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
     var downloaded = false;
-    for (final workflow in _workflows(inventory)) {
+    for (final workflow in workflows) {
       if (deadline.expired) return _WorkflowDownloadOutcome.failed;
-      if (localVersionIds.contains(workflow.versionId)) continue;
+      if (localVersionIds.contains(workflow.workflowVersionId)) continue;
 
       final temporaryDefinition = File(
         '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
-        '${Platform.pathSeparator}${base64Url.encode(utf8.encode(workflow.versionId))}.json',
+        '${Platform.pathSeparator}${base64Url.encode(utf8.encode(workflow.workflowVersionId))}.json',
       );
       final result = await _workflowVersionDownloader.download(
         serverUrl: serverUrl,
         credential: _credential,
-        workflowVersionId: workflow.versionId,
+        workflowVersionId: workflow.workflowVersionId,
         workflowName: workflow.name,
         temporaryDefinition: temporaryDefinition,
         allowInsecureLoopback: allowInsecureLoopback,
@@ -242,6 +242,7 @@ class AyniSdk {
     final workflows = {...local.workflows};
     final models = {...local.models};
     final resources = <SyncResourceResult>[];
+    final acceptedWorkflows = <_Workflow>[];
 
     for (final item in remote['models'] as List) {
       final model = _Model.fromJson(item);
@@ -271,6 +272,7 @@ class AyniSdk {
         resources.add(_invalidResource(SyncResourceType.workflow, item));
         continue;
       }
+      acceptedWorkflows.add(workflow);
       final previous = workflows[workflow.id];
       final status = previous?.version == workflow.version
           ? SyncResourceStatus.upToDate
@@ -291,6 +293,7 @@ class AyniSdk {
     return _Comparison(
       inventory,
       resources,
+      acceptedWorkflows,
       resources.any(
         (resource) => resource.status == SyncResourceStatus.updated,
       ),
@@ -450,10 +453,16 @@ class _Model {
 bool _isNonEmptyString(Object? value) => value is String && value.isNotEmpty;
 
 class _Comparison {
-  const _Comparison(this.inventory, this.resources, this.changed);
+  const _Comparison(
+    this.inventory,
+    this.resources,
+    this.acceptedWorkflows,
+    this.changed,
+  );
 
   final _Inventory inventory;
   final List<SyncResourceResult> resources;
+  final List<_Workflow> acceptedWorkflows;
   final bool changed;
 }
 

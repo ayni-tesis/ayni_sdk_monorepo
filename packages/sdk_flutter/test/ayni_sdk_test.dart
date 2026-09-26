@@ -175,6 +175,50 @@ void main() {
   );
 
   test(
+    'does not download a workflow rejected by the inventory comparison',
+    () async {
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['missing-model-version'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+        ],
+      });
+      final downloads = <WorkflowVersionDownloadResult>[];
+      final client = AyniSdk(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+        onWorkflowDownload: downloads.add,
+      );
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(downloads, isEmpty);
+      expect(requests.single.uri.path, '/sdk/sync');
+    },
+  );
+
+  test(
     'keeps a valid local resource when its remote update is invalid',
     () async {
       final inventory = File(
