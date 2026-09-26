@@ -41,9 +41,16 @@ export type DashboardView =
   | "workflows"
   | "models"
   | "credentials"
+  | "privacy"
   | "settings";
 
-export type ApplicationSection = "overview" | "workflows" | "models" | "credentials" | "settings";
+export type ApplicationSection =
+  | "overview"
+  | "workflows"
+  | "models"
+  | "credentials"
+  | "privacy"
+  | "settings";
 
 export type DashboardViewDescriptor = {
   id: DashboardView;
@@ -58,5 +65,6 @@ export const DASHBOARD_VIEWS: Record<DashboardView, DashboardViewDescriptor> = {
   workflows: { id: "workflows", label: "Workflows", segment: "workflows" },
   models: { id: "models", label: "Modelos", segment: "models" },
   credentials: { id: "credentials", label: "Credenciales SDK", segment: "credentials" },
+  privacy: { id: "privacy", label: "Privacidad y telemetría", segment: "privacy" },
   settings: { id: "settings", label: "Configuración", segment: "settings" },
 };
