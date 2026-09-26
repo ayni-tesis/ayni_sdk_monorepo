@@ -18,8 +18,7 @@ void main() {
     requests.clear();
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
-    responseBody =
-        '{"workflows":[{"id":"workflow-1"}],"models":[{"id":"model-1"}]}';
+    responseBody = _manifest(workflowVersion: '1.0.0');
     redirectUrl = null;
     responseDelay = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -63,8 +62,11 @@ void main() {
     onBeforeInventoryPersist: onBeforeInventoryPersist,
   );
 
+  Future<SyncStatus> syncStatus(AyniSdk client) async =>
+      (await client.sync()).status;
+
   Future<File> seedInventory(AyniSdk client) async {
-    expect(await client.sync(), SyncStatus.updated);
+    expect(await syncStatus(client), SyncStatus.updated);
     return File(
       '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
     );
@@ -75,18 +77,39 @@ void main() {
     () async {
       final client = sdk();
 
-      expect(await client.sync(), SyncStatus.updated);
-      expect(await client.sync(), SyncStatus.upToDate);
+      final updated = await client.sync();
+      final upToDate = await client.sync();
+      expect(updated.status, SyncStatus.updated);
+      expect(upToDate.status, SyncStatus.upToDate);
+      expect(updated.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.updated,
+      ]);
+      expect(upToDate.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.upToDate,
+      ]);
 
       final inventory = await File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       ).readAsString();
       expect(jsonDecode(inventory), {
         'workflows': [
-          {'id': 'workflow-1'},
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['model-version-1'],
+          },
         ],
         'models': [
-          {'id': 'model-1'},
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256':
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          },
         ],
       });
 
@@ -102,13 +125,63 @@ void main() {
     },
   );
 
+  test('marks only new or changed resources as updated', () async {
+    final client = sdk();
+    await client.sync();
+    responseBody = _manifest(workflowVersion: '2.0.0');
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    expect(result.resources.map((resource) => resource.status), [
+      SyncResourceStatus.updated,
+      SyncResourceStatus.upToDate,
+    ]);
+  });
+
+  test(
+    'keeps a valid local resource when its remote update is invalid',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      final before = await inventory.readAsString();
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['model-version-1'],
+          },
+        ],
+        'models': [
+          {'modelVersionId': 'model-version-1', 'version': '2.0.0'},
+        ],
+      });
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(
+        result.resources.last.message,
+        'Se mantuvo la versión local porque la actualización no es válida.',
+      );
+      expect(await inventory.readAsString(), before);
+    },
+  );
+
   test('keeps the local inventory when offline', () async {
     final client = sdk();
     final inventory = await seedInventory(client);
     final before = await inventory.readAsString();
     await server.close(force: true);
 
-    expect(await client.sync(), SyncStatus.offline);
+    expect(await syncStatus(client), SyncStatus.offline);
     expect(await inventory.readAsString(), before);
   });
 
@@ -118,12 +191,12 @@ void main() {
     final before = await inventory.readAsString();
 
     statusCode = HttpStatus.internalServerError;
-    expect(await client.sync(), SyncStatus.error);
+    expect(await syncStatus(client), SyncStatus.error);
     expect(await inventory.readAsString(), before);
 
     statusCode = HttpStatus.ok;
     responseBody = 'not json';
-    expect(await client.sync(), SyncStatus.error);
+    expect(await syncStatus(client), SyncStatus.error);
     expect(await inventory.readAsString(), before);
   });
 
@@ -135,7 +208,7 @@ void main() {
       final before = await inventory.readAsString();
       responseBody = '{"authenticated":true}';
 
-      expect(await client.sync(), SyncStatus.upToDate);
+      expect(await syncStatus(client), SyncStatus.upToDate);
       expect(await inventory.readAsString(), before);
     },
   );
@@ -146,7 +219,7 @@ void main() {
     final before = await inventory.readAsString();
     responseBody = '{"authenticated":true,"workflows":"invalid","models":[]}';
 
-    expect(await client.sync(), SyncStatus.error);
+    expect(await syncStatus(client), SyncStatus.error);
     expect(await inventory.readAsString(), before);
   });
 
@@ -157,7 +230,7 @@ void main() {
       storageDirectory: storageDirectory,
     );
 
-    expect(await client.sync(), SyncStatus.error);
+    expect(await syncStatus(client), SyncStatus.error);
     expect(requests, isEmpty);
   });
 
@@ -170,7 +243,7 @@ void main() {
       storageDirectory: storageDirectory,
     );
 
-    expect(await client.sync(), SyncStatus.error);
+    expect(await syncStatus(client), SyncStatus.error);
     expect(requests, isEmpty);
   });
 
@@ -178,7 +251,7 @@ void main() {
     redirectUrl = Uri.parse('http://example.invalid/sdk/sync');
     statusCode = HttpStatus.found;
 
-    expect(await sdk().sync(), SyncStatus.error);
+    expect(await syncStatus(sdk()), SyncStatus.error);
     expect(requests, hasLength(1));
     expect(
       requests.single.headers.value(HttpHeaders.authorizationHeader),
@@ -190,7 +263,7 @@ void main() {
     final recordingClient = _RecordingHttpClient(HttpClient());
 
     await HttpOverrides.runZoned(
-      () async => expect(await sdk().sync(), SyncStatus.updated),
+      () async => expect(await syncStatus(sdk()), SyncStatus.updated),
       createHttpClient: (_) => recordingClient,
     );
 
@@ -211,7 +284,7 @@ void main() {
       responseDelay = const Duration(milliseconds: 100);
 
       expect(
-        await sdk(timeout: const Duration(milliseconds: 10)).sync(),
+        await syncStatus(sdk(timeout: const Duration(milliseconds: 10))),
         SyncStatus.error,
       );
       await Future<void>.delayed(responseDelay!);
@@ -223,8 +296,7 @@ void main() {
     () async {
       final inventory = await seedInventory(sdk());
       final before = await inventory.readAsString();
-      responseBody =
-          '{"workflows":[{"id":"workflow-2"}],"models":[{"id":"model-2"}]}';
+      responseBody = _manifest(workflowVersion: '2.0.0');
       final startedPersisting = Completer<void>();
       final releasePersistence = Completer<void>();
       final client = sdk(
@@ -237,7 +309,7 @@ void main() {
       final sync = client.sync();
       await startedPersisting.future.timeout(const Duration(seconds: 2));
 
-      expect(await sync, SyncStatus.error);
+      expect((await sync).status, SyncStatus.error);
       releasePersistence.complete();
       await Future<void>.delayed(Duration.zero);
       expect(await inventory.readAsString(), before);
@@ -247,14 +319,13 @@ void main() {
   test('keeps inventory when the persistence callback fails', () async {
     final inventory = await seedInventory(sdk());
     final before = await inventory.readAsString();
-    responseBody =
-        '{"workflows":[{"id":"workflow-2"}],"models":[{"id":"model-2"}]}';
+    responseBody = _manifest(workflowVersion: '2.0.0');
 
     expect(
       await sdk(
         onBeforeInventoryPersist: () =>
             Future<void>.error(StateError('persistence callback failed')),
-      ).sync(),
+      ).sync().then((result) => result.status),
       SyncStatus.error,
     );
     expect(await inventory.readAsString(), before);
@@ -288,12 +359,31 @@ void main() {
     );
 
     try {
-      expect(await client.sync(), SyncStatus.error);
+      expect(await syncStatus(client), SyncStatus.error);
     } finally {
       await invalidServer.close();
     }
   });
 }
+
+String _manifest({required String workflowVersion}) => jsonEncode({
+  'workflows': [
+    {
+      'workflowId': 'workflow-1',
+      'workflowVersionId': 'workflow-version-$workflowVersion',
+      'name': 'Clasificar hoja',
+      'version': workflowVersion,
+      'modelVersionIds': ['model-version-1'],
+    },
+  ],
+  'models': [
+    {
+      'modelVersionId': 'model-version-1',
+      'version': '1.0.0',
+      'sha256': 'a' * 64,
+    },
+  ],
+});
 
 class _RecordingHttpClient implements HttpClient {
   _RecordingHttpClient(this._delegate);
