@@ -994,11 +994,11 @@ function WorkflowCanvasFlow({
         return true;
       case "delete":
         // One node asks first, like Eliminar nodo; a connection goes at once, like
-        // Eliminar conexión. TODO(US-132): several nodes open Eliminar nodos.
+        // Eliminar conexión. TODO(US-132): several nodes open Eliminar nodos. The
+        // key is used either way, so Retroceso never takes the browser back.
         if (selectedNodeIds.length === 1 && canManage) onRequestDeleteNode(selectedNodeIds[0]);
         else if (selectedNodeIds.length === 0 && removableSelection)
           onRemoveConnection(removableSelection);
-        else return false;
         return true;
       case "selectAll":
         if (!canManageDraft) return false;
@@ -1017,8 +1017,7 @@ function WorkflowCanvasFlow({
         viewportActions.zoomOut();
         return true;
       case "selectNeighbor": {
-        // Like a click on a node, which only administrators may select.
-        if (!canManageDraft) return false;
+        // Members may select a node this way too, to open its details read-only.
         const neighbor = neighborNode(shortcut.direction);
         if (neighbor) changeSelection([neighbor]);
         return true;

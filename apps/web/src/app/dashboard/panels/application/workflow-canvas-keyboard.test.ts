@@ -29,7 +29,6 @@ describe("workflowCanvasShortcut", () => {
     ["1", "fit"],
     ["0", "resetZoom"],
     ["+", "zoomIn"],
-    ["=", "zoomIn"],
     ["-", "zoomOut"],
     ["Enter", "openDetails"],
     ["Tab", "addNode"],
@@ -85,6 +84,7 @@ describe("workflowCanvasShortcut", () => {
 
   it("leaves other keys and the browser's own shortcuts alone", () => {
     expect(workflowCanvasShortcut(key("a"), false)).toBeNull();
+    expect(workflowCanvasShortcut(key("="), false)).toBeNull();
     expect(workflowCanvasShortcut(key("0", { ctrlKey: true }), false)).toBeNull();
     expect(workflowCanvasShortcut(key("+", { metaKey: true }), true)).toBeNull();
     expect(workflowCanvasShortcut(key("Tab", { shiftKey: true }), false)).toBeNull();
@@ -216,14 +216,11 @@ describe("workflowCanvasShortcutHelp", () => {
     expect(keys(workflowCanvasShortcutHelp({ mac: true, canManage: true }))).toContain("Cmd + A");
   });
 
-  it("lists only navigation shortcuts for members", () => {
-    expect(keys(workflowCanvasShortcutHelp({ mac: false, canManage: false }))).toEqual([
-      "1",
-      "0",
-      "+",
-      "-",
-      "Esc",
-      "?",
-    ]);
+  it("lists only navigation and selection shortcuts for members", () => {
+    const rows = workflowCanvasShortcutHelp({ mac: false, canManage: false });
+
+    expect(keys(rows)).toEqual(["1", "0", "+", "-", "Enter", "Flechas", "Esc", "?"]);
+    // Members cannot click a node to select it; the double click opens its details.
+    expect(rows.find((row) => row.keys === "Flechas")?.equivalent).toBe("Doble clic sobre el nodo");
   });
 });

@@ -44,7 +44,6 @@ const CHARACTER_SHORTCUTS: Record<string, WorkflowCanvasShortcut["action"]> = {
   "1": "fit",
   "0": "resetZoom",
   "+": "zoomIn",
-  "=": "zoomIn",
   "-": "zoomOut",
   "?": "help",
 };
@@ -191,14 +190,13 @@ export function workflowCanvasShortcutHelp({
       keys: "Enter",
       action: "Abre Detalles del nodo seleccionado",
       equivalent: "Doble clic sobre el nodo",
-      editing: true,
     },
     { keys: "Tab", action: "Abre Agregar nodo", equivalent: "Agregar nodo", editing: true },
     {
       keys: "Flechas",
       action: "Selecciona el nodo vecino",
-      equivalent: "Clic sobre un nodo",
-      editing: true,
+      // Members cannot click a node to select it; they open it with a double click.
+      equivalent: canManage ? "Clic sobre un nodo" : "Doble clic sobre el nodo",
     },
     {
       keys: "Shift + flechas",

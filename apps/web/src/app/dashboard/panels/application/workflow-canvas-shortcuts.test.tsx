@@ -202,11 +202,12 @@ describe("workflow canvas keyboard shortcuts", () => {
     expect(handlers.onRequestDeleteNode).not.toHaveBeenCalled();
   });
 
-  it("deletes nothing with several nodes selected", () => {
+  it("deletes nothing with several nodes selected, and keeps Retroceso from the browser", () => {
     render(<Canvas initialSelection={["image", "a"]} />);
 
-    press("Delete");
+    const notPrevented = press("Backspace");
 
+    expect(notPrevented).toBe(false);
     expect(handlers.onRequestDeleteNode).not.toHaveBeenCalled();
   });
 
@@ -285,17 +286,36 @@ describe("workflow canvas keyboard shortcuts", () => {
   });
 
   describe("for a member without edit permission", () => {
-    it("neither offers to delete a selected node nor selects nodes", () => {
+    it("does not offer to delete a selected node, and keeps the DAG", () => {
       render(<Canvas canManage={false} initialSelection={["a"]} />);
 
       press("Delete");
-      press("a", { ctrlKey: true });
-      press("ArrowRight");
+      press("Backspace");
       press("Tab");
 
       expect(handlers.onRequestDeleteNode).not.toHaveBeenCalled();
-      expect(handlers.onSelectNodes).not.toHaveBeenCalled();
+      expect(handlers.onRemoveConnection).not.toHaveBeenCalled();
+      expect(handlers.onToggleAddNode).not.toHaveBeenCalled();
       expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("selects a node with the arrows and opens its details read-only with Enter", () => {
+      render(<Canvas canManage={false} />);
+
+      press("ArrowRight");
+      expect(isSelected("image")).toBe(true);
+      press("ArrowRight");
+      press("Enter");
+
+      expect(handlers.onOpenNodeDetails).toHaveBeenCalledExactlyOnceWith("a");
+    });
+
+    it("does not select every node, as Seleccionar todo is not offered to members", () => {
+      render(<Canvas canManage={false} />);
+
+      press("a", { ctrlKey: true });
+
+      expect(handlers.onSelectNodes).not.toHaveBeenCalled();
     });
 
     it("keeps the navigation shortcuts and lists only those", () => {
