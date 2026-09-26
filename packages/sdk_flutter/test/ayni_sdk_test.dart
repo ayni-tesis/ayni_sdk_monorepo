@@ -49,7 +49,10 @@ void main() {
     await storageDirectory.delete(recursive: true);
   });
 
-  AyniSdk sdk({Duration? timeout}) => AyniSdk(
+  AyniSdk sdk({
+    Duration? timeout,
+    Future<void> Function()? onBeforeInventoryPersist,
+  }) => AyniSdk(
     serverUrl: Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
     ),
@@ -57,6 +60,7 @@ void main() {
     storageDirectory: storageDirectory,
     syncTimeout: timeout ?? const Duration(seconds: 30),
     allowInsecureLoopback: true,
+    onBeforeInventoryPersist: onBeforeInventoryPersist,
   );
 
   Future<File> seedInventory(AyniSdk client) async {
@@ -136,6 +140,16 @@ void main() {
     },
   );
 
+  test('rejects malformed inventory fields despite authentication', () async {
+    final client = sdk();
+    final inventory = await seedInventory(client);
+    final before = await inventory.readAsString();
+    responseBody = '{"authenticated":true,"workflows":"invalid","models":[]}';
+
+    expect(await client.sync(), SyncStatus.error);
+    expect(await inventory.readAsString(), before);
+  });
+
   test('rejects insecure remote URLs before sending the credential', () async {
     final client = AyniSdk(
       serverUrl: Uri.parse('http://example.invalid'),
@@ -172,6 +186,25 @@ void main() {
     );
   });
 
+  test('uses a direct connection for permitted loopback HTTP', () async {
+    final recordingClient = _RecordingHttpClient(HttpClient());
+
+    await HttpOverrides.runZoned(
+      () async => expect(await sdk().sync(), SyncStatus.updated),
+      createHttpClient: (_) => recordingClient,
+    );
+
+    expect(recordingClient.findProxy, isNotNull);
+    expect(
+      recordingClient.findProxy!(
+        Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+      ),
+      'DIRECT',
+    );
+  });
+
   test(
     'returns an error when the complete sync exceeds its deadline',
     () async {
@@ -182,6 +215,32 @@ void main() {
         SyncStatus.error,
       );
       await Future<void>.delayed(responseDelay!);
+    },
+  );
+
+  test(
+    'keeps inventory when persistence is pending past the deadline',
+    () async {
+      final inventory = await seedInventory(sdk());
+      final before = await inventory.readAsString();
+      responseBody =
+          '{"workflows":[{"id":"workflow-2"}],"models":[{"id":"model-2"}]}';
+      final startedPersisting = Completer<void>();
+      final releasePersistence = Completer<void>();
+      final client = sdk(
+        timeout: const Duration(milliseconds: 10),
+        onBeforeInventoryPersist: () {
+          startedPersisting.complete();
+          return releasePersistence.future;
+        },
+      );
+      final sync = client.sync();
+      await startedPersisting.future;
+
+      expect(await sync, SyncStatus.error);
+      releasePersistence.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(await inventory.readAsString(), before);
     },
   );
 
@@ -211,4 +270,29 @@ void main() {
       await invalidServer.close();
     }
   });
+}
+
+class _RecordingHttpClient implements HttpClient {
+  _RecordingHttpClient(this._delegate);
+
+  final HttpClient _delegate;
+  String Function(Uri uri)? findProxy;
+
+  @override
+  Future<HttpClientRequest> postUrl(Uri url) => _delegate.postUrl(url);
+
+  @override
+  void close({bool force = false}) => _delegate.close(force: force);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName == const Symbol('findProxy=')) {
+      final finder =
+          invocation.positionalArguments.single as String Function(Uri);
+      findProxy = finder;
+      _delegate.findProxy = finder;
+      return null;
+    }
+    return super.noSuchMethod(invocation);
+  }
 }
