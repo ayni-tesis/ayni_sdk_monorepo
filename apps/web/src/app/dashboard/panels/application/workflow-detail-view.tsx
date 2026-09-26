@@ -1,6 +1,13 @@
 "use client";
 
-import { findWorkflowCycle, workflowEdges } from "@ayni/api/workflow-graph";
+import {
+  findWorkflowCycle,
+  type WorkflowSourcedNode,
+  withWorkflowSource,
+  workflowEdges,
+  workflowPortCompatibility,
+  workflowSourceTarget,
+} from "@ayni/api/workflow-graph";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -50,7 +57,7 @@ import {
   WORKFLOW_PORT_LABELS,
   WORKFLOW_PORTS_CONNECTED_MESSAGE,
   WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
-  workflowPortCompatibility,
+  WORKFLOW_SOURCE_INCOMPATIBLE_MESSAGES,
 } from "./workflow-canvas-ports";
 import type {
   WorkflowModelOption,
@@ -99,6 +106,7 @@ const WORKFLOW_POSITIONS_SAVE_ERROR =
 const WORKFLOW_ARRANGE_ERROR = "No pudimos ordenar los nodos. Inténtalo nuevamente.";
 const WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE =
   "No pudimos restaurar la conexión porque el borrador cambió.";
+const WORKFLOW_SOURCE_UPDATE_ERROR = "No pudimos actualizar la conexión.";
 // Deshacer stays available while the notice is visible.
 const WORKFLOW_UNDO_DURATION = 5000;
 const MODEL_OPTIONS_LOAD_ERROR = "No pudimos cargar los modelos. Inténtalo nuevamente.";
@@ -371,6 +379,9 @@ export function WorkflowDetailView({
   const [modelOptionsError, setModelOptionsError] = useState("");
   const [modelOptionsReload, setModelOptionsReload] = useState(0);
   const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
+  // The new source of a condition or an output while it saves (US-131).
+  const [pendingSource, setPendingSource] = useState<WorkflowConnectionItem | null>(null);
+  const reassigningSourceRef = useRef(false);
   const [connectionSource, setConnectionSource] = useState<{
     sourceNodeId: string;
     sourcePort: string;
@@ -873,12 +884,15 @@ export function WorkflowDetailView({
   async function changeConnection(connection: WorkflowConnectionItem) {
     if (detail) {
       // Rejected connections never reach the server and leave the draft as it is.
+      const sourceTarget = workflowSourceTarget(detail.draft, connection);
       const compatibility = workflowPortCompatibility(detail.draft, connection);
       if (compatibility !== "compatible") {
         toast.error(
           compatibility === "connected"
             ? WORKFLOW_PORTS_CONNECTED_MESSAGE
-            : WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
+            : sourceTarget
+              ? WORKFLOW_SOURCE_INCOMPATIBLE_MESSAGES[sourceTarget.type]
+              : WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE,
         );
         return;
       }
@@ -886,6 +900,10 @@ export function WorkflowDetailView({
       if (cycle) {
         setCycleNodeIds(cycle);
         toast.error(WORKFLOW_CYCLE_MESSAGE);
+        return;
+      }
+      if (sourceTarget) {
+        await reassignSource(connection, sourceTarget);
         return;
       }
     }
@@ -907,6 +925,62 @@ export function WorkflowDetailView({
         setCycleNodeIds(connectionError.response.data.nodeIds ?? []);
       toast.error(errorMessage(connectionError, "No pudimos crear la conexión."));
       void loadDetail(application.id, workflowId);
+    }
+  }
+
+  /** The draft with `node`'s source taken from `source`, keeping its id, settings, and position. */
+  function withSource(
+    current: WorkflowDetailItem | null,
+    nodeId: string,
+    source: { sourceNodeId: string; sourcePort: string },
+  ) {
+    if (!current) return current;
+    const nodes = current.draft.nodes.map((node) =>
+      node.id === nodeId && (node.type === "condition" || node.type === "output")
+        ? withWorkflowSource(node, source)
+        : node,
+    );
+    return { ...current, draft: { ...current.draft, nodes } };
+  }
+
+  // A connection to the Origen of a condition or an output replaces its source
+  // (US-131). The new edge shows at once, dotted until it is saved; any failure
+  // puts the previous source back.
+  async function reassignSource(connection: WorkflowConnectionItem, node: WorkflowSourcedNode) {
+    if (reassigningSourceRef.current) return;
+    reassigningSourceRef.current = true;
+    const previous = {
+      sourceNodeId: node.sourceNodeId,
+      sourcePort: node.type === "output" ? node.sourcePort : "result",
+    };
+    setDetail((current) => withSource(current, node.id, connection));
+    setPendingSource(connection);
+    try {
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.post<DraftChanged>(connectionsUrl, { ...connection, draftRevision }),
+      );
+      setDetail((current) => (current ? { ...current, draft: data.draft } : current));
+      setCycleNodeIds([]);
+      setSelectedConnection(null);
+      setConnectionSource(null);
+      toast.success("Conexión actualizada.");
+    } catch (reassignError) {
+      setDetail((current) => withSource(current, node.id, previous));
+      if (staleDraftChange(reassignError)) return;
+      // US-131 names the node's own message for a refused source and one message
+      // for the rest; a cycle reads like the one found in the browser (US-033).
+      const data = axios.isAxiosError<{ code?: string; nodeIds?: string[] }>(reassignError)
+        ? reassignError.response?.data
+        : undefined;
+      if (data?.code === "incompatibleSource")
+        toast.error(WORKFLOW_SOURCE_INCOMPATIBLE_MESSAGES[node.type]);
+      else if (data?.code === "workflowCycle") {
+        setCycleNodeIds(data.nodeIds ?? []);
+        toast.error(WORKFLOW_CYCLE_MESSAGE);
+      } else toast.error(WORKFLOW_SOURCE_UPDATE_ERROR);
+    } finally {
+      setPendingSource(null);
+      reassigningSourceRef.current = false;
     }
   }
 
@@ -1203,6 +1277,7 @@ export function WorkflowDetailView({
             draft={draft}
             canManage={canManage && application.status === "active"}
             selectedConnection={selectedConnection}
+            pendingConnection={pendingSource}
             connectionSource={connectionSource}
             cycleNodeIds={cycleNodeIds}
             nodeErrors={nodeErrors}

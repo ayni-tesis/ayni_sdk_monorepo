@@ -1,12 +1,8 @@
-import type {
-  WorkflowCanvasConnection,
-  WorkflowCanvasDraft,
-  WorkflowCanvasNode,
-} from "./workflow-canvas";
+import type { WorkflowCanvasNode } from "./workflow-canvas";
 
+// Which ports connect is decided by the rules the server applies too, in
+// `@ayni/api/workflow-graph`; this module only says how ports look.
 export type WorkflowCanvasPort = { id: string; label: string };
-/** `connected` means that exact connection already exists. */
-export type WorkflowPortCompatibility = "compatible" | "incompatible" | "connected";
 
 export const WORKFLOW_PORT_LABELS: Record<string, string> = {
   image: "Entrada de imagen",
@@ -38,49 +34,9 @@ export function workflowNodePorts(node: WorkflowCanvasNode): {
   }
 }
 
-/** The type of what an output port produces, or `undefined` if the node has no such output. */
-export function workflowOutputPortType(node: WorkflowCanvasNode | undefined, sourcePort: string) {
-  if (node?.type === "input.image" && sourcePort === "imagen") return "image";
-  if (node?.type === "model.tflite" && sourcePort === "result") return node.outputs.result.type;
-  if (node?.type === "condition" && (sourcePort === "true" || sourcePort === "false"))
-    return "boolean";
-  return undefined;
-}
-
-// Only a model's image input takes explicit connections; the Origen input of a
-// condition or an output is reassigned by US-131.
-function inputType(node: WorkflowCanvasNode | undefined, targetPort: string) {
-  return node?.type === "model.tflite" && targetPort === "image" ? "image" : undefined;
-}
-
-/**
- * Whether `connection` may be added to the draft, with the rules the server
- * applies: matching types, one connection per model image input, and no
- * repeated connection. Cycles are checked separately.
- */
-export function workflowPortCompatibility(
-  draft: WorkflowCanvasDraft,
-  connection: WorkflowCanvasConnection,
-): WorkflowPortCompatibility {
-  const connections = draft.connections ?? [];
-  if (
-    connections.some(
-      (edge) =>
-        edge.sourceNodeId === connection.sourceNodeId &&
-        edge.sourcePort === connection.sourcePort &&
-        edge.targetNodeId === connection.targetNodeId &&
-        edge.targetPort === connection.targetPort,
-    )
-  )
-    return "connected";
-  if (connection.sourceNodeId === connection.targetNodeId) return "incompatible";
-  const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
-  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
-  const type = workflowOutputPortType(source, connection.sourcePort);
-  if (!type || type !== inputType(target, connection.targetPort)) return "incompatible";
-  const inputTaken = connections.some(
-    (edge) =>
-      edge.targetNodeId === connection.targetNodeId && edge.targetPort === connection.targetPort,
-  );
-  return inputTaken ? "incompatible" : "compatible";
-}
+// The Origen of a condition or an output that does not accept a source keeps
+// the message used when the node is added (US-131).
+export const WORKFLOW_SOURCE_INCOMPATIBLE_MESSAGES = {
+  condition: "Esta condición no es compatible con la salida seleccionada.",
+  output: "El resultado seleccionado no es compatible con la salida.",
+} as const;

@@ -2735,6 +2735,194 @@ describe("addWorkflowConnection", () => {
   });
 });
 
+describe("addWorkflowConnection to an Origen input (US-131)", () => {
+  const model = (
+    id: string,
+    output:
+      | { type: "classification"; labels: string[] }
+      | { type: "detection"; labels: string[]; scoreThreshold: number },
+  ) => ({
+    id,
+    type: "model.tflite" as const,
+    modelVersionId: `${id}-version`,
+    modelName: id,
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 224,
+        height: 224,
+        channels: 3 as const,
+        normalization: "none" as const,
+      },
+    },
+    outputs: { result: output },
+  });
+  const condition = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "model-a",
+    label: "perro",
+    operator: "gte" as const,
+    threshold: 0.8,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const otherCondition = { ...condition, id: "other-condition", sourceNodeId: "model-b" };
+  const classificationOutput = {
+    id: "classification-output",
+    type: "output" as const,
+    name: "Clase",
+    sourceNodeId: "model-a",
+    sourcePort: "result",
+    resultType: "classification" as const,
+  };
+  const booleanOutput = {
+    id: "boolean-output",
+    type: "output" as const,
+    name: "Es perro",
+    sourceNodeId: "condition",
+    sourcePort: "true",
+    resultType: "boolean" as const,
+  };
+  const draft = {
+    nodes: [
+      { id: "image", type: "input.image" as const, outputs: { imagen: "image" as const } },
+      model("model-a", { type: "classification", labels: ["perro"] }),
+      model("model-b", { type: "classification", labels: ["gato", "perro"] }),
+      model("model-c", { type: "classification", labels: ["gato"] }),
+      model("detector", { type: "detection", labels: ["perro"], scoreThreshold: 0.5 }),
+      condition,
+      otherCondition,
+      classificationOutput,
+      booleanOutput,
+    ],
+    connections: [
+      { sourceNodeId: "image", sourcePort: "imagen", targetNodeId: "model-a", targetPort: "image" },
+    ],
+    layout: { condition: { x: 640, y: 48 }, "boolean-output": { x: 960, y: 48 } },
+  };
+  const input = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    draftRevision: 0,
+    targetPort: "source",
+  };
+  const withNode = (node: (typeof draft.nodes)[number]) => ({
+    ...draft,
+    nodes: draft.nodes.map((item) => (item.id === node.id ? node : item)),
+  });
+
+  it("replaces a condition's source in one write, keeping its id, settings, and position", async () => {
+    const store = makeWorkflowPositionStoreDb(draft);
+
+    const result = await addWorkflowConnection(store.db, {
+      ...input,
+      sourceNodeId: "model-b",
+      sourcePort: "result",
+      targetNodeId: "condition",
+    });
+
+    const expected = withNode({ ...condition, sourceNodeId: "model-b" });
+    expect(result).toEqual({ ok: true, draft: expected, draftRevision: 1 });
+    expect(store.reload()).toEqual(expected);
+    // The source lives on the node: no second edge into its Origen is stored.
+    expect(store.reload().connections).toEqual(draft.connections);
+    expect(store.writes).toBe(1);
+    expect(store.lockedTables).toContain(workflow);
+  });
+
+  it("replaces an output's source and port with a result of its type", async () => {
+    const store = makeWorkflowPositionStoreDb(draft);
+
+    const result = await addWorkflowConnection(store.db, {
+      ...input,
+      sourceNodeId: "other-condition",
+      sourcePort: "false",
+      targetNodeId: "boolean-output",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(store.reload()).toEqual(
+      withNode({ ...booleanOutput, sourceNodeId: "other-condition", sourcePort: "false" }),
+    );
+  });
+
+  it.each([
+    ["a condition to a model without its label", "model-c", "result", "condition", "condition"],
+    ["a condition to a detection model", "detector", "result", "condition", "condition"],
+    ["a condition to a condition branch", "other-condition", "true", "condition", "condition"],
+    [
+      "a classification output to a detection result",
+      "detector",
+      "result",
+      "classification-output",
+      "output",
+    ],
+    ["a boolean output to a model result", "model-b", "result", "boolean-output", "output"],
+    ["a condition to a missing node", "missing", "result", "condition", "condition"],
+  ] as const)(
+    "rejects reassigning %s and keeps its previous source",
+    async (_case, sourceNodeId, sourcePort, targetNodeId, nodeType) => {
+      const store = makeWorkflowPositionStoreDb(draft);
+
+      const result = await addWorkflowConnection(store.db, {
+        ...input,
+        sourceNodeId,
+        sourcePort,
+        targetNodeId,
+      });
+
+      expect(result).toEqual({ ok: false, reason: "incompatibleSource", nodeType });
+      expect(store.writes).toBe(0);
+      expect(store.reload()).toEqual(draft);
+    },
+  );
+
+  it("rejects a source that would close a cycle through any edge stored in the draft", async () => {
+    // A connection saved earlier from the condition into model-b makes model-b
+    // downstream of the condition, so it cannot become the condition's source.
+    const withStoredEdge = {
+      ...draft,
+      connections: [
+        ...draft.connections,
+        {
+          sourceNodeId: "condition",
+          sourcePort: "true",
+          targetNodeId: "model-b",
+          targetPort: "image",
+        },
+      ],
+    };
+    const store = makeWorkflowPositionStoreDb(withStoredEdge);
+
+    const result = await addWorkflowConnection(store.db, {
+      ...input,
+      sourceNodeId: "model-b",
+      sourcePort: "result",
+      targetNodeId: "condition",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "cycle", nodeIds: ["model-b", "condition"] });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(withStoredEdge);
+  });
+
+  it("reports the current source as a duplicate without writing", async () => {
+    const store = makeWorkflowPositionStoreDb(draft);
+
+    const result = await addWorkflowConnection(store.db, {
+      ...input,
+      sourceNodeId: "model-a",
+      sourcePort: "result",
+      targetNodeId: "condition",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "duplicate" });
+    expect(store.writes).toBe(0);
+  });
+});
+
 describe("addModelNode after an output port (US-128)", () => {
   const contract = {
     input: {
@@ -3438,6 +3626,57 @@ describe("draft revisions in the routes (US-130)", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ draft: saved, draftRevision: NEXT_REVISION });
+  });
+});
+
+describe("POST …/connections to an Origen input (US-131)", () => {
+  const reassignment = {
+    sourceNodeId: "model-b",
+    sourcePort: "result",
+    targetNodeId: "condition",
+    targetPort: "source",
+    draftRevision: BASE_REVISION,
+  };
+  const post = (request: ReturnType<typeof makeApp>["request"]) =>
+    request.request("/applications/app-1/workflows/workflow-1/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reassignment),
+    });
+
+  it.each([
+    ["condition", "Esta condición no es compatible con la salida seleccionada."],
+    ["output", "El resultado seleccionado no es compatible con la salida."],
+  ] as const)(
+    "answers 409 with the %s's own message when it does not accept the source",
+    async (nodeType, message) => {
+      const { request } = makeApp({
+        addConnection: async () => ({ ok: false, reason: "incompatibleSource", nodeType }),
+      });
+
+      const response = await post(request);
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({ message, code: "incompatibleSource" });
+    },
+  );
+
+  it("passes the reassignment to the store like any other connection", async () => {
+    const saved = { nodes: [] };
+    const { request, addConnection } = makeApp({
+      addConnection: async () => ({ ok: true, draft: saved, draftRevision: NEXT_REVISION }),
+    });
+
+    const response = await post(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft: saved, draftRevision: NEXT_REVISION });
+    expect(addConnection).toHaveBeenCalledWith({
+      ...reassignment,
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+    });
   });
 });
 

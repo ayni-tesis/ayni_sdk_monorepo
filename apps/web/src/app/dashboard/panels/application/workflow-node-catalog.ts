@@ -1,9 +1,9 @@
+import { workflowOutputPortType } from "@ayni/api/workflow-graph";
 import type {
   WorkflowCanvasDraft,
   WorkflowCanvasNode,
   WorkflowPaletteNode,
 } from "./workflow-canvas";
-import { workflowOutputPortType } from "./workflow-canvas-ports";
 
 export const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 
