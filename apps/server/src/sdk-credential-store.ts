@@ -435,6 +435,16 @@ export async function useSdkCredential(
       return { ok: false, code: "credentialRevoked", message: SDK_CREDENTIAL_REVOKED_MESSAGE };
     }
 
+    const activeApplicationRows = await tx
+      .select({ id: application.id })
+      .from(application)
+      .where(and(eq(application.id, found.applicationId), eq(application.status, "active")))
+      .limit(1)
+      .for("update");
+    if (!activeApplicationRows[0]) {
+      return { ok: false, code: "invalidCredential", message: INVALID_CREDENTIAL_MESSAGE };
+    }
+
     await tx
       .update(sdkCredential)
       .set({ lastUsedAt: new Date() })

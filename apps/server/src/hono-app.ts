@@ -2,13 +2,7 @@ import { createHash } from "node:crypto";
 import { createOpenApiDocument } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import {
-  application,
-  invitationLink,
-  member,
-  organization,
-  user,
-} from "@ayni/db/schema/index";
+import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";

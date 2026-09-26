@@ -1019,14 +1019,18 @@ describe("regenerateSdkCredential", () => {
 });
 
 describe("useSdkCredential", () => {
-  function makeUseDb(rows: Record<string, unknown>[]) {
+  function makeUseDb(rows: Record<string, unknown>[], applicationIsActive = true) {
     const lastUses: Record<string, unknown>[] = [];
+    let selectCount = 0;
     const tx = {
       select: () => ({
         from: () => ({
           where: () => ({
             limit: () => ({
-              for: async () => rows,
+              for: async () => {
+                selectCount += 1;
+                return selectCount === 1 ? rows : applicationIsActive ? [{ id: "app-1" }] : [];
+              },
             }),
           }),
         }),
@@ -1067,6 +1071,27 @@ describe("useSdkCredential", () => {
     });
     expect(lastUses).toHaveLength(1);
     expect(lastUses[0]?.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects a credential for an archived application without recording use", async () => {
+    const secret = generateSdkCredentialSecret();
+    const { database, lastUses } = makeUseDb(
+      [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          secretHash: hashSdkCredentialSecret(secret),
+          revokedAt: null,
+        },
+      ],
+      false,
+    );
+
+    await expect(useSdkCredential(database, secret)).resolves.toMatchObject({
+      ok: false,
+      code: "invalidCredential",
+    });
+    expect(lastUses).toHaveLength(0);
   });
 
   it("rejects a revoked credential with the credentialRevoked state without recording use", async () => {
