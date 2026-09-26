@@ -1,6 +1,6 @@
+import { workflowEdges } from "@ayni/api/workflow-graph";
 import { describe, expect, it } from "vitest";
 import type { WorkflowCanvasDraft, WorkflowCanvasNode } from "./workflow-canvas";
-import { workflowCanvasEdges } from "./workflow-canvas";
 import {
   arrangeWorkflowNodes,
   placeWorkflowNodeAfter,
@@ -57,7 +57,7 @@ function sizesOf(draft: WorkflowCanvasDraft, measured: Record<string, WorkflowCa
 }
 
 function arrange(draft: WorkflowCanvasDraft, measured?: Record<string, WorkflowCanvasSize>) {
-  return arrangeWorkflowNodes(draft.nodes, workflowCanvasEdges(draft), sizesOf(draft, measured));
+  return arrangeWorkflowNodes(draft.nodes, workflowEdges(draft), sizesOf(draft, measured));
 }
 
 // Leaf diagnosis: validate the leaf, then branch on the condition.
@@ -92,7 +92,7 @@ describe("arrangeWorkflowNodes", () => {
 
     expect(Object.keys(positions).sort()).toEqual(diagnosis.nodes.map((node) => node.id).sort());
     const box = (id: string) => ({ ...positions[id], ...sizes[id] });
-    for (const edge of workflowCanvasEdges(diagnosis)) {
+    for (const edge of workflowEdges(diagnosis)) {
       const source = box(edge.sourceNodeId);
       expect(box(edge.targetNodeId).x - (source.x + source.width)).toBeGreaterThanOrEqual(48);
     }

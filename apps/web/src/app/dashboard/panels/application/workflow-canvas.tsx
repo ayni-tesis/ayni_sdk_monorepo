@@ -2,6 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 
+import { workflowEdges } from "@ayni/api/workflow-graph";
 import {
   IconAlertTriangle,
   IconBan,
@@ -147,7 +148,6 @@ export type WorkflowPaletteNode =
 export type WorkflowCanvasPositions = Record<string, WorkflowCanvasPosition>;
 
 type ConnectionSource = { sourceNodeId: string; sourcePort: string } | null;
-type CanvasEdge = WorkflowCanvasConnection;
 type MeasuredSizes = Record<string, Partial<Dimensions> | undefined>;
 type WorkflowFlowNodeData = {
   node: WorkflowCanvasNode;
@@ -329,33 +329,6 @@ export function sameWorkflowConnection(
 /** Only connections between ports can be removed; condition and output sources cannot. */
 function removableConnection(draft: WorkflowCanvasDraft, connection: WorkflowCanvasConnection) {
   return (draft.connections ?? []).some((edge) => sameWorkflowConnection(edge, connection));
-}
-
-export function workflowCanvasEdges(draft: WorkflowCanvasDraft): CanvasEdge[] {
-  return [
-    ...(draft.connections ?? []),
-    ...draft.nodes.flatMap((node) =>
-      node.type === "condition"
-        ? [
-            {
-              sourceNodeId: node.sourceNodeId,
-              sourcePort: "result",
-              targetNodeId: node.id,
-              targetPort: "source",
-            },
-          ]
-        : node.type === "output"
-          ? [
-              {
-                sourceNodeId: node.sourceNodeId,
-                sourcePort: node.sourcePort,
-                targetNodeId: node.id,
-                targetPort: "source",
-              },
-            ]
-          : [],
-    ),
-  ];
 }
 
 /** Starts dragging a node from Agregar nodo; the canvas adds it where it is dropped. */
@@ -941,7 +914,7 @@ function WorkflowCanvasFlow({
     const sizes = Object.fromEntries(
       draft.nodes.map((node) => [node.id, workflowNodeSize(node.id, measured)]),
     );
-    const positions = arrangeWorkflowNodes(draft.nodes, workflowCanvasEdges(draft), sizes);
+    const positions = arrangeWorkflowNodes(draft.nodes, workflowEdges(draft), sizes);
     if (!(await onArrangeNodes(positions))) return;
     const { width, height } = store.getState();
     // Like the fit when the draft opens, a small draft is not enlarged past 100 %.
@@ -1074,7 +1047,7 @@ function WorkflowCanvasFlow({
       onAddAfter: addNode?.onAddAfter,
     },
   }));
-  const edges: WorkflowFlowEdge[] = workflowCanvasEdges(draft)
+  const edges: WorkflowFlowEdge[] = workflowEdges(draft)
     .filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId))
     .map((edge) => {
       const selected = selectedConnection

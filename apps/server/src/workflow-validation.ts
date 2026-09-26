@@ -1,8 +1,8 @@
+import { type WorkflowEdge, workflowEdges } from "@ayni/api/workflow-graph";
 import {
   areWorkflowPortsCompatible,
   isConditionSourceCompatible,
   isOutputSourceCompatible,
-  type WorkflowConnection,
   type WorkflowDraft,
   type WorkflowNode,
 } from "./workflow-store";
@@ -35,38 +35,7 @@ function workflowNodeName(node: WorkflowNode) {
   return node.name;
 }
 
-/**
- * Every edge of the draft: explicit port connections plus the source
- * references that condition and output nodes store on themselves.
- */
-function workflowEdges(draft: WorkflowDraft): WorkflowConnection[] {
-  return [
-    ...(draft.connections ?? []),
-    ...draft.nodes.flatMap((node) =>
-      node.type === "condition"
-        ? [
-            {
-              sourceNodeId: node.sourceNodeId,
-              sourcePort: "result",
-              targetNodeId: node.id,
-              targetPort: "source",
-            },
-          ]
-        : node.type === "output"
-          ? [
-              {
-                sourceNodeId: node.sourceNodeId,
-                sourcePort: node.sourcePort,
-                targetNodeId: node.id,
-                targetPort: "source",
-              },
-            ]
-          : [],
-    ),
-  ];
-}
-
-function reachableFrom(startIds: string[], edges: WorkflowConnection[]) {
+function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
   const reached = new Set<string>();
   const pending = [...startIds];
   while (pending.length) {

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 import { application } from "./application";
 
@@ -27,6 +27,8 @@ export const workflow = pgTable(
       }>()
       .default({ nodes: [] })
       .notNull(),
+    // Grows by one with every draft change; a change based on an older revision is rejected (US-130).
+    draftRevision: integer("draft_revision").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

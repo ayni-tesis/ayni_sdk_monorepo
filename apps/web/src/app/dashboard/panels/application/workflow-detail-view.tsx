@@ -1,5 +1,6 @@
 "use client";
 
+import { findWorkflowCycle, workflowEdges } from "@ayni/api/workflow-graph";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -42,7 +43,6 @@ import {
   type WorkflowCanvasPosition,
   type WorkflowCanvasPositions,
   type WorkflowCanvasConnection as WorkflowConnectionItem,
-  workflowCanvasEdges,
   workflowNodePosition,
   workflowNodeTitle,
 } from "./workflow-canvas";
@@ -71,39 +71,14 @@ export type WorkflowVersionItem = {
 export type WorkflowDetailItem = {
   workflow: WorkflowItem;
   draft: WorkflowCanvasDraft;
+  /** The revision every draft change is based on (US-130). */
+  draftRevision: number;
   versions: WorkflowVersionItem[];
 };
 
-export function findWorkflowCycleNodeIds(
-  draft: WorkflowDetailItem["draft"],
-  connection: WorkflowConnectionItem,
-): string[] | undefined {
-  const pending = [connection.targetNodeId];
-  const previous = new Map<string, string>();
-  const visited = new Set(pending);
-  while (pending.length) {
-    const nodeId = pending.pop();
-    if (nodeId === undefined) continue;
-    if (nodeId === connection.sourceNodeId) {
-      const path = [nodeId];
-      let currentNodeId = nodeId;
-      while (currentNodeId !== connection.targetNodeId) {
-        const parentNodeId = previous.get(currentNodeId);
-        if (!parentNodeId) return undefined;
-        path.unshift(parentNodeId);
-        currentNodeId = parentNodeId;
-      }
-      return [...new Set([connection.sourceNodeId, ...path])];
-    }
-    for (const edge of draft.connections ?? []) {
-      if (edge.sourceNodeId === nodeId && !visited.has(edge.targetNodeId)) {
-        visited.add(edge.targetNodeId);
-        previous.set(edge.targetNodeId, nodeId);
-        pending.push(edge.targetNodeId);
-      }
-    }
-  }
-}
+/** What a saved draft change answers: the draft and its new revision. */
+type DraftChanged = { draft: WorkflowCanvasDraft; draftRevision: number };
+type PositionsSaved = { positions: WorkflowCanvasPositions; draftRevision: number };
 
 type WorkflowValidationResult = {
   publishable: boolean;
@@ -117,6 +92,8 @@ type WorkflowValidationResult = {
 };
 
 const WORKFLOW_LOAD_ERROR = "No pudimos cargar el workflow. Inténtalo nuevamente.";
+const WORKFLOW_DRAFT_CONFLICT_MESSAGE =
+  "Otra persona modificó este borrador. Recarga para ver los cambios.";
 const WORKFLOW_POSITIONS_SAVE_ERROR =
   "No pudimos guardar las posiciones. Se restauró la ubicación anterior.";
 const WORKFLOW_ARRANGE_ERROR = "No pudimos ordenar los nodos. Inténtalo nuevamente.";
@@ -142,6 +119,13 @@ const ADD_CONNECTED_NODE_MESSAGES = {
 };
 const INVALID_VERSION_MESSAGE = "Ingresa una versión con formato SemVer, por ejemplo 1.0.0.";
 const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+
+/** Whether the server refused a draft change because someone else changed the draft first. */
+function isDraftConflict(error: unknown) {
+  return (
+    axios.isAxiosError<{ code?: string }>(error) && error.response?.data?.code === "draftConflict"
+  );
+}
 
 export type PublishWorkflowVersionDialogProps = {
   open: boolean;
@@ -404,6 +388,12 @@ export function WorkflowDetailView({
   // A notice's Deshacer runs later than the render that created it.
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  // The revision the next draft change is based on, and the change being sent:
+  // changes go out one at a time, each on the revision the previous one left.
+  const draftRevisionRef = useRef(0);
+  const draftChangesRef = useRef<Promise<void> | null>(null);
+  // Set once someone else changed the draft; Recargar borrador clears it.
+  const [draftConflict, setDraftConflict] = useState<"stale" | "reloading" | "failed" | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -421,6 +411,7 @@ export function WorkflowDetailView({
         { signal: controller.signal },
       );
       if (controller.signal.aborted) return;
+      draftRevisionRef.current = data.draftRevision;
       setDetail(data);
     } catch (loadError) {
       if (controller.signal.aborted) return;
@@ -553,6 +544,57 @@ export function WorkflowDetailView({
     }
   }
 
+  const detailUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}`;
+
+  // Sends a draft change at once, or once the change being sent is answered,
+  // based on the revision that one left, so the editor never conflicts with itself.
+  function sendDraftChange<T extends { draftRevision: number }>(
+    send: (draftRevision: number) => Promise<{ data: T }>,
+  ): Promise<T> {
+    const run = async () => {
+      const { data } = await send(draftRevisionRef.current);
+      draftRevisionRef.current = data.draftRevision;
+      return data;
+    };
+    const previous = draftChangesRef.current;
+    const change = previous ? previous.then(run) : run();
+    const settled = change.then(
+      () => undefined,
+      () => undefined,
+    );
+    draftChangesRef.current = settled;
+    void settled.then(() => {
+      if (draftChangesRef.current === settled) draftChangesRef.current = null;
+    });
+    return change;
+  }
+
+  // Shows the saved draft in place of the stale one; the canvas stays mounted, so
+  // the zoom and the position of the view are kept.
+  async function reloadDraft() {
+    // Shares loadDetail's controller, so leaving the view or loading again drops it.
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setDraftConflict("reloading");
+    try {
+      const { data } = await httpClient.get<WorkflowDetailItem>(detailUrl, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      draftRevisionRef.current = data.draftRevision;
+      setDetail(data);
+      const nodeIds = new Set(data.draft.nodes.map((node) => node.id));
+      setSelectedNodeIds((current) => current.filter((nodeId) => nodeIds.has(nodeId)));
+      setSelectedConnection(null);
+      setConnectionSource(null);
+      setCycleNodeIds([]);
+      setDraftConflict(null);
+    } catch {
+      if (!controller.signal.aborted) setDraftConflict("failed");
+    }
+  }
+
   // Agregar nodo closes once the node is saved; after a failure it stays open, with
   // the settings typed, over the draft reloaded from the server. A node added
   // after an output port is saved with its connection, so the canvas changes
@@ -567,15 +609,22 @@ export function WorkflowDetailView({
     setAddingNode(true);
     const messages = connected ? ADD_CONNECTED_NODE_MESSAGES : ADD_NODE_MESSAGES[node.type];
     try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes`,
-        { ...node, position },
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.post<DraftChanged>(`${detailUrl}/nodes`, {
+          ...node,
+          position,
+          draftRevision,
+        }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setAddNodeOpen(false);
       setAddNodeOrigin(null);
       toast.success(messages.success);
     } catch (addError) {
+      if (isDraftConflict(addError)) {
+        setDraftConflict("stale");
+        return;
+      }
       // US-128 names a single failure message for a node added after a port.
       toast.error(connected ? messages.failure : errorMessage(addError, messages.failure));
       void loadDetail(application.id, workflowId);
@@ -725,8 +774,10 @@ export function WorkflowDetailView({
     setSavingPositions(true);
     showPositions(positions);
     try {
-      await httpClient.patch(layoutUrl, { positions });
-    } catch {
+      await sendDraftChange((draftRevision) =>
+        httpClient.patch<PositionsSaved>(layoutUrl, { positions, draftRevision }),
+      );
+    } catch (moveError) {
       setDetail((current) => {
         if (!current) return current;
         const layout = { ...current.draft.layout };
@@ -738,7 +789,8 @@ export function WorkflowDetailView({
         return { ...current, draft: { ...current.draft, layout } };
       });
       // Unlike other edits, a failed move always reads the same: the nodes were restored.
-      toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
+      if (isDraftConflict(moveError)) setDraftConflict("stale");
+      else toast.error(WORKFLOW_POSITIONS_SAVE_ERROR);
     } finally {
       savingLayoutRef.current = false;
       setSavingPositions(false);
@@ -757,9 +809,12 @@ export function WorkflowDetailView({
     savingLayoutRef.current = true;
     setArrangingNodes(true);
     try {
-      await httpClient.patch(layoutUrl, { positions });
-    } catch {
-      toast.error(WORKFLOW_ARRANGE_ERROR);
+      await sendDraftChange((draftRevision) =>
+        httpClient.patch<PositionsSaved>(layoutUrl, { positions, draftRevision }),
+      );
+    } catch (arrangeError) {
+      if (isDraftConflict(arrangeError)) setDraftConflict("stale");
+      else toast.error(WORKFLOW_ARRANGE_ERROR);
       return false;
     } finally {
       savingLayoutRef.current = false;
@@ -785,11 +840,14 @@ export function WorkflowDetailView({
     savingLayoutRef.current = true;
     setSavingPositions(true);
     try {
-      await httpClient.patch(layoutUrl, { positions });
+      await sendDraftChange((draftRevision) =>
+        httpClient.patch<PositionsSaved>(layoutUrl, { positions, draftRevision }),
+      );
       showPositions(positions);
       toast.success("Posiciones restauradas.");
     } catch (restoreError) {
-      toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
+      if (isDraftConflict(restoreError)) setDraftConflict("stale");
+      else toast.error(errorMessage(restoreError, "No pudimos restaurar las posiciones."));
     } finally {
       savingLayoutRef.current = false;
       setSavingPositions(false);
@@ -810,7 +868,7 @@ export function WorkflowDetailView({
         );
         return;
       }
-      const cycle = findWorkflowCycleNodeIds(detail.draft, connection);
+      const cycle = findWorkflowCycle(detail.draft, connection);
       if (cycle) {
         setCycleNodeIds(cycle);
         toast.error(WORKFLOW_CYCLE_MESSAGE);
@@ -818,9 +876,8 @@ export function WorkflowDetailView({
       }
     }
     try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        connectionsUrl,
-        connection,
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.post<DraftChanged>(connectionsUrl, { ...connection, draftRevision }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setCycleNodeIds([]);
@@ -828,6 +885,10 @@ export function WorkflowDetailView({
       setConnectionSource(null);
       toast.success("Conexión creada.");
     } catch (connectionError) {
+      if (isDraftConflict(connectionError)) {
+        setDraftConflict("stale");
+        return;
+      }
       if (
         axios.isAxiosError(connectionError) &&
         connectionError.response?.data?.code === "workflowCycle"
@@ -838,16 +899,16 @@ export function WorkflowDetailView({
     }
   }
 
-  // Deshacer restores the connection only on the very draft the deletion left.
-  // TODO(US-130): compare the server's draft revision instead, so that changes
-  // made by someone else also block the restore.
+  // Deshacer restores the connection only on the revision the deletion left; the
+  // server refuses it too once someone else changed the draft.
   async function removeConnection(connection: WorkflowConnectionItem) {
     if (removingConnectionRef.current) return;
     removingConnectionRef.current = true;
     try {
-      const { data } = await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(
-        connectionsUrl,
-        { data: connection },
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.delete<DraftChanged>(connectionsUrl, {
+          data: { ...connection, draftRevision },
+        }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setCycleNodeIds([]);
@@ -856,10 +917,14 @@ export function WorkflowDetailView({
         duration: WORKFLOW_UNDO_DURATION,
         action: {
           label: "Deshacer",
-          onClick: () => void restoreConnection(connection, data.draft),
+          onClick: () => void restoreConnection(connection, data.draftRevision),
         },
       });
     } catch (removeError) {
+      if (isDraftConflict(removeError)) {
+        setDraftConflict("stale");
+        return;
+      }
       toast.error(errorMessage(removeError, "No pudimos eliminar la conexión."));
       void loadDetail(application.id, workflowId);
     } finally {
@@ -869,20 +934,23 @@ export function WorkflowDetailView({
 
   async function restoreConnection(
     connection: WorkflowConnectionItem,
-    draftAfterRemoval: WorkflowDetailItem["draft"],
+    revisionAfterRemoval: number,
   ) {
-    if (detailRef.current?.draft !== draftAfterRemoval) {
+    if (draftRevisionRef.current !== revisionAfterRemoval) {
       toast.error(WORKFLOW_CONNECTION_RESTORE_CHANGED_MESSAGE);
       return;
     }
     try {
-      const { data } = await httpClient.post<{ draft: WorkflowDetailItem["draft"] }>(
-        connectionsUrl,
-        connection,
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.post<DraftChanged>(connectionsUrl, { ...connection, draftRevision }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Conexión restaurada.");
     } catch (restoreError) {
+      if (isDraftConflict(restoreError)) {
+        setDraftConflict("stale");
+        return;
+      }
       toast.error(errorMessage(restoreError, "No pudimos restaurar la conexión."));
       void loadDetail(application.id, workflowId);
     }
@@ -907,13 +975,19 @@ export function WorkflowDetailView({
     if (savingNodeDetails) return;
     setSavingNodeDetails(true);
     try {
-      const { data } = await httpClient.patch<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}`,
-        changes,
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.patch<DraftChanged>(`${detailUrl}/nodes/${encodeURIComponent(nodeId)}`, {
+          ...changes,
+          draftRevision,
+        }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       toast.success("Nodo actualizado.");
     } catch (saveError) {
+      if (isDraftConflict(saveError)) {
+        setDraftConflict("stale");
+        return;
+      }
       toast.error(errorMessage(saveError, "No pudimos guardar los cambios del nodo."));
     } finally {
       setSavingNodeDetails(false);
@@ -924,16 +998,16 @@ export function WorkflowDetailView({
     if (!selectedNodeId || deletingNode) return;
     setDeletingNode(true);
     try {
-      const { data } = await httpClient.delete<{ draft: WorkflowDetailItem["draft"] }>(
-        `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(selectedNodeId)}`,
+      const nodeUrl = `${detailUrl}/nodes/${encodeURIComponent(selectedNodeId)}`;
+      const data = await sendDraftChange((draftRevision) =>
+        httpClient.delete<DraftChanged>(nodeUrl, { data: { draftRevision } }),
       );
       setDetail((current) => (current ? { ...current, draft: data.draft } : current));
       setSelectedNodeIds([]);
       setSelectedConnection((current) =>
         current
-          ? (workflowCanvasEdges(data.draft).find((edge) =>
-              sameWorkflowConnection(edge, current),
-            ) ?? null)
+          ? (workflowEdges(data.draft).find((edge) => sameWorkflowConnection(edge, current)) ??
+            null)
           : null,
       );
       setConnectionSource((current) =>
@@ -948,6 +1022,10 @@ export function WorkflowDetailView({
     } catch (deleteError) {
       setDeleteNodeDialogOpen(false);
       setSelectedNodeIds([]);
+      if (isDraftConflict(deleteError)) {
+        setDraftConflict("stale");
+        return;
+      }
       toast.error(errorMessage(deleteError, "No pudimos eliminar el nodo."));
       void loadDetail(application.id, workflowId);
     } finally {
@@ -1088,6 +1166,31 @@ export function WorkflowDetailView({
                   </table>
                 </section>
               )}
+            </div>
+          )}
+          {draftConflict && (
+            <div
+              role="alert"
+              data-testid="workflow-draft-conflict"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/50 p-3"
+            >
+              <p className="text-sm">
+                {draftConflict === "reloading"
+                  ? "Cargando workflow…"
+                  : draftConflict === "failed"
+                    ? WORKFLOW_LOAD_ERROR
+                    : WORKFLOW_DRAFT_CONFLICT_MESSAGE}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={draftConflict === "reloading"}
+                onClick={() => void reloadDraft()}
+              >
+                <IconRefresh className="mr-1 size-4" />
+                Recargar borrador
+              </Button>
             </div>
           )}
           <WorkflowCanvas

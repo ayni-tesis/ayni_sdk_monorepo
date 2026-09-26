@@ -16,38 +16,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatLongDateEs } from "@/lib/format-date";
 import type { Application } from "../types";
 import { canvasViewport, stubWorkflowCanvasLayout } from "./application/workflow-canvas-test-utils";
-import { findWorkflowCycleNodeIds } from "./application/workflow-detail-view";
 import { ApplicationDetailPanel } from "./application-detail-panel";
-
-describe("findWorkflowCycleNodeIds", () => {
-  const connection = {
-    sourceNodeId: "b",
-    sourcePort: "result",
-    targetNodeId: "a",
-    targetPort: "image",
-  };
-  const edge = (sourceNodeId: string, targetNodeId: string) => ({
-    sourceNodeId,
-    sourcePort: "result",
-    targetNodeId,
-    targetPort: "image",
-  });
-
-  it("finds direct and indirect cycles before posting a connection", () => {
-    expect(
-      findWorkflowCycleNodeIds({ nodes: [], connections: [edge("a", "b")] }, connection),
-    ).toEqual(["b", "a"]);
-    expect(
-      findWorkflowCycleNodeIds(
-        { nodes: [], connections: [edge("a", "c"), edge("c", "b")] },
-        connection,
-      ),
-    ).toEqual(["b", "a", "c"]);
-    expect(findWorkflowCycleNodeIds({ nodes: [], connections: [edge("a", "c")] }, connection)).toBe(
-      undefined,
-    );
-  });
-});
 
 const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
   client: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -1905,6 +1874,7 @@ describe("ApplicationDetailPanel", () => {
         updatedAt: "2026-09-21T16:00:00.000Z",
       },
       draft: { nodes: [imageNode] },
+      draftRevision: 2,
       versions: [],
     };
 
@@ -1929,7 +1899,7 @@ describe("ApplicationDetailPanel", () => {
       client.get.mockImplementation(async (url: string) =>
         url.endsWith("/workflows/workflow-1") ? { data: workflowDetail } : { data: { models: [] } },
       );
-      client.delete.mockResolvedValueOnce({ data: { draft: { nodes: [] } } });
+      client.delete.mockResolvedValueOnce({ data: { draft: { nodes: [] }, draftRevision: 3 } });
 
       render(workflowDetailPanel());
       await screen.findByTestId("workflow-node-image-node");
@@ -1953,6 +1923,7 @@ describe("ApplicationDetailPanel", () => {
       await waitFor(() => {
         expect(client.delete).toHaveBeenCalledWith(
           "/applications/app-1/workflows/workflow-1/nodes/image-node",
+          { data: { draftRevision: 2 } },
         );
         expect(toastMock.success).toHaveBeenCalledWith("Nodo eliminado.");
       });
@@ -2382,6 +2353,7 @@ describe("ApplicationDetailPanel", () => {
                   updatedAt: "2026-09-21T16:00:00.000Z",
                 },
                 draft,
+                draftRevision: 3,
                 versions: [],
               },
             }
@@ -2421,13 +2393,13 @@ describe("ApplicationDetailPanel", () => {
     }
 
     it("deletes the selected connection, keeps both nodes and offers Deshacer for 5 seconds", async () => {
-      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
 
       await deleteImageToModel();
 
       await waitFor(() => expect(imageToModelEdge()).toBeNull());
       expect(client.delete).toHaveBeenCalledExactlyOnceWith(connectionsUrl, {
-        data: imageToModel,
+        data: { ...imageToModel, draftRevision: 3 },
       });
       expect(toastMock.success).toHaveBeenCalledWith("Conexión eliminada.", {
         duration: 5000,
@@ -2439,7 +2411,7 @@ describe("ApplicationDetailPanel", () => {
     });
 
     it("deletes the selected connection with the Supr key", async () => {
-      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
       renderConnectedDraft();
       await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
 
@@ -2451,26 +2423,29 @@ describe("ApplicationDetailPanel", () => {
 
       await waitFor(() => expect(imageToModelEdge()).toBeNull());
       expect(client.delete).toHaveBeenCalledExactlyOnceWith(connectionsUrl, {
-        data: imageToModel,
+        data: { ...imageToModel, draftRevision: 3 },
       });
     });
 
     it("recreates the same connection with Deshacer while the draft is unchanged", async () => {
-      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
-      client.post.mockResolvedValueOnce({ data: { draft: connected } });
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
+      client.post.mockResolvedValueOnce({ data: { draft: connected, draftRevision: 5 } });
       await deleteImageToModel();
       await waitFor(() => expect(imageToModelEdge()).toBeNull());
 
       await undoLastNotice();
 
-      expect(client.post).toHaveBeenCalledExactlyOnceWith(connectionsUrl, imageToModel);
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(connectionsUrl, {
+        ...imageToModel,
+        draftRevision: 4,
+      });
       await waitFor(() => expect(imageToModelEdge()).not.toBeNull());
       expect(toastMock.success).toHaveBeenLastCalledWith("Conexión restaurada.");
     });
 
     it("does not restore the connection once the draft changed", async () => {
-      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
-      client.patch.mockResolvedValueOnce({ data: { positions: {} } });
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
+      client.patch.mockResolvedValueOnce({ data: { positions: {}, draftRevision: 5 } });
       await deleteImageToModel();
       await waitFor(() => expect(imageToModelEdge()).toBeNull());
 
@@ -2490,7 +2465,7 @@ describe("ApplicationDetailPanel", () => {
     });
 
     it("reloads the draft when the connection cannot be restored", async () => {
-      client.delete.mockResolvedValueOnce({ data: { draft: disconnected } });
+      client.delete.mockResolvedValueOnce({ data: { draft: disconnected, draftRevision: 4 } });
       client.post.mockRejectedValueOnce(new Error("network"));
       await deleteImageToModel();
       await waitFor(() => expect(imageToModelEdge()).toBeNull());

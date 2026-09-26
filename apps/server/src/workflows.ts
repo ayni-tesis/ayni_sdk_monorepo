@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 
 import type { Application } from "./applications";
@@ -17,6 +17,7 @@ import type {
   ChangeWorkflowConnectionResult,
   CreateWorkflowInput,
   CreateWorkflowResult,
+  DeleteWorkflowNodeInput,
   DeleteWorkflowNodeResult,
   RenameWorkflowInput,
   RenameWorkflowResult,
@@ -56,6 +57,8 @@ const CONDITION_INVALID_MESSAGE = "Ingresa una condición válida.";
 const OUTPUT_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para la salida.";
 const CONDITION_INCOMPATIBLE_MESSAGE =
   "Esta condición no es compatible con la salida seleccionada.";
+const DRAFT_CONFLICT_MESSAGE = "Otra persona modificó este borrador. Recarga para ver los cambios.";
+const DRAFT_REVISION_REQUIRED_MESSAGE = "Recarga el borrador e inténtalo nuevamente.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
@@ -110,6 +113,15 @@ const connectionSchema = z.object({
   targetNodeId: z.string().min(1),
   targetPort: z.string().min(1),
 });
+const draftRevisionSchema = z.number().int().min(0);
+
+/** The draft revision a change was based on (US-130), or `undefined` when the body lacks it. */
+function draftRevisionOf(body: unknown) {
+  const parsed = draftRevisionSchema.safeParse(
+    (body as { draftRevision?: unknown } | null)?.draftRevision,
+  );
+  return parsed.success ? parsed.data : undefined;
+}
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -136,12 +148,7 @@ type Dependencies = {
     updateNodePositions: (
       input: UpdateWorkflowNodePositionsInput,
     ) => Promise<UpdateWorkflowNodePositionsResult>;
-    deleteNode: (input: {
-      applicationId: string;
-      workflowId: string;
-      nodeId: string;
-      userId: string;
-    }) => Promise<DeleteWorkflowNodeResult>;
+    deleteNode: (input: DeleteWorkflowNodeInput) => Promise<DeleteWorkflowNodeResult>;
     updateNode: (input: UpdateWorkflowNodeInput) => Promise<UpdateWorkflowNodeResult>;
     publishVersion: (input: PublishWorkflowVersionInput) => Promise<PublishWorkflowVersionResult>;
   };
@@ -156,6 +163,11 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!application || !role) return undefined;
     return { ...application, role };
   };
+  // Every draft change names the revision it was based on; a stale one changes nothing.
+  const draftRevisionRequired = (c: Context) =>
+    c.json({ message: DRAFT_REVISION_REQUIRED_MESSAGE }, 400);
+  const draftConflict = (c: Context) =>
+    c.json({ message: DRAFT_CONFLICT_MESSAGE, code: "draftConflict" }, 409);
 
   app.get("/applications/:applicationId/workflows", async (c) => {
     const session = await getSession(c.req.raw.headers);
@@ -350,10 +362,13 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     ) {
       return c.json({ message: "Tipo de nodo no válido." }, 400);
     }
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const workflowInput = {
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
+      draftRevision,
     };
     let position: WorkflowNodePosition | undefined;
     if ((body as { position?: unknown }).position !== undefined) {
@@ -378,7 +393,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       }
       const { type: _type, ...output } = parsed.data;
       const result = await workflows.addOutputNode({ ...workflowInput, ...output, position });
-      if (result.ok) return c.json({ draft: result.draft });
+      if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+      if (result.reason === "draftConflict") return draftConflict(c);
       if (result.reason === "forbidden")
         return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
       if (result.reason === "archived")
@@ -400,7 +416,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       if (!parsed.success) return c.json({ message: CONDITION_INVALID_MESSAGE }, 400);
       const { type: _type, ...condition } = parsed.data;
       const result = await workflows.addConditionNode({ ...workflowInput, ...condition, position });
-      if (result.ok) return c.json({ draft: result.draft });
+      if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+      if (result.reason === "draftConflict") return draftConflict(c);
       if (result.reason === "forbidden")
         return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
       if (result.reason === "archived")
@@ -436,7 +453,8 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
             source,
           })
         : await workflows.addImageInput({ ...workflowInput, position });
-    if (result.ok) return c.json({ draft: result.draft });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden")
       return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
     if (result.reason === "archived")
@@ -468,15 +486,20 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!session) return c.json({ message: "Authentication required" }, 401);
     const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
     if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    const parsed = connectionSchema.safeParse(await c.req.json().catch(() => null));
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = connectionSchema.safeParse(body);
     if (!parsed.success) return c.json({ message: "Selecciona puertos válidos." }, 400);
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const result = await workflows.addConnection({
       ...parsed.data,
+      draftRevision,
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ draft: result.draft });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
     if (result.reason === "archived")
       return c.json(
@@ -513,15 +536,21 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!session) return c.json({ message: "Authentication required" }, 401);
     const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
     if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    const parsed = workflowLayoutSchema.safeParse(await c.req.json().catch(() => null));
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = workflowLayoutSchema.safeParse(body);
     if (!parsed.success) return c.json({ message: WORKFLOW_LAYOUT_INVALID_MESSAGE }, 400);
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const result = await workflows.updateNodePositions({
       positions: parsed.data.positions,
+      draftRevision,
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ positions: result.positions });
+    if (result.ok)
+      return c.json({ positions: result.positions, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
     if (result.reason === "archived")
       return c.json(
@@ -538,13 +567,17 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!session) return c.json({ message: "Authentication required" }, 401);
     const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
     if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    const draftRevision = draftRevisionOf(await c.req.json().catch(() => null));
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const result = await workflows.deleteNode({
+      draftRevision,
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       nodeId: c.req.param("nodeId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ draft: result.draft });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
     if (result.reason === "archived")
       return c.json(
@@ -574,14 +607,18 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       if (!parsed.success) return c.json({ message: OUTPUT_NAME_REQUIRED_MESSAGE }, 400);
       changes = parsed.data;
     } else return c.json({ message: NODE_NOT_EDITABLE_MESSAGE }, 400);
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const result = await workflows.updateNode({
+      draftRevision,
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       nodeId: c.req.param("nodeId"),
       userId: session.user.id,
       changes,
     });
-    if (result.ok) return c.json({ draft: result.draft });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
     if (result.reason === "archived")
       return c.json(
@@ -601,15 +638,20 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (!session) return c.json({ message: "Authentication required" }, 401);
     const application = await getMemberApplication(c.req.param("applicationId"), session.user.id);
     if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
-    const parsed = connectionSchema.safeParse(await c.req.json().catch(() => null));
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = connectionSchema.safeParse(body);
     if (!parsed.success) return c.json({ message: "Selecciona una conexión válida." }, 400);
+    const draftRevision = draftRevisionOf(body);
+    if (draftRevision === undefined) return draftRevisionRequired(c);
     const result = await workflows.removeConnection({
       ...parsed.data,
+      draftRevision,
       applicationId: application.id,
       workflowId: c.req.param("workflowId"),
       userId: session.user.id,
     });
-    if (result.ok) return c.json({ draft: result.draft });
+    if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+    if (result.reason === "draftConflict") return draftConflict(c);
     if (result.reason === "forbidden") return c.json({ message: FORBIDDEN_RENAME_MESSAGE }, 403);
     if (result.reason === "archived")
       return c.json(
