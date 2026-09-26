@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,42 +9,24 @@ class AyniSdk {
     required this.serverUrl,
     required String credential,
     required this.storageDirectory,
+    this.syncTimeout = const Duration(seconds: 30),
+    this.allowInsecureLoopback = false,
   }) : _credential = credential;
 
   final Uri serverUrl;
   final Directory storageDirectory;
+  final Duration syncTimeout;
+  final bool allowInsecureLoopback;
   final String _credential;
 
   Future<SyncStatus> sync() async {
+    if (!_canSendCredentialTo(serverUrl)) return SyncStatus.error;
+
     final client = HttpClient();
     try {
-      final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer $_credential',
-      );
-      final response = await request.close();
-      final body = await utf8.decoder.bind(response).join();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        return SyncStatus.error;
-      }
-
-      final decoded = jsonDecode(body);
-      if (decoded is! Map || decoded['authenticated'] != true) {
-        return SyncStatus.error;
-      }
-
-      final inventory = jsonEncode(Map<String, dynamic>.from(decoded));
-      final inventoryFile = File(
-        '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
-      );
-      if (await inventoryFile.exists() &&
-          await inventoryFile.readAsString() == inventory) {
-        return SyncStatus.upToDate;
-      }
-
-      await _persistInventory(inventoryFile, inventory);
-      return SyncStatus.updated;
+      return await _sync(client).timeout(syncTimeout);
+    } on TimeoutException {
+      return SyncStatus.error;
     } on SocketException {
       return SyncStatus.offline;
     } on FileSystemException {
@@ -56,6 +39,51 @@ class AyniSdk {
       client.close(force: true);
     }
   }
+
+  Future<SyncStatus> _sync(HttpClient client) async {
+    final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final response = await request.close();
+    final body = await utf8.decoder.bind(response).join();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return SyncStatus.error;
+    }
+
+    final decoded = jsonDecode(body);
+    if (!_isInventory(decoded)) {
+      return decoded is Map && decoded['authenticated'] == true
+          ? SyncStatus.upToDate
+          : SyncStatus.error;
+    }
+
+    final inventory = jsonEncode(decoded);
+    final inventoryFile = File(
+      '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+    );
+    if (await inventoryFile.exists() &&
+        await inventoryFile.readAsString() == inventory) {
+      return SyncStatus.upToDate;
+    }
+
+    await _persistInventory(inventoryFile, inventory);
+    return SyncStatus.updated;
+  }
+
+  bool _canSendCredentialTo(Uri url) =>
+      url.scheme == 'https' ||
+      (allowInsecureLoopback &&
+          url.scheme == 'http' &&
+          (url.host == 'localhost' ||
+              InternetAddress.tryParse(url.host)?.isLoopback == true));
+
+  bool _isInventory(Object? value) =>
+      value is Map &&
+      value.keys.every((key) => key == 'workflows' || key == 'models') &&
+      value['workflows'] is List &&
+      value['models'] is List &&
+      (value['workflows'] as List).every((item) => item is Map) &&
+      (value['models'] as List).every((item) => item is Map);
 
   Future<void> _persistInventory(File inventoryFile, String inventory) async {
     await storageDirectory.create(recursive: true);
