@@ -9,6 +9,7 @@ void main() {
   late Directory storageDirectory;
   late HttpServer server;
   late int statusCode;
+  int? workflowStatusCode;
   late String responseBody;
   Uri? redirectUrl;
   Duration? responseDelay;
@@ -18,6 +19,7 @@ void main() {
     requests.clear();
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
+    workflowStatusCode = null;
     responseBody = _manifest(workflowVersion: '1.0.0');
     redirectUrl = null;
     responseDelay = null;
@@ -27,14 +29,21 @@ void main() {
         requests.add(request);
         if (responseDelay != null) await Future<void>.delayed(responseDelay!);
         try {
-          request.response.statusCode = statusCode;
+          request.response.statusCode =
+              request.uri.path.startsWith('/sdk/workflow-versions/')
+              ? (workflowStatusCode ?? statusCode)
+              : statusCode;
           if (redirectUrl != null) {
             request.response.headers.set(
               HttpHeaders.locationHeader,
               redirectUrl!.toString(),
             );
           }
-          request.response.write(responseBody);
+          request.response.write(
+            request.uri.path.startsWith('/sdk/workflow-versions/')
+                ? '{"nodes":[],"connections":[]}'
+                : responseBody,
+          );
           await request.response.close();
         } on HttpException {
           // The timed-out client has already closed its response stream.
@@ -78,31 +87,23 @@ void main() {
       final client = sdk();
 
       final updated = await client.sync();
-      final upToDate = await client.sync();
+      final retried = await client.sync();
       expect(updated.status, SyncStatus.updated);
-      expect(upToDate.status, SyncStatus.upToDate);
+      expect(retried.status, SyncStatus.updated);
       expect(updated.resources.map((resource) => resource.status), [
         SyncResourceStatus.updated,
         SyncResourceStatus.updated,
       ]);
-      expect(upToDate.resources.map((resource) => resource.status), [
+      expect(retried.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
-        SyncResourceStatus.upToDate,
+        SyncResourceStatus.updated,
       ]);
 
       final inventory = await File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       ).readAsString();
       expect(jsonDecode(inventory), {
-        'workflows': [
-          {
-            'workflowId': 'workflow-1',
-            'workflowVersionId': 'workflow-version-1.0.0',
-            'name': 'Clasificar hoja',
-            'version': '1.0.0',
-            'modelVersionIds': ['model-version-1'],
-          },
-        ],
+        'workflows': [],
         'models': [
           {
             'modelVersionId': 'model-version-1',
@@ -113,15 +114,12 @@ void main() {
         ],
       });
 
-      expect(requests, hasLength(2));
-      for (final request in requests) {
-        expect(request.method, 'POST');
-        expect(request.uri.path, '/sdk/sync');
-        expect(
-          request.headers.value(HttpHeaders.authorizationHeader),
-          'Bearer ayni_sk_test',
-        );
-      }
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1.0.0',
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1.0.0',
+      ]);
     },
   );
 
@@ -177,11 +175,58 @@ void main() {
   );
 
   test(
+    'does not download a workflow rejected by the inventory comparison',
+    () async {
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['missing-model-version'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+        ],
+      });
+      final downloads = <WorkflowVersionDownloadResult>[];
+      final client = AyniSdk(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+        onWorkflowDownload: downloads.add,
+      );
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(downloads, isEmpty);
+      expect(requests.single.uri.path, '/sdk/sync');
+    },
+  );
+
+  test(
     'keeps a valid local resource when its remote update is invalid',
     () async {
-      final client = sdk();
-      final inventory = await seedInventory(client);
+      final inventory = File(
+        '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+      );
+      await inventory.writeAsString(_manifest(workflowVersion: '1.0.0'));
       final before = await inventory.readAsString();
+      final client = sdk();
       responseBody = jsonEncode({
         'workflows': [
           {
@@ -221,6 +266,81 @@ void main() {
     expect(await syncStatus(client), SyncStatus.offline);
     expect(await inventory.readAsString(), before);
   });
+
+  test(
+    'downloads an unvalidated workflow version again without advancing the inventory',
+    () async {
+      responseBody = _manifest(workflowVersion: '1.0.0');
+      final messages = <String>[];
+      final downloads = <WorkflowVersionDownloadResult>[];
+      final client = AyniSdk(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+        onProgress: messages.add,
+        onWorkflowDownload: downloads.add,
+      );
+
+      expect((await client.sync()).status, SyncStatus.updated);
+      expect(messages, ['Descargando workflow Clasificar hoja…']);
+      expect(downloads.single.status, WorkflowVersionDownloadStatus.downloaded);
+      expect(
+        await File(downloads.single.temporaryDefinition!).exists(),
+        isTrue,
+      );
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1.0.0',
+      ]);
+      expect(
+        await File(
+          '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+        ).readAsString(),
+        contains('"workflows":[]'),
+      );
+
+      expect((await client.sync()).status, SyncStatus.updated);
+      expect(downloads, hasLength(2));
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1.0.0',
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1.0.0',
+      ]);
+    },
+  );
+
+  test(
+    'keeps the local inventory when a new workflow becomes unavailable',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      final before = await inventory.readAsString();
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      final downloads = <WorkflowVersionDownloadResult>[];
+      workflowStatusCode = HttpStatus.notFound;
+
+      final unavailableClient = AyniSdk(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+        onWorkflowDownload: downloads.add,
+      );
+
+      expect((await unavailableClient.sync()).status, SyncStatus.error);
+      expect(
+        downloads.single.status,
+        WorkflowVersionDownloadStatus.workflowUnavailable,
+      );
+      expect(await inventory.readAsString(), before);
+    },
+  );
 
   test('keeps the local inventory after invalid server responses', () async {
     final client = sdk();
@@ -430,6 +550,9 @@ class _RecordingHttpClient implements HttpClient {
 
   @override
   Future<HttpClientRequest> postUrl(Uri url) => _delegate.postUrl(url);
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) => _delegate.getUrl(url);
 
   @override
   void close({bool force = false}) => _delegate.close(force: force);

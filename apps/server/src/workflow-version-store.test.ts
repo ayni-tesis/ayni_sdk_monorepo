@@ -2,7 +2,11 @@ import { application, member, workflow, workflowVersion } from "@ayni/db/schema/
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowDatabase, WorkflowDraft } from "./workflow-store";
-import { publishWorkflowVersion } from "./workflow-version-store";
+import {
+  getSdkWorkflowVersionDefinition,
+  publishWorkflowVersion,
+  type SdkWorkflowVersionDefinition,
+} from "./workflow-version-store";
 
 const publishableDraft: WorkflowDraft = {
   nodes: [
@@ -177,5 +181,92 @@ describe("publishWorkflowVersion", () => {
       reason: "workflowNotFound",
     });
     expect(store.inserted).toHaveLength(0);
+  });
+});
+
+const publishedDefinition: SdkWorkflowVersionDefinition = {
+  nodes: [{ id: "input", type: "input.image" }],
+  connections: [],
+};
+
+function makeSdkDefinitionDatabase({
+  applicationRow = { id: "app-1", status: "active" },
+  versionRow = { workflowId: "workflow-1", definition: publishedDefinition },
+  workflowRow = { id: "workflow-1", applicationId: "app-1", status: "draft" },
+}: {
+  applicationRow?: { id: string; status: string } | undefined;
+  versionRow?: { workflowId: string; definition: SdkWorkflowVersionDefinition } | null;
+  workflowRow?: { id: string; applicationId: string; status: string } | undefined;
+} = {}) {
+  const lockedTables: { table: unknown; strength: "update" | "share" }[] = [];
+  const executor = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => ({
+            for: async (strength: "update" | "share") => {
+              lockedTables.push({ table, strength });
+              if (table === application) {
+                return applicationRow?.id === "app-1" && applicationRow.status === "active"
+                  ? [applicationRow]
+                  : [];
+              }
+              if (table === workflowVersion) return versionRow ? [versionRow] : [];
+              if (table === workflow) {
+                return workflowRow &&
+                  workflowRow.id === versionRow?.workflowId &&
+                  workflowRow.applicationId === "app-1" &&
+                  workflowRow.status !== "archived"
+                  ? [workflowRow]
+                  : [];
+              }
+              return [];
+            },
+          }),
+        }),
+      }),
+    }),
+  };
+  return {
+    lockedTables,
+    db: {
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
+    },
+  };
+}
+
+describe("getSdkWorkflowVersionDefinition", () => {
+  it("returns only a published definition owned by an available workflow and application", async () => {
+    const { db, lockedTables } = makeSdkDefinitionDatabase();
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: true,
+      definition: publishedDefinition,
+    });
+    expect(lockedTables).toEqual([
+      { table: application, strength: "share" },
+      { table: workflowVersion, strength: "share" },
+      { table: workflow, strength: "share" },
+    ]);
+  });
+
+  it.each([
+    ["is missing", { versionRow: null }],
+    [
+      "belongs to another application",
+      { workflowRow: { id: "workflow-1", applicationId: "app-2", status: "draft" } },
+    ],
+    [
+      "belongs to an archived workflow",
+      { workflowRow: { id: "workflow-1", applicationId: "app-1", status: "archived" } },
+    ],
+    ["belongs to an archived application", { applicationRow: { id: "app-1", status: "archived" } }],
+  ])("does not expose a definition that %s", async (_description, rows) => {
+    const { db } = makeSdkDefinitionDatabase(rows);
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: false,
+      reason: "notFound",
+    });
   });
 });

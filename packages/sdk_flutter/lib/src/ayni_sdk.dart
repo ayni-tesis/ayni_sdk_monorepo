@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'workflow_version_downloader.dart';
+
 enum SyncStatus { updated, upToDate, offline, error }
 
 enum SyncResourceStatus { updated, upToDate, invalidRemoteResource }
@@ -41,14 +43,26 @@ class AyniSdk {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onBeforeInventoryPersist,
-  }) : _credential = credential;
+    this.onProgress,
+    this.onWorkflowDownload,
+    WorkflowVersionDownloader? workflowVersionDownloader,
+  }) : _credential = credential,
+       _workflowVersionDownloader =
+           workflowVersionDownloader ?? WorkflowVersionDownloader();
 
   final Uri serverUrl;
   final Directory storageDirectory;
   final Duration syncTimeout;
   final bool allowInsecureLoopback;
   final Future<void> Function()? onBeforeInventoryPersist;
+
+  /// Reports SDK activity, including `Descargando workflow <nombre>…`.
+  final void Function(String message)? onProgress;
+
+  /// Receives each downloaded or unavailable workflow definition during sync.
+  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
   final String _credential;
+  final WorkflowVersionDownloader _workflowVersionDownloader;
 
   Future<SyncResult> sync() async {
     if (!_canSendCredentialTo(serverUrl))
@@ -108,13 +122,89 @@ class AyniSdk {
       return SyncResult(SyncStatus.upToDate, comparison.resources);
     }
 
+    final downloadOutcome = await _downloadNewWorkflowVersions(
+      comparison.acceptedWorkflows,
+      inventoryFile,
+      client,
+      deadline,
+    );
+    if (downloadOutcome == _WorkflowDownloadOutcome.failed) {
+      return const SyncResult(SyncStatus.error);
+    }
+    // US-042 validates and installs the temporary definition. Until then this
+    // manifest must stay uncommitted so the SDK retries the unvalidated version.
     return await _persistInventory(
           inventoryFile,
-          comparison.inventory,
+          downloadOutcome == _WorkflowDownloadOutcome.downloaded
+              ? _Inventory(local.workflows, comparison.inventory.models)
+              : comparison.inventory,
           deadline,
         )
         ? SyncResult(SyncStatus.updated, comparison.resources)
         : const SyncResult(SyncStatus.error);
+  }
+
+  Future<_WorkflowDownloadOutcome> _downloadNewWorkflowVersions(
+    Iterable<_Workflow> workflows,
+    File inventoryFile,
+    HttpClient client,
+    _SyncDeadline deadline,
+  ) async {
+    final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
+    var downloaded = false;
+    for (final workflow in workflows) {
+      if (deadline.expired) return _WorkflowDownloadOutcome.failed;
+      if (localVersionIds.contains(workflow.workflowVersionId)) continue;
+
+      final temporaryDefinition = File(
+        '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
+        '${Platform.pathSeparator}${base64Url.encode(utf8.encode(workflow.workflowVersionId))}.json',
+      );
+      final result = await _workflowVersionDownloader.download(
+        serverUrl: serverUrl,
+        credential: _credential,
+        workflowVersionId: workflow.workflowVersionId,
+        workflowName: workflow.name,
+        temporaryDefinition: temporaryDefinition,
+        allowInsecureLoopback: allowInsecureLoopback,
+        onProgress: onProgress,
+        httpClient: client,
+      );
+      try {
+        onWorkflowDownload?.call(result);
+      } catch (_) {
+        return _WorkflowDownloadOutcome.failed;
+      }
+      if (result.status != WorkflowVersionDownloadStatus.downloaded)
+        return _WorkflowDownloadOutcome.failed;
+      downloaded = true;
+    }
+    if (deadline.expired) return _WorkflowDownloadOutcome.failed;
+    return downloaded
+        ? _WorkflowDownloadOutcome.downloaded
+        : _WorkflowDownloadOutcome.unchanged;
+  }
+
+  Future<Set<String>> _localWorkflowVersionIds(File inventoryFile) async {
+    if (!await inventoryFile.exists()) return {};
+    try {
+      return _workflows(
+        jsonDecode(await inventoryFile.readAsString()),
+      ).map((workflow) => workflow.versionId).toSet();
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Iterable<_WorkflowManifestEntry> _workflows(Object inventory) {
+    if (inventory is! Map || inventory['workflows'] is! List) return const [];
+    return (inventory['workflows'] as List)
+        .map(_Workflow.fromJson)
+        .whereType<_Workflow>()
+        .map(
+          (workflow) =>
+              _WorkflowManifestEntry(workflow.workflowVersionId, workflow.name),
+        );
   }
 
   bool _canSendCredentialTo(Uri url) =>
@@ -152,6 +242,7 @@ class AyniSdk {
     final workflows = {...local.workflows};
     final models = {...local.models};
     final resources = <SyncResourceResult>[];
+    final acceptedWorkflows = <_Workflow>[];
 
     for (final item in remote['models'] as List) {
       final model = _Model.fromJson(item);
@@ -181,6 +272,7 @@ class AyniSdk {
         resources.add(_invalidResource(SyncResourceType.workflow, item));
         continue;
       }
+      acceptedWorkflows.add(workflow);
       final previous = workflows[workflow.id];
       final status = previous?.version == workflow.version
           ? SyncResourceStatus.upToDate
@@ -201,6 +293,7 @@ class AyniSdk {
     return _Comparison(
       inventory,
       resources,
+      acceptedWorkflows,
       resources.any(
         (resource) => resource.status == SyncResourceStatus.updated,
       ),
@@ -360,10 +453,16 @@ class _Model {
 bool _isNonEmptyString(Object? value) => value is String && value.isNotEmpty;
 
 class _Comparison {
-  const _Comparison(this.inventory, this.resources, this.changed);
+  const _Comparison(
+    this.inventory,
+    this.resources,
+    this.acceptedWorkflows,
+    this.changed,
+  );
 
   final _Inventory inventory;
   final List<SyncResourceResult> resources;
+  final List<_Workflow> acceptedWorkflows;
   final bool changed;
 }
 
@@ -372,3 +471,12 @@ class _SyncDeadline {
 
   void expire() => expired = true;
 }
+
+class _WorkflowManifestEntry {
+  const _WorkflowManifestEntry(this.versionId, this.name);
+
+  final String versionId;
+  final String name;
+}
+
+enum _WorkflowDownloadOutcome { unchanged, downloaded, failed }

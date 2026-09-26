@@ -46,6 +46,7 @@ import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
+import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import {
   addConditionNode,
   addImageInputNode,
@@ -62,7 +63,7 @@ import {
   updateWorkflowNode,
   updateWorkflowNodePositions,
 } from "./workflow-store";
-import { publishWorkflowVersion } from "./workflow-version-store";
+import { getSdkWorkflowVersionDefinition, publishWorkflowVersion } from "./workflow-version-store";
 import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
@@ -247,6 +248,15 @@ const sdkSync = {
   },
   getManifest(applicationId: string) {
     return getSdkSyncManifest(db, applicationId);
+  },
+};
+
+const sdkWorkflowVersions = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  getDefinition(applicationId: string, workflowVersionId: string) {
+    return getSdkWorkflowVersionDefinition(db, applicationId, workflowVersionId);
   },
 };
 
@@ -629,6 +639,13 @@ app.route(
   }),
 );
 app.route("/", createSdkSyncApp({ credentials: sdkSync, sync: sdkSync }));
+app.route(
+  "/",
+  createSdkWorkflowVersionsApp({
+    credentials: sdkWorkflowVersions,
+    workflowVersions: sdkWorkflowVersions,
+  }),
+);
 
 const openApiApp = new OpenAPIHono();
 

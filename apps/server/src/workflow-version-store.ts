@@ -1,5 +1,5 @@
-import { workflow, workflowVersion } from "@ayni/db/schema/index";
-import { and, eq } from "drizzle-orm";
+import { application, workflow, workflowVersion } from "@ayni/db/schema/index";
+import { and, eq, ne } from "drizzle-orm";
 import { executeApplicationAction } from "./application-actions";
 import {
   toWorkflowVersion,
@@ -87,4 +87,79 @@ export async function publishWorkflowVersion(
   if (result.value.kind === "invalidDraft")
     return { ok: false, reason: "invalidDraft", errors: result.value.errors };
   return { ok: false, reason: result.value.kind };
+}
+
+export type SdkWorkflowVersionDefinition = {
+  nodes: unknown[];
+  connections: unknown[];
+};
+
+export type GetSdkWorkflowVersionDefinitionResult =
+  | { ok: true; definition: SdkWorkflowVersionDefinition }
+  | { ok: false; reason: "notFound" };
+
+type SdkWorkflowVersionQueryDatabase = {
+  transaction: <T>(callback: (tx: unknown) => Promise<T>) => Promise<T>;
+};
+
+type SdkWorkflowVersionQueryExecutor = {
+  select(fields: Record<string, unknown>): {
+    from(table: unknown): {
+      where(condition: unknown): {
+        limit(count: number): {
+          for(strength: "update" | "share"): Promise<Record<string, unknown>[]>;
+        };
+      };
+    };
+  };
+};
+
+/**
+ * Gets the immutable definition of a published workflow version only when the
+ * version belongs to the credential application and its workflow is available.
+ * Foreign, missing, archived-workflow, and archived-application resources are
+ * deliberately indistinguishable.
+ */
+export async function getSdkWorkflowVersionDefinition(
+  database: SdkWorkflowVersionQueryDatabase,
+  applicationId: string,
+  workflowVersionId: string,
+): Promise<GetSdkWorkflowVersionDefinitionResult> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as SdkWorkflowVersionQueryExecutor;
+    // archiveWorkflow takes this application lock before it writes the workflow,
+    // so this availability check cannot race its status transition.
+    const applicationRows = (await tx
+      .select({ id: application.id })
+      .from(application)
+      .where(and(eq(application.id, applicationId), eq(application.status, "active")))
+      .limit(1)
+      .for("share")) as { id: string }[];
+    if (!applicationRows[0]) return { ok: false, reason: "notFound" } as const;
+
+    const versionRows = (await tx
+      .select({ workflowId: workflowVersion.workflowId, definition: workflowVersion.definition })
+      .from(workflowVersion)
+      .where(eq(workflowVersion.id, workflowVersionId))
+      .limit(1)
+      .for("share")) as { workflowId: string; definition: SdkWorkflowVersionDefinition }[];
+    const found = versionRows[0];
+    if (!found) return { ok: false, reason: "notFound" } as const;
+
+    const workflowRows = await tx
+      .select({ id: workflow.id })
+      .from(workflow)
+      .where(
+        and(
+          eq(workflow.id, found.workflowId),
+          eq(workflow.applicationId, applicationId),
+          ne(workflow.status, "archived"),
+        ),
+      )
+      .limit(1)
+      .for("share");
+    if (!workflowRows[0]) return { ok: false, reason: "notFound" } as const;
+
+    return { ok: true, definition: found.definition } as const;
+  });
 }
