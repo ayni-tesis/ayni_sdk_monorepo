@@ -92,4 +92,30 @@ void main() {
     expect(await client.sync(), SyncStatus.error);
     expect(await inventory.readAsString(), before);
   });
+
+  test('reports an invalid HTTP response as an error', () async {
+    final invalidServer = await ServerSocket.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    unawaited(
+      invalidServer.first.then((socket) async {
+        socket.add('not an HTTP response'.codeUnits);
+        await socket.close();
+      }),
+    );
+    final client = AyniSdk(
+      serverUrl: Uri.parse(
+        'http://${InternetAddress.loopbackIPv4.address}:${invalidServer.port}',
+      ),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+    );
+
+    try {
+      expect(await client.sync(), SyncStatus.error);
+    } finally {
+      await invalidServer.close();
+    }
+  });
 }

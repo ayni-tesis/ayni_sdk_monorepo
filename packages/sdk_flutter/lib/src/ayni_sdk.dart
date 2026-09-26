@@ -46,9 +46,9 @@ class AyniSdk {
       return SyncStatus.updated;
     } on SocketException {
       return SyncStatus.offline;
-    } on HttpException {
-      return SyncStatus.offline;
     } on FileSystemException {
+      return SyncStatus.error;
+    } on IOException {
       return SyncStatus.error;
     } on FormatException {
       return SyncStatus.error;
