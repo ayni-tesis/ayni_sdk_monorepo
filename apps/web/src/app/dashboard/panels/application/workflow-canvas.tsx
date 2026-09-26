@@ -50,7 +50,24 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  isMacPlatform,
+  shortcutsIgnoredAt,
+  type WorkflowCanvasDirection,
+  type WorkflowCanvasShortcut,
+  workflowCanvasNeighbor,
+  workflowCanvasShortcut,
+  workflowCanvasShortcutHelp,
+} from "./workflow-canvas-keyboard";
 import { arrangeWorkflowNodes, placeWorkflowNodeAfter } from "./workflow-canvas-layout";
 import {
   type WorkflowCanvasAddNodeControl,
@@ -731,6 +748,8 @@ type WorkflowCanvasProps = {
   details?: ReactNode;
   /** Opens Detalles del nodo, on a double click or Enter with one node selected. */
   onOpenNodeDetails?: (nodeId: string) => void;
+  /** Closes Detalles del nodo, with Esc while the canvas has the focus. */
+  onCloseNodeDetails?: () => void;
   /** Picks the output to connect from; `null` when Escape cancels it. */
   onSelectSource: (source: ConnectionSource) => void;
   /** The selected nodes, in draft order. */
@@ -761,6 +780,7 @@ function WorkflowCanvasFlow({
   addNode,
   details,
   onOpenNodeDetails,
+  onCloseNodeDetails,
   onSelectSource,
   selectedNodeIds,
   onSelectNodes,
@@ -773,7 +793,7 @@ function WorkflowCanvasFlow({
   onRemoveConnection,
 }: WorkflowCanvasProps) {
   const canManage = canManageDraft && !savingPositions && !arrangingNodes;
-  const { screenToFlowPosition, setViewport } = useReactFlow();
+  const { screenToFlowPosition, setViewport, zoomTo } = useReactFlow();
   const store = useStoreApi<WorkflowFlowNode>();
   // The output a connection is being dragged from.
   const draggedSource = useConnection<WorkflowFlowNode, ConnectionSource>((connection) =>
@@ -795,6 +815,7 @@ function WorkflowCanvasFlow({
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [dropActive, setDropActive] = useState(false);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // React Flow may report several selection changes before the next render.
   const selectionRef = useRef(selectedNodeIds);
   selectionRef.current = selectedNodeIds;
@@ -929,6 +950,103 @@ function WorkflowCanvasFlow({
     );
   }
 
+  // The canvas controls and their shortcuts (1, 0, + and -) do the same.
+  const currentZoom = () => store.getState().transform[2];
+  const viewportActions: WorkflowCanvasViewportActions = {
+    zoomIn: () => void zoomTo(stepWorkflowCanvasZoom(currentZoom(), 1)),
+    zoomOut: () => void zoomTo(stepWorkflowCanvasZoom(currentZoom(), -1)),
+    fit: () => {
+      const { width, height } = store.getState();
+      void setViewport(workflowCanvasFitViewport(draft, { width, height }, measured));
+    },
+    reset: () => void zoomTo(1),
+  };
+
+  /** The node next to the selection in `direction`; with none selected, the image input or the first node. */
+  function neighborNode(direction: WorkflowCanvasDirection) {
+    const [from] = selectedNodeIds;
+    if (!from)
+      return (draft.nodes.find((node) => node.type === "input.image") ?? draft.nodes[0])?.id;
+    const boxes = workflowNodeBoxes(draft, measured);
+    return workflowCanvasNeighbor(
+      Object.fromEntries(draft.nodes.map((node, index) => [node.id, boxes[index]])),
+      from,
+      direction,
+    );
+  }
+
+  /** Runs the action of a shortcut; resolves whether the key was used. */
+  function runShortcut(shortcut: WorkflowCanvasShortcut, event: KeyboardEvent<HTMLElement>) {
+    // Some keys only act on the canvas itself: on a node's buttons Enter
+    // presses them and Tab moves the focus as usual.
+    const onCanvas = event.target === event.currentTarget;
+    switch (shortcut.action) {
+      case "arrange":
+        if (canManageDraft) void arrangeNodes();
+        return true;
+      case "addNode":
+        if (!onCanvas || !addNode || addNode.open) return false;
+        addNode.onToggle();
+        return true;
+      case "openDetails":
+        if (!onCanvas || selectedNodeIds.length !== 1) return false;
+        openNodeDetails(selectedNodeIds[0]);
+        return true;
+      case "delete":
+        // One node asks first, like Eliminar nodo; a connection goes at once, like
+        // Eliminar conexión. TODO(US-132): several nodes open Eliminar nodos. The
+        // key is used either way, so Retroceso never takes the browser back.
+        if (selectedNodeIds.length === 1 && canManage) onRequestDeleteNode(selectedNodeIds[0]);
+        else if (selectedNodeIds.length === 0 && removableSelection)
+          onRemoveConnection(removableSelection);
+        return true;
+      case "selectAll":
+        if (!canManageDraft) return false;
+        changeSelection(draft.nodes.map((node) => node.id));
+        return true;
+      case "fit":
+        viewportActions.fit();
+        return true;
+      case "resetZoom":
+        viewportActions.reset();
+        return true;
+      case "zoomIn":
+        viewportActions.zoomIn();
+        return true;
+      case "zoomOut":
+        viewportActions.zoomOut();
+        return true;
+      case "selectNeighbor": {
+        // Members may select a node this way too, to open its details read-only.
+        const neighbor = neighborNode(shortcut.direction);
+        if (neighbor) changeSelection([neighbor]);
+        return true;
+      }
+      case "moveSelection":
+        moveSelectionWithKeyboard(event);
+        return event.defaultPrevented;
+      case "escape":
+        // Escape first cancels a connection in progress, on its own.
+        if (connecting) return false;
+        if (details) onCloseNodeDetails?.();
+        if (addNode?.open) addNode.onToggle();
+        if (selectedNodeIds.length > 0) changeSelection([]);
+        if (selectedConnection) onSelectConnection(null);
+        return true;
+      case "help":
+        setShortcutsOpen(true);
+        return true;
+    }
+  }
+
+  function handleShortcutKey(event: KeyboardEvent<HTMLElement>) {
+    // Text fields, menus and dialogs keep their keys, and so do the controls
+    // that already used one, such as the minimap's arrows.
+    if (event.defaultPrevented || shortcutsIgnoredAt(event.target)) return;
+    const shortcut = workflowCanvasShortcut(event, isMacPlatform());
+    if (shortcut && runShortcut(shortcut, event)) event.preventDefault();
+  }
+
   const nodeIds = new Set(draft.nodes.map((node) => node.id));
   const nodes: WorkflowFlowNode[] = draft.nodes.map((node, index) => ({
     id: node.id,
@@ -1061,48 +1179,7 @@ function WorkflowCanvasFlow({
             // biome-ignore lint/a11y/noNoninteractiveTabindex: the canvas takes keyboard shortcuts.
             tabIndex={0}
             className={`relative h-[720px] overflow-hidden rounded-lg border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dropActive ? "ring-2 ring-primary/60 ring-inset" : ""}`}
-            onKeyDown={(event) => {
-              // Shift + Alt + T is Ordenar nodos; the key code is used because Alt
-              // changes the typed character on some keyboards.
-              if (event.shiftKey && event.altKey && event.code === "KeyT") {
-                event.preventDefault();
-                if (canManageDraft) void arrangeNodes();
-                return;
-              }
-              // Tab on the canvas itself opens Agregar nodo; once it is open, and
-              // from the nodes' own buttons, Tab moves the focus as usual.
-              if (
-                event.key === "Tab" &&
-                !event.shiftKey &&
-                !event.altKey &&
-                !event.ctrlKey &&
-                !event.metaKey &&
-                event.target === event.currentTarget &&
-                addNode &&
-                !addNode.open
-              ) {
-                event.preventDefault();
-                addNode.onToggle();
-                return;
-              }
-              // Enter on the canvas itself opens the details of the one selected node.
-              if (
-                event.key === "Enter" &&
-                event.target === event.currentTarget &&
-                selectedNodeIds.length === 1
-              ) {
-                event.preventDefault();
-                openNodeDetails(selectedNodeIds[0]);
-                return;
-              }
-              // Supr deletes the selected connection, without a dialog.
-              if (event.key === "Delete" && removableSelection) {
-                event.preventDefault();
-                onRemoveConnection(removableSelection);
-                return;
-              }
-              moveSelectionWithKeyboard(event);
-            }}
+            onKeyDown={handleShortcutKey}
             onKeyUp={(event) => {
               if (event.key === "Shift") finishKeyboardMove();
             }}
@@ -1229,6 +1306,8 @@ function WorkflowCanvasFlow({
                 measured={measured}
                 savingPositions={savingPositions}
                 arrangingNodes={arrangingNodes}
+                viewportActions={viewportActions}
+                onShowShortcuts={() => setShortcutsOpen(true)}
                 addNode={addNode ? { open: addNode.open, onToggle: addNode.onToggle } : undefined}
                 editing={
                   canManageDraft
@@ -1271,15 +1350,64 @@ function WorkflowCanvasFlow({
         </div>
         {details}
       </div>
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent showCloseButton={false} className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Atajos de teclado</DialogTitle>
+            <DialogDescription>
+              Funcionan con el foco en el lienzo. Cada uno hace lo mismo que la acción visible que
+              se indica.
+            </DialogDescription>
+          </DialogHeader>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="pb-2 font-medium">Atajo</th>
+                <th className="pb-2 font-medium">Acción</th>
+                <th className="pb-2 font-medium">Equivalente en la interfaz</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workflowCanvasShortcutHelp({ mac: isMacPlatform(), canManage: canManageDraft }).map(
+                (row) => (
+                  <tr key={row.keys} className="border-b last:border-0">
+                    <td className="whitespace-nowrap py-2 pr-3">
+                      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                        {row.keys}
+                      </kbd>
+                    </td>
+                    <td className="py-2 pr-3">{row.action}</td>
+                    <td className="py-2">{row.equivalent}</td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShortcutsOpen(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
+
+type WorkflowCanvasViewportActions = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fit: () => void;
+  reset: () => void;
+};
 
 function CanvasNavigation({
   draft,
   measured,
   savingPositions,
   arrangingNodes,
+  viewportActions,
+  onShowShortcuts,
   addNode,
   editing,
 }: {
@@ -1287,10 +1415,12 @@ function CanvasNavigation({
   measured: MeasuredSizes;
   savingPositions: boolean;
   arrangingNodes: boolean;
+  viewportActions: WorkflowCanvasViewportActions;
+  onShowShortcuts: () => void;
   addNode?: WorkflowCanvasAddNodeControl;
   editing?: WorkflowCanvasEditControls;
 }) {
-  const { setViewport, zoomTo, setCenter } = useReactFlow();
+  const { setViewport, setCenter } = useReactFlow();
   const viewport = useViewport();
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
@@ -1313,10 +1443,11 @@ function CanvasNavigation({
       <Panel position="bottom-left" className="!m-3">
         <WorkflowCanvasControls
           zoom={viewport.zoom}
-          onZoomIn={() => void zoomTo(stepWorkflowCanvasZoom(viewport.zoom, 1))}
-          onZoomOut={() => void zoomTo(stepWorkflowCanvasZoom(viewport.zoom, -1))}
-          onFit={() => void setViewport(workflowCanvasFitViewport(draft, size, measured))}
-          onReset={() => void zoomTo(1)}
+          onZoomIn={viewportActions.zoomIn}
+          onZoomOut={viewportActions.zoomOut}
+          onFit={viewportActions.fit}
+          onReset={viewportActions.reset}
+          onShowShortcuts={onShowShortcuts}
           savingPositions={savingPositions}
           arrangingNodes={arrangingNodes}
           addNode={addNode}

@@ -193,10 +193,13 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
   one the deletion returned, so a change made by someone else does not block
   the restore. When US-130 adds draft revisions, compare the revision instead
   (see the `TODO(US-130)` in `workflow-detail-view.tsx`).
-- **Members open node details only with the mouse (US-126 → US-129)**: nodes are not
-  selectable for members, so `Enter` never reaches a node for them and only the double
-  click opens `Detalles del nodo`. US-129 (keyboard map) should give members a
-  keyboard way to open a node read-only.
+- **Members select nodes only with the keyboard (US-129)**: nodes are not selectable
+  by click for members (US-121), but the canvas arrows select a neighbor for them so
+  `Enter` opens `Detalles del nodo` read-only. `Ctrl`/`Cmd` + `A` stays
+  administrator-only, like `Seleccionar todo`.
+- **Supr with several nodes selected does nothing yet (US-129 → US-132)**: it should
+  open `Eliminar nodos`; see the `TODO(US-132)` in `workflow-canvas.tsx` and add the
+  row to `workflowCanvasShortcutHelp`.
 - **Root `CLAUDE.md` is stale**: it still omits workflow creation and listing and
   model listing (last updated around US-012). `AGENTS.md` is the maintained copy;
   decide whether to sync `CLAUDE.md`.
