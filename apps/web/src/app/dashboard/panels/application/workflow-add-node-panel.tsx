@@ -1,5 +1,6 @@
 "use client";
 
+import { workflowOutputPortType } from "@ayni/api/workflow-graph";
 import { IconArrowLeft, IconRefresh, IconX } from "@tabler/icons-react";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import {
   type WorkflowCanvasDraft,
   workflowNodeTitle,
 } from "./workflow-canvas";
-import { WORKFLOW_PORT_LABELS, workflowOutputPortType } from "./workflow-canvas-ports";
+import { WORKFLOW_PORT_LABELS } from "./workflow-canvas-ports";
 import {
   CONDITION_SOURCE_MISSING_MESSAGE,
   searchWorkflowNodeCatalog,

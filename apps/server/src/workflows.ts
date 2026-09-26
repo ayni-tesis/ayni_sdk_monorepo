@@ -57,6 +57,7 @@ const CONDITION_INVALID_MESSAGE = "Ingresa una condición válida.";
 const OUTPUT_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para la salida.";
 const CONDITION_INCOMPATIBLE_MESSAGE =
   "Esta condición no es compatible con la salida seleccionada.";
+const OUTPUT_INCOMPATIBLE_MESSAGE = "El resultado seleccionado no es compatible con la salida.";
 const DRAFT_CONFLICT_MESSAGE = "Otra persona modificó este borrador. Recarga para ver los cambios.";
 const DRAFT_REVISION_REQUIRED_MESSAGE = "Recarga el borrador e inténtalo nuevamente.";
 
@@ -403,10 +404,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
           409,
         );
       if (result.reason === "incompatibleSource")
-        return c.json(
-          { message: "El resultado seleccionado no es compatible con la salida." },
-          409,
-        );
+        return c.json({ message: OUTPUT_INCOMPATIBLE_MESSAGE }, 409);
       if (result.reason === "workflowNotFound")
         return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
       return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
@@ -513,6 +511,19 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
             result.reason === "duplicate"
               ? "Estos puertos ya están conectados."
               : "Estos puertos no son compatibles.",
+        },
+        409,
+      );
+    // A connection to the Origen of a condition or an output reassigns its
+    // source, and is refused with the message used when the node is added.
+    if (result.reason === "incompatibleSource")
+      return c.json(
+        {
+          message:
+            result.nodeType === "condition"
+              ? CONDITION_INCOMPATIBLE_MESSAGE
+              : OUTPUT_INCOMPATIBLE_MESSAGE,
+          code: "incompatibleSource",
         },
         409,
       );

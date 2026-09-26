@@ -54,6 +54,144 @@ export function workflowEdges(draft: WorkflowGraphDraft): WorkflowEdge[] {
   ];
 }
 
+/** What the port rules read from a node; server and dashboard nodes both fit it. */
+export type WorkflowPortNode =
+  | { id: string; type: "input.image" }
+  | {
+      id: string;
+      type: "model.tflite";
+      outputs: {
+        result: { type: "classification" | "detection"; labels: readonly string[] };
+      };
+    }
+  | { id: string; type: "condition"; sourceNodeId: string; label: string }
+  | {
+      id: string;
+      type: "output";
+      sourceNodeId: string;
+      sourcePort: string;
+      resultType: "classification" | "detection" | "boolean";
+    };
+
+/** The parts of a draft the port rules read; server and dashboard drafts both fit it. */
+export type WorkflowPortDraft = {
+  nodes: readonly WorkflowPortNode[];
+  connections?: readonly WorkflowEdge[];
+};
+
+/** A condition or an output: the nodes whose `source` input holds their source. */
+export type WorkflowSourcedNode = Extract<WorkflowPortNode, { type: "condition" | "output" }>;
+
+/** `connected` means that exact edge already exists. */
+export type WorkflowPortCompatibility = "compatible" | "incompatible" | "connected";
+
+/** The type of what an output port produces, or `undefined` if the node has no such output. */
+export function workflowOutputPortType(node: WorkflowPortNode | undefined, sourcePort: string) {
+  if (node?.type === "input.image" && sourcePort === "imagen") return "image";
+  if (node?.type === "model.tflite" && sourcePort === "result") return node.outputs.result.type;
+  if (node?.type === "condition" && (sourcePort === "true" || sourcePort === "false"))
+    return "boolean";
+  return undefined;
+}
+
+/** Whether `connection` joins ports of the same type; only a model's image input takes one. */
+export function areWorkflowPortsCompatible(draft: WorkflowPortDraft, connection: WorkflowEdge) {
+  const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
+  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
+  const outputType = workflowOutputPortType(source, connection.sourcePort);
+  const inputType =
+    target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
+  return Boolean(outputType && outputType === inputType);
+}
+
+/** A condition needs the result of a classification model that produces its label. */
+export function isConditionSourceCompatible(source: WorkflowPortNode | undefined, label: string) {
+  return (
+    source?.type === "model.tflite" &&
+    source.outputs.result.type === "classification" &&
+    source.outputs.result.labels.includes(label)
+  );
+}
+
+/** An output needs a model result of its result type, or a condition branch if it is boolean. */
+export function isOutputSourceCompatible(
+  source: WorkflowPortNode | undefined,
+  sourcePort: string,
+  resultType: "classification" | "detection" | "boolean",
+) {
+  return resultType === "boolean"
+    ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
+    : source?.type === "model.tflite" &&
+        sourcePort === "result" &&
+        source.outputs.result.type === resultType;
+}
+
+/**
+ * The condition or output whose `source` input `connection` reaches. That input
+ * always holds one source, so a connection to it replaces the source (US-131).
+ */
+export function workflowSourceTarget(
+  draft: WorkflowPortDraft,
+  connection: WorkflowEdge,
+): WorkflowSourcedNode | undefined {
+  if (connection.targetPort !== "source") return undefined;
+  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
+  return target?.type === "condition" || target?.type === "output" ? target : undefined;
+}
+
+/**
+ * `node` with the source given by `edge`, keeping its id and settings: a
+ * condition stores only the node (its source is always a `result`), an output
+ * also the port.
+ */
+export function withWorkflowSource<Node extends WorkflowSourcedNode>(
+  node: Node,
+  edge: Pick<WorkflowEdge, "sourceNodeId" | "sourcePort">,
+): Node {
+  return node.type === "condition"
+    ? { ...node, sourceNodeId: edge.sourceNodeId }
+    : { ...node, sourceNodeId: edge.sourceNodeId, sourcePort: edge.sourcePort };
+}
+
+/**
+ * Whether `connection` may be added to the draft: matching types and one
+ * connection per model image input, or, on the `source` input of a condition or
+ * an output, a source that node accepts, which replaces its current one. Cycles
+ * are checked separately with `findWorkflowCycle`.
+ */
+export function workflowPortCompatibility(
+  draft: WorkflowPortDraft,
+  connection: WorkflowEdge,
+): WorkflowPortCompatibility {
+  if (
+    workflowEdges(draft).some(
+      (edge) =>
+        edge.sourceNodeId === connection.sourceNodeId &&
+        edge.sourcePort === connection.sourcePort &&
+        edge.targetNodeId === connection.targetNodeId &&
+        edge.targetPort === connection.targetPort,
+    )
+  )
+    return "connected";
+  if (connection.sourceNodeId === connection.targetNodeId) return "incompatible";
+  const sourceTarget = workflowSourceTarget(draft, connection);
+  if (sourceTarget) {
+    const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
+    const accepted =
+      sourceTarget.type === "condition"
+        ? connection.sourcePort === "result" &&
+          isConditionSourceCompatible(source, sourceTarget.label)
+        : isOutputSourceCompatible(source, connection.sourcePort, sourceTarget.resultType);
+    return accepted ? "compatible" : "incompatible";
+  }
+  if (!areWorkflowPortsCompatible(draft, connection)) return "incompatible";
+  const inputTaken = (draft.connections ?? []).some(
+    (edge) =>
+      edge.targetNodeId === connection.targetNodeId && edge.targetPort === connection.targetPort,
+  );
+  return inputTaken ? "incompatible" : "compatible";
+}
+
 /**
  * The nodes of the cycle that adding `edge` would close, starting with its
  * source, or `undefined` when the draft stays acyclic.

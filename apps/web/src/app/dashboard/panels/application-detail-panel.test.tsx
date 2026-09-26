@@ -2162,8 +2162,10 @@ describe("ApplicationDetailPanel", () => {
       renderDraft({ nodes: [imageNode, modelNode, conditionNode], connections: [] });
       await screen.findByTestId("workflow-node-condition-node");
 
-      fireEvent.click(inNode("model-node", "Salida Resultado"));
-      fireEvent.click(inNode("condition-node", "Conectar origen de Condición: perro"));
+      // A condition branch cannot feed a model's image input. (The Origen's own
+      // rules and messages are US-131's, in workflow-reassign-source.test.tsx.)
+      fireEvent.click(inNode("condition-node", "Salida Verdadero"));
+      fireEvent.click(inNode("model-node", "Conectar entrada de imagen de Clasificador · 1.0.0"));
 
       expect(toastMock.error).toHaveBeenCalledWith("Estos puertos no son compatibles.");
       expect(client.post).not.toHaveBeenCalled();

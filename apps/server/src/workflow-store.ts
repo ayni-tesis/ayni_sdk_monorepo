@@ -1,4 +1,12 @@
-import { findWorkflowCycle } from "@ayni/api/workflow-graph";
+import {
+  areWorkflowPortsCompatible,
+  findWorkflowCycle,
+  isConditionSourceCompatible,
+  isOutputSourceCompatible,
+  withWorkflowSource,
+  workflowPortCompatibility,
+  workflowSourceTarget,
+} from "@ayni/api/workflow-graph";
 import {
   type ModelVersionContract,
   model,
@@ -193,47 +201,12 @@ async function changeWorkflowDraft<Refusal extends { reason: string }>(
   return { ok: true, ...result.value.changed };
 }
 
-export function areWorkflowPortsCompatible(draft: WorkflowDraft, connection: WorkflowConnection) {
-  const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
-  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
-  const outputType =
-    source?.type === "input.image" && connection.sourcePort === "imagen"
-      ? "image"
-      : source?.type === "model.tflite" && connection.sourcePort === "result"
-        ? source.outputs.result.type
-        : source?.type === "condition" &&
-            (connection.sourcePort === "true" || connection.sourcePort === "false")
-          ? "boolean"
-          : undefined;
-  const inputType =
-    target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
-  return Boolean(outputType && inputType && outputType === inputType);
-}
-
-export function isConditionSourceCompatible(source: WorkflowNode | undefined, label: string) {
-  return (
-    source?.type === "model.tflite" &&
-    source.outputs.result.type === "classification" &&
-    source.outputs.result.labels.includes(label)
-  );
-}
-
-export function isOutputSourceCompatible(
-  source: WorkflowNode | undefined,
-  sourcePort: string,
-  resultType: "classification" | "detection" | "boolean",
-) {
-  return resultType === "boolean"
-    ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")
-    : source?.type === "model.tflite" &&
-        sourcePort === "result" &&
-        source.outputs.result.type === resultType;
-}
-
 export type ChangeWorkflowConnectionInput = WorkflowConnection & WorkflowDraftChangeInput;
 type ChangeWorkflowConnectionRefusal =
   | { reason: "cycle"; nodeIds: string[] }
-  | { reason: "incompatible" | "duplicate" | "connectionNotFound" };
+  | { reason: "incompatible" | "duplicate" | "connectionNotFound" }
+  /** The condition or output whose source was reassigned does not accept the new one (US-131). */
+  | { reason: "incompatibleSource"; nodeType: "condition" | "output" };
 export type ChangeWorkflowConnectionResult =
   WorkflowDraftChangeResult<ChangeWorkflowConnectionRefusal>;
 
@@ -391,20 +364,36 @@ async function changeWorkflowConnection(
         item.targetNodeId === connection.targetNodeId &&
         item.targetPort === connection.targetPort,
     );
-    if (add && exists) return { reason: "duplicate" as const };
     if (!add && !exists) return { reason: "connectionNotFound" as const };
-    // An input admits a single connection (today only a model's image input
-    // takes explicit connections). Kept out of areWorkflowPortsCompatible,
-    // which validation also runs on the connections already saved.
-    const inputTaken = connections.some(
-      (item) =>
-        item.targetNodeId === connection.targetNodeId && item.targetPort === connection.targetPort,
-    );
-    if (add && (inputTaken || !areWorkflowPortsCompatible(draft, connection)))
-      return { reason: "incompatible" as const };
+    // The Origen input of a condition or an output holds its source on the node
+    // itself; a connection to it replaces that source (US-131).
+    const sourceTarget = add ? workflowSourceTarget(draft, connection) : undefined;
+    if (add) {
+      // Also rejects a second connection to an input that admits one, which
+      // validation does not look at, since it runs on the saved connections.
+      const compatibility = workflowPortCompatibility(draft, connection);
+      if (compatibility === "connected") return { reason: "duplicate" as const };
+      if (compatibility === "incompatible")
+        return sourceTarget
+          ? { reason: "incompatibleSource" as const, nodeType: sourceTarget.type }
+          : { reason: "incompatible" as const };
+    }
     // The cycle check follows every edge, condition and output sources included.
+    // Adding the new source while the old one is still there finds the same
+    // cycles: no path from the node back to a source goes through its own input.
     const cycle = add ? findWorkflowCycle(draft, connection) : undefined;
     if (cycle) return { reason: "cycle" as const, nodeIds: cycle };
+    if (sourceTarget)
+      return {
+        draft: {
+          ...draft,
+          nodes: draft.nodes.map((node) =>
+            node.id === sourceTarget.id && (node.type === "condition" || node.type === "output")
+              ? withWorkflowSource(node, connection)
+              : node,
+          ),
+        },
+      };
     return {
       draft: {
         ...draft,

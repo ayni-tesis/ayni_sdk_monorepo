@@ -1,6 +1,7 @@
+import { workflowPortCompatibility } from "@ayni/api/workflow-graph";
 import { describe, expect, it } from "vitest";
 import type { WorkflowCanvasDraft, WorkflowCanvasNode } from "./workflow-canvas";
-import { workflowNodePorts, workflowPortCompatibility } from "./workflow-canvas-ports";
+import { workflowNodePorts } from "./workflow-canvas-ports";
 
 const image = (id: string): WorkflowCanvasNode => ({
   id,
@@ -77,59 +78,23 @@ describe("workflow node ports", () => {
   });
 });
 
-describe("workflow port compatibility", () => {
-  const draft: WorkflowCanvasDraft = {
-    nodes: [image("image"), model("model"), model("detector", "detection"), condition, output],
-    connections: [connect("image", "imagen", "model", "image")],
-  };
+// The dashboard's drafts are checked with the shared rules (US-131); their own
+// cases live in packages/api/src/workflow-graph.test.ts.
+describe("workflow port compatibility of dashboard drafts", () => {
+  it("lets an Origen input take another compatible source and nothing else", () => {
+    const draft: WorkflowCanvasDraft = {
+      nodes: [image("image"), model("model"), model("other"), condition, output],
+      connections: [connect("image", "imagen", "model", "image")],
+    };
 
-  it("accepts the image output on a free model image input", () => {
-    expect(workflowPortCompatibility(draft, connect("image", "imagen", "detector", "image"))).toBe(
-      "compatible",
-    );
-  });
-
-  it("reports a connection that already exists", () => {
-    expect(workflowPortCompatibility(draft, connect("image", "imagen", "model", "image"))).toBe(
-      "connected",
-    );
-  });
-
-  it("rejects a model image input that already has a connection", () => {
-    const twoInputs: WorkflowCanvasDraft = { ...draft, nodes: [...draft.nodes, image("image-2")] };
     expect(
-      workflowPortCompatibility(twoInputs, connect("image-2", "imagen", "model", "image")),
-    ).toBe("incompatible");
-  });
-
-  it("rejects ports whose types do not match", () => {
-    expect(workflowPortCompatibility(draft, connect("model", "result", "detector", "image"))).toBe(
-      "incompatible",
-    );
-    expect(
-      workflowPortCompatibility(draft, connect("condition", "true", "detector", "image")),
-    ).toBe("incompatible");
-  });
-
-  // The Origen input is reassigned by US-131; until then nothing connects to it.
-  it("does not connect to an Origen input yet", () => {
-    expect(
-      workflowPortCompatibility(draft, connect("model", "result", "condition", "source")),
-    ).toBe("incompatible");
+      workflowPortCompatibility(draft, connect("other", "result", "condition", "source")),
+    ).toBe("compatible");
     expect(
       workflowPortCompatibility(draft, connect("condition", "false", "output", "source")),
-    ).toBe("incompatible");
-  });
-
-  it("rejects missing nodes, unknown ports, and a node connected to itself", () => {
+    ).toBe("compatible");
     expect(
-      workflowPortCompatibility(draft, connect("missing", "imagen", "detector", "image")),
-    ).toBe("incompatible");
-    expect(workflowPortCompatibility(draft, connect("image", "result", "detector", "image"))).toBe(
-      "incompatible",
-    );
-    expect(
-      workflowPortCompatibility(draft, connect("detector", "result", "detector", "image")),
+      workflowPortCompatibility(draft, connect("image", "imagen", "condition", "source")),
     ).toBe("incompatible");
   });
 });

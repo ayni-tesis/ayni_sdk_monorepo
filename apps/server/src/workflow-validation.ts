@@ -1,11 +1,11 @@
-import { type WorkflowEdge, workflowEdges } from "@ayni/api/workflow-graph";
 import {
   areWorkflowPortsCompatible,
   isConditionSourceCompatible,
   isOutputSourceCompatible,
-  type WorkflowDraft,
-  type WorkflowNode,
-} from "./workflow-store";
+  type WorkflowEdge,
+  workflowEdges,
+} from "@ayni/api/workflow-graph";
+import type { WorkflowDraft, WorkflowNode } from "./workflow-store";
 
 export type WorkflowValidationError = {
   code:

@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { workflowEdges } from "@ayni/api/workflow-graph";
+import { workflowEdges, workflowPortCompatibility } from "@ayni/api/workflow-graph";
 import {
   IconAlertTriangle,
   IconBan,
@@ -76,7 +76,7 @@ import {
   type WorkflowCanvasEditControls,
   WorkflowCanvasMinimap,
 } from "./workflow-canvas-navigation";
-import { workflowNodePorts, workflowPortCompatibility } from "./workflow-canvas-ports";
+import { workflowNodePorts } from "./workflow-canvas-ports";
 import {
   fitWorkflowCanvasViewport,
   stepWorkflowCanvasZoom,
@@ -148,6 +148,8 @@ export type WorkflowPaletteNode =
 export type WorkflowCanvasPositions = Record<string, WorkflowCanvasPosition>;
 
 type ConnectionSource = { sourceNodeId: string; sourcePort: string } | null;
+/** The Origen input whose edge has its source end dragged to another output (US-131). */
+type ConnectionTarget = { targetNodeId: string; targetPort: string } | null;
 type MeasuredSizes = Record<string, Partial<Dimensions> | undefined>;
 type WorkflowFlowNodeData = {
   node: WorkflowCanvasNode;
@@ -161,6 +163,8 @@ type WorkflowFlowNodeData = {
   connectionSource: ConnectionSource;
   /** The output a connection is being dragged from, or else the picked one. */
   pendingSource: ConnectionSource;
+  /** The input an edge is being given another source for. */
+  pendingTarget: ConnectionTarget;
   onSelectSource: (source: Exclude<ConnectionSource, null>) => void;
   /** Selects only this node, or adds or removes it when `toggle` is set. */
   onSelectNode: (nodeId: string, toggle: boolean) => void;
@@ -179,6 +183,8 @@ type WorkflowFlowEdgeData = {
   /** False while positions save. */
   canRemove: boolean;
   hovered: boolean;
+  /** A reassigned source still being saved (US-131). */
+  pending: boolean;
   onRemove: (connection: WorkflowCanvasConnection) => void;
 };
 type WorkflowFlowEdge = Edge<WorkflowFlowEdgeData, "workflow">;
@@ -370,7 +376,21 @@ function portState(
   portId: string,
   direction: "input" | "output",
 ): "compatible" | "incompatible" | undefined {
-  const { draft, node, pendingSource } = data;
+  const { draft, node, pendingSource, pendingTarget } = data;
+  // Dragging the source end of an edge marks the outputs that input accepts.
+  if (pendingTarget) {
+    if (direction === "input")
+      return pendingTarget.targetNodeId === node.id && pendingTarget.targetPort === portId
+        ? undefined
+        : "incompatible";
+    return workflowPortCompatibility(draft, {
+      sourceNodeId: node.id,
+      sourcePort: portId,
+      ...pendingTarget,
+    }) === "compatible"
+      ? "compatible"
+      : "incompatible";
+  }
   if (!pendingSource) return undefined;
   if (direction === "output")
     return pendingSource.sourceNodeId === node.id && pendingSource.sourcePort === portId
@@ -593,13 +613,16 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
             >
               {port.label}
             </button>
+            {/* An output ends a connection only when the source end of an edge
+                is dragged onto it (US-131); a drag from another output is
+                refused, since React Flow's strict mode joins outputs to inputs. */}
             <Handle
               type="source"
               position={Position.Right}
               id={port.id}
               isConnectable={canManage}
               isConnectableStart={canManage}
-              isConnectableEnd={false}
+              isConnectableEnd={canManage}
             />
           </PortRow>
         ))}
@@ -609,7 +632,8 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
 }
 
 // An edge thickens under the pointer; once selected it turns cyan and thicker,
-// solid instead of dashed, and shows Eliminar conexión at its midpoint.
+// solid instead of dashed, and shows Eliminar conexión at its midpoint. A new
+// source is dotted while it saves.
 function WorkflowEdge({
   id,
   sourceX,
@@ -641,7 +665,8 @@ function WorkflowEdge({
         style={{
           stroke: selected ? SELECTED_EDGE_COLOR : EDGE_COLOR,
           strokeWidth: selected ? 4 : data?.hovered ? 3 : 2,
-          strokeDasharray: selected ? undefined : "5 5",
+          strokeDasharray: data?.pending ? "1 6" : selected ? undefined : "5 5",
+          strokeLinecap: data?.pending ? "round" : undefined,
         }}
       />
       {selected && data?.canManage && (
@@ -709,6 +734,8 @@ type WorkflowCanvasProps = {
   draft: WorkflowCanvasDraft;
   canManage: boolean;
   selectedConnection: WorkflowCanvasConnection | null;
+  /** The new source of a condition or an output while it saves, drawn dotted (US-131). */
+  pendingConnection?: WorkflowCanvasConnection | null;
   connectionSource: ConnectionSource;
   cycleNodeIds: string[];
   /** The messages of each node's errors in the last validation of this draft, by node id. */
@@ -745,6 +772,7 @@ function WorkflowCanvasFlow({
   draft,
   canManage: canManageDraft,
   selectedConnection,
+  pendingConnection = null,
   connectionSource,
   cycleNodeIds,
   nodeErrors,
@@ -770,10 +798,19 @@ function WorkflowCanvasFlow({
   const store = useStoreApi<WorkflowFlowNode>();
   // The output a connection is being dragged from.
   const draggedSource = useConnection<WorkflowFlowNode, ConnectionSource>((connection) =>
-    connection.inProgress
+    connection.inProgress && connection.fromHandle.type === "source"
       ? {
           sourceNodeId: connection.fromHandle.nodeId,
           sourcePort: connection.fromHandle.id ?? "",
+        }
+      : null,
+  );
+  // The input kept while the source end of its edge is dragged (US-131).
+  const draggedTarget = useConnection<WorkflowFlowNode, ConnectionTarget>((connection) =>
+    connection.inProgress && connection.fromHandle.type === "target"
+      ? {
+          targetNodeId: connection.fromHandle.nodeId,
+          targetPort: connection.fromHandle.id ?? "",
         }
       : null,
   );
@@ -832,7 +869,7 @@ function WorkflowCanvasFlow({
   const addNodePanel = addNode?.open ? addNode.panel(placement) : null;
 
   // Escape cancels the connection being dragged, or else the output picked with Salida.
-  const connecting = draggedSource !== null || connectionSource !== null;
+  const connecting = draggedSource !== null || draggedTarget !== null || connectionSource !== null;
   useEffect(() => {
     if (!connecting) return;
     function cancelOnEscape(event: globalThis.KeyboardEvent) {
@@ -1040,6 +1077,7 @@ function WorkflowCanvasFlow({
       errors: nodeErrors?.[node.id] ?? [],
       connectionSource,
       pendingSource: canManage ? (draggedSource ?? connectionSource) : null,
+      pendingTarget: canManage ? draggedTarget : null,
       onSelectSource,
       onSelectNode: selectNode,
       onOpenDetails: openNodeDetails,
@@ -1053,6 +1091,7 @@ function WorkflowCanvasFlow({
       const selected = selectedConnection
         ? sameWorkflowConnection(edge, selectedConnection)
         : false;
+      const required = !removableConnection(draft, edge);
       return {
         id: connectionKey(edge),
         type: "workflow",
@@ -1061,16 +1100,19 @@ function WorkflowCanvasFlow({
         target: edge.targetNodeId,
         targetHandle: edge.targetPort,
         selected,
+        // A required source is reassigned by dragging its source end to another output.
+        reconnectable: required && canManage ? "source" : false,
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: selected ? SELECTED_EDGE_COLOR : EDGE_COLOR,
         },
         data: {
           connection: edge,
-          required: !removableConnection(draft, edge),
+          required,
           canManage: canManageDraft,
           canRemove: canManage,
           hovered: hoveredEdgeId === connectionKey(edge),
+          pending: pendingConnection ? sameWorkflowConnection(edge, pendingConnection) : false,
           onRemove: onRemoveConnection,
         },
       };
@@ -1213,11 +1255,33 @@ function WorkflowCanvasFlow({
               onConnect={(connection) => {
                 if (!connectionCancelledRef.current) onConnect(toCanvasConnection(connection));
               }}
+              // Only the required sources of conditions and outputs can be
+              // reconnected, from their source end; the new output replaces the
+              // source like a connection dropped on their Origen (US-131).
+              edgesReconnectable={false}
+              onReconnect={(_, connection) => {
+                if (!connectionCancelledRef.current) onConnect(toCanvasConnection(connection));
+              }}
               // A drop on an incompatible port is reported too, so it can be
               // rejected with its reason. A drop on the background opens Agregar
               // nodo after the output the connection started from.
               onConnectEnd={(event, { isValid, fromHandle, toHandle }) => {
                 if (connectionCancelledRef.current || isValid || !fromHandle) return;
+                if (fromHandle.type === "target") {
+                  // The source end of an edge was dragged from its input. Only
+                  // another output is reported; the background or the current
+                  // source leave the edge where it was.
+                  if (toHandle?.type !== "source") return;
+                  const reassigned = {
+                    sourceNodeId: toHandle.nodeId,
+                    sourcePort: toHandle.id ?? "",
+                    targetNodeId: fromHandle.nodeId,
+                    targetPort: fromHandle.id ?? "",
+                  };
+                  if (workflowPortCompatibility(draft, reassigned) !== "connected")
+                    onConnect(reassigned);
+                  return;
+                }
                 if (!toHandle) {
                   if (addNode?.onAddAfter && droppedOnBackground(event))
                     addNode.onAddAfter({
