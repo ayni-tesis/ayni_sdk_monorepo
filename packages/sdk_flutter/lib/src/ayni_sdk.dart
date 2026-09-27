@@ -165,12 +165,9 @@ class AyniConfig {
 typedef AyniSdkConfig = AyniConfig;
 
 /// The result of an SDK initialization attempt.
-///
-/// Implements [Future] so that `AyniSdk.initialize` can be either awaited
-/// (`await AyniSdk.initialize(config)`) or accessed synchronously.
-class AyniInitializationResult implements Future<AyniInitializationResult> {
+class AyniInitializationResult {
   /// Creates an initialization result.
-  AyniInitializationResult({
+  const AyniInitializationResult({
     required this.status,
     required this.message,
     this.sdk,
@@ -187,45 +184,6 @@ class AyniInitializationResult implements Future<AyniInitializationResult> {
 
   /// The initialized [AyniSdk] instance, or `null` if initialization failed.
   final AyniSdk? sdk;
-
-  @override
-  Stream<AyniInitializationResult> asStream() => Stream.value(this);
-
-  @override
-  Future<AyniInitializationResult> catchError(
-    Function onError, {
-    bool Function(Object error)? test,
-  }) => Future<void>.microtask(
-    () {},
-  ).then((_) => this).catchError(onError, test: test);
-
-  @override
-  Future<R> then<R>(
-    FutureOr<R> Function(AyniInitializationResult value) onValue, {
-    Function? onError,
-  }) {
-    return Future<void>.microtask(
-      () {},
-    ).then((_) => onValue(this), onError: onError);
-  }
-
-  @override
-  Future<AyniInitializationResult> timeout(
-    Duration timeLimit, {
-    FutureOr<AyniInitializationResult> Function()? onTimeout,
-  }) => Future<void>.microtask(
-    () {},
-  ).then((_) => this).timeout(timeLimit, onTimeout: onTimeout);
-
-  @override
-  Future<AyniInitializationResult> whenComplete(
-    FutureOr<void> Function() action,
-  ) {
-    return then((value) async {
-      await action();
-      return value;
-    });
-  }
 
   @override
   String toString() =>
@@ -328,6 +286,14 @@ class AyniSdk {
       );
     }
   }
+
+  /// Asynchronously initializes the shared [AyniSdk] singleton with [config].
+  ///
+  /// Delegates to [initialize] and returns a [Future] completing with the
+  /// [AyniInitializationResult].
+  static Future<AyniInitializationResult> initializeAsync(
+    AyniConfig config,
+  ) async => initialize(config);
 
   /// Checks whether [url] is a permitted destination for SDK credentials.
   ///

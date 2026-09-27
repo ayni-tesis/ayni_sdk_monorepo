@@ -1497,100 +1497,41 @@ void main() {
       },
     );
 
-    test('initializes successfully when awaited as a Future', () async {
-      final config = AyniConfig(
-        serverUrl: Uri.parse('https://api.ayni.dev'),
-        credential: 'ayni_sk_valid_secret_123',
-        storageDirectory: storageDirectory,
-      );
-
-      final result = await AyniSdk.initialize(config);
-
-      expect(result.status, equals(InitializationStatus.ready));
-      expect(result.message, equals('SDK listo.'));
-      expect(result.isSuccess, isTrue);
-      expect(result.sdk, isNotNull);
-      expect(AyniSdk.isInitialized, isTrue);
-    });
-
-    test('implements Future methods on AyniInitializationResult', () async {
-      final config = AyniConfig(
-        serverUrl: Uri.parse('https://api.ayni.dev'),
-        credential: 'ayni_sk_valid_secret_123',
-        storageDirectory: storageDirectory,
-      );
-
-      var thenCalled = false;
-      var whenCompleteCalled = false;
-
-      final res = await AyniSdk.initialize(config)
-          .then((r) {
-            thenCalled = true;
-            return r;
-          })
-          .whenComplete(() {
-            whenCompleteCalled = true;
-          })
-          .timeout(const Duration(seconds: 1));
-
-      expect(thenCalled, isTrue);
-      expect(whenCompleteCalled, isTrue);
-      expect(res.status, equals(InitializationStatus.ready));
-
-      // Verify that then and whenComplete schedule execution asynchronously via microtask.
-      var microtaskStep = 0;
-      final thenFuture = AyniSdk.initialize(config).then((_) {
-        expect(microtaskStep, equals(1));
-        microtaskStep = 2;
-      });
-      expect(microtaskStep, equals(0));
-      microtaskStep = 1;
-      await thenFuture;
-      expect(microtaskStep, equals(2));
-
-      var whenCompleteStep = 0;
-      final whenCompleteFuture = AyniSdk.initialize(config).whenComplete(() {
-        expect(whenCompleteStep, equals(1));
-        whenCompleteStep = 2;
-      });
-      expect(whenCompleteStep, equals(0));
-      whenCompleteStep = 1;
-      await whenCompleteFuture;
-      expect(whenCompleteStep, equals(2));
-
-      final streamResult = await AyniSdk.initialize(config).asStream().first;
-      expect(streamResult.status, equals(InitializationStatus.ready));
-
-      final caught = await AyniSdk.initialize(config).catchError((_) {
-        return AyniInitializationResult(
-          status: InitializationStatus.error,
-          message: 'error',
+    test(
+      'initializes successfully with initializeAsync as Future API',
+      () async {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret_123',
+          storageDirectory: storageDirectory,
         );
-      });
-      expect(caught.status, equals(InitializationStatus.ready));
 
-      // Verify that onError in then handles only source-future errors,
-      // and errors thrown by onValue remain uncaught by that onError handler.
-      var onErrorInvoked = false;
-      final futureWithError = AyniSdk.initialize(config).then<void>(
-        (val) {
-          throw StateError('thrown in onValue');
-        },
-        onError: (Object error, StackTrace stack) {
-          onErrorInvoked = true;
-        },
+        final future = AyniSdk.initializeAsync(config);
+        expect(future, isA<Future<AyniInitializationResult>>());
+
+        final result = await future;
+        expect(result.status, equals(InitializationStatus.ready));
+        expect(result.message, equals('SDK listo.'));
+        expect(result.isSuccess, isTrue);
+        expect(result.sdk, isNotNull);
+        expect(AyniSdk.isInitialized, isTrue);
+      },
+    );
+
+    test('initialization result is a plain value', () {
+      final config = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret_123',
+        storageDirectory: storageDirectory,
       );
-      await expectLater(
-        futureWithError,
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            'thrown in onValue',
-          ),
-        ),
-      );
-      expect(onErrorInvoked, isFalse);
+
+      final result = AyniSdk.initialize(config);
+      expect(result, isA<AyniInitializationResult>());
+      expect(result, isNot(isA<Future>()));
+      expect(result.status, equals(InitializationStatus.ready));
+      expect(result.isSuccess, isTrue);
+      expect(result.message, equals('SDK listo.'));
+      expect(result.sdk, isNotNull);
     });
 
     test('allows loopback HTTP when allowInsecureLoopback is true', () {
