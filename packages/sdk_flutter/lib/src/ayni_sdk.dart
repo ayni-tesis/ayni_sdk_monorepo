@@ -157,11 +157,19 @@ class AyniSdk {
     if (!changed) {
       return SyncResult(SyncStatus.upToDate, installation.resources);
     }
-    return await _persistInventory(
-          inventoryFile,
-          installation.inventory,
-          deadline,
-        )
+    final persisted = await _persistInventory(
+      inventoryFile,
+      installation.inventory,
+      deadline,
+    );
+    if (!persisted) {
+      // The inventory still names the previous versions, so no definition
+      // promoted by this run may stay installed without one.
+      for (final file in installation.promotedFiles) {
+        await _deleteDownloadedDefinition(file);
+      }
+    }
+    return persisted
         ? SyncResult(SyncStatus.updated, installation.resources)
         : const SyncResult(SyncStatus.error);
   }
@@ -176,6 +184,7 @@ class AyniSdk {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
     final workflows = Map<String, _Workflow>.of(comparison.inventory.workflows);
     final rejections = <_WorkflowRejection>[];
+    final promotedFiles = <File>[];
     for (final workflow in comparison.acceptedWorkflows) {
       if (deadline.expired) return null;
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
@@ -217,6 +226,7 @@ class AyniSdk {
       );
       if (validation == WorkflowValidationStatus.valid) {
         await _promoteToInstalledDefinition(downloadedFile, installedFile);
+        promotedFiles.add(installedFile);
       } else {
         await _deleteDownloadedDefinition(downloadedFile);
         final previous = local.workflows[workflow.id];
@@ -237,6 +247,7 @@ class AyniSdk {
     return _Installation(
       inventory: _Inventory(workflows, comparison.inventory.models),
       resources: _resourcesWithRejections(comparison.resources, rejections),
+      promotedFiles: promotedFiles,
     );
   }
 
@@ -568,13 +579,19 @@ class _Comparison {
 
 /// The outcome of installing the downloaded workflow definitions: the
 /// inventory to persist (with rejected workflows rolled back to their local
-/// state) and the reported resources, where rejected workflows now carry
-/// `invalidWorkflow`.
+/// state), the reported resources, where rejected workflows now carry
+/// `invalidWorkflow`, and the definitions promoted this run, which are
+/// removed again when the inventory cannot be persisted.
 class _Installation {
-  const _Installation({required this.inventory, required this.resources});
+  const _Installation({
+    required this.inventory,
+    required this.resources,
+    required this.promotedFiles,
+  });
 
   final _Inventory inventory;
   final List<SyncResourceResult> resources;
+  final List<File> promotedFiles;
 }
 
 /// A workflow whose downloaded definition failed validation. It owns the

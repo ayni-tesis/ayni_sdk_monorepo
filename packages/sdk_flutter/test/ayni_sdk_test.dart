@@ -562,6 +562,16 @@ void main() {
       SyncStatus.error,
     );
     expect(await inventory.readAsString(), before);
+    // The definition promoted this run is removed with the uncommitted
+    // inventory; the previously installed one stays.
+    expect(
+      await installedDefinitionFile('workflow-version-2.0.0').exists(),
+      isFalse,
+    );
+    expect(
+      await installedDefinitionFile('workflow-version-1.0.0').exists(),
+      isTrue,
+    );
     expect(
       await storageDirectory
           .list()

@@ -1,4 +1,5 @@
 import '../lib/src/workflow_definition_validator.dart';
+
 import 'package:test/test.dart';
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
     String modelVersionId = 'model-version-1',
     String resultType = 'classification',
     List<String> labels = const ['perro', 'gato'],
+    Object? scoreThreshold,
   }) => {
     'id': id,
     'type': 'model.tflite',
@@ -44,7 +46,11 @@ void main() {
       },
     },
     'outputs': {
-      'result': {'type': resultType, 'labels': labels},
+      'result': {
+        'type': resultType,
+        'labels': labels,
+        if (scoreThreshold != null) 'scoreThreshold': scoreThreshold,
+      },
     },
   };
 
@@ -344,6 +350,71 @@ void main() {
               'modelVersionId': 'model-version-1',
               'outputs': {
                 'result': {'type': 'classification', 'labels': 'perro'},
+              },
+            },
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+  });
+
+  test('accepts detection results adding a numeric score threshold', () {
+    expect(
+      validate(
+        definition(
+          nodes: [
+            model(
+              resultType: 'detection',
+              labels: const ['hoja'],
+              scoreThreshold: 0.5,
+            ),
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.valid,
+    );
+    expect(
+      validate(
+        definition(nodes: [model(resultType: 'detection', scoreThreshold: 1)]),
+      ),
+      WorkflowValidationStatus.valid,
+    );
+  });
+
+  test('rejects malformed score thresholds on model results', () {
+    expect(
+      validate(
+        definition(
+          nodes: [model(resultType: 'detection', scoreThreshold: '0.5')],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(definition(nodes: [model(scoreThreshold: 0.5)])),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(
+        definition(
+          nodes: [
+            const {
+              'id': 'model-1',
+              'type': 'model.tflite',
+              'modelVersionId': 'model-version-1',
+              'modelName': 'Detector',
+              'version': '1.0.0',
+              'inputs': {
+                'image': {'type': 'image'},
+              },
+              'outputs': {
+                'result': {
+                  'type': 'detection',
+                  'labels': ['hoja'],
+                  'scoreThreshold': 0.5,
+                  'maxDetections': 10,
+                },
               },
             },
           ],

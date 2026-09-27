@@ -224,8 +224,8 @@ class WorkflowDefinitionValidator {
         outputs is! Map ||
         !_hasExactFields(outputs, const {'result'}) ||
         result is! Map ||
-        !_hasExactFields(result, const {'type', 'labels'}) ||
         !_modelOutputTypes.contains(resultType) ||
+        !_isModelResult(resultType as String, result) ||
         labels is! List ||
         !labels.every((label) => label is String)) {
       return WorkflowValidationStatus.invalidSchema;
@@ -233,10 +233,25 @@ class WorkflowDefinitionValidator {
     if (!declaredModelVersionIds.contains(modelVersionId)) {
       return WorkflowValidationStatus.undeclaredModelVersion;
     }
-    node.modelResultType = resultType as String;
+    node.modelResultType = resultType;
     node.modelLabels = labels.cast<String>().toSet();
     return null;
   }
+
+  /// The model contract's output (mirrored by `addModelNode` from
+  /// `packages/db/src/schema/model-version.ts`): classification results hold
+  /// exactly their type and labels, while detection results may add a numeric
+  /// `scoreThreshold`. Anything else is a damaged contract.
+  bool _isModelResult(String resultType, Map result) =>
+      resultType == 'detection'
+      ? _hasExactFields(result, const {'type', 'labels'}) ||
+            (_hasExactFields(result, const {
+                  'type',
+                  'labels',
+                  'scoreThreshold',
+                }) &&
+                result['scoreThreshold'] is num)
+      : _hasExactFields(result, const {'type', 'labels'});
 
   WorkflowValidationStatus? _readCondition(_Node node, Map item) {
     final threshold = item['threshold'];
