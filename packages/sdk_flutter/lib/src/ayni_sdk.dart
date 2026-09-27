@@ -285,12 +285,20 @@ class AyniSdk {
       return null;
     }
 
-    Future<void> rollbackModelsSince(int fileStart, int versionStart) async {
+    Future<void> rollbackModelsSince(
+      int fileStart,
+      int versionStart, {
+      String? failedDependencyId,
+    }) async {
       for (final file in installedModelFiles.skip(fileStart)) {
         await _deleteDownloadedDefinition(file);
       }
       installedModelFiles.removeRange(fileStart, installedModelFiles.length);
-      for (final versionId in installedModelVersionIds.skip(versionStart)) {
+      final versionIdsToRollback = {
+        ...installedModelVersionIds.skip(versionStart),
+        if (failedDependencyId != null) failedDependencyId,
+      };
+      for (final versionId in versionIdsToRollback) {
         rolledBackModelVersionIds.add(versionId);
         final previous = local.models[versionId];
         if (previous == null) {
@@ -360,12 +368,16 @@ class AyniSdk {
         final installedModelFileCount = installedModelFiles.length;
         final installedModelVersionCount = installedModelVersionIds.length;
         var failedDependency = 'modelo desconocido';
+        String? failedDependencyId;
         final depsOk = await _installModelDependencies(
           workflow,
           comparison.inventory.models,
           client,
           deadline,
-          (name) => failedDependency = name,
+          (name) {
+            failedDependency = name;
+            failedDependencyId = name;
+          },
           installedModelFiles,
           installedModelVersionIds,
         );
@@ -373,6 +385,7 @@ class AyniSdk {
           await rollbackModelsSince(
             installedModelFileCount,
             installedModelVersionCount,
+            failedDependencyId: failedDependencyId,
           );
           await _rejectWorkflow(
             workflow,

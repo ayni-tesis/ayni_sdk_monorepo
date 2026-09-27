@@ -932,10 +932,9 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.updated);
-    expect(result.resources.first.type, SyncResourceType.model);
-    expect(result.resources.first.status, SyncResourceStatus.updated);
-    final workflow = result.resources.last;
+    expect(result.status, SyncStatus.upToDate);
+    expect(result.resources, hasLength(1));
+    final workflow = result.resources.single;
     expect(workflow.type, SyncResourceType.workflow);
     expect(workflow.status, SyncResourceStatus.dependencyFailed);
     expect(workflow.resourceVersionId, 'workflow-version-1.0.0');
@@ -958,7 +957,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       final workflow = result.resources.last;
       expect(workflow.type, SyncResourceType.workflow);
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
@@ -990,7 +989,7 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.updated);
+    expect(result.status, SyncStatus.upToDate);
     final workflow = result.resources.last;
     expect(workflow.status, SyncResourceStatus.dependencyFailed);
     expect(
@@ -1022,7 +1021,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       final workflow = result.resources.last;
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
     },
@@ -1088,17 +1087,13 @@ void main() {
 
       final result = await client.sync();
 
-      // The workflow version changed (1.0.0 → 2.0.0), so the inventory
-      // marks it as `updated`, even though the dependency install failed.
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((r) => r.status), [
         SyncResourceStatus.upToDate,
-        SyncResourceStatus.updated,
         SyncResourceStatus.dependencyFailed,
       ]);
       expect(result.resources.map((resource) => resource.resourceVersionId), [
         'model-version-1',
-        'model-version-3',
         'workflow-version-2.0.0',
       ]);
       final failed = result.resources.last;
@@ -1138,6 +1133,31 @@ void main() {
           .toList();
       expect(installedModelIds, contains('model-version-1'));
       expect(installedModelIds, isNot(contains('model-version-2')));
+      expect(installedModelIds, isNot(contains('model-version-3')));
+    },
+  );
+
+  test(
+    'restores prior model metadata and result when its reinstall fails',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      await Directory(
+        '${storageDirectory.path}${Platform.pathSeparator}model-version-1',
+      ).delete(recursive: true);
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      modelManifestStatusCode = HttpStatus.internalServerError;
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.dependencyFailed,
+      ]);
+      expect(result.resources.first.resourceVersionId, 'model-version-1');
+      expect(result.resources.first.version, '1.0.0');
+      expect(await inventory.readAsString(), contains('model-version-1'));
     },
   );
 
