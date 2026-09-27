@@ -301,16 +301,21 @@ class AyniSdk {
         storageDirectory,
         workflow.workflowVersionId,
       );
-      final result = await _workflowVersionDownloader.download(
-        serverUrl: serverUrl,
-        credential: _credential,
-        workflowVersionId: workflow.workflowVersionId,
-        workflowName: workflow.name,
-        temporaryDefinition: installedFile,
-        allowInsecureLoopback: allowInsecureLoopback,
-        onProgress: onProgress,
-        httpClient: client,
-      );
+      final WorkflowVersionDownloadResult result;
+      try {
+        result = await _workflowVersionDownloader.download(
+          serverUrl: serverUrl,
+          credential: _credential,
+          workflowVersionId: workflow.workflowVersionId,
+          workflowName: workflow.name,
+          temporaryDefinition: installedFile,
+          allowInsecureLoopback: allowInsecureLoopback,
+          onProgress: onProgress,
+          httpClient: client,
+        );
+      } catch (_) {
+        return abort();
+      }
       try {
         onWorkflowDownload?.call(result);
       } catch (_) {
