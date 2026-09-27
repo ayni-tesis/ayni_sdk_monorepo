@@ -1,0 +1,75 @@
+---
+/**
+ * A left-to-right flow of boxes. A step that is a list draws its items as
+ * parallel boxes, such as the two branches of a condition. Screen readers get
+ * `alt` instead of the boxes, so it must describe the whole flow (US-141).
+ */
+interface Props {
+  steps: (string | string[])[];
+  alt: string;
+}
+
+const { steps, alt } = Astro.props;
+---
+
+<figure class="diagram not-content" role="img" aria-label={alt}>
+  <ol aria-hidden="true">
+    {
+      steps.map((step) => (
+        <li>
+          {Array.isArray(step) ? (
+            <span class="branches">
+              {step.map((branch) => (
+                <span class="box">{branch}</span>
+              ))}
+            </span>
+          ) : (
+            <span class="box">{step}</span>
+          )}
+        </li>
+      ))
+    }
+  </ol>
+</figure>
+
+<style>
+  .diagram {
+    margin-block: 1.5rem;
+  }
+
+  .diagram ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .diagram li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .diagram li + li::before {
+    content: "→";
+    color: var(--sl-color-gray-3);
+  }
+
+  .branches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .box {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+    font-size: var(--sl-text-sm);
+  }
+</style>
