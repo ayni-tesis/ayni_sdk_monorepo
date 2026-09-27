@@ -247,14 +247,15 @@ class AyniSdk {
       );
       if (validation == WorkflowValidationStatus.valid) {
         var failedDependency = 'modelo desconocido';
-        final modelFiles = await _installModelDependencies(
+        final depsOk = await _installModelDependencies(
           workflow,
           comparison.inventory.models,
           client,
           deadline,
           (name) => failedDependency = name,
+          installedModelFiles,
         );
-        if (modelFiles == null) {
+        if (!depsOk) {
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -270,7 +271,6 @@ class AyniSdk {
           await _deleteDownloadedDefinition(downloadedFile);
           return null;
         }
-        installedModelFiles.addAll(modelFiles);
         try {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
@@ -386,26 +386,26 @@ class AyniSdk {
   }
 
   /// Downloads and installs model versions required by a workflow that are
-  /// not yet available locally (US-044). Returns the list of newly installed
-  /// model files, or `null` when a dependency could not be installed. Sets
-  /// [failedDependencyName] to the model version ID of the first dependency
-  /// that could not be installed.
-  Future<List<File>?> _installModelDependencies(
+  /// not yet available locally (US-044). Each newly installed model file is
+  /// added to [installedModelFiles] immediately after installation so that
+  /// the caller can clean them up even if a later dependency fails. Returns
+  /// `false` when a dependency could not be installed.
+  Future<bool> _installModelDependencies(
     _Workflow workflow,
     Map<String, _Model> models,
     HttpClient client,
     _SyncDeadline deadline,
     void Function(String name) setFailedDependency,
+    List<File> installedModelFiles,
   ) async {
     final installer = ModelArtifactInstaller(
       storageDirectory: storageDirectory,
     );
     final downloader = ModelArtifactDownloader();
     final verifier = ModelArtifactIntegrityVerifier();
-    final installedFiles = <File>[];
 
     for (final modelVersionId in workflow.modelVersionIds) {
-      if (deadline.expired) return null;
+      if (deadline.expired) return false;
 
       final available = await installer.isVersionAvailable(
         modelId: modelVersionId,
@@ -416,7 +416,7 @@ class AyniSdk {
       final model = models[modelVersionId];
       if (model == null) {
         setFailedDependency(modelVersionId);
-        return null;
+        return false;
       }
 
       onProgress?.call('Descargando modelos para ${workflow.name}…');
@@ -424,9 +424,9 @@ class AyniSdk {
       final manifestResult = await _fetchModelManifest(modelVersionId, client);
       if (manifestResult == null) {
         setFailedDependency(modelVersionId);
-        return null;
+        return false;
       }
-      if (deadline.expired) return null;
+      if (deadline.expired) return false;
 
       final temporaryArtifact = File(
         '${storageDirectory.path}${Platform.pathSeparator}'
@@ -443,11 +443,11 @@ class AyniSdk {
       if (downloadResult.status != ModelArtifactDownloadStatus.downloaded) {
         await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
         setFailedDependency(modelVersionId);
-        return null;
+        return false;
       }
       if (deadline.expired) {
         await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
-        return null;
+        return false;
       }
 
       final integrityResult = await verifier.verify(
@@ -460,11 +460,11 @@ class AyniSdk {
       if (!integrityResult.isVerified) {
         await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
         setFailedDependency(modelVersionId);
-        return null;
+        return false;
       }
       if (deadline.expired) {
         await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
-        return null;
+        return false;
       }
 
       final installResult = await installer.install(
@@ -476,16 +476,16 @@ class AyniSdk {
       if (installResult.status != ModelArtifactInstallStatus.availableOffline) {
         await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
         setFailedDependency(modelVersionId);
-        return null;
+        return false;
       }
 
-      installedFiles.add(
+      installedModelFiles.add(
         File(
           '${storageDirectory.path}${Platform.pathSeparator}'
           '$modelVersionId${Platform.pathSeparator}$modelVersionId.tflite',
         ),
       );
-      installedFiles.add(
+      installedModelFiles.add(
         File(
           '${storageDirectory.path}${Platform.pathSeparator}'
           '$modelVersionId${Platform.pathSeparator}$modelVersionId.json',
@@ -493,7 +493,7 @@ class AyniSdk {
       );
     }
 
-    return installedFiles;
+    return true;
   }
 
   Future<ModelDownloadManifest?> _fetchModelManifest(
