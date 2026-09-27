@@ -282,6 +282,13 @@ class AyniSdk {
       return null;
     }
 
+    Future<void> rollbackModelsSince(int start) async {
+      for (final file in installedModelFiles.skip(start)) {
+        await _deleteDownloadedDefinition(file);
+      }
+      installedModelFiles.removeRange(start, installedModelFiles.length);
+    }
+
     for (final workflow in comparison.acceptedWorkflows) {
       if (deadline.expired) return abort();
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
@@ -329,6 +336,7 @@ class AyniSdk {
         workflow.modelVersionIds,
       );
       if (validation == WorkflowValidationStatus.valid) {
+        final installedModelCount = installedModelFiles.length;
         var failedDependency = 'modelo desconocido';
         final depsOk = await _installModelDependencies(
           workflow,
@@ -339,6 +347,7 @@ class AyniSdk {
           installedModelFiles,
         );
         if (!depsOk) {
+          await rollbackModelsSince(installedModelCount);
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -357,6 +366,7 @@ class AyniSdk {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
         } on FileSystemException {
+          await rollbackModelsSince(installedModelCount);
           await _rejectWorkflow(
             workflow,
             downloadedFile,
