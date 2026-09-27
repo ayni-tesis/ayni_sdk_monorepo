@@ -607,6 +607,143 @@ void main() {
       await invalidServer.close();
     }
   });
+
+  test(
+    'keeps the previous version when promotion fails due to storage error',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      responseBody = _manifest(workflowVersion: '2.0.0');
+
+      // Place a non-empty directory at the target path so that the
+      // atomic rename (promote) fails and cannot recover by deleting
+      // and retrying.
+      final installedPath = installedDefinitionFile(
+        'workflow-version-2.0.0',
+      ).path;
+      final blocker = Directory(installedPath);
+      await blocker.create(recursive: true);
+      await File(
+        '${blocker.path}${Platform.pathSeparator}blocker.txt',
+      ).writeAsString('blocked');
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.installationFailed,
+      ]);
+      final failed = result.resources.last;
+      expect(failed.resourceVersionId, 'workflow-version-2.0.0');
+      expect(failed.version, '2.0.0');
+      expect(failed.name, 'Clasificar hoja');
+      expect(failed.previousVersionRetained, isTrue);
+      expect(
+        failed.message,
+        'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
+      );
+      expect(await inventory.readAsString(), contains('workflow-version-1.0.0'));
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isTrue,
+      );
+      // The blocker directory is not a valid workflow definition file.
+      expect(
+        installedDefinitionFile('workflow-version-2.0.0').existsSync(),
+        isFalse,
+      );
+      // No .part files should remain.
+      final leftovers = await storageDirectory
+          .list(recursive: true)
+          .where((entry) => entry is File && entry.path.endsWith('.part'))
+          .toList();
+      expect(leftovers, isEmpty);
+    },
+  );
+
+  test(
+    'reports installation failure without previous version when storage fails',
+    () async {
+      // Seed no prior inventory.  Place a blocker at the only workflow's
+      // installed path so that promotion fails for a never-installed workflow.
+      final installedPath = installedDefinitionFile(
+        'workflow-version-1.0.0',
+      ).path;
+      final blocker = Directory(installedPath);
+      await blocker.create(recursive: true);
+      await File(
+        '${blocker.path}${Platform.pathSeparator}blocker.txt',
+      ).writeAsString('blocked');
+
+      final result = await sdk().sync();
+
+      // The model is updated, so the overall sync status is updated.
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.installationFailed,
+      ]);
+      final failed = result.resources.last;
+      expect(failed.previousVersionRetained, isFalse);
+      expect(
+        failed.message,
+        'No se pudo guardar la actualización. No se instaló ninguna versión.',
+      );
+      final leftovers = await storageDirectory
+          .list(recursive: true)
+          .where((entry) => entry is File && entry.path.endsWith('.part'))
+          .toList();
+      expect(leftovers, isEmpty);
+    },
+  );
+
+  test(
+    'installs a validated workflow as an atomic unit',
+    () async {
+      final client = sdk();
+      await seedInventory(client);
+
+      // The installed definition file must not exist before the second sync.
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isTrue,
+      );
+
+      // A new version is available.
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((r) => r.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.updated,
+      ]);
+
+      // The new definition is fully installed (not partially available).
+      expect(
+        await installedDefinitionFile('workflow-version-2.0.0').exists(),
+        isTrue,
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-2.0.0').readAsString(),
+        workflowResponseBody,
+      );
+
+      // The previous version is still present.
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isTrue,
+      );
+
+      // No .part files remain after a successful install.
+      final leftovers = await storageDirectory
+          .list(recursive: true)
+          .where((entry) => entry is File && entry.path.endsWith('.part'))
+          .toList();
+      expect(leftovers, isEmpty);
+    },
+  );
 }
 
 String _manifest({required String workflowVersion}) => jsonEncode({
