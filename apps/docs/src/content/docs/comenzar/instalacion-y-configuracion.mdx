@@ -176,12 +176,18 @@ proxy del sistema.
 
 ### Android
 
-`ayni_sdk` no requiere ajustes propios en Android: no necesitas modificar tu
-proyecto Android para instalarlo. El paquete todavía no declara una versión
-mínima de Android.
+`ayni_sdk` no añade ajustes propios en Android y todavía no declara una
+versión mínima de Android. Los requisitos vienen de su dependencia
+`tflite_flutter` 0.12.1, que ejecuta los modelos:
+
+- Compila con `compileSdkVersion 36`, y el plugin indica que las apps que lo
+  usan deben compilar con esa versión. Si tu app usa un `compileSdk` menor,
+  súbelo a 36 en `android/app/build.gradle`.
+- Declara `minSdkVersion 19`.
 
 ### iOS
 
-`ayni_sdk` no requiere ajustes propios en iOS: no necesitas modificar tu
-proyecto iOS para instalarlo. El paquete todavía no declara una versión mínima
-de iOS.
+`ayni_sdk` no añade ajustes propios en iOS y todavía no declara una versión
+mínima de iOS. Su dependencia `tflite_flutter` 0.12.1 agrega TensorFlow Lite
+con CocoaPods (`TensorFlowLiteSwift`) y exige iOS 11.0 o superior como
+destino de tu app.

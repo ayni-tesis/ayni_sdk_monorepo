@@ -49,6 +49,22 @@ describe("constructorParameters", () => {
     );
   });
 
+  it("takes field types only from the class of the constructor", () => {
+    const laterField = `
+class Client {
+  Client({this.value});
+}
+
+class Later {
+  final int value;
+}
+`;
+
+    expect(() => constructorParameters(laterField, "Client")).toThrow(
+      'The source has no "value" field.',
+    );
+  });
+
   it("reads the constructor of AyniSdk from the SDK source", () => {
     const names = constructorParameters(ayniSdkSource, "AyniSdk").map(({ name }) => name);
 

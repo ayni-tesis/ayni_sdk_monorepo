@@ -22,7 +22,9 @@ export function constructorParameters(source: string, className: string): DartPa
   const listStart = start + opening.length;
   const listEnd = source.indexOf("})", listStart);
   if (listEnd === -1) throw new Error(`The "${className}" constructor never closes.`);
-  const classBody = source.slice(listEnd);
+  // A top-level class closes with the first `}` at the start of a line.
+  const classEnd = source.indexOf("\n}", listEnd);
+  const classBody = source.slice(listEnd, classEnd === -1 ? undefined : classEnd);
 
   return splitTopLevel(source.slice(listStart, listEnd)).map((declaration) => {
     const required = declaration.startsWith("required ");
