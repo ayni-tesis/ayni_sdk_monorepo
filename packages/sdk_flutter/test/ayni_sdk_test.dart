@@ -35,6 +35,7 @@ void main() {
       installedWorkflowDefinitionFile(storageDirectory, versionId);
 
   setUp(() async {
+    AyniSdk.resetForTesting();
     requests.clear();
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
@@ -119,6 +120,7 @@ void main() {
   });
 
   tearDown(() async {
+    AyniSdk.resetForTesting();
     await server.close(force: true);
     await artifactServer.close(force: true);
     await storageDirectory.delete(recursive: true);
@@ -1472,6 +1474,489 @@ void main() {
         )
         .toList();
     expect(modelFiles, isEmpty);
+  });
+
+  group('US-049: SDK initialization', () {
+    test(
+      'initializes successfully with valid HTTPS configuration (sync access)',
+      () {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret_123',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(result.status, equals(InitializationStatus.ready));
+        expect(result.message, equals('SDK listo.'));
+        expect(result.isSuccess, isTrue);
+        expect(result.sdk, isNotNull);
+        expect(result.sdk, same(AyniSdk.instance));
+        expect(AyniSdk.isInitialized, isTrue);
+      },
+    );
+
+    test(
+      'initializes successfully with initializeAsync as Future API',
+      () async {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret_123',
+          storageDirectory: storageDirectory,
+        );
+
+        final future = AyniSdk.initializeAsync(config);
+        expect(future, isA<Future<AyniInitializationResult>>());
+
+        final result = await future;
+        expect(result.status, equals(InitializationStatus.ready));
+        expect(result.message, equals('SDK listo.'));
+        expect(result.isSuccess, isTrue);
+        expect(result.sdk, isNotNull);
+        expect(AyniSdk.isInitialized, isTrue);
+      },
+    );
+
+    test('initialization result is a plain value', () {
+      final config = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret_123',
+        storageDirectory: storageDirectory,
+      );
+
+      final result = AyniSdk.initialize(config);
+      expect(result, isA<AyniInitializationResult>());
+      expect(result, isNot(isA<Future>()));
+      expect(result.status, equals(InitializationStatus.ready));
+      expect(result.isSuccess, isTrue);
+      expect(result.message, equals('SDK listo.'));
+      expect(result.sdk, isNotNull);
+    });
+
+    test('allows loopback HTTP when allowInsecureLoopback is true', () {
+      for (final host in ['localhost', '127.0.0.1', '[::1]']) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('http://$host:8080'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+          allowInsecureLoopback: true,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.ready),
+          reason: 'Failed for loopback host: $host',
+        );
+        expect(result.isSuccess, isTrue);
+        expect(AyniSdk.isInitialized, isTrue);
+        AyniSdk.resetForTesting();
+      }
+    });
+
+    test('initialized instance can perform sync and operations', () async {
+      final config = AyniConfig(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test_credential',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+      );
+
+      final initResult = AyniSdk.initialize(config);
+      expect(initResult.isSuccess, isTrue);
+
+      final syncResult = await AyniSdk.instance.sync();
+      expect(syncResult.status, equals(SyncStatus.updated));
+      expect(requests, isNotEmpty);
+    });
+
+    test('rejects empty or whitespace credential', () {
+      for (final emptyCredential in ['', '   ', '\t\n ']) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: emptyCredential,
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+        );
+        expect(
+          result.message,
+          equals('Revisa la configuración del SDK antes de continuar.'),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
+    });
+
+    test('rejects empty or whitespace storageDirectory path', () {
+      for (final emptyPath in ['', '   ', '\t']) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: Directory(emptyPath),
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+        );
+        expect(
+          result.message,
+          equals('Revisa la configuración del SDK antes de continuar.'),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
+    });
+
+    test('rejects insecure remote HTTP URL', () {
+      final config = AyniConfig(
+        serverUrl: Uri.parse('http://example.com/api'),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: false,
+      );
+
+      final result = AyniSdk.initialize(config);
+
+      expect(
+        result.status,
+        equals(InitializationStatus.incompleteConfiguration),
+      );
+      expect(
+        result.message,
+        equals('Revisa la configuración del SDK antes de continuar.'),
+      );
+      expect(result.isSuccess, isFalse);
+      expect(result.sdk, isNull);
+      expect(AyniSdk.isInitialized, isFalse);
+    });
+
+    test('rejects loopback HTTP when allowInsecureLoopback is false', () {
+      for (final host in ['localhost', '127.0.0.1', '[::1]']) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('http://$host:8080'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+          allowInsecureLoopback: false,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
+    });
+
+    test('rejects remote HTTP even when allowInsecureLoopback is true', () {
+      final config = AyniConfig(
+        serverUrl: Uri.parse('http://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+      );
+
+      final result = AyniSdk.initialize(config);
+
+      expect(
+        result.status,
+        equals(InitializationStatus.incompleteConfiguration),
+      );
+      expect(result.isSuccess, isFalse);
+      expect(result.sdk, isNull);
+      expect(AyniSdk.isInitialized, isFalse);
+    });
+
+    test('rejects serverUrl with empty host or unsupported scheme', () {
+      for (final invalidUrl in [
+        Uri.parse('https://'),
+        Uri.parse('ftp://localhost:21'),
+        Uri.parse('ws://localhost:8080'),
+        Uri.parse('file:///tmp/path'),
+      ]) {
+        final config = AyniConfig(
+          serverUrl: invalidUrl,
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+          allowInsecureLoopback: true,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+          reason: 'Failed for url: $invalidUrl',
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
+    });
+
+    test('rejects non-positive syncTimeout', () {
+      for (final timeout in [const Duration(seconds: -1), Duration.zero]) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+          syncTimeout: timeout,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+          reason: 'Failed to reject syncTimeout: $timeout',
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
+    });
+
+    test(
+      'AyniConfig.isValid validates required fields and endpoint security',
+      () {
+        final validConfig = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+        expect(validConfig.isValid, isTrue);
+
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: '   ',
+            storageDirectory: storageDirectory,
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: Directory('   '),
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('http://insecure.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            allowInsecureLoopback: false,
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('http://localhost:8080'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            allowInsecureLoopback: true,
+          ).isValid,
+          isTrue,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            syncTimeout: const Duration(seconds: -1),
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            syncTimeout: Duration.zero,
+          ).isValid,
+          isFalse,
+        );
+      },
+    );
+
+    test('does not expose credential in AyniConfig.toString()', () {
+      const secret = 'ayni_sk_super_secret_never_leak_this';
+      final config = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: secret,
+        storageDirectory: storageDirectory,
+      );
+
+      final asString = config.toString();
+
+      expect(asString, isNot(contains(secret)));
+      expect(asString, contains('[REDACTED]'));
+    });
+
+    test(
+      'does not expose credential in AyniInitializationResult.toString() or message',
+      () {
+        const secret = 'ayni_sk_super_secret_never_leak_this';
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: secret,
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(result.toString(), isNot(contains(secret)));
+        expect(result.message, isNot(contains(secret)));
+
+        final failedConfig = AyniConfig(
+          serverUrl: Uri.parse('http://insecure.com'),
+          credential: secret,
+          storageDirectory: storageDirectory,
+        );
+        final failedResult = AyniSdk.initialize(failedConfig);
+
+        expect(failedResult.toString(), isNot(contains(secret)));
+        expect(failedResult.message, isNot(contains(secret)));
+      },
+    );
+
+    test(
+      'throws StateError when accessing AyniSdk.instance before initialization',
+      () {
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(
+          () => AyniSdk.instance,
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('no está inicializado'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'failed initialization does not leave a partially operative SDK instance',
+      () {
+        final invalidConfig = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: '',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(invalidConfig);
+
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+      },
+    );
+
+    test('failed re-initialization resets prior operative instance', () {
+      final validConfig = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+      );
+      final firstResult = AyniSdk.initialize(validConfig);
+      expect(firstResult.isSuccess, isTrue);
+      expect(AyniSdk.isInitialized, isTrue);
+
+      final invalidConfig = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: '',
+        storageDirectory: storageDirectory,
+      );
+      final secondResult = AyniSdk.initialize(invalidConfig);
+
+      expect(secondResult.isSuccess, isFalse);
+      expect(secondResult.sdk, isNull);
+      expect(AyniSdk.isInitialized, isFalse);
+      expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+    });
+
+    test('resetForTesting clears the instance', () {
+      final validConfig = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+      );
+      AyniSdk.initialize(validConfig);
+      expect(AyniSdk.isInitialized, isTrue);
+
+      AyniSdk.resetForTesting();
+
+      expect(AyniSdk.isInitialized, isFalse);
+      expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+    });
+
+    test('does not initiate network operations during initialization', () {
+      final config = AyniConfig(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+      );
+
+      final result = AyniSdk.initialize(config);
+
+      expect(result.isSuccess, isTrue);
+      expect(requests, isEmpty);
+    });
+
+    test(
+      'does not initiate network operations during failed initialization',
+      () {
+        final invalidConfig = AyniConfig(
+          serverUrl: Uri.parse(
+            'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+          ),
+          credential: '',
+          storageDirectory: storageDirectory,
+          allowInsecureLoopback: true,
+        );
+
+        final result = AyniSdk.initialize(invalidConfig);
+
+        expect(result.isSuccess, isFalse);
+        expect(requests, isEmpty);
+      },
+    );
+
+    test('supports typedef aliases AyniSdkConfig and InitializationResult', () {
+      final AyniSdkConfig config = AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_valid_secret',
+        storageDirectory: storageDirectory,
+      );
+      final InitializationResult result = AyniSdk.initialize(config);
+      expect(result.isSuccess, isTrue);
+    });
   });
 }
 

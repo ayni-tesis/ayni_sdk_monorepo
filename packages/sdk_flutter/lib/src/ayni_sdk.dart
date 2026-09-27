@@ -85,7 +85,123 @@ class SyncResult {
   final List<SyncResourceResult> resources;
 }
 
+/// Status indicating the outcome of SDK initialization.
+enum InitializationStatus {
+  /// The SDK was successfully initialized with valid configuration.
+  ready,
+
+  /// One or more required configuration parameters are missing or invalid.
+  incompleteConfiguration,
+
+  /// An unexpected error occurred during initialization.
+  error,
+}
+
+/// Configuration required to initialize the Ayni SDK.
+class AyniConfig {
+  /// Creates an SDK configuration instance.
+  AyniConfig({
+    required this.serverUrl,
+    required this.credential,
+    required this.storageDirectory,
+    this.syncTimeout = const Duration(seconds: 30),
+    this.allowInsecureLoopback = false,
+    this.onProgress,
+    this.onWorkflowDownload,
+    this.onBeforeInventoryPersist,
+    this.workflowVersionDownloader,
+  });
+
+  /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
+  /// when [allowInsecureLoopback] is true).
+  final Uri serverUrl;
+
+  /// The SDK secret credential (`ayni_sk_...`).
+  final String credential;
+
+  /// Directory where the SDK stores workflows, models, and sync inventory.
+  final Directory storageDirectory;
+
+  /// Maximum duration for a sync operation. Defaults to 30 seconds.
+  final Duration syncTimeout;
+
+  /// Whether insecure HTTP is permitted for local loopback development.
+  final bool allowInsecureLoopback;
+
+  /// Optional callback to receive human-readable progress messages.
+  final void Function(String message)? onProgress;
+
+  /// Optional callback to receive downloaded workflow definitions.
+  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
+
+  /// Optional callback invoked before writing inventory to disk.
+  final Future<void> Function()? onBeforeInventoryPersist;
+
+  /// Optional downloader used for fetching workflow versions.
+  final WorkflowVersionDownloader? workflowVersionDownloader;
+
+  /// Whether this configuration is complete and valid for SDK initialization.
+  bool get isValid =>
+      credential.trim().isNotEmpty &&
+      storageDirectory.path.trim().isNotEmpty &&
+      syncTimeout > Duration.zero &&
+      AyniSdk._canSendCredentialTo(
+        serverUrl,
+        allowInsecureLoopback: allowInsecureLoopback,
+      );
+
+  @override
+  String toString() =>
+      'AyniConfig('
+      'serverUrl: $serverUrl, '
+      'credential: [REDACTED], '
+      'storageDirectory: ${storageDirectory.path}, '
+      'syncTimeout: $syncTimeout, '
+      'allowInsecureLoopback: $allowInsecureLoopback'
+      ')';
+}
+
+/// Alias for [AyniConfig].
+typedef AyniSdkConfig = AyniConfig;
+
+/// The result of an SDK initialization attempt.
+class AyniInitializationResult {
+  /// Creates an initialization result.
+  const AyniInitializationResult({
+    required this.status,
+    required this.message,
+    this.sdk,
+  }) : isSuccess = status == InitializationStatus.ready;
+
+  /// The status of the initialization attempt.
+  final InitializationStatus status;
+
+  /// Human-readable message describing the initialization outcome.
+  final String message;
+
+  /// Whether initialization was successful and the SDK is ready for use.
+  final bool isSuccess;
+
+  /// The initialized [AyniSdk] instance, or `null` if initialization failed.
+  final AyniSdk? sdk;
+
+  @override
+  String toString() =>
+      'AyniInitializationResult('
+      'status: $status, '
+      'message: $message, '
+      'isSuccess: $isSuccess, '
+      'sdk: ${sdk != null ? 'AyniSdk' : 'null'}'
+      ')';
+}
+
+/// Alias for [AyniInitializationResult].
+typedef InitializationResult = AyniInitializationResult;
+
+/// Manages synchronization and offline execution of workflows.
 class AyniSdk {
+  /// Creates a new [AyniSdk] instance directly.
+  ///
   /// [workflowVersionDownloader] replaces the SDK's own workflow definition
   /// downloader; it exists for the SDK's tests.
   AyniSdk({
@@ -101,6 +217,106 @@ class AyniSdk {
   }) : _credential = credential,
        _workflowVersionDownloader =
            workflowVersionDownloader ?? WorkflowVersionDownloader();
+
+  static AyniSdk? _instance;
+
+  /// Returns the shared [AyniSdk] instance configured by [initialize].
+  ///
+  /// Throws a [StateError] if the SDK has not been initialized.
+  static AyniSdk get instance {
+    final current = _instance;
+    if (current == null) {
+      throw StateError(
+        'AyniSdk no está inicializado. Llama a AyniSdk.initialize primero.',
+      );
+    }
+    return current;
+  }
+
+  /// Whether the SDK has been successfully initialized.
+  static bool get isInitialized => _instance != null;
+
+  /// Resets the shared SDK singleton for testing.
+  static void resetForTesting() {
+    _instance = null;
+  }
+
+  /// Initializes the shared [AyniSdk] singleton with the provided [config].
+  ///
+  /// Validates mandatory configuration parameters ([AyniConfig.credential],
+  /// [AyniConfig.serverUrl], and [AyniConfig.storageDirectory]).
+  /// Returns an [AyniInitializationResult] indicating whether initialization
+  /// succeeded.
+  ///
+  /// Does not initiate network operations or model inference.
+  /// If initialization fails, no operative SDK instance is retained.
+  static AyniInitializationResult initialize(AyniConfig config) {
+    try {
+      if (!config.isValid) {
+        _instance = null;
+        return AyniInitializationResult(
+          status: InitializationStatus.incompleteConfiguration,
+          message: 'Revisa la configuración del SDK antes de continuar.',
+          sdk: null,
+        );
+      }
+      final sdk = AyniSdk(
+        serverUrl: config.serverUrl,
+        credential: config.credential,
+        storageDirectory: config.storageDirectory,
+        syncTimeout: config.syncTimeout,
+        allowInsecureLoopback: config.allowInsecureLoopback,
+        onProgress: config.onProgress,
+        onWorkflowDownload: config.onWorkflowDownload,
+        onBeforeInventoryPersist: config.onBeforeInventoryPersist,
+        workflowVersionDownloader: config.workflowVersionDownloader,
+      );
+      _instance = sdk;
+      return AyniInitializationResult(
+        status: InitializationStatus.ready,
+        message: 'SDK listo.',
+        sdk: sdk,
+      );
+    } catch (_) {
+      _instance = null;
+      return AyniInitializationResult(
+        status: InitializationStatus.error,
+        message: 'Revisa la configuración del SDK antes de continuar.',
+        sdk: null,
+      );
+    }
+  }
+
+  /// Asynchronously initializes the shared [AyniSdk] singleton with [config].
+  ///
+  /// Delegates to [initialize] and returns a [Future] completing with the
+  /// [AyniInitializationResult].
+  static Future<AyniInitializationResult> initializeAsync(
+    AyniConfig config,
+  ) async => initialize(config);
+
+  /// Checks whether [url] is a permitted destination for SDK credentials.
+  ///
+  /// Requires HTTPS unless [allowInsecureLoopback] is true and [url] targets
+  /// a loopback host.
+  static bool _canSendCredentialTo(
+    Uri url, {
+    required bool allowInsecureLoopback,
+  }) {
+    if (url.host.trim().isEmpty) return false;
+    return url.scheme == 'https' ||
+        (allowInsecureLoopback &&
+            url.scheme == 'http' &&
+            _isLoopbackHost(url.host));
+  }
+
+  static bool _isLoopbackHost(String host) {
+    if (host == 'localhost') return true;
+    final normalized = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    return InternetAddress.tryParse(normalized)?.isLoopback == true;
+  }
 
   final Uri serverUrl;
   final Directory storageDirectory;
@@ -203,7 +419,10 @@ class AyniSdk {
     final deadline = _SyncDeadline();
     var timedOut = false;
     try {
-      if (!_canSendCredentialTo(serverUrl)) {
+      if (!_canSendCredentialTo(
+        serverUrl,
+        allowInsecureLoopback: allowInsecureLoopback,
+      )) {
         return const SyncResult(SyncStatus.error);
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
@@ -800,13 +1019,6 @@ class AyniSdk {
               _WorkflowManifestEntry(workflow.workflowVersionId, workflow.name),
         );
   }
-
-  bool _canSendCredentialTo(Uri url) =>
-      url.scheme == 'https' ||
-      (allowInsecureLoopback &&
-          url.scheme == 'http' &&
-          (url.host == 'localhost' ||
-              InternetAddress.tryParse(url.host)?.isLoopback == true));
 
   bool _isInventory(Object? value) =>
       value is Map &&
