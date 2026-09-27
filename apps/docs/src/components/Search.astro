@@ -1,0 +1,293 @@
+---
+/**
+ * Replaces Starlight's search UI with a dialog that keeps Pagefind's index,
+ * built by Starlight at compile time, and adds the states of US-138.
+ */
+import { Icon } from "@astrojs/starlight/components";
+import { searchText } from "../search/search";
+---
+
+<button
+  type="button"
+  class="search-trigger"
+  data-search-open
+  aria-label={searchText.label}
+  aria-keyshortcuts="Control+K Meta+K /"
+>
+  <Icon name="magnifier" />
+  <span class="search-trigger-label" aria-hidden="true">{searchText.label}</span>
+  <kbd class="search-trigger-keys" aria-hidden="true"
+    ><kbd data-search-platform-key>Ctrl</kbd><kbd>K</kbd></kbd
+  >
+</button>
+
+<dialog class="search-dialog" data-search-dialog aria-label={searchText.placeholder}>
+  <div class="search-frame">
+    <div class="search-field">
+      <Icon name="magnifier" />
+      <input
+        type="search"
+        data-search-input
+        role="combobox"
+        aria-label={searchText.placeholder}
+        aria-describedby="search-help"
+        aria-controls="search-results"
+        aria-autocomplete="list"
+        aria-expanded="false"
+        placeholder={searchText.placeholder}
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button type="button" class="search-close" data-search-close>{searchText.close}</button>
+    </div>
+    <p id="search-help" class="search-help">{searchText.help}</p>
+    <p class="search-status" data-search-status role="status"></p>
+    <div
+      id="search-results"
+      class="search-results"
+      data-search-results
+      role="listbox"
+      aria-label={searchText.results}
+    >
+    </div>
+    <footer class="search-hints">{searchText.hints}</footer>
+  </div>
+</dialog>
+
+<script is:inline>
+  // Inline so the shortcut never flashes the wrong modifier key on Apple devices.
+  (() => {
+    const key = document.querySelector("[data-search-platform-key]");
+    if (key && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) key.textContent = "⌘";
+  })();
+</script>
+
+<script>
+  import { type Pagefind, setupSearch } from "../search/search-dialog";
+
+  // Starlight writes Pagefind's bundle to `dist/pagefind/` after the build.
+  const bundle = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/pagefind/pagefind.js`;
+
+  // Browsers cache a failed dynamic import, so each retry asks for a new URL.
+  let attempts = 0;
+
+  setupSearch(document, {
+    loadPagefind: () => {
+      const url = attempts++ === 0 ? bundle : `${bundle}?retry=${attempts}`;
+      return import(/* @vite-ignore */ url) as Promise<Pagefind>;
+    },
+    navigate: (url) => window.location.assign(url),
+  });
+</script>
+
+<style>
+  .search-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--sl-color-gray-1);
+    font-size: var(--sl-text-xl);
+    cursor: pointer;
+  }
+
+  .search-trigger-label,
+  .search-trigger-keys {
+    display: none;
+  }
+
+  .search-trigger-keys {
+    gap: 0.25em;
+    margin-inline-start: auto;
+    padding-inline: 0.375rem;
+    border-radius: 0.25rem;
+    background-color: var(--sl-color-gray-6);
+    font-family: var(--__sl-font);
+    font-size: var(--sl-text-2xs);
+  }
+
+  .search-trigger-keys kbd {
+    font-family: inherit;
+  }
+
+  @media (min-width: 50rem) {
+    .search-trigger {
+      width: 100%;
+      max-width: 22rem;
+      padding-inline: 0.75rem 0.5rem;
+      border: 1px solid var(--sl-color-gray-5);
+      border-radius: 0.5rem;
+      background-color: var(--sl-color-black);
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-sm);
+    }
+
+    .search-trigger:hover {
+      border-color: var(--sl-color-gray-2);
+      color: var(--sl-color-white);
+    }
+
+    .search-trigger-label {
+      display: block;
+    }
+
+    .search-trigger-keys {
+      display: flex;
+    }
+  }
+
+  .search-dialog {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--sl-color-gray-5);
+    background-color: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+    box-shadow: var(--sl-shadow-lg);
+  }
+
+  /* Only the result list scrolls, so the field and the key hints stay visible. */
+  .search-dialog[open] {
+    display: flex;
+  }
+
+  .search-dialog::backdrop {
+    background-color: var(--sl-color-backdrop-overlay);
+    backdrop-filter: blur(0.25rem);
+  }
+
+  .search-frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.75rem;
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-inline: 0.75rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    background-color: var(--sl-color-black);
+    color: var(--sl-color-gray-2);
+  }
+
+  .search-field:focus-within {
+    border-color: var(--sl-color-accent);
+  }
+
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    padding-block: 0.75rem;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--sl-color-white);
+    font: inherit;
+  }
+
+  .search-close {
+    border: 0;
+    background: transparent;
+    color: var(--sl-color-text-accent);
+    font: inherit;
+    font-size: var(--sl-text-sm);
+    cursor: pointer;
+  }
+
+  .search-help,
+  .search-status,
+  .search-hints {
+    margin: 0;
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+  }
+
+  .search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
+    margin: 0;
+    overflow-y: auto;
+  }
+
+  /* Results of the previous term while the new one is searched. */
+  .search-results[aria-busy="true"] {
+    opacity: 0.6;
+  }
+
+  .search-results :global([role="option"]) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    background-color: var(--sl-color-black);
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+
+  .search-results :global([role="option"]:hover),
+  .search-results :global([role="option"][aria-selected="true"]) {
+    border-color: var(--sl-color-accent-high);
+    background-color: var(--sl-color-accent-low);
+  }
+
+  .search-results :global(.search-result-title) {
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  .search-results :global(.search-result-section) {
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-xs);
+  }
+
+  .search-results :global(.search-result-excerpt) {
+    font-size: var(--sl-text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .search-results :global(mark) {
+    background-color: transparent;
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+
+  .search-hints {
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+
+  @media (min-width: 50rem) {
+    .search-dialog {
+      width: 90%;
+      max-width: 40rem;
+      height: max-content;
+      max-height: calc(100% - 8rem);
+      margin: 4rem auto auto;
+      border-radius: 0.5rem;
+    }
+
+    .search-frame {
+      padding: 1.5rem;
+    }
+  }
+
+  :global(body[data-search-modal-open]) {
+    overflow: hidden;
+  }
+</style>

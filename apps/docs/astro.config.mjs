@@ -1,6 +1,7 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import { sidebar } from "./src/navigation.ts";
+import { searchIndexCoverage } from "./src/search/index-coverage.ts";
 
 const repository = "https://github.com/ayni-tesis/ayni_sdk_monorepo";
 
@@ -25,7 +26,9 @@ export default defineConfig({
       ],
       components: {
         PageTitle: "./src/components/PageTitle.astro",
+        Search: "./src/components/Search.astro",
       },
     }),
+    searchIndexCoverage(),
   ],
 });

@@ -52,6 +52,14 @@ encajaba mejor con el stack de `apps/web`, pero el equipo eligió Starlight el
   `Sistema`).
 - Starlight no trae migas de pan. Se agregan sustituyendo su componente
   `PageTitle` (`apps/docs/src/components/PageTitle.astro`).
+- La interfaz de búsqueda de Starlight (Pagefind UI) no admite los estados,
+  la ayuda, el atajo `/` ni la navegación con flechas de US-138. Se sustituye
+  su componente `Search` (`apps/docs/src/components/Search.astro`) por un
+  diálogo que usa la API JavaScript de Pagefind (`apps/docs/src/search/`);
+  Starlight sigue generando el índice al compilar. La integración
+  `searchIndexCoverage` hace fallar la compilación si una página de `dist`
+  (salvo la 404) no está en el índice, así que las referencias Dart y HTTP
+  (US-143, US-144) no pueden quedar fuera de la búsqueda sin que se note.
 - `Última actualización` sale del historial de git. Vercel clona el
   repositorio con poca profundidad, así que en un archivo sin cambios recientes
   la fecha puede ser la del commit más antiguo clonado, no la real.
