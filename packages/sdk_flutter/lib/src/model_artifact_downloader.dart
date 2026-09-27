@@ -57,6 +57,7 @@ class ModelArtifactDownloader {
     void Function(String message, int receivedBytes, int totalBytes)?
     onProgress,
     HttpClient? httpClient,
+    bool allowInsecureLoopback = false,
   }) async {
     const expiredMessage =
         'La descarga del modelo venció. Intenta sincronizar nuevamente.';
@@ -72,7 +73,7 @@ class ModelArtifactDownloader {
       );
     }
 
-    if (manifest.downloadUrl.scheme != 'https' ||
+    if ((!_canDownloadFrom(manifest.downloadUrl, allowInsecureLoopback)) ||
         !manifest.downloadUrlExpiresAt.isAfter(DateTime.now())) {
       return ModelArtifactDownloadResult(
         modelVersionId: id,
@@ -178,4 +179,11 @@ class ModelArtifactDownloader {
       if (ownsClient) client.close(force: true);
     }
   }
+
+  bool _canDownloadFrom(Uri url, bool allowInsecureLoopback) =>
+      url.scheme == 'https' ||
+      (allowInsecureLoopback &&
+          url.scheme == 'http' &&
+          (url.host == 'localhost' ||
+              InternetAddress.tryParse(url.host)?.isLoopback == true));
 }
