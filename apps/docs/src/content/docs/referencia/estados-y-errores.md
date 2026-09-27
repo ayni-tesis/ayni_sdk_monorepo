@@ -1,9 +1,24 @@
 ---
 title: Estados y errores
-description: Valores de SyncStatus y SyncResourceStatus que devuelve sync(), con sus mensajes.
+description: Valores de InitializationStatus, SyncStatus y SyncResourceStatus, con sus mensajes.
 sidebar:
   order: 1
 ---
+
+## Inicialización del SDK
+
+`AyniSdk.initialize(config)` devuelve un `AyniInitializationResult` que indica
+el resultado de la validación inicial de la configuración:
+
+| `InitializationStatus` | Significado | Mensaje en `message` |
+| --- | --- | --- |
+| `ready` | La configuración es válida y el SDK está listo para sincronizar y ejecutar workflows. | `SDK listo.` |
+| `incompleteConfiguration` | Falta algún dato obligatorio o la configuración no es válida. | `Revisa la configuración del SDK antes de continuar.` |
+| `error` | Ocurrió un error inesperado al inicializar el SDK. | `Revisa la configuración del SDK antes de continuar.` |
+
+El resultado nunca expone la credencial en registros, mensajes ni en su método `toString()`. Si la inicialización falla, el SDK no queda en un estado parcialmente operativo.
+
+## Sincronización
 
 `sync()` devuelve un `SyncResult` con un estado general (`status`) y la lista
 de recursos revisados (`resources`).

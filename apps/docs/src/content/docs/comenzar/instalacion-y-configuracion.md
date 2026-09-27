@@ -26,7 +26,37 @@ dependencies:
     path: ../../packages/sdk_flutter
 ```
 
-## Parámetros de `AyniSdk`
+## Inicialización
+
+Para preparar el SDK, inicialízalo con `AyniSdk.initialize(...)` pasando un
+`AyniConfig`:
+
+```dart
+final result = await AyniSdk.initialize(
+  AyniConfig(
+    serverUrl: Uri.parse('https://api.ayni.dev'),
+    credential: credential,
+    storageDirectory: storageDirectory,
+  ),
+);
+
+if (!result.isSuccess) {
+  // Muestra el mensaje si falta algún dato obligatorio:
+  print(result.message); // "Revisa la configuración del SDK antes de continuar."
+  return;
+}
+
+// El SDK queda listo para sincronizar o ejecutar:
+await AyniSdk.instance.sync();
+```
+
+`AyniSdk.initialize` valida los parámetros obligatorios antes de iniciar cualquier
+operación de red o inferencia. Si la configuración es incompleta o inválida, devuelve
+el estado `InitializationStatus.incompleteConfiguration`, no deja un SDK parcialmente
+operativo (`AyniSdk.isInitialized` es `false`, `result.sdk` es `null`) y nunca expone
+la credencial en errores ni registros.
+
+## Parámetros de configuración (`AyniConfig`)
 
 | Parámetro | Tipo | Obligatorio | Descripción |
 | --- | --- | --- | --- |
@@ -39,7 +69,7 @@ dependencies:
 | `onWorkflowDownload` | `void Function(WorkflowVersionDownloadResult)` | No | Recibe cada definición de workflow descargada o no disponible durante la sincronización. |
 
 :::note
-El SDK solo envía la credencial por `https`. Con `http`, `sync()` devuelve
-`SyncStatus.error` sin conectarse, salvo que `allowInsecureLoopback` sea
-`true` y el servidor esté en loopback.
+El SDK solo envía la credencial por `https`. Con `http`, `initialize()` rechaza
+la configuración y devuelve `InitializationStatus.incompleteConfiguration` sin
+conectarse, salvo que `allowInsecureLoopback` sea `true` y el servidor esté en loopback.
 :::
