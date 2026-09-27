@@ -271,9 +271,11 @@ class AyniSdk {
   ) async {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
     final workflows = Map<String, _Workflow>.of(comparison.inventory.workflows);
+    final models = Map<String, _Model>.of(comparison.inventory.models);
     final rejections = <_WorkflowRejection>[];
     final promotedFiles = <File>[];
     final installedModelFiles = <File>[];
+    final installedModelVersionIds = <String>[];
     Future<_Installation?> abort([File? pendingFile]) async {
       if (pendingFile != null) await _deleteDownloadedDefinition(pendingFile);
       for (final file in [...promotedFiles, ...installedModelFiles]) {
@@ -282,11 +284,23 @@ class AyniSdk {
       return null;
     }
 
-    Future<void> rollbackModelsSince(int start) async {
-      for (final file in installedModelFiles.skip(start)) {
+    Future<void> rollbackModelsSince(int fileStart, int versionStart) async {
+      for (final file in installedModelFiles.skip(fileStart)) {
         await _deleteDownloadedDefinition(file);
       }
-      installedModelFiles.removeRange(start, installedModelFiles.length);
+      installedModelFiles.removeRange(fileStart, installedModelFiles.length);
+      for (final versionId in installedModelVersionIds.skip(versionStart)) {
+        final previous = local.models[versionId];
+        if (previous == null) {
+          models.remove(versionId);
+        } else {
+          models[versionId] = previous;
+        }
+      }
+      installedModelVersionIds.removeRange(
+        versionStart,
+        installedModelVersionIds.length,
+      );
     }
 
     for (final workflow in comparison.acceptedWorkflows) {
@@ -341,7 +355,8 @@ class AyniSdk {
         workflow.modelVersionIds,
       );
       if (validation == WorkflowValidationStatus.valid) {
-        final installedModelCount = installedModelFiles.length;
+        final installedModelFileCount = installedModelFiles.length;
+        final installedModelVersionCount = installedModelVersionIds.length;
         var failedDependency = 'modelo desconocido';
         final depsOk = await _installModelDependencies(
           workflow,
@@ -350,9 +365,13 @@ class AyniSdk {
           deadline,
           (name) => failedDependency = name,
           installedModelFiles,
+          installedModelVersionIds,
         );
         if (!depsOk) {
-          await rollbackModelsSince(installedModelCount);
+          await rollbackModelsSince(
+            installedModelFileCount,
+            installedModelVersionCount,
+          );
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -371,7 +390,10 @@ class AyniSdk {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
         } on FileSystemException {
-          await rollbackModelsSince(installedModelCount);
+          await rollbackModelsSince(
+            installedModelFileCount,
+            installedModelVersionCount,
+          );
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -393,7 +415,7 @@ class AyniSdk {
     }
     if (deadline.expired) return abort();
     return _Installation(
-      inventory: _Inventory(workflows, comparison.inventory.models),
+      inventory: _Inventory(workflows, models),
       resources: _resourcesWithRejections(comparison.resources, rejections),
       promotedFiles: promotedFiles,
       installedModelFiles: installedModelFiles,
@@ -484,9 +506,9 @@ class AyniSdk {
 
   /// Downloads and installs model versions required by a workflow that are
   /// not yet available locally (US-044). Each newly installed model file is
-  /// added to [installedModelFiles] immediately after installation so that
-  /// the caller can clean them up even if a later dependency fails. Returns
-  /// `false` when a dependency could not be installed.
+  /// added to the installed-file and version-id lists immediately so the
+  /// caller can roll them back if a later dependency fails. Returns `false`
+  /// when a dependency could not be installed.
   Future<bool> _installModelDependencies(
     _Workflow workflow,
     Map<String, _Model> models,
@@ -494,6 +516,7 @@ class AyniSdk {
     _SyncDeadline deadline,
     void Function(String name) setFailedDependency,
     List<File> installedModelFiles,
+    List<String> installedModelVersionIds,
   ) async {
     final installer = ModelArtifactInstaller(
       storageDirectory: storageDirectory,
@@ -588,6 +611,7 @@ class AyniSdk {
       if (!preExisting) {
         installedModelFiles.add(File(artifactPath));
         installedModelFiles.add(File(metadataPath));
+        installedModelVersionIds.add(modelVersionId);
       }
     }
 
