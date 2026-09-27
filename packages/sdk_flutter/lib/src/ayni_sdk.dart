@@ -33,6 +33,7 @@ class SyncResourceResult {
     this.name,
     this.previousVersionRetained = false,
     this.dependencyName,
+    this.remoteHashConflict = false,
   });
 
   final SyncResourceType type;
@@ -48,24 +49,28 @@ class SyncResourceResult {
 
   /// The name of the failed dependency for `dependencyFailed` status (US-044).
   final String? dependencyName;
+  final bool remoteHashConflict;
 
-  String? get message => switch (status) {
-    SyncResourceStatus.invalidRemoteResource =>
-      'La actualización no coincide con la versión instalada; se conservará la copia local.',
-    SyncResourceStatus.invalidWorkflow when previousVersionRetained =>
-      'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
-    SyncResourceStatus.invalidWorkflow =>
-      'La actualización de $name no es compatible. No se instaló ninguna versión.',
-    SyncResourceStatus.installationFailed when previousVersionRetained =>
-      'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
-    SyncResourceStatus.installationFailed =>
-      'No se pudo guardar la actualización. No se instaló ninguna versión.',
-    SyncResourceStatus.dependencyFailed when previousVersionRetained =>
-      'No se pudo preparar $name: $dependencyName. Se mantuvo la última versión válida.',
-    SyncResourceStatus.dependencyFailed =>
-      'No se pudo preparar $name: $dependencyName.',
-    _ => null,
-  };
+  String? get message =>
+      status == SyncResourceStatus.invalidRemoteResource && remoteHashConflict
+      ? 'La actualización no coincide con la versión instalada; se conservará la copia local.'
+      : switch (status) {
+          SyncResourceStatus.invalidRemoteResource =>
+            'Se mantuvo la versión local porque la actualización no es válida.',
+          SyncResourceStatus.invalidWorkflow when previousVersionRetained =>
+            'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
+          SyncResourceStatus.invalidWorkflow =>
+            'La actualización de $name no es compatible. No se instaló ninguna versión.',
+          SyncResourceStatus.installationFailed when previousVersionRetained =>
+            'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
+          SyncResourceStatus.installationFailed =>
+            'No se pudo guardar la actualización. No se instaló ninguna versión.',
+          SyncResourceStatus.dependencyFailed when previousVersionRetained =>
+            'No se pudo preparar $name: $dependencyName. Se mantuvo la última versión válida.',
+          SyncResourceStatus.dependencyFailed =>
+            'No se pudo preparar $name: $dependencyName.',
+          _ => null,
+        };
 }
 
 class SyncResult {
@@ -827,6 +832,7 @@ class AyniSdk {
           status: status,
           resourceVersionId: model.id,
           version: model.version,
+          remoteHashConflict: hashConflict,
         ),
       );
     }

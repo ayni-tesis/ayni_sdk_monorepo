@@ -328,7 +328,6 @@ void main() {
           },
         ],
       });
-
       final result = await client.sync();
 
       expect(result.status, SyncStatus.upToDate);
@@ -373,6 +372,49 @@ void main() {
       ]);
       expect(downloads, isEmpty);
       expect(requests.single.uri.path, '/sdk/sync');
+    },
+  );
+
+  test(
+    'rejects a same-version model hash conflict and keeps the local copy',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      final before = await inventory.readAsString();
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-2.0.0',
+            'name': 'Clasificar hoja',
+            'version': '2.0.0',
+            'modelVersionIds': ['model-version-1'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'b' * 64,
+          },
+        ],
+      });
+      final requestsBeforeSync = requests.length;
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.invalidRemoteResource,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(
+        result.resources.first.message,
+        'La actualización no coincide con la versión instalada; '
+        'se conservará la copia local.',
+      );
+      expect(await inventory.readAsString(), before);
+      expect(requests.length, requestsBeforeSync + 1);
     },
   );
 
