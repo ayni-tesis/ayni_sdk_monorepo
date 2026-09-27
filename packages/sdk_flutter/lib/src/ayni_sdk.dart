@@ -270,10 +270,10 @@ class AyniSdk {
           await _deleteDownloadedDefinition(downloadedFile);
           return null;
         }
+        installedModelFiles.addAll(modelFiles);
         try {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
-          installedModelFiles.addAll(modelFiles);
         } on FileSystemException {
           await _rejectWorkflow(
             workflow,
@@ -520,6 +520,8 @@ class AyniSdk {
     } on IOException {
       return null;
     } on FormatException {
+      return null;
+    } on TypeError {
       return null;
     }
   }
