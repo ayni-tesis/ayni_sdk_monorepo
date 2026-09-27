@@ -41,17 +41,6 @@ void main() {
     workflowResponseBody = _validWorkflowDefinition();
     modelArtifactBytes = utf8.encode('tflite-model-artifact-content');
     final artifactSha256 = sha256.convert(modelArtifactBytes).toString();
-    modelManifestResponseBody = jsonEncode({
-      'modelVersionId': 'model-version-1',
-      'version': '1.0.0',
-      'sha256': artifactSha256,
-      'sizeBytes': modelArtifactBytes.length,
-      'downloadUrl': '', // set after artifact server starts
-      'downloadUrlExpiresAt': DateTime.now()
-          .add(const Duration(hours: 1))
-          .toUtc()
-          .toIso8601String(),
-    });
     redirectUrl = null;
     responseDelay = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
