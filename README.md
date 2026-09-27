@@ -8,6 +8,7 @@ Created with [Better Fullstack](https://github.com/Marve10s/Better-Fullstack).
 - **hono** (typescript, backend): `apps/server`; part `backend:typescript:hono`
 - **postgres** (universal, database): `packages/db`; part `database:universal:postgres`
 - **flutter** (dart, mobile): `apps/native`; part `mobile:dart:flutter`
+- **astro + starlight** (typescript, documentation site): `apps/docs`; see `docs/adr/0002-sitio-documentacion-astro-starlight-vercel.md`
 - **biome** (universal, codeQuality): `.`; part `codequality:universal:biome`
 - **github-actions** (universal, continuousIntegration): `.`; part `continuousintegration:universal:github-actions`
 - **turborepo** (universal, workspaceRunner): `.`; part `workspacerunner:universal:turborepo`
@@ -42,6 +43,14 @@ bun run dev
 ```
 
 The supervisor stops the other services when one exits. Native mobile applications run separately so you can choose a simulator or device. Open Kotlin applications in Android Studio.
+
+### docs
+
+The SDK documentation site (Astro + Starlight) runs on port 3002. Search only works on a production build (`bun run build`, then `bun run preview` in `apps/docs`).
+
+```sh
+bun run --filter docs dev
+```
 
 ### flutter
 

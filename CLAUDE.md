@@ -20,6 +20,12 @@ This file provides context about the project for AI assistants.
 - Workflow canvas: @xyflow/react (React Flow 12), see `docs/adr/0001-lienzo-workflows-con-xyflow-react.md`
 - Workflow auto layout: @dagrejs/dagre (installed by the ADR 0001 spike; used from US-124)
 
+### Documentation site
+
+- `apps/docs`: Astro 7 + Starlight, static output deployed on Vercel (project `ayni-docs`, root `apps/docs`) without an adapter; see `docs/adr/0002-sitio-documentacion-astro-starlight-vercel.md`
+- Sidebar groups live in `apps/docs/src/navigation.ts` and autogenerate from `src/content/docs/<group>/`; UI string overrides in `src/content/i18n/es.json`; theme tokens in `src/styles/theme.css` (contrast checked by `src/theme.test.ts`)
+- Pages document only shipped behavior (epic rule, `docs/epicas/documentacion-sdk/README.md`)
+
 ### Backend
 
 - Framework: hono
@@ -52,6 +58,7 @@ This file provides context about the project for AI assistants.
 ayni/
 ├── apps/
 │   ├── web/         # Frontend application
+│   ├── docs/        # SDK documentation site (Astro + Starlight)
 │   └── server/      # Backend API
 ├── packages/
 │   ├── api/         # API layer

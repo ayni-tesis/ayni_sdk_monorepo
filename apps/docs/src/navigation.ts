@@ -1,0 +1,37 @@
+/**
+ * The five sidebar groups from `docs/investigacion/documentacion-sdk.md`
+ * (section 4). Each group lists every page in its content directory, so a new
+ * page cannot be left out of the sidebar.
+ */
+export const sidebarGroups = [
+  { label: "Comenzar", directory: "comenzar" },
+  { label: "Guías", directory: "guias" },
+  { label: "Conceptos", directory: "conceptos" },
+  { label: "Referencia", directory: "referencia" },
+  { label: "Recursos", directory: "recursos" },
+] as const;
+
+export const sidebar = sidebarGroups.map(({ label, directory }) => ({
+  label,
+  items: [{ autogenerate: { directory } }],
+}));
+
+/** The part of Starlight's sidebar route data the breadcrumbs read. */
+type SidebarEntry =
+  | { type: "link"; label: string; href: string; isCurrent: boolean }
+  | { type: "group"; label: string; entries: SidebarEntry[] };
+
+export type Breadcrumb = { label: string; href?: string };
+
+/** The groups that lead to the current page, followed by the page itself. */
+export function breadcrumbTrail(entries: SidebarEntry[]): Breadcrumb[] {
+  for (const entry of entries) {
+    if (entry.type === "link") {
+      if (entry.isCurrent) return [{ label: entry.label, href: entry.href }];
+      continue;
+    }
+    const trail = breadcrumbTrail(entry.entries);
+    if (trail.length > 0) return [{ label: entry.label }, ...trail];
+  }
+  return [];
+}
