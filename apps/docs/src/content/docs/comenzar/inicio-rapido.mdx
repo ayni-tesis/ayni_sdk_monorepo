@@ -1,0 +1,129 @@
+---
+title: Inicio rápido
+description: Sincroniza tu primer workflow publicado con el SDK de Ayni en una app Flutter.
+sidebar:
+  order: 2
+---
+
+import { Code } from "@astrojs/starlight/components";
+import { quickstart } from "../../../examples/quickstart";
+
+En esta guía agregas el SDK de Ayni a una app Flutter y sincronizas tu primer
+workflow publicado. Al terminar, el workflow queda guardado en el dispositivo y
+disponible sin conexión.
+
+## Requisitos previos
+
+- [Una aplicación en Ayni con un workflow publicado](/conceptos/workspaces-y-aplicaciones/)
+- [Una credencial del SDK](/conceptos/credenciales-del-sdk/)
+- [Flutter con Dart 3.8 o superior](/comenzar/instalacion-y-configuracion/#requisitos)
+
+## 1. Instala el SDK
+
+`ayni_sdk` todavía no está publicado en pub.dev. Agrégalo como dependencia
+`git` en el `pubspec.yaml` de tu app:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  ayni_sdk:
+    git:
+      url: https://github.com/ayni-tesis/ayni_sdk_monorepo.git
+      path: packages/sdk_flutter
+```
+
+Si tu app vive dentro del monorepo de Ayni, usa una dependencia `path` (ver
+[Instalación y configuración](/comenzar/instalacion-y-configuracion/#instalación)).
+Luego resuelve las dependencias:
+
+```sh
+flutter pub get
+```
+
+**Resultado esperado:** `flutter pub get` termina sin errores y puedes importar
+`package:ayni_sdk/ayni_sdk.dart`.
+
+## 2. Guarda la credencial
+
+Lee la credencial de una variable de compilación en lugar de escribirla en el
+código:
+
+<Code code={quickstart.saveCredential} lang="dart" />
+
+Y pásala al ejecutar la app:
+
+```sh
+flutter run --dart-define=AYNI_CREDENTIAL=ayni_sk_…
+```
+
+:::caution
+No incluyas la credencial en el código fuente ni en el control de versiones.
+
+Quien la tenga puede sincronizar los recursos de tu aplicación hasta que la
+revoques en el dashboard.
+:::
+
+`--dart-define` incorpora el valor en la app compilada, así que una app
+distribuida puede contener la credencial. Si se expone, revócala en el
+dashboard y genera una nueva (ver
+[Credenciales del SDK](/conceptos/credenciales-del-sdk/#revocación)).
+
+**Resultado esperado:** la credencial no aparece en el código fuente ni en
+ningún archivo de tu repositorio.
+
+## 3. Crea el cliente
+
+Crea un `AyniSdk` con la URL de tu servidor de Ayni (con `https`), la
+credencial y un directorio propio de la app donde el SDK pueda escribir. En
+Flutter puedes obtenerlo, por ejemplo, con `getApplicationSupportDirectory()`
+del paquete `path_provider`.
+
+<Code code={quickstart.createClient} lang="dart" />
+
+**Resultado esperado:** el cliente se crea sin conectarse al servidor; todavía
+no se descarga nada.
+
+## 4. Sincroniza
+
+Llama a `sync()`. El SDK descarga los workflows publicados de la aplicación y
+los modelos que usan, los valida y los guarda en `storageDirectory`:
+
+<Code code={quickstart.sync} lang="dart" />
+
+**Resultado esperado:** la primera vez, `result.status` es `SyncStatus.updated`
+y `result.resources` incluye tu workflow publicado: un recurso de tipo
+`SyncResourceType.workflow`, con su nombre en `name` y el estado
+`SyncResourceStatus.updated`. Si vuelves a sincronizar sin publicar nada nuevo,
+`result.status` es `SyncStatus.upToDate`.
+
+## 5. Revisa el resultado
+
+Convierte `result.status` en un mensaje para quien usa tu app con un `switch`:
+
+<Code code={quickstart.checkResult} lang="dart" />
+
+Si ves `No se completó la sincronización. Revisa los recursos afectados.`,
+revisa la credencial: una credencial revocada o mal copiada hace que `sync()`
+devuelva `SyncStatus.error`. Encontrarás las causas y cómo resolverlas en
+[Solucionar problemas](/guias/solucionar-problemas-de-sincronizacion/#syncstatuserror).
+Si un recurso no se actualizó, su propiedad `message` explica por qué (ver
+[Estados y errores](/referencia/estados-y-errores/#estados-de-cada-recurso)).
+
+El ejemplo completo está en
+[`packages/sdk_flutter/example/quickstart.dart`](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/quickstart.dart).
+
+**Resultado esperado:** la app muestra `Sincronización completada.` la primera
+vez y `Ya estás al día.` cuando repites la sincronización.
+
+## Siguientes pasos
+
+- [Conceptos](/conceptos/workspaces-y-aplicaciones/): workspaces, aplicaciones
+  y credenciales del SDK.
+- [Referencia de la API](/referencia/estados-y-errores/): los estados y errores
+  que devuelve `sync()`.
+- [Solucionar problemas](/guias/solucionar-problemas-de-sincronizacion/): qué
+  hacer cuando la sincronización no se completa.
+
+:::note
+¿Algo no funcionó? Consulta
+[Solucionar problemas de sincronización](/guias/solucionar-problemas-de-sincronizacion/).
+:::
