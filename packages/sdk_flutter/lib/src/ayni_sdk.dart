@@ -274,8 +274,16 @@ class AyniSdk {
     final rejections = <_WorkflowRejection>[];
     final promotedFiles = <File>[];
     final installedModelFiles = <File>[];
+    Future<_Installation?> abort([File? pendingFile]) async {
+      if (pendingFile != null) await _deleteDownloadedDefinition(pendingFile);
+      for (final file in [...promotedFiles, ...installedModelFiles]) {
+        await _deleteDownloadedDefinition(file);
+      }
+      return null;
+    }
+
     for (final workflow in comparison.acceptedWorkflows) {
-      if (deadline.expired) return null;
+      if (deadline.expired) return abort();
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
 
       // Two phases per download: the downloader streams into an isolated
@@ -299,15 +307,22 @@ class AyniSdk {
       try {
         onWorkflowDownload?.call(result);
       } catch (_) {
-        return null;
+        return abort(
+          result.temporaryDefinition == null
+              ? null
+              : File(result.temporaryDefinition!),
+        );
       }
       if (result.status != WorkflowVersionDownloadStatus.downloaded) {
-        return null;
+        return abort(
+          result.temporaryDefinition == null
+              ? null
+              : File(result.temporaryDefinition!),
+        );
       }
       final downloadedFile = File(result.temporaryDefinition!);
       if (deadline.expired) {
-        await _deleteDownloadedDefinition(downloadedFile);
-        return null;
+        return abort(downloadedFile);
       }
       final validation = await _validateDownloadedDefinition(
         downloadedFile,
@@ -336,8 +351,7 @@ class AyniSdk {
           continue;
         }
         if (deadline.expired) {
-          await _deleteDownloadedDefinition(downloadedFile);
-          return null;
+          return abort(downloadedFile);
         }
         try {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
@@ -362,7 +376,7 @@ class AyniSdk {
         );
       }
     }
-    if (deadline.expired) return null;
+    if (deadline.expired) return abort();
     return _Installation(
       inventory: _Inventory(workflows, comparison.inventory.models),
       resources: _resourcesWithRejections(comparison.resources, rejections),
