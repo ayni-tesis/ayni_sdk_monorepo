@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { glossary } from "../glossary/glossary";
 
 const docsRoot = join(import.meta.dirname, "..", "content", "docs");
@@ -88,6 +89,7 @@ describe("Conceptos (US-141)", () => {
     expect(rules).toContain("El secreto se muestra una sola vez");
     expect(rules).toContain("solo su hash SHA-256");
     expect(rules).toContain("no borra los recursos ya instalados en los dispositivos");
+    expect(rules).toContain("Regenerar una credencial revoca la anterior");
   });
 
   it("follows a workflow from draft to an immutable published version", () => {
@@ -122,6 +124,12 @@ describe("¿Qué es Ayni? (US-141)", () => {
     expect(read(page)).toContain(
       ":::note\nEl dashboard no ejecuta los modelos: la inferencia ocurre en el dispositivo.\n:::",
     );
+  });
+
+  it("names the version of the package it describes", () => {
+    const version = /^version:\s*(\S+)/m.exec(pubspec)?.[1];
+
+    expect(section(page, "Qué hace el SDK")).toContain(`La versión ${version} del SDK`);
   });
 
   it("lists what the SDK does and does not do", () => {

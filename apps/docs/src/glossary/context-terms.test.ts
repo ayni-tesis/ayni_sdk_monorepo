@@ -33,8 +33,24 @@ describe("contextTerms", () => {
     ]);
   });
 
+  it("reads only the Language section", () => {
+    const withOtherSection = [
+      source,
+      "## Example dialogue",
+      "",
+      "**Note**:",
+      "Not a term.",
+      "_Avoid_: x",
+    ].join("\r\n");
+
+    expect(contextTerms(withOtherSection).map(({ term }) => term)).toEqual([
+      "Workspace",
+      "Draft Revision",
+    ]);
+  });
+
   it("rejects a term without an _Avoid_ line", () => {
-    expect(() => contextTerms("**Workspace**:\nThe tenant boundary.\n")).toThrow(
+    expect(() => contextTerms("## Language\n\n**Workspace**:\nThe tenant boundary.\n")).toThrow(
       'The term "Workspace" has no _Avoid_ line.',
     );
   });

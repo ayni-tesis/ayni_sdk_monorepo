@@ -8,7 +8,10 @@ export type ContextTerm = { term: string; definition: string; avoid: string[] };
 export function contextTerms(source: string): ContextTerm[] {
   const terms: ContextTerm[] = [];
   let current: { term: string; lines: string[] } | undefined;
+  let inLanguage = false;
   for (const line of source.split(/\r?\n/)) {
+    if (line.startsWith("## ")) inLanguage = line === "## Language";
+    if (!inLanguage) continue;
     const heading = /^\*\*(.+)\*\*:$/.exec(line);
     if (heading?.[1]) {
       if (current) throw new Error(`The term "${current.term}" has no _Avoid_ line.`);

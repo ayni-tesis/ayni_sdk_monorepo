@@ -27,8 +27,8 @@ activa. El secreto empieza por `ayni_sk_`. El listado de credenciales muestra
 solo el prefijo, el estado (`active` o `revoked`) y las fechas.
 
 :::caution
-Si pierdes el secreto no se puede recuperar. Genera una credencial nueva y
-revoca la anterior.
+Si pierdes el secreto no se puede recuperar. Regenera la credencial y
+actualiza la app con el secreto nuevo.
 :::
 
 ## Reglas
@@ -40,6 +40,9 @@ revoca la anterior.
   recursos de esa aplicación.
 - Una aplicación archivada no acepta credenciales nuevas.
 - Una credencial revocada ya no autentica ni sincroniza recursos nuevos.
+- Regenerar una credencial revoca la anterior al instante y muestra una sola
+  vez el secreto de su reemplazo, sin cambiar la aplicación ni sus recursos.
+  Solo se regenera una credencial activa.
 - Revocar una credencial no borra workflows, modelos ni versiones del servidor,
   y no borra los recursos ya instalados en los dispositivos.
 

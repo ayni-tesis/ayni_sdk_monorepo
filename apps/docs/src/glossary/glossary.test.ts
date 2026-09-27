@@ -27,6 +27,14 @@ describe("glossary (US-141)", () => {
     expect(undefinedTerms).toEqual([]);
   });
 
+  it("closes every inline code span it opens", () => {
+    const unbalanced = glossary
+      .filter(({ definition }) => (definition.match(/`/g)?.length ?? 0) % 2 === 1)
+      .map(({ source }) => source);
+
+    expect(unbalanced).toEqual([]);
+  });
+
   it("links each term only to concept pages that exist", () => {
     const missing = glossary.flatMap(({ concept }) => {
       if (concept === undefined) return [];
