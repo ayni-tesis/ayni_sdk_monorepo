@@ -1208,8 +1208,9 @@ void main() {
     final result = await client.sync();
 
     expect(result.status, SyncStatus.error);
-    // model-version-1 was installed before persistence ran.
-    expect(modelAvailableAtPersist, isTrue);
+    // The workflow update failed before persistence, so its new model was
+    // rolled back instead of becoming part of the offline cache.
+    expect(modelAvailableAtPersist, isFalse);
 
     // model-version-1 was installed by this sync and must be cleaned up.
     // model-version-2 was never installed (download failed).
