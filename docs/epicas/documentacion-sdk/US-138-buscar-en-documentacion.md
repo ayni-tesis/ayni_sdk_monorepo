@@ -64,7 +64,11 @@ Scenario: Falla el índice de búsqueda
 - El índice cubre guías, conceptos y ambas referencias (Dart y HTTP), incluidos
   los nombres de clases, enums y códigos de error.
 - La búsqueda es de texto completo, no distingue mayúsculas ni tildes y no
-  depende de un servicio externo de pago.
+  depende de un servicio externo de pago. Usa la búsqueda integrada de
+  Starlight (Pagefind), que se sirve como archivos estáticos desde Vercel.
+- Se comprueba que el índice incluye la referencia Dart generada por
+  `dart doc` (US-143) y la referencia HTTP (US-144). Si Pagefind no indexa esas
+  páginas, se agregan al índice por configuración.
 - El índice se genera en la compilación; una página nueva aparece sin pasos
   manuales.
 - El diálogo se opera solo con teclado y devuelve el foco al cerrarse.

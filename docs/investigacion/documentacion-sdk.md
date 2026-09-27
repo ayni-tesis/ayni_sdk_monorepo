@@ -3,8 +3,9 @@
 Este documento respalda la épica **Documentación del SDK** (US-137 a US-150,
 `docs/epicas/documentacion-sdk/`). Estudia dos sitios de referencia, inventaria
 lo que hoy se puede documentar en el repositorio, compara herramientas y propone
-la estructura del sitio. La elección final de herramienta se registra en un ADR
-al iniciar US-137.
+la estructura del sitio. Decisión del equipo (2026-09-27): el sitio se construye
+con Astro y se despliega en Vercel (sección 3); el ADR 0002 la registra al
+iniciar US-137.
 
 Fecha de la investigación: 2026-09-27.
 
@@ -116,18 +117,40 @@ Referencia de la API Dart, independiente de la herramienta del sitio:
 referencia al publicar, pero el paquete aún no se publica (`publish_to: none`),
 así que el sitio debe alojar la salida de `dart doc` hasta US-096.
 
-### Recomendación
+### Decisión
 
-**Fumadocs en una aplicación nueva `apps/docs`.** Reutiliza el stack, las
-dependencias del catálogo y el despliegue que ya existen, y genera la referencia
-HTTP desde `packages/api/src/openapi.json` con un paquete oficial. Starlight
-reproduce mejor el aspecto de la documentación de Astro, pero agrega un segundo
-framework web al monorepo solo para contenido. Si el equipo prioriza ese aspecto
-sobre la homogeneidad, Starlight es una alternativa válida: las historias
-describen el comportamiento del sitio y no dependen de la herramienta.
+**Astro con Starlight en una aplicación nueva `apps/docs`, desplegada en
+Vercel.** El equipo la eligió el 2026-09-27, por encima de la recomendación
+inicial de Fumadocs, para reproducir la experiencia de docs.astro.build.
 
-La decisión se confirma en `docs/adr/0002-…` como primer paso de US-137, con un
-spike que instale las versiones concretas y ejecute `build` en CI.
+- **Herramienta:** Starlight es el tema de documentación oficial de Astro y el
+  motor de docs.astro.build. Trae de fábrica la navegación lateral, la tabla
+  `En esta página`, el tema claro u oscuro, los avisos, las pestañas y la
+  búsqueda con Pagefind, sin servicios externos (US-138).
+- **Referencia HTTP:** el complemento `starlight-openapi` genera las páginas
+  desde `packages/api/src/openapi.json` (US-144). Es comunitario, así que el
+  spike confirma que genera las tres rutas `/sdk/*`; si no alcanza, la
+  alternativa es enlazar la referencia Scalar que ya publica el servidor.
+- **Despliegue:** el sitio es estático, que es el modo por defecto de Astro, y
+  Vercel lo despliega sin adaptador. `@astrojs/vercel` (11.0.11) solo hace falta
+  si alguna página necesita renderizado bajo demanda, y hoy ninguna lo necesita.
+  Como `apps/server`, el proyecto de Vercel usa `apps/docs` como raíz y compila
+  con Turborepo desde la raíz del monorepo.
+- **Monorepo:** Astro compila en `dist/`, que ya figura en los `outputs` de
+  `turbo.json`. Astro 7 (7.3.5 en npm) cumple el requisito `astro` ^7.2.10 de
+  Starlight 0.42.4.
+- **Referencia Dart en Vercel:** la imagen de compilación de Vercel (Amazon
+  Linux 2023) incluye Node.js, Python, Ruby y Go, pero no Dart. Por eso
+  `dart doc` se ejecuta en CI (GitHub Actions ya instala Dart) o instalando Dart
+  en el `installCommand` de `vercel.json`. El ADR elige
+  una de las dos (US-143).
+- **Costo asumido:** se añade un segundo framework web. El estilo no comparte
+  componentes con `apps/web`; reutiliza sus tokens de color y tipografía en
+  CSS.
+
+`docs/adr/0002-…` registra la decisión como primer paso de US-137, con un spike
+que instale las versiones concretas, ejecute `bun run build` y haga un
+despliegue de vista previa en Vercel.
 
 ## 4. Estructura propuesta del sitio
 
@@ -184,4 +207,6 @@ páginas afectadas en su propio cambio; así lo exige el criterio de US-150.
 - Starlight, [Getting started](https://starlight.astro.build/es/getting-started/) y [Site search](https://starlight.astro.build/guides/site-search/) (Pagefind).
 - Fumadocs, [Documentación](https://www.fumadocs.dev/docs) y [OpenAPI](https://www.fumadocs.dev/docs/integrations/openapi).
 - Dart, [dart doc](https://dart.dev/tools/dart-doc) y [public_member_api_docs](https://dart.dev/tools/linter-rules/public_member_api_docs).
-- Registro de npm: `fumadocs-core`/`fumadocs-ui` 16.15.15, `fumadocs-mdx` 15.4.5, `fumadocs-openapi` 12.0.4, `@astrojs/starlight` 0.42.4 y `starlight-openapi` 0.26.2, consultados el 2026-09-27.
+- Registro de npm: `fumadocs-core`/`fumadocs-ui` 16.15.15, `fumadocs-mdx` 15.4.5, `fumadocs-openapi` 12.0.4, `@astrojs/starlight` 0.42.4, `starlight-openapi` 0.26.2, `astro` 7.3.5 y `@astrojs/vercel` 11.0.11, consultados el 2026-09-27.
+- Vercel, [Build image overview](https://vercel.com/docs/builds/build-image): runtimes preinstalados e instalación de paquetes con `dnf` desde `installCommand`.
+- Astro, [Deploy your Astro Site to Vercel](https://docs.astro.build/en/guides/deploy/vercel/): un sitio estático no necesita configuración adicional; el adaptador solo se usa para renderizado bajo demanda.

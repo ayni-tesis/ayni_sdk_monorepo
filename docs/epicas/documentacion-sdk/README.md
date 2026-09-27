@@ -4,8 +4,10 @@ Un sitio público de documentación reúne lo que un desarrollador necesita para
 integrar Ayni: qué es, cómo instalar el SDK, cómo preparar una aplicación en el
 dashboard, cómo sincronizar y qué contratos exactos exponen el SDK Dart y la API
 HTTP. Toma como referencia la documentación del SDK de Google Cloud y la de
-Astro. La investigación, la comparación de herramientas y la estructura del
-sitio están en `docs/investigacion/documentacion-sdk.md`.
+Astro. El sitio se construye con **Astro y Starlight** en `apps/docs` y se
+despliega en **Vercel** como sitio estático (decisión del 2026-09-27). La
+investigación, la comparación de herramientas y la estructura del sitio están
+en `docs/investigacion/documentacion-sdk.md`.
 
 ## Estado actual y alcance
 
