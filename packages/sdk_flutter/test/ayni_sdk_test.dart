@@ -659,20 +659,31 @@ void main() {
       responseBody = _manifest(workflowVersion: '2.0.0');
       final startedPersisting = Completer<void>();
       final releasePersistence = Completer<void>();
+      final retryReachedPersistence = Completer<void>();
+      var firstPersistence = true;
       final client = sdk(
         timeout: const Duration(seconds: 1),
-        onBeforeInventoryPersist: () {
-          startedPersisting.complete();
-          return releasePersistence.future;
+        onBeforeInventoryPersist: () async {
+          if (firstPersistence) {
+            firstPersistence = false;
+            startedPersisting.complete();
+            await releasePersistence.future;
+          } else {
+            retryReachedPersistence.complete();
+          }
         },
       );
       final sync = client.sync();
       await startedPersisting.future.timeout(const Duration(seconds: 2));
 
       expect((await sync).status, SyncStatus.error);
+      final retry = client.sync();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(retryReachedPersistence.isCompleted, isFalse);
       releasePersistence.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(await inventory.readAsString(), before);
+      expect((await retry).status, SyncStatus.updated);
+      expect(retryReachedPersistence.isCompleted, isTrue);
+      expect(await inventory.readAsString(), isNot(before));
     },
   );
 
@@ -1160,6 +1171,88 @@ void main() {
       expect(await inventory.readAsString(), contains('model-version-1'));
     },
   );
+
+  test('persists a model installed by a later workflow after rollback', () async {
+    final client = sdk();
+    await seedInventory(client);
+    workflowResponseBody = _validWorkflowDefinition().replaceAll(
+      'model-version-1',
+      'model-version-2',
+    );
+    responseBody = jsonEncode({
+      'workflows': [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-2.0.0',
+          'name': 'Clasificar hoja',
+          'version': '2.0.0',
+          'modelVersionIds': ['model-version-2', 'model-version-3'],
+        },
+        {
+          'workflowId': 'workflow-2',
+          'workflowVersionId': 'workflow-version-3.0.0',
+          'name': 'Segundo workflow',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-2'],
+        },
+      ],
+      'models': [
+        {
+          'modelVersionId': 'model-version-2',
+          'version': '1.0.0',
+          'sha256': sha256.convert(modelArtifactBytes).toString(),
+        },
+        {
+          'modelVersionId': 'model-version-3',
+          'version': '1.0.0',
+          'sha256': 'c' * 64,
+        },
+      ],
+    });
+    modelManifestResponses['model-version-2'] = jsonEncode({
+      'modelVersionId': 'model-version-2',
+      'version': '1.0.0',
+      'sha256': sha256.convert(modelArtifactBytes).toString(),
+      'sizeBytes': modelArtifactBytes.length,
+      'downloadUrl':
+          'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
+    modelManifestResponses['model-version-3'] = 'null';
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    expect(result.resources.map((resource) => resource.resourceVersionId), [
+      'model-version-2',
+      'workflow-version-2.0.0',
+      'workflow-version-3.0.0',
+    ]);
+    expect(result.resources.map((resource) => resource.status), [
+      SyncResourceStatus.updated,
+      SyncResourceStatus.dependencyFailed,
+      SyncResourceStatus.updated,
+    ]);
+    final inventory =
+        jsonDecode(
+              await File(
+                '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+              ).readAsString(),
+            )
+            as Map;
+    final modelIds = (inventory['models'] as List)
+        .map((model) => model['modelVersionId'])
+        .toList();
+    expect(modelIds, contains('model-version-2'));
+    expect(modelIds, isNot(contains('model-version-3')));
+    expect(
+      await installedDefinitionFile('workflow-version-3.0.0').exists(),
+      isTrue,
+    );
+  });
 
   test(
     'keeps valid local models when a dependency fails for a different workflow',

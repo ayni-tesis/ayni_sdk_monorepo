@@ -105,6 +105,7 @@ class AyniSdk {
   final WorkflowVersionDownloader _workflowVersionDownloader;
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
+  Future<void> _syncQueue = Future<void>.value();
 
   /// Executes the last locally installed, validated version of [workflowId].
   /// [input] is the encoded image bytes (for example JPEG or PNG).
@@ -172,19 +173,40 @@ class AyniSdk {
     }
   }
 
-  Future<SyncResult> sync() async {
-    if (!_canSendCredentialTo(serverUrl))
-      return const SyncResult(SyncStatus.error);
+  Future<SyncResult> sync() {
+    final previousSync = _syncQueue;
+    final syncFinished = Completer<void>();
+    _syncQueue = syncFinished.future;
+    return _syncAfter(previousSync, syncFinished);
+  }
 
+  Future<SyncResult> _syncAfter(
+    Future<void> previousSync,
+    Completer<void> syncFinished,
+  ) async {
+    await previousSync;
     final client = HttpClient();
-    if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
     final deadline = _SyncDeadline();
+    var timedOut = false;
     try {
-      return await _sync(client, deadline).timeout(
+      if (!_canSendCredentialTo(serverUrl)) {
+        return const SyncResult(SyncStatus.error);
+      }
+      if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
+      final operation = _sync(client, deadline);
+      return await operation.timeout(
         syncTimeout,
         onTimeout: () {
+          timedOut = true;
           deadline.expire();
           client.close(force: true);
+          unawaited(
+            operation
+                .then<void>((_) {}, onError: (Object _, StackTrace __) {})
+                .whenComplete(() {
+                  if (!syncFinished.isCompleted) syncFinished.complete();
+                }),
+          );
           return const SyncResult(SyncStatus.error);
         },
       );
@@ -200,6 +222,7 @@ class AyniSdk {
       return const SyncResult(SyncStatus.error);
     } finally {
       client.close(force: true);
+      if (!timedOut && !syncFinished.isCompleted) syncFinished.complete();
     }
   }
 
@@ -402,6 +425,8 @@ class AyniSdk {
           installedModelVersionCount,
         )) {
           rolledBackModelVersionIds.remove(versionId);
+          final remoteModel = comparison.inventory.models[versionId];
+          if (remoteModel != null) models[versionId] = remoteModel;
         }
         if (deadline.expired) {
           return abort(downloadedFile);
