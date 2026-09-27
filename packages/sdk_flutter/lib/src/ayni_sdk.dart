@@ -20,6 +20,7 @@ enum SyncResourceStatus {
   invalidWorkflow,
   installationFailed,
   dependencyFailed,
+  workflowUnavailable,
 }
 
 enum SyncResourceType { workflow, model }
@@ -69,6 +70,10 @@ class SyncResourceResult {
             'No se pudo preparar $name: $dependencyName. Se mantuvo la última versión válida.',
           SyncResourceStatus.dependencyFailed =>
             'No se pudo preparar $name: $dependencyName.',
+          SyncResourceStatus.workflowUnavailable when previousVersionRetained =>
+            'El workflow ya no está disponible. Se mantuvo la versión anterior.',
+          SyncResourceStatus.workflowUnavailable =>
+            'El workflow ya no está disponible. No se instaló ninguna versión.',
           _ => null,
         };
 }
@@ -267,8 +272,18 @@ class AyniSdk {
     final changed = installation.resources.any(
       (resource) => resource.status == SyncResourceStatus.updated,
     );
+    final resourceFailed = installation.resources.any(
+      (resource) =>
+          resource.status == SyncResourceStatus.invalidRemoteResource ||
+          resource.status == SyncResourceStatus.installationFailed ||
+          resource.status == SyncResourceStatus.dependencyFailed ||
+          resource.status == SyncResourceStatus.workflowUnavailable,
+    );
     if (!changed) {
-      return SyncResult(SyncStatus.upToDate, installation.resources);
+      return SyncResult(
+        resourceFailed ? SyncStatus.error : SyncStatus.upToDate,
+        installation.resources,
+      );
     }
     final persisted = await _persistInventory(
       inventoryFile,
@@ -286,7 +301,10 @@ class AyniSdk {
       }
     }
     return persisted
-        ? SyncResult(SyncStatus.updated, installation.resources)
+        ? SyncResult(
+            resourceFailed ? SyncStatus.error : SyncStatus.updated,
+            installation.resources,
+          )
         : const SyncResult(SyncStatus.error);
   }
 
@@ -378,11 +396,17 @@ class AyniSdk {
         );
       }
       if (result.status != WorkflowVersionDownloadStatus.downloaded) {
-        return abort(
+        await _rejectWorkflow(
+          workflow,
           result.temporaryDefinition == null
               ? null
               : File(result.temporaryDefinition!),
+          local,
+          workflows,
+          rejections,
+          unavailable: true,
         );
+        continue;
       }
       final downloadedFile = File(result.temporaryDefinition!);
       if (deadline.expired) {
@@ -482,15 +506,17 @@ class AyniSdk {
   /// [_WorkflowRejection] with the appropriate status.
   Future<void> _rejectWorkflow(
     _Workflow workflow,
-    File downloadedFile,
+    File? downloadedFile,
     _Inventory local,
     Map<String, _Workflow> workflows,
     List<_WorkflowRejection> rejections, {
     bool installationFailed = false,
     bool dependencyFailed = false,
     String? dependencyName,
+    bool unavailable = false,
   }) async {
-    await _deleteDownloadedDefinition(downloadedFile);
+    if (downloadedFile != null)
+      await _deleteDownloadedDefinition(downloadedFile);
     final previous = local.workflows[workflow.id];
     if (previous == null) {
       workflows.remove(workflow.id);
@@ -504,6 +530,7 @@ class AyniSdk {
         installationFailed: installationFailed,
         dependencyFailed: dependencyFailed,
         dependencyName: dependencyName,
+        unavailable: unavailable,
       ),
     );
   }
@@ -1066,6 +1093,7 @@ class _WorkflowRejection {
     this.installationFailed = false,
     this.dependencyFailed = false,
     this.dependencyName,
+    this.unavailable = false,
   });
 
   final _Workflow workflow;
@@ -1073,10 +1101,13 @@ class _WorkflowRejection {
   final bool installationFailed;
   final bool dependencyFailed;
   final String? dependencyName;
+  final bool unavailable;
 
   SyncResourceResult toResult() => SyncResourceResult(
     type: SyncResourceType.workflow,
-    status: dependencyFailed
+    status: unavailable
+        ? SyncResourceStatus.workflowUnavailable
+        : dependencyFailed
         ? SyncResourceStatus.dependencyFailed
         : installationFailed
         ? SyncResourceStatus.installationFailed

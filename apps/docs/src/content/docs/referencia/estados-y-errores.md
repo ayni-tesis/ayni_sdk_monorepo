@@ -13,9 +13,9 @@ de recursos revisados (`resources`).
 | `SyncStatus` | Significado |
 | --- | --- |
 | `updated` | Se instaló al menos una versión nueva. |
-| `upToDate` | No había nada nuevo o ninguna actualización se pudo aplicar. |
+| `upToDate` | No había nada nuevo, o solo se rechazaron definiciones de workflow incompatibles. |
 | `offline` | No se pudo conectar con el servidor. |
-| `error` | La sincronización falló; se mantienen las versiones guardadas. |
+| `error` | Falló una actualización de recurso; revisa `resources` para ver cuál y si se conservó la versión local. |
 
 ## Estados de cada recurso
 
@@ -33,3 +33,4 @@ workflow:
 | `invalidWorkflow` | La actualización de `<nombre>` no es compatible. Se mantuvo la última versión válida. | La actualización de `<nombre>` no es compatible. No se instaló ninguna versión. |
 | `installationFailed` | No se pudo guardar la actualización. Se mantuvo la versión anterior. | No se pudo guardar la actualización. No se instaló ninguna versión. |
 | `dependencyFailed` | No se pudo preparar `<nombre>`: `<dependencia>`. Se mantuvo la última versión válida. | No se pudo preparar `<nombre>`: `<dependencia>`. |
+| `workflowUnavailable` | El workflow ya no está disponible. Se mantuvo la versión anterior. | El workflow ya no está disponible. No se instaló ninguna versión. |
