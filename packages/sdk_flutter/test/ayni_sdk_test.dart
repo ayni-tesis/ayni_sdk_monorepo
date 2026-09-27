@@ -1537,6 +1537,27 @@ void main() {
       expect(whenCompleteCalled, isTrue);
       expect(res.status, equals(InitializationStatus.ready));
 
+      // Verify that then and whenComplete schedule execution asynchronously via microtask.
+      var microtaskStep = 0;
+      final thenFuture = AyniSdk.initialize(config).then((_) {
+        expect(microtaskStep, equals(1));
+        microtaskStep = 2;
+      });
+      expect(microtaskStep, equals(0));
+      microtaskStep = 1;
+      await thenFuture;
+      expect(microtaskStep, equals(2));
+
+      var whenCompleteStep = 0;
+      final whenCompleteFuture = AyniSdk.initialize(config).whenComplete(() {
+        expect(whenCompleteStep, equals(1));
+        whenCompleteStep = 2;
+      });
+      expect(whenCompleteStep, equals(0));
+      whenCompleteStep = 1;
+      await whenCompleteFuture;
+      expect(whenCompleteStep, equals(2));
+
       final streamResult = await AyniSdk.initialize(config).asStream().first;
       expect(streamResult.status, equals(InitializationStatus.ready));
 
@@ -1727,23 +1748,26 @@ void main() {
       }
     });
 
-    test('rejects negative syncTimeout', () {
-      final config = AyniConfig(
-        serverUrl: Uri.parse('https://api.ayni.dev'),
-        credential: 'ayni_sk_valid_secret',
-        storageDirectory: storageDirectory,
-        syncTimeout: const Duration(seconds: -1),
-      );
+    test('rejects non-positive syncTimeout', () {
+      for (final timeout in [const Duration(seconds: -1), Duration.zero]) {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+          syncTimeout: timeout,
+        );
 
-      final result = AyniSdk.initialize(config);
+        final result = AyniSdk.initialize(config);
 
-      expect(
-        result.status,
-        equals(InitializationStatus.incompleteConfiguration),
-      );
-      expect(result.isSuccess, isFalse);
-      expect(result.sdk, isNull);
-      expect(AyniSdk.isInitialized, isFalse);
+        expect(
+          result.status,
+          equals(InitializationStatus.incompleteConfiguration),
+          reason: 'Failed to reject syncTimeout: $timeout',
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      }
     });
 
     test(
@@ -1796,6 +1820,15 @@ void main() {
             credential: 'ayni_sk_valid_secret',
             storageDirectory: storageDirectory,
             syncTimeout: const Duration(seconds: -1),
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            syncTimeout: Duration.zero,
           ).isValid,
           isFalse,
         );

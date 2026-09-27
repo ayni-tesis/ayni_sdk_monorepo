@@ -144,7 +144,7 @@ class AyniConfig {
   bool get isValid =>
       credential.trim().isNotEmpty &&
       storageDirectory.path.trim().isNotEmpty &&
-      !syncTimeout.isNegative &&
+      syncTimeout > Duration.zero &&
       AyniSdk._canSendCredentialTo(
         serverUrl,
         allowInsecureLoopback: allowInsecureLoopback,
@@ -195,21 +195,28 @@ class AyniInitializationResult implements Future<AyniInitializationResult> {
   Future<AyniInitializationResult> catchError(
     Function onError, {
     bool Function(Object error)? test,
-  }) => this;
+  }) => Future<AyniInitializationResult>.microtask(() => this);
 
   @override
   Future<R> then<R>(
     FutureOr<R> Function(AyniInitializationResult value) onValue, {
     Function? onError,
   }) {
-    return Future<R>.sync(() => onValue(this));
+    final future = Future<R>.microtask(() => onValue(this));
+    if (onError != null) {
+      return future.catchError(onError);
+    }
+    return future;
   }
 
   @override
   Future<AyniInitializationResult> timeout(
     Duration timeLimit, {
     FutureOr<AyniInitializationResult> Function()? onTimeout,
-  }) => this;
+  }) => Future<AyniInitializationResult>.microtask(() => this).timeout(
+    timeLimit,
+    onTimeout: onTimeout,
+  );
 
   @override
   Future<AyniInitializationResult> whenComplete(
@@ -237,6 +244,9 @@ typedef InitializationResult = AyniInitializationResult;
 /// Manages synchronization and offline execution of workflows.
 class AyniSdk {
   /// Creates a new [AyniSdk] instance directly.
+  ///
+  /// [workflowVersionDownloader] replaces the SDK's own workflow definition
+  /// downloader; it exists for the SDK's tests.
   AyniSdk({
     required this.serverUrl,
     required String credential,
@@ -347,6 +357,8 @@ class AyniSdk {
   final Directory storageDirectory;
   final Duration syncTimeout;
   final bool allowInsecureLoopback;
+
+  /// Runs right before the inventory is saved; it exists for the SDK's tests.
   final Future<void> Function()? onBeforeInventoryPersist;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.

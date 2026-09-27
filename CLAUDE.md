@@ -26,6 +26,8 @@ This file provides context about the project for AI assistants.
 - Sidebar groups live in `apps/docs/src/navigation.ts` and autogenerate from `src/content/docs/<group>/`; UI string overrides in `src/content/i18n/es.json`; theme tokens in `src/styles/theme.css` (contrast checked by `src/theme.test.ts`)
 - Pages document only shipped behavior (epic rule, `docs/epicas/documentacion-sdk/README.md`)
 - Dart snippets are never written in a page: they live between `// #region <name>` markers in `packages/sdk_flutter/example/*.dart` (checked by the SDK CI job's `dart analyze`), `src/examples/` exposes them through `exampleRegion`, and `.mdx` pages render them with Starlight's `<Code>` (US-139 quick start)
+- Starlight components that render with `satteri` (such as `<Tabs>`) need it loaded from `node_modules`: `satteri` is a direct docs dependency and `astro.config.mjs` externalizes it for the `ssr` and `prerender` environments, because Bun's isolated linker hides its native binding from the bundled prerender chunks (US-140)
+- `Instalación y configuración` (US-140): `src/sdk/installation-page.test.ts` checks the `AyniSdk` parameter table (name, type, required, default) against the constructor in `packages/sdk_flutter/lib/src/ayni_sdk.dart` (parsed by `src/sdk/dart-constructor.ts`) and the requirements against `pubspec.yaml`
 - Search (US-138): `src/components/Search.astro` overrides Starlight's `Search` with a dialog over Pagefind's JS API (`src/search/`); the `searchIndexCoverage` integration fails `astro build` when a built page (except the 404) is missing from the Pagefind index. The dialog tests run in jsdom (`// @vitest-environment jsdom`, a docs devDependency), which lacks `showModal()`, so they stub it
 
 ### Backend
