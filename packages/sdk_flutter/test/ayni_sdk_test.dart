@@ -1568,6 +1568,29 @@ void main() {
         );
       });
       expect(caught.status, equals(InitializationStatus.ready));
+
+      // Verify that onError in then handles only source-future errors,
+      // and errors thrown by onValue remain uncaught by that onError handler.
+      var onErrorInvoked = false;
+      final futureWithError = AyniSdk.initialize(config).then<void>(
+        (val) {
+          throw StateError('thrown in onValue');
+        },
+        onError: (Object error, StackTrace stack) {
+          onErrorInvoked = true;
+        },
+      );
+      await expectLater(
+        futureWithError,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'thrown in onValue',
+          ),
+        ),
+      );
+      expect(onErrorInvoked, isFalse);
     });
 
     test('allows loopback HTTP when allowInsecureLoopback is true', () {

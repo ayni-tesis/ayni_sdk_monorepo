@@ -195,28 +195,27 @@ class AyniInitializationResult implements Future<AyniInitializationResult> {
   Future<AyniInitializationResult> catchError(
     Function onError, {
     bool Function(Object error)? test,
-  }) => Future<AyniInitializationResult>.microtask(() => this);
+  }) => Future<void>.microtask(
+    () {},
+  ).then((_) => this).catchError(onError, test: test);
 
   @override
   Future<R> then<R>(
     FutureOr<R> Function(AyniInitializationResult value) onValue, {
     Function? onError,
   }) {
-    final future = Future<R>.microtask(() => onValue(this));
-    if (onError != null) {
-      return future.catchError(onError);
-    }
-    return future;
+    return Future<void>.microtask(
+      () {},
+    ).then((_) => onValue(this), onError: onError);
   }
 
   @override
   Future<AyniInitializationResult> timeout(
     Duration timeLimit, {
     FutureOr<AyniInitializationResult> Function()? onTimeout,
-  }) => Future<AyniInitializationResult>.microtask(() => this).timeout(
-    timeLimit,
-    onTimeout: onTimeout,
-  );
+  }) => Future<void>.microtask(
+    () {},
+  ).then((_) => this).timeout(timeLimit, onTimeout: onTimeout);
 
   @override
   Future<AyniInitializationResult> whenComplete(
