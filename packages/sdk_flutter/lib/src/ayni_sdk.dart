@@ -134,7 +134,7 @@ class AyniSdk {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       }
       final executor = WorkflowExecutor(storageDirectory);
-      final decodedImage = executor.validateInputAndContracts(
+      await executor.validateInputAndContracts(
         decoded as Map<String, dynamic>,
         input,
       );
@@ -159,7 +159,7 @@ class AyniSdk {
         workflowId: workflowId,
         workflowVersion: workflow.version,
         definition: decoded,
-        decodedImage: decodedImage,
+        imageBytes: input,
       );
     } on WorkflowError {
       rethrow;

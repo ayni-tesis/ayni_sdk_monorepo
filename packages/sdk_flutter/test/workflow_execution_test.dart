@@ -1,6 +1,6 @@
 import 'package:test/test.dart';
 
-import '../lib/src/workflow_execution.dart';
+import 'package:ayni_sdk/src/workflow_execution.dart';
 
 void main() {
   test('requires the selected condition branch to reach an output', () {

@@ -1,8 +1,12 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
+
+import 'workflow_tflite_stub.dart'
+    if (dart.library.ui) 'workflow_tflite_flutter.dart'
+    as tflite;
 
 enum WorkflowErrorCategory {
   workflowNotAvailable,
@@ -116,26 +120,27 @@ class WorkflowExecutor {
   WorkflowExecutor(this.storageDirectory);
   final Directory storageDirectory;
 
-  img.Image validateInputAndContracts(
+  Future<void> validateInputAndContracts(
     Map<String, dynamic> definition,
     Uint8List bytes,
-  ) {
-    final decoded = bytes.isEmpty ? null : img.decodeImage(bytes);
-    if (decoded == null) {
+  ) async {
+    final isDecodable = bytes.isEmpty
+        ? false
+        : await Isolate.run(() => img.decodeImage(bytes) != null);
+    if (!isDecodable) {
       throw const WorkflowError(WorkflowErrorCategory.invalidInput);
     }
     for (final node in (definition['nodes'] as List).cast<Map>()) {
       if (node['type'] != 'model.tflite') continue;
       _parseInputContract(node, node['id'] as String);
     }
-    return decoded;
   }
 
   Future<WorkflowResult> execute({
     required String workflowId,
     required String workflowVersion,
     required Map<String, dynamic> definition,
-    required img.Image decodedImage,
+    required Uint8List imageBytes,
   }) async {
     try {
       final nodes = (definition['nodes'] as List).cast<Map>();
@@ -177,18 +182,18 @@ class WorkflowExecutor {
         if (active.contains(id))
           switch (node['type']) {
             case 'input.image':
-              values[id] = decodedImage;
+              values[id] = imageBytes;
             case 'model.tflite':
               final parent = (incoming[id] ?? []).firstWhere(
                 (p) => byId[p]!['type'] == 'input.image',
                 orElse: () => '',
               );
-              if (parent.isEmpty || values[parent] is! img.Image)
+              if (parent.isEmpty || values[parent] is! Uint8List)
                 throw WorkflowError(
                   WorkflowErrorCategory.invalidWorkflow,
                   nodeId: id,
                 );
-              values[id] = await _infer(node, decodedImage, id);
+              values[id] = await _infer(node, imageBytes, id);
             case 'condition':
               final source = values[node['sourceNodeId']];
               if (source is! ClassificationResult ||
@@ -318,79 +323,75 @@ class WorkflowExecutor {
 
   Future<WorkflowValue> _infer(
     Map node,
-    img.Image decoded,
+    Uint8List imageBytes,
     String nodeId,
   ) async {
     final contract = _parseInputContract(node, nodeId);
     final width = contract.width,
         height = contract.height,
         channels = contract.channels;
-    final resized = img.copyResize(decoded, width: width, height: height);
-    final input = Float32List(width * height * channels);
-    var index = 0;
-    for (var y = 0; y < height; y++) {
-      for (var x = 0; x < width; x++) {
-        final pixel = resized.getPixel(x, y);
-        final values = [pixel.r, pixel.g, pixel.b, pixel.a];
-        for (var c = 0; c < channels; c++) {
-          var v = values[channels == 1 ? 0 : c].toDouble();
-          if (channels == 1) v = (pixel.r + pixel.g + pixel.b) / 3;
-          input[index++] = switch (contract.normalization) {
-            'none' => v,
-            'zero_to_one' => v / 255,
-            'minus_one_to_one' => v / 127.5 - 1,
-            _ => throw WorkflowError(
-              WorkflowErrorCategory.unsupportedInputContract,
-              nodeId: nodeId,
-            ),
-          };
-        }
-      }
-    }
+    final input = await Isolate.run(
+      () => _prepareImageTensor(
+        imageBytes,
+        width,
+        height,
+        channels,
+        contract.normalization,
+      ),
+    );
     final versionId = node['modelVersionId'] as String;
     final modelFile = File(
       '${storageDirectory.path}/$versionId/$versionId.tflite',
     );
-    Interpreter? interpreter;
     try {
-      interpreter = Interpreter.fromFile(modelFile);
-      final inputTensor = interpreter.getInputTensor(0);
-      final shape = inputTensor.shape;
-      final shapeMatches =
-          (shape.length == 4 &&
-              shape[0] == 1 &&
-              shape[1] == height &&
-              shape[2] == width &&
-              shape[3] == channels) ||
-          (shape.length == 3 &&
-              shape[0] == height &&
-              shape[1] == width &&
-              shape[2] == channels);
-      if (interpreter.getInputTensors().length != 1 ||
-          inputTensor.type != TensorType.float32 ||
-          !shapeMatches) {
+      final inference = await tflite.runModel(
+        modelPath: modelFile.path,
+        inputBytes: input.buffer.asUint8List(
+          input.offsetInBytes,
+          input.lengthInBytes,
+        ),
+        acceptedInputShapes: [
+          [1, height, width, channels],
+          [height, width, channels],
+        ],
+      );
+      if (inference.error == 'modelNotAvailable') {
+        throw WorkflowError(
+          WorkflowErrorCategory.modelNotAvailable,
+          nodeId: nodeId,
+          modelVersionId: versionId,
+        );
+      }
+      if (inference.error == 'unsupportedInputContract') {
         throw WorkflowError(
           WorkflowErrorCategory.unsupportedInputContract,
           nodeId: nodeId,
         );
       }
-      final tensors = interpreter.getOutputTensors();
-      if (tensors.any((tensor) => tensor.type != TensorType.float32)) {
+      if (inference.error == 'runtimeError') {
+        throw WorkflowError(
+          WorkflowErrorCategory.runtimeError,
+          nodeId: nodeId,
+          modelVersionId: versionId,
+        );
+      }
+      if (inference.error != null) {
         throw WorkflowError(
           WorkflowErrorCategory.modelOutputInvalid,
           nodeId: nodeId,
         );
       }
-      final outputBuffers = <int, Object>{};
-      for (var i = 0; i < tensors.length; i++) {
-        final count = tensors[i].shape.fold<int>(1, (a, b) => a * b);
-        outputBuffers[i] = Float32List(count);
-      }
-      interpreter.runForMultipleInputs([input], outputBuffers);
+      final tensors = inference.outputs;
       final result = ((node['outputs'] as Map)['result'] as Map);
       final labels = (result['labels'] as List).cast<String>();
       if (result['type'] == 'classification') {
-        final scores = (outputBuffers[0] as Float32List);
+        if (tensors.isEmpty) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        final scores = tensors[0].values;
         if (scores.length != labels.length ||
             scores.any((s) => !s.isFinite || s < 0 || s > 1))
           throw WorkflowError(
@@ -420,14 +421,14 @@ class WorkflowExecutor {
           nodeId: nodeId,
         );
       }
-      final boxes = outputBuffers[boxIndex] as Float32List;
+      final boxes = tensors[boxIndex].values;
       final vectors = <Float32List>[];
       for (var i = 0; i < tensors.length; i++) {
         if (i != boxIndex &&
             tensors[i].shape.length == 2 &&
             tensors[i].shape.first == 1 &&
             tensors[i].shape.last == boxes.length ~/ 4) {
-          vectors.add(outputBuffers[i] as Float32List);
+          vectors.add(tensors[i].values);
         }
       }
       if (vectors.length < 2) {
@@ -505,10 +506,6 @@ class WorkflowExecutor {
         nodeId: nodeId,
         modelVersionId: versionId,
       );
-    } finally {
-      try {
-        interpreter?.close();
-      } catch (_) {}
     }
   }
 
@@ -520,4 +517,39 @@ class WorkflowExecutor {
         'lt' => value < threshold,
         _ => false,
       };
+}
+
+Float32List _prepareImageTensor(
+  Uint8List imageBytes,
+  int width,
+  int height,
+  int channels,
+  String normalization,
+) {
+  final decoded = img.decodeImage(imageBytes);
+  if (decoded == null) throw const FormatException('Invalid image.');
+  final uint8Image =
+      decoded.format == img.Format.uint8 && decoded.palette == null
+      ? decoded
+      : decoded.convert(format: img.Format.uint8, withPalette: false);
+  final resized = img.copyResize(uint8Image, width: width, height: height);
+  final input = Float32List(width * height * channels);
+  var index = 0;
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final pixel = resized.getPixel(x, y);
+      final values = [pixel.r, pixel.g, pixel.b, pixel.a];
+      for (var c = 0; c < channels; c++) {
+        var value = values[channels == 1 ? 0 : c].toDouble();
+        if (channels == 1) value = (pixel.r + pixel.g + pixel.b) / 3;
+        input[index++] = switch (normalization) {
+          'none' => value,
+          'zero_to_one' => value / 255,
+          'minus_one_to_one' => value / 127.5 - 1,
+          _ => throw const FormatException('Unsupported normalization.'),
+        };
+      }
+    }
+  }
+  return input;
 }
