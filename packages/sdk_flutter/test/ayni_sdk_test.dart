@@ -659,20 +659,31 @@ void main() {
       responseBody = _manifest(workflowVersion: '2.0.0');
       final startedPersisting = Completer<void>();
       final releasePersistence = Completer<void>();
+      final retryReachedPersistence = Completer<void>();
+      var firstPersistence = true;
       final client = sdk(
         timeout: const Duration(seconds: 1),
-        onBeforeInventoryPersist: () {
-          startedPersisting.complete();
-          return releasePersistence.future;
+        onBeforeInventoryPersist: () async {
+          if (firstPersistence) {
+            firstPersistence = false;
+            startedPersisting.complete();
+            await releasePersistence.future;
+          } else {
+            retryReachedPersistence.complete();
+          }
         },
       );
       final sync = client.sync();
       await startedPersisting.future.timeout(const Duration(seconds: 2));
 
       expect((await sync).status, SyncStatus.error);
+      final retry = client.sync();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(retryReachedPersistence.isCompleted, isFalse);
       releasePersistence.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(await inventory.readAsString(), before);
+      expect((await retry).status, SyncStatus.updated);
+      expect(retryReachedPersistence.isCompleted, isTrue);
+      expect(await inventory.readAsString(), isNot(before));
     },
   );
 
@@ -808,10 +819,8 @@ void main() {
 
       final result = await sdk().sync();
 
-      // The model is updated, so the overall sync status is updated.
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((resource) => resource.status), [
-        SyncResourceStatus.updated,
         SyncResourceStatus.installationFailed,
       ]);
       final failed = result.resources.last;
@@ -934,10 +943,9 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.updated);
-    expect(result.resources.first.type, SyncResourceType.model);
-    expect(result.resources.first.status, SyncResourceStatus.updated);
-    final workflow = result.resources.last;
+    expect(result.status, SyncStatus.upToDate);
+    expect(result.resources, hasLength(1));
+    final workflow = result.resources.single;
     expect(workflow.type, SyncResourceType.workflow);
     expect(workflow.status, SyncResourceStatus.dependencyFailed);
     expect(workflow.resourceVersionId, 'workflow-version-1.0.0');
@@ -960,7 +968,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       final workflow = result.resources.last;
       expect(workflow.type, SyncResourceType.workflow);
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
@@ -992,7 +1000,7 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.updated);
+    expect(result.status, SyncStatus.upToDate);
     final workflow = result.resources.last;
     expect(workflow.status, SyncResourceStatus.dependencyFailed);
     expect(
@@ -1024,20 +1032,28 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       final workflow = result.resources.last;
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
     },
   );
 
   test(
-    'keeps a valid local workflow when its new version has a dependency failure',
+    'rolls back newly installed model metadata when a later dependency fails',
     () async {
       final client = sdk();
       await seedInventory(client);
+      final staleArtifact = File(
+        '${storageDirectory.path}${Platform.pathSeparator}'
+        'model-version-2${Platform.pathSeparator}model-version-2.tflite',
+      );
+      await staleArtifact.parent.create(recursive: true);
+      await staleArtifact.writeAsString('stale artifact');
 
-      // Keep model-version-1 (already installed, passes validation) and add
-      // model-version-2 (not installed, manifest returns 500).
+      workflowResponseBody = _validWorkflowDefinition().replaceAll(
+        'model-version-1',
+        'model-version-2',
+      );
       responseBody = jsonEncode({
         'workflows': [
           {
@@ -1045,7 +1061,7 @@ void main() {
             'workflowVersionId': 'workflow-version-2.0.0',
             'name': 'Clasificar hoja',
             'version': '2.0.0',
-            'modelVersionIds': ['model-version-1', 'model-version-2'],
+            'modelVersionIds': ['model-version-2', 'model-version-3'],
           },
         ],
         'models': [
@@ -1057,27 +1073,45 @@ void main() {
           {
             'modelVersionId': 'model-version-2',
             'version': '1.0.0',
-            'sha256': 'b' * 64,
+            'sha256': sha256.convert(modelArtifactBytes).toString(),
+          },
+          {
+            'modelVersionId': 'model-version-3',
+            'version': '1.0.0',
+            'sha256': 'c' * 64,
           },
         ],
       });
-      modelManifestStatusCode = HttpStatus.internalServerError;
+      modelManifestResponses['model-version-2'] = jsonEncode({
+        'modelVersionId': 'model-version-2',
+        'version': '1.0.0',
+        'sha256': sha256.convert(modelArtifactBytes).toString(),
+        'sizeBytes': modelArtifactBytes.length,
+        'downloadUrl':
+            'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+        'downloadUrlExpiresAt': DateTime.now()
+            .add(const Duration(hours: 1))
+            .toUtc()
+            .toIso8601String(),
+      });
+      modelManifestResponses['model-version-3'] = 'null';
 
       final result = await client.sync();
 
-      // The workflow version changed (1.0.0 → 2.0.0), so the inventory
-      // marks it as `updated`, even though the dependency install failed.
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((r) => r.status), [
         SyncResourceStatus.upToDate,
-        SyncResourceStatus.updated,
         SyncResourceStatus.dependencyFailed,
+      ]);
+      expect(result.resources.map((resource) => resource.resourceVersionId), [
+        'model-version-1',
+        'workflow-version-2.0.0',
       ]);
       final failed = result.resources.last;
       expect(failed.previousVersionRetained, isTrue);
       expect(
         failed.message,
-        'No se pudo preparar Clasificar hoja: model-version-2. '
+        'No se pudo preparar Clasificar hoja: model-version-3. '
         'Se mantuvo la última versión válida.',
       );
       expect(
@@ -1088,8 +1122,137 @@ void main() {
         await installedDefinitionFile('workflow-version-2.0.0').exists(),
         isFalse,
       );
+      expect(
+        await ModelArtifactInstaller(
+          storageDirectory: storageDirectory,
+        ).isVersionAvailable(
+          modelId: 'model-version-2',
+          modelVersionId: 'model-version-2',
+        ),
+        isFalse,
+      );
+      expect(await staleArtifact.exists(), isFalse);
+      final inventory =
+          jsonDecode(
+                await File(
+                  '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+                ).readAsString(),
+              )
+              as Map;
+      final installedModelIds = (inventory['models'] as List)
+          .map((model) => model['modelVersionId'])
+          .toList();
+      expect(installedModelIds, contains('model-version-1'));
+      expect(installedModelIds, isNot(contains('model-version-2')));
+      expect(installedModelIds, isNot(contains('model-version-3')));
     },
   );
+
+  test(
+    'restores prior model metadata and result when its reinstall fails',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      await Directory(
+        '${storageDirectory.path}${Platform.pathSeparator}model-version-1',
+      ).delete(recursive: true);
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      modelManifestStatusCode = HttpStatus.internalServerError;
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.dependencyFailed,
+      ]);
+      expect(result.resources.first.resourceVersionId, 'model-version-1');
+      expect(result.resources.first.version, '1.0.0');
+      expect(await inventory.readAsString(), contains('model-version-1'));
+    },
+  );
+
+  test('persists a model installed by a later workflow after rollback', () async {
+    final client = sdk();
+    await seedInventory(client);
+    workflowResponseBody = _validWorkflowDefinition().replaceAll(
+      'model-version-1',
+      'model-version-2',
+    );
+    responseBody = jsonEncode({
+      'workflows': [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-2.0.0',
+          'name': 'Clasificar hoja',
+          'version': '2.0.0',
+          'modelVersionIds': ['model-version-2', 'model-version-3'],
+        },
+        {
+          'workflowId': 'workflow-2',
+          'workflowVersionId': 'workflow-version-3.0.0',
+          'name': 'Segundo workflow',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-2'],
+        },
+      ],
+      'models': [
+        {
+          'modelVersionId': 'model-version-2',
+          'version': '1.0.0',
+          'sha256': sha256.convert(modelArtifactBytes).toString(),
+        },
+        {
+          'modelVersionId': 'model-version-3',
+          'version': '1.0.0',
+          'sha256': 'c' * 64,
+        },
+      ],
+    });
+    modelManifestResponses['model-version-2'] = jsonEncode({
+      'modelVersionId': 'model-version-2',
+      'version': '1.0.0',
+      'sha256': sha256.convert(modelArtifactBytes).toString(),
+      'sizeBytes': modelArtifactBytes.length,
+      'downloadUrl':
+          'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
+    modelManifestResponses['model-version-3'] = 'null';
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    expect(result.resources.map((resource) => resource.resourceVersionId), [
+      'model-version-2',
+      'workflow-version-2.0.0',
+      'workflow-version-3.0.0',
+    ]);
+    expect(result.resources.map((resource) => resource.status), [
+      SyncResourceStatus.updated,
+      SyncResourceStatus.dependencyFailed,
+      SyncResourceStatus.updated,
+    ]);
+    final inventory =
+        jsonDecode(
+              await File(
+                '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+              ).readAsString(),
+            )
+            as Map;
+    final modelIds = (inventory['models'] as List)
+        .map((model) => model['modelVersionId'])
+        .toList();
+    expect(modelIds, contains('model-version-2'));
+    expect(modelIds, isNot(contains('model-version-3')));
+    expect(
+      await installedDefinitionFile('workflow-version-3.0.0').exists(),
+      isTrue,
+    );
+  });
 
   test(
     'keeps valid local models when a dependency fails for a different workflow',
@@ -1153,8 +1316,7 @@ void main() {
   );
 
   test('cleans up model files when inventory persistence fails', () async {
-    // Two models: model-version-1 installs successfully, model-version-2
-    // manifest returns a bad size so download fails.
+    // Two models install successfully before inventory persistence fails.
     responseBody = jsonEncode({
       'workflows': [
         {
@@ -1174,17 +1336,18 @@ void main() {
         {
           'modelVersionId': 'model-version-2',
           'version': '1.0.0',
-          'sha256': 'b' * 64,
+          'sha256': sha256.convert(modelArtifactBytes).toString(),
         },
       ],
     });
-    // model-version-2 gets a manifest with sizeBytes=0 → download fails.
+    // model-version-2 uses the same valid test artifact as model-version-1.
     modelManifestResponses['model-version-2'] = jsonEncode({
       'modelVersionId': 'model-version-2',
       'version': '1.0.0',
-      'sha256': 'b' * 64,
-      'sizeBytes': 0,
-      'downloadUrl': 'https://invalid.example/model.tflite',
+      'sha256': sha256.convert(modelArtifactBytes).toString(),
+      'sizeBytes': modelArtifactBytes.length,
+      'downloadUrl':
+          'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
       'downloadUrlExpiresAt': DateTime.now()
           .add(const Duration(hours: 1))
           .toUtc()
@@ -1208,11 +1371,9 @@ void main() {
     final result = await client.sync();
 
     expect(result.status, SyncStatus.error);
-    // model-version-1 was installed before persistence ran.
     expect(modelAvailableAtPersist, isTrue);
 
-    // model-version-1 was installed by this sync and must be cleaned up.
-    // model-version-2 was never installed (download failed).
+    // Both newly installed model versions are removed when persistence fails.
     final modelFiles = await storageDirectory
         .list(recursive: true)
         .where(

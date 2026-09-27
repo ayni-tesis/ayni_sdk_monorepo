@@ -105,6 +105,7 @@ class AyniSdk {
   final WorkflowVersionDownloader _workflowVersionDownloader;
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
+  Future<void> _syncQueue = Future<void>.value();
 
   /// Executes the last locally installed, validated version of [workflowId].
   /// [input] is the encoded image bytes (for example JPEG or PNG).
@@ -172,19 +173,40 @@ class AyniSdk {
     }
   }
 
-  Future<SyncResult> sync() async {
-    if (!_canSendCredentialTo(serverUrl))
-      return const SyncResult(SyncStatus.error);
+  Future<SyncResult> sync() {
+    final previousSync = _syncQueue;
+    final syncFinished = Completer<void>();
+    _syncQueue = syncFinished.future;
+    return _syncAfter(previousSync, syncFinished);
+  }
 
+  Future<SyncResult> _syncAfter(
+    Future<void> previousSync,
+    Completer<void> syncFinished,
+  ) async {
+    await previousSync;
     final client = HttpClient();
-    if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
     final deadline = _SyncDeadline();
+    var timedOut = false;
     try {
-      return await _sync(client, deadline).timeout(
+      if (!_canSendCredentialTo(serverUrl)) {
+        return const SyncResult(SyncStatus.error);
+      }
+      if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
+      final operation = _sync(client, deadline);
+      return await operation.timeout(
         syncTimeout,
         onTimeout: () {
+          timedOut = true;
           deadline.expire();
           client.close(force: true);
+          unawaited(
+            operation
+                .then<void>((_) {}, onError: (Object _, StackTrace __) {})
+                .whenComplete(() {
+                  if (!syncFinished.isCompleted) syncFinished.complete();
+                }),
+          );
           return const SyncResult(SyncStatus.error);
         },
       );
@@ -200,6 +222,7 @@ class AyniSdk {
       return const SyncResult(SyncStatus.error);
     } finally {
       client.close(force: true);
+      if (!timedOut && !syncFinished.isCompleted) syncFinished.complete();
     }
   }
 
@@ -271,11 +294,50 @@ class AyniSdk {
   ) async {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
     final workflows = Map<String, _Workflow>.of(comparison.inventory.workflows);
+    final models = Map<String, _Model>.of(comparison.inventory.models);
     final rejections = <_WorkflowRejection>[];
     final promotedFiles = <File>[];
     final installedModelFiles = <File>[];
+    final installedModelVersionIds = <String>[];
+    final rolledBackModelVersionIds = <String>{};
+    Future<_Installation?> abort([File? pendingFile]) async {
+      if (pendingFile != null) await _deleteDownloadedDefinition(pendingFile);
+      for (final file in [...promotedFiles, ...installedModelFiles]) {
+        await _deleteDownloadedDefinition(file);
+      }
+      return null;
+    }
+
+    Future<void> rollbackModelsSince(
+      int fileStart,
+      int versionStart, {
+      String? failedDependencyId,
+    }) async {
+      for (final file in installedModelFiles.skip(fileStart)) {
+        await _deleteDownloadedDefinition(file);
+      }
+      installedModelFiles.removeRange(fileStart, installedModelFiles.length);
+      final versionIdsToRollback = {
+        ...installedModelVersionIds.skip(versionStart),
+        if (failedDependencyId != null) failedDependencyId,
+      };
+      for (final versionId in versionIdsToRollback) {
+        rolledBackModelVersionIds.add(versionId);
+        final previous = local.models[versionId];
+        if (previous == null) {
+          models.remove(versionId);
+        } else {
+          models[versionId] = previous;
+        }
+      }
+      installedModelVersionIds.removeRange(
+        versionStart,
+        installedModelVersionIds.length,
+      );
+    }
+
     for (final workflow in comparison.acceptedWorkflows) {
-      if (deadline.expired) return null;
+      if (deadline.expired) return abort();
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
 
       // Two phases per download: the downloader streams into an isolated
@@ -286,44 +348,68 @@ class AyniSdk {
         storageDirectory,
         workflow.workflowVersionId,
       );
-      final result = await _workflowVersionDownloader.download(
-        serverUrl: serverUrl,
-        credential: _credential,
-        workflowVersionId: workflow.workflowVersionId,
-        workflowName: workflow.name,
-        temporaryDefinition: installedFile,
-        allowInsecureLoopback: allowInsecureLoopback,
-        onProgress: onProgress,
-        httpClient: client,
-      );
+      final WorkflowVersionDownloadResult result;
+      try {
+        result = await _workflowVersionDownloader.download(
+          serverUrl: serverUrl,
+          credential: _credential,
+          workflowVersionId: workflow.workflowVersionId,
+          workflowName: workflow.name,
+          temporaryDefinition: installedFile,
+          allowInsecureLoopback: allowInsecureLoopback,
+          onProgress: onProgress,
+          httpClient: client,
+        );
+      } catch (_) {
+        return abort();
+      }
       try {
         onWorkflowDownload?.call(result);
       } catch (_) {
-        return null;
+        return abort(
+          result.temporaryDefinition == null
+              ? null
+              : File(result.temporaryDefinition!),
+        );
       }
       if (result.status != WorkflowVersionDownloadStatus.downloaded) {
-        return null;
+        return abort(
+          result.temporaryDefinition == null
+              ? null
+              : File(result.temporaryDefinition!),
+        );
       }
       final downloadedFile = File(result.temporaryDefinition!);
       if (deadline.expired) {
-        await _deleteDownloadedDefinition(downloadedFile);
-        return null;
+        return abort(downloadedFile);
       }
       final validation = await _validateDownloadedDefinition(
         downloadedFile,
         workflow.modelVersionIds,
       );
       if (validation == WorkflowValidationStatus.valid) {
+        final installedModelFileCount = installedModelFiles.length;
+        final installedModelVersionCount = installedModelVersionIds.length;
         var failedDependency = 'modelo desconocido';
+        String? failedDependencyId;
         final depsOk = await _installModelDependencies(
           workflow,
           comparison.inventory.models,
           client,
           deadline,
-          (name) => failedDependency = name,
+          (name) {
+            failedDependency = name;
+            failedDependencyId = name;
+          },
           installedModelFiles,
+          installedModelVersionIds,
         );
         if (!depsOk) {
+          await rollbackModelsSince(
+            installedModelFileCount,
+            installedModelVersionCount,
+            failedDependencyId: failedDependencyId,
+          );
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -335,14 +421,24 @@ class AyniSdk {
           );
           continue;
         }
+        for (final versionId in installedModelVersionIds.skip(
+          installedModelVersionCount,
+        )) {
+          rolledBackModelVersionIds.remove(versionId);
+          final remoteModel = comparison.inventory.models[versionId];
+          if (remoteModel != null) models[versionId] = remoteModel;
+        }
         if (deadline.expired) {
-          await _deleteDownloadedDefinition(downloadedFile);
-          return null;
+          return abort(downloadedFile);
         }
         try {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
         } on FileSystemException {
+          await rollbackModelsSince(
+            installedModelFileCount,
+            installedModelVersionCount,
+          );
           await _rejectWorkflow(
             workflow,
             downloadedFile,
@@ -362,10 +458,15 @@ class AyniSdk {
         );
       }
     }
-    if (deadline.expired) return null;
+    if (deadline.expired) return abort();
     return _Installation(
-      inventory: _Inventory(workflows, comparison.inventory.models),
-      resources: _resourcesWithRejections(comparison.resources, rejections),
+      inventory: _Inventory(workflows, models),
+      resources: _resourcesWithRejections(
+        comparison.resources,
+        rejections,
+        rolledBackModelVersionIds,
+        local.models,
+      ),
       promotedFiles: promotedFiles,
       installedModelFiles: installedModelFiles,
     );
@@ -408,20 +509,39 @@ class AyniSdk {
   List<SyncResourceResult> _resourcesWithRejections(
     List<SyncResourceResult> resources,
     List<_WorkflowRejection> rejections,
+    Set<String> rolledBackModelVersionIds,
+    Map<String, _Model> localModels,
   ) {
-    if (rejections.isEmpty) return resources;
+    if (rejections.isEmpty && rolledBackModelVersionIds.isEmpty) {
+      return resources;
+    }
     final rejected = {
       for (final rejection in rejections)
         rejection.workflow.workflowVersionId: rejection,
     };
-    return [
-      for (final resource in resources)
-        if (resource.type == SyncResourceType.workflow &&
-            rejected.containsKey(resource.resourceVersionId))
-          rejected[resource.resourceVersionId]!.toResult()
-        else
-          resource,
-    ];
+    final result = <SyncResourceResult>[];
+    for (final resource in resources) {
+      if (resource.type == SyncResourceType.model &&
+          rolledBackModelVersionIds.contains(resource.resourceVersionId)) {
+        final previous = localModels[resource.resourceVersionId];
+        if (previous == null) continue;
+        result.add(
+          SyncResourceResult(
+            type: resource.type,
+            status: SyncResourceStatus.upToDate,
+            resourceVersionId: resource.resourceVersionId,
+            version: previous.version,
+            name: resource.name,
+          ),
+        );
+      } else if (resource.type == SyncResourceType.workflow &&
+          rejected.containsKey(resource.resourceVersionId)) {
+        result.add(rejected[resource.resourceVersionId]!.toResult());
+      } else {
+        result.add(resource);
+      }
+    }
+    return result;
   }
 
   Future<void> _promoteToInstalledDefinition(
@@ -455,9 +575,9 @@ class AyniSdk {
 
   /// Downloads and installs model versions required by a workflow that are
   /// not yet available locally (US-044). Each newly installed model file is
-  /// added to [installedModelFiles] immediately after installation so that
-  /// the caller can clean them up even if a later dependency fails. Returns
-  /// `false` when a dependency could not be installed.
+  /// added to the installed-file and version-id lists immediately so the
+  /// caller can roll them back if a later dependency fails. Returns `false`
+  /// when a dependency could not be installed.
   Future<bool> _installModelDependencies(
     _Workflow workflow,
     Map<String, _Model> models,
@@ -465,6 +585,7 @@ class AyniSdk {
     _SyncDeadline deadline,
     void Function(String name) setFailedDependency,
     List<File> installedModelFiles,
+    List<String> installedModelVersionIds,
   ) async {
     final installer = ModelArtifactInstaller(
       storageDirectory: storageDirectory,
@@ -542,7 +663,10 @@ class AyniSdk {
           '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.tflite';
       final metadataPath =
           '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.json';
-      final preExisting = File(artifactPath).existsSync();
+      final availableBeforeInstall = await installer.isVersionAvailable(
+        modelId: modelVersionId,
+        modelVersionId: modelVersionId,
+      );
 
       final installResult = await installer.install(
         modelId: modelVersionId,
@@ -556,9 +680,10 @@ class AyniSdk {
         return false;
       }
 
-      if (!preExisting) {
+      if (!availableBeforeInstall) {
         installedModelFiles.add(File(artifactPath));
         installedModelFiles.add(File(metadataPath));
+        installedModelVersionIds.add(modelVersionId);
       }
     }
 
