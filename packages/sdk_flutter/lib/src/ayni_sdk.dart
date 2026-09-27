@@ -13,6 +13,7 @@ enum SyncResourceStatus {
   upToDate,
   invalidRemoteResource,
   invalidWorkflow,
+  installationFailed,
 }
 
 enum SyncResourceType { workflow, model }
@@ -45,6 +46,10 @@ class SyncResourceResult {
       'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
     SyncResourceStatus.invalidWorkflow =>
       'La actualización de $name no es compatible. No se instaló ninguna versión.',
+    SyncResourceStatus.installationFailed when previousVersionRetained =>
+      'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
+    SyncResourceStatus.installationFailed =>
+      'No se pudo guardar la actualización. No se instaló ninguna versión.',
     _ => null,
   };
 }
@@ -225,22 +230,21 @@ class AyniSdk {
         workflow.modelVersionIds,
       );
       if (validation == WorkflowValidationStatus.valid) {
-        await _promoteToInstalledDefinition(downloadedFile, installedFile);
-        promotedFiles.add(installedFile);
-      } else {
-        await _deleteDownloadedDefinition(downloadedFile);
-        final previous = local.workflows[workflow.id];
-        if (previous == null) {
-          workflows.remove(workflow.id);
-        } else {
-          workflows[workflow.id] = previous;
-        }
-        rejections.add(
-          _WorkflowRejection(
+        try {
+          await _promoteToInstalledDefinition(downloadedFile, installedFile);
+          promotedFiles.add(installedFile);
+        } on FileSystemException {
+          await _rejectWorkflow(
             workflow,
-            previousVersionRetained: previous != null,
-          ),
-        );
+            downloadedFile,
+            local,
+            workflows,
+            rejections,
+            installationFailed: true,
+          );
+        }
+      } else {
+        await _rejectWorkflow(workflow, downloadedFile, local, workflows, rejections);
       }
     }
     if (deadline.expired) return null;
@@ -248,6 +252,33 @@ class AyniSdk {
       inventory: _Inventory(workflows, comparison.inventory.models),
       resources: _resourcesWithRejections(comparison.resources, rejections),
       promotedFiles: promotedFiles,
+    );
+  }
+
+  /// Records a workflow rejection: deletes the downloaded definition,
+  /// restores the local inventory entry (if any), and adds a
+  /// [_WorkflowRejection] with the appropriate status.
+  Future<void> _rejectWorkflow(
+    _Workflow workflow,
+    File downloadedFile,
+    _Inventory local,
+    Map<String, _Workflow> workflows,
+    List<_WorkflowRejection> rejections, {
+    bool installationFailed = false,
+  }) async {
+    await _deleteDownloadedDefinition(downloadedFile);
+    final previous = local.workflows[workflow.id];
+    if (previous == null) {
+      workflows.remove(workflow.id);
+    } else {
+      workflows[workflow.id] = previous;
+    }
+    rejections.add(
+      _WorkflowRejection(
+        workflow,
+        previousVersionRetained: previous != null,
+        installationFailed: installationFailed,
+      ),
     );
   }
 
@@ -594,21 +625,26 @@ class _Installation {
   final List<File> promotedFiles;
 }
 
-/// A workflow whose downloaded definition failed validation. It owns the
-/// user-facing result because only the install step knows whether a previous
-/// valid version was retained, which selects the `invalidWorkflow` message.
+/// A workflow whose downloaded definition failed validation or whose
+/// installation failed due to a storage error. It owns the user-facing
+/// result because only the install step knows whether a previous valid
+/// version was retained, which selects the appropriate message.
 class _WorkflowRejection {
   const _WorkflowRejection(
     this.workflow, {
     required this.previousVersionRetained,
+    this.installationFailed = false,
   });
 
   final _Workflow workflow;
   final bool previousVersionRetained;
+  final bool installationFailed;
 
   SyncResourceResult toResult() => SyncResourceResult(
     type: SyncResourceType.workflow,
-    status: SyncResourceStatus.invalidWorkflow,
+    status: installationFailed
+        ? SyncResourceStatus.installationFailed
+        : SyncResourceStatus.invalidWorkflow,
     resourceVersionId: workflow.workflowVersionId,
     version: workflow.version,
     name: workflow.name,
