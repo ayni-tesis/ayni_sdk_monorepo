@@ -515,8 +515,11 @@ class AyniSdk {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
+      // The server wraps the manifest: `{ "manifest": { ... } }`
+      // (apps/server/src/sdk-model-versions.ts).
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
       return ModelDownloadManifest.fromJson(
-        jsonDecode(body) as Map<String, dynamic>,
+        decoded['manifest'] as Map<String, dynamic>,
       );
     } on IOException {
       return null;

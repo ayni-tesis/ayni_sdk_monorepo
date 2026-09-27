@@ -78,8 +78,13 @@ void main() {
             final mvId = segments.length >= 3 ? segments[2] : '';
             final body =
                 modelManifestResponses[mvId] ?? modelManifestResponseBody;
-            request.response.statusCode = modelManifestStatusCode ?? statusCode;
-            request.response.write(body);
+            final status = modelManifestStatusCode ?? statusCode;
+            request.response.statusCode = status;
+            // Like apps/server/src/sdk-model-versions.ts, a successful
+            // response wraps the manifest: `{ "manifest": { ... } }`.
+            request.response.write(
+              status >= 200 && status < 300 ? '{"manifest":$body}' : body,
+            );
           } else {
             request.response.statusCode = statusCode;
             if (redirectUrl != null) {
@@ -876,6 +881,29 @@ void main() {
       isFalse,
     );
   });
+
+  test(
+    'rejects a workflow when the manifest response has no manifest',
+    () async {
+      modelManifestResponseBody = 'null';
+      final client = sdk();
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.updated);
+      final workflow = result.resources.last;
+      expect(workflow.type, SyncResourceType.workflow);
+      expect(workflow.status, SyncResourceStatus.dependencyFailed);
+      expect(
+        workflow.message,
+        'No se pudo preparar Clasificar hoja: model-version-1.',
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isFalse,
+      );
+    },
+  );
 
   test('rejects a workflow when model integrity verification fails', () async {
     modelManifestResponseBody = jsonEncode({
