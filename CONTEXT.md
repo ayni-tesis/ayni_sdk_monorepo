@@ -13,7 +13,7 @@ The Better Auth entity backing a Workspace, holding members and permissions.
 _Avoid_: Org, tenant
 
 **Application**:
-An isolated project owned by a Workspace that defines and deploys DAG workflows, models, and telemetry policies.
+An isolated project owned by a Workspace that defines and deploys DAG workflows, models, and telemetry and collection policies.
 _Avoid_: App project, client app
 
 **Administrator**:
@@ -43,6 +43,10 @@ _Avoid_: Draft version (a published Workflow version is a different thing), ETag
 **Telemetry Policy**:
 The per-Application setting that says whether the SDK may send technical telemetry and how many days its traces are kept. Only administrators change it. Without a saved policy, telemetry is disabled. It never authorizes collecting images or raw inputs.
 _Avoid_: Tracking settings, analytics consent
+
+**Collection Policy**:
+The per-Application setting that says whether the SDK may capture images as evidence for datasets, over which network it may upload them, and the maximum size and quality it compresses them to. Only administrators change it. Without a saved policy, collection is disabled. Collection can only be enabled together with an explicit consent configuration, and images are only captured by workflows that include `dataset.capture`.
+_Avoid_: Capture settings, upload settings
 
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.

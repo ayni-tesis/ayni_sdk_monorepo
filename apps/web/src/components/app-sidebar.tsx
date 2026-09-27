@@ -6,6 +6,7 @@ import {
   IconGitBranch,
   IconKey,
   IconLayoutDashboard,
+  IconPhotoShield,
   IconSettings,
   IconShieldLock,
   IconUsers,
@@ -145,6 +146,16 @@ export function AppSidebar({
                   >
                     <IconShieldLock />
                     <span>Privacidad y telemetría</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeView === "collection"}
+                    tooltip="Privacidad y recolección"
+                    onClick={() => onViewChange?.("collection")}
+                  >
+                    <IconPhotoShield />
+                    <span>Privacidad y recolección</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>

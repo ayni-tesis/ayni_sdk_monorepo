@@ -1,5 +1,6 @@
 export * from "./application";
 export * from "./auth";
+export * from "./collection-policy";
 export * from "./invitation-link";
 export * from "./model";
 export * from "./model-version";

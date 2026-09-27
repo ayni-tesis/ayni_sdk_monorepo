@@ -1,6 +1,7 @@
 "use client";
 
 import type { Application, ApplicationSection } from "../types";
+import { CollectionPolicyView } from "./application/collection-policy-view";
 import { CredentialsView } from "./application/credentials-view";
 import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
@@ -144,6 +145,14 @@ export function ApplicationDetailPanel({
 
       {activeSection === "privacy" && (
         <TelemetryPolicyView key={application.id} application={application} canManage={canManage} />
+      )}
+
+      {activeSection === "collection" && (
+        <CollectionPolicyView
+          key={application.id}
+          application={application}
+          canManage={canManage}
+        />
       )}
     </section>
   );
