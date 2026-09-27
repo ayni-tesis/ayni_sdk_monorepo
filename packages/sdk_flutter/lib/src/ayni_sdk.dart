@@ -85,7 +85,148 @@ class SyncResult {
   final List<SyncResourceResult> resources;
 }
 
+/// Status indicating the outcome of SDK initialization.
+enum InitializationStatus {
+  /// The SDK was successfully initialized with valid configuration.
+  ready,
+
+  /// One or more required configuration parameters are missing or invalid.
+  incompleteConfiguration,
+
+  /// An unexpected error occurred during initialization.
+  error,
+}
+
+/// Configuration required to initialize the Ayni SDK.
+class AyniConfig {
+  /// Creates an SDK configuration instance.
+  AyniConfig({
+    required this.serverUrl,
+    required this.credential,
+    required this.storageDirectory,
+    this.syncTimeout = const Duration(seconds: 30),
+    this.allowInsecureLoopback = false,
+    this.onProgress,
+    this.onWorkflowDownload,
+    this.onBeforeInventoryPersist,
+    this.workflowVersionDownloader,
+  });
+
+  /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
+  /// when [allowInsecureLoopback] is true).
+  final Uri serverUrl;
+
+  /// The SDK secret credential (`ayni_sk_...`).
+  final String credential;
+
+  /// Directory where the SDK stores workflows, models, and sync inventory.
+  final Directory storageDirectory;
+
+  /// Maximum duration for a sync operation. Defaults to 30 seconds.
+  final Duration syncTimeout;
+
+  /// Whether insecure HTTP is permitted for local loopback development.
+  final bool allowInsecureLoopback;
+
+  /// Optional callback to receive human-readable progress messages.
+  final void Function(String message)? onProgress;
+
+  /// Optional callback to receive downloaded workflow definitions.
+  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
+
+  /// Optional callback invoked before writing inventory to disk.
+  final Future<void> Function()? onBeforeInventoryPersist;
+
+  /// Optional downloader used for fetching workflow versions.
+  final WorkflowVersionDownloader? workflowVersionDownloader;
+
+  @override
+  String toString() =>
+      'AyniConfig('
+      'serverUrl: $serverUrl, '
+      'credential: [REDACTED], '
+      'storageDirectory: ${storageDirectory.path}, '
+      'syncTimeout: $syncTimeout, '
+      'allowInsecureLoopback: $allowInsecureLoopback'
+      ')';
+}
+
+/// Alias for [AyniConfig].
+typedef AyniSdkConfig = AyniConfig;
+
+/// The result of an SDK initialization attempt.
+///
+/// Implements [Future] so that `AyniSdk.initialize` can be either awaited
+/// (`await AyniSdk.initialize(config)`) or accessed synchronously.
+class AyniInitializationResult implements Future<AyniInitializationResult> {
+  /// Creates an initialization result.
+  AyniInitializationResult({
+    required this.status,
+    required this.message,
+    this.sdk,
+  }) : isSuccess = status == InitializationStatus.ready;
+
+  /// The status of the initialization attempt.
+  final InitializationStatus status;
+
+  /// Human-readable message describing the initialization outcome.
+  final String message;
+
+  /// Whether initialization was successful and the SDK is ready for use.
+  final bool isSuccess;
+
+  /// The initialized [AyniSdk] instance, or `null` if initialization failed.
+  final AyniSdk? sdk;
+
+  @override
+  Stream<AyniInitializationResult> asStream() => Stream.value(this);
+
+  @override
+  Future<AyniInitializationResult> catchError(
+    Function onError, {
+    bool Function(Object error)? test,
+  }) => this;
+
+  @override
+  Future<R> then<R>(
+    FutureOr<R> Function(AyniInitializationResult value) onValue, {
+    Function? onError,
+  }) {
+    return Future<R>.sync(() => onValue(this));
+  }
+
+  @override
+  Future<AyniInitializationResult> timeout(
+    Duration timeLimit, {
+    FutureOr<AyniInitializationResult> Function()? onTimeout,
+  }) => this;
+
+  @override
+  Future<AyniInitializationResult> whenComplete(
+    FutureOr<void> Function() action,
+  ) {
+    return then((value) async {
+      await action();
+      return value;
+    });
+  }
+
+  @override
+  String toString() =>
+      'AyniInitializationResult('
+      'status: $status, '
+      'message: $message, '
+      'isSuccess: $isSuccess, '
+      'sdk: ${sdk != null ? 'AyniSdk' : 'null'}'
+      ')';
+}
+
+/// Alias for [AyniInitializationResult].
+typedef InitializationResult = AyniInitializationResult;
+
+/// Manages synchronization and offline execution of workflows.
 class AyniSdk {
+  /// Creates a new [AyniSdk] instance directly.
   AyniSdk({
     required this.serverUrl,
     required String credential,
@@ -99,6 +240,108 @@ class AyniSdk {
   }) : _credential = credential,
        _workflowVersionDownloader =
            workflowVersionDownloader ?? WorkflowVersionDownloader();
+
+  static AyniSdk? _instance;
+
+  /// Returns the shared [AyniSdk] instance configured by [initialize].
+  ///
+  /// Throws a [StateError] if the SDK has not been initialized.
+  static AyniSdk get instance {
+    final current = _instance;
+    if (current == null) {
+      throw StateError(
+        'AyniSdk no está inicializado. Llama a AyniSdk.initialize primero.',
+      );
+    }
+    return current;
+  }
+
+  /// Whether the SDK has been successfully initialized.
+  static bool get isInitialized => _instance != null;
+
+  /// Resets the shared SDK singleton for testing.
+  static void resetForTesting() {
+    _instance = null;
+  }
+
+  /// Initializes the shared [AyniSdk] singleton with the provided [config].
+  ///
+  /// Validates mandatory configuration parameters ([AyniConfig.credential],
+  /// [AyniConfig.serverUrl], and [AyniConfig.storageDirectory]).
+  /// Returns an [AyniInitializationResult] indicating whether initialization
+  /// succeeded.
+  ///
+  /// Does not initiate network operations or model inference.
+  /// If initialization fails, no operative SDK instance is retained.
+  static AyniInitializationResult initialize(AyniConfig config) {
+    try {
+      if (!_isValidConfig(config)) {
+        _instance = null;
+        return AyniInitializationResult(
+          status: InitializationStatus.incompleteConfiguration,
+          message: 'Revisa la configuración del SDK antes de continuar.',
+          sdk: null,
+        );
+      }
+      final sdk = AyniSdk(
+        serverUrl: config.serverUrl,
+        credential: config.credential,
+        storageDirectory: config.storageDirectory,
+        syncTimeout: config.syncTimeout,
+        allowInsecureLoopback: config.allowInsecureLoopback,
+        onProgress: config.onProgress,
+        onWorkflowDownload: config.onWorkflowDownload,
+        onBeforeInventoryPersist: config.onBeforeInventoryPersist,
+        workflowVersionDownloader: config.workflowVersionDownloader,
+      );
+      _instance = sdk;
+      return AyniInitializationResult(
+        status: InitializationStatus.ready,
+        message: 'SDK listo.',
+        sdk: sdk,
+      );
+    } catch (_) {
+      _instance = null;
+      return AyniInitializationResult(
+        status: InitializationStatus.error,
+        message: 'Revisa la configuración del SDK antes de continuar.',
+        sdk: null,
+      );
+    }
+  }
+
+  static bool _isValidConfig(AyniConfig config) {
+    if (config.credential.trim().isEmpty) {
+      return false;
+    }
+    if (config.storageDirectory.path.trim().isEmpty) {
+      return false;
+    }
+    if (config.syncTimeout.isNegative) {
+      return false;
+    }
+    final url = config.serverUrl;
+    if (url.host.trim().isEmpty) {
+      return false;
+    }
+    final isHttps = url.scheme == 'https';
+    final isAllowedHttpLoopback =
+        config.allowInsecureLoopback &&
+        url.scheme == 'http' &&
+        _isLoopbackHost(url.host);
+    if (!isHttps && !isAllowedHttpLoopback) {
+      return false;
+    }
+    return true;
+  }
+
+  static bool _isLoopbackHost(String host) {
+    if (host == 'localhost') return true;
+    final normalized = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    return InternetAddress.tryParse(normalized)?.isLoopback == true;
+  }
 
   final Uri serverUrl;
   final Directory storageDirectory;
@@ -801,8 +1044,7 @@ class AyniSdk {
       url.scheme == 'https' ||
       (allowInsecureLoopback &&
           url.scheme == 'http' &&
-          (url.host == 'localhost' ||
-              InternetAddress.tryParse(url.host)?.isLoopback == true));
+          _isLoopbackHost(url.host));
 
   bool _isInventory(Object? value) =>
       value is Map &&
