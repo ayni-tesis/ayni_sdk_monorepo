@@ -808,10 +808,8 @@ void main() {
 
       final result = await sdk().sync();
 
-      // The model is updated, so the overall sync status is updated.
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((resource) => resource.status), [
-        SyncResourceStatus.updated,
         SyncResourceStatus.installationFailed,
       ]);
       final failed = result.resources.last;
@@ -1035,6 +1033,12 @@ void main() {
     () async {
       final client = sdk();
       await seedInventory(client);
+      final staleArtifact = File(
+        '${storageDirectory.path}${Platform.pathSeparator}'
+        'model-version-2${Platform.pathSeparator}model-version-2.tflite',
+      );
+      await staleArtifact.parent.create(recursive: true);
+      await staleArtifact.writeAsString('stale artifact');
 
       workflowResponseBody = _validWorkflowDefinition().replaceAll(
         'model-version-1',
@@ -1090,8 +1094,12 @@ void main() {
       expect(result.resources.map((r) => r.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.updated,
-        SyncResourceStatus.updated,
         SyncResourceStatus.dependencyFailed,
+      ]);
+      expect(result.resources.map((resource) => resource.resourceVersionId), [
+        'model-version-1',
+        'model-version-3',
+        'workflow-version-2.0.0',
       ]);
       final failed = result.resources.last;
       expect(failed.previousVersionRetained, isTrue);
@@ -1117,6 +1125,7 @@ void main() {
         ),
         isFalse,
       );
+      expect(await staleArtifact.exists(), isFalse);
       final inventory =
           jsonDecode(
                 await File(

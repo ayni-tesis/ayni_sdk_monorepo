@@ -276,6 +276,7 @@ class AyniSdk {
     final promotedFiles = <File>[];
     final installedModelFiles = <File>[];
     final installedModelVersionIds = <String>[];
+    final rolledBackModelVersionIds = <String>{};
     Future<_Installation?> abort([File? pendingFile]) async {
       if (pendingFile != null) await _deleteDownloadedDefinition(pendingFile);
       for (final file in [...promotedFiles, ...installedModelFiles]) {
@@ -290,6 +291,7 @@ class AyniSdk {
       }
       installedModelFiles.removeRange(fileStart, installedModelFiles.length);
       for (final versionId in installedModelVersionIds.skip(versionStart)) {
+        rolledBackModelVersionIds.add(versionId);
         final previous = local.models[versionId];
         if (previous == null) {
           models.remove(versionId);
@@ -383,6 +385,11 @@ class AyniSdk {
           );
           continue;
         }
+        for (final versionId in installedModelVersionIds.skip(
+          installedModelVersionCount,
+        )) {
+          rolledBackModelVersionIds.remove(versionId);
+        }
         if (deadline.expired) {
           return abort(downloadedFile);
         }
@@ -416,7 +423,12 @@ class AyniSdk {
     if (deadline.expired) return abort();
     return _Installation(
       inventory: _Inventory(workflows, models),
-      resources: _resourcesWithRejections(comparison.resources, rejections),
+      resources: _resourcesWithRejections(
+        comparison.resources,
+        rejections,
+        rolledBackModelVersionIds,
+        local.models,
+      ),
       promotedFiles: promotedFiles,
       installedModelFiles: installedModelFiles,
     );
@@ -459,20 +471,39 @@ class AyniSdk {
   List<SyncResourceResult> _resourcesWithRejections(
     List<SyncResourceResult> resources,
     List<_WorkflowRejection> rejections,
+    Set<String> rolledBackModelVersionIds,
+    Map<String, _Model> localModels,
   ) {
-    if (rejections.isEmpty) return resources;
+    if (rejections.isEmpty && rolledBackModelVersionIds.isEmpty) {
+      return resources;
+    }
     final rejected = {
       for (final rejection in rejections)
         rejection.workflow.workflowVersionId: rejection,
     };
-    return [
-      for (final resource in resources)
-        if (resource.type == SyncResourceType.workflow &&
-            rejected.containsKey(resource.resourceVersionId))
-          rejected[resource.resourceVersionId]!.toResult()
-        else
-          resource,
-    ];
+    final result = <SyncResourceResult>[];
+    for (final resource in resources) {
+      if (resource.type == SyncResourceType.model &&
+          rolledBackModelVersionIds.contains(resource.resourceVersionId)) {
+        final previous = localModels[resource.resourceVersionId];
+        if (previous == null) continue;
+        result.add(
+          SyncResourceResult(
+            type: resource.type,
+            status: SyncResourceStatus.upToDate,
+            resourceVersionId: resource.resourceVersionId,
+            version: previous.version,
+            name: resource.name,
+          ),
+        );
+      } else if (resource.type == SyncResourceType.workflow &&
+          rejected.containsKey(resource.resourceVersionId)) {
+        result.add(rejected[resource.resourceVersionId]!.toResult());
+      } else {
+        result.add(resource);
+      }
+    }
+    return result;
   }
 
   Future<void> _promoteToInstalledDefinition(
@@ -594,7 +625,10 @@ class AyniSdk {
           '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.tflite';
       final metadataPath =
           '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.json';
-      final preExisting = File(artifactPath).existsSync();
+      final availableBeforeInstall = await installer.isVersionAvailable(
+        modelId: modelVersionId,
+        modelVersionId: modelVersionId,
+      );
 
       final installResult = await installer.install(
         modelId: modelVersionId,
@@ -608,7 +642,7 @@ class AyniSdk {
         return false;
       }
 
-      if (!preExisting) {
+      if (!availableBeforeInstall) {
         installedModelFiles.add(File(artifactPath));
         installedModelFiles.add(File(metadataPath));
         installedModelVersionIds.add(modelVersionId);
