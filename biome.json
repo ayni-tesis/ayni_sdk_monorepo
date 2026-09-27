@@ -10,6 +10,7 @@
     "includes": [
       "**",
       "!**/.next",
+      "!**/.astro",
       "!**/dist",
       "!**/.turbo",
       "!**/dev-dist",
@@ -76,6 +77,17 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["**/components/ui/label.tsx"],
       "linter": {

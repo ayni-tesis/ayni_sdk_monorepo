@@ -1,0 +1,48 @@
+/*
+ * Ayni palette and type for Starlight, taken from apps/web/DESIGN.md and the
+ * shadcn tokens in apps/web/src/index.css: jet black and petrol surfaces,
+ * signal cyan reserved for links, focus and the current page, and Geist.
+ * Light accent-high is the only derived shade: a darker frosted blue 700
+ * for text on light accent-low backgrounds.
+ * src/theme.test.ts checks the WCAG AA contrast of these colors.
+ */
+
+/* Dark theme (Starlight's default). */
+:root {
+  --sl-color-white: rgb(248 250 252);
+  --sl-color-gray-1: rgb(238 242 247);
+  --sl-color-gray-2: rgb(206 214 225);
+  --sl-color-gray-3: rgb(150 160 178);
+  --sl-color-gray-4: rgb(84 104 128);
+  --sl-color-gray-5: rgb(32 50 70);
+  --sl-color-gray-6: rgb(16 25 35);
+  --sl-color-black: rgb(16 17 20);
+  --sl-color-accent-low: rgb(33 69 59);
+  --sl-color-accent: rgb(54 182 201);
+  --sl-color-accent-high: rgb(94 196 212);
+}
+
+:root[data-theme="light"] {
+  --sl-color-white: rgb(16 25 35);
+  --sl-color-gray-1: rgb(16 39 47);
+  --sl-color-gray-2: rgb(40 52 66);
+  --sl-color-gray-3: rgb(84 94 112);
+  --sl-color-gray-4: rgb(113 122 142);
+  --sl-color-gray-5: rgb(185 203 223);
+  --sl-color-gray-6: rgb(220 229 239);
+  --sl-color-gray-7: rgb(238 242 247);
+  --sl-color-black: rgb(255 255 255);
+  --sl-color-accent-low: rgb(235 248 250);
+  --sl-color-accent: rgb(32 109 121);
+  --sl-color-accent-high: rgb(20 72 80);
+}
+
+:root {
+  --sl-font: "Geist Variable";
+  --sl-font-mono: "Geist Mono Variable";
+}
+
+/* Starlight sizes the theme select for "Auto"; "Sistema" needs more room. */
+starlight-theme-select select {
+  width: calc(7em + var(--sl-inline-padding) * 2);
+}
