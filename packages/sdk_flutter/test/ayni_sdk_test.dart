@@ -330,7 +330,7 @@ void main() {
       });
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.invalidRemoteResource,
         SyncResourceStatus.invalidRemoteResource,
@@ -365,7 +365,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.updated);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.updated,
         SyncResourceStatus.invalidRemoteResource,
@@ -425,7 +425,7 @@ void main() {
         modelVersionIds: ['model-version-1', 'model-version-2'],
       );
 
-      expect(dependencyChange.status, SyncStatus.upToDate);
+      expect(dependencyChange.status, SyncStatus.error);
       expect(dependencyChange.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.invalidRemoteResource,
@@ -478,7 +478,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.invalidRemoteResource,
         SyncResourceStatus.upToDate,
@@ -612,7 +612,18 @@ void main() {
 
       final unavailableClient = sdk(onWorkflowDownload: downloads.add);
 
-      expect((await unavailableClient.sync()).status, SyncStatus.error);
+      final result = await unavailableClient.sync();
+      expect(result.status, SyncStatus.error);
+      final failedWorkflow = result.resources.singleWhere(
+        (resource) => resource.type == SyncResourceType.workflow,
+      );
+      expect(failedWorkflow.status, SyncResourceStatus.workflowUnavailable);
+      expect(failedWorkflow.resourceVersionId, 'workflow-version-2.0.0');
+      expect(failedWorkflow.previousVersionRetained, isTrue);
+      expect(
+        failedWorkflow.message,
+        'El workflow ya no está disponible. Se mantuvo la versión anterior.',
+      );
       expect(
         downloads.single.status,
         WorkflowVersionDownloadStatus.workflowUnavailable,
@@ -843,7 +854,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.installationFailed,
@@ -895,7 +906,7 @@ void main() {
 
       final result = await sdk().sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.installationFailed,
       ]);
@@ -1019,7 +1030,7 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.upToDate);
+    expect(result.status, SyncStatus.error);
     expect(result.resources, hasLength(1));
     final workflow = result.resources.single;
     expect(workflow.type, SyncResourceType.workflow);
@@ -1044,7 +1055,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       final workflow = result.resources.last;
       expect(workflow.type, SyncResourceType.workflow);
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
@@ -1076,7 +1087,7 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.upToDate);
+    expect(result.status, SyncStatus.error);
     final workflow = result.resources.last;
     expect(workflow.status, SyncResourceStatus.dependencyFailed);
     expect(
@@ -1108,7 +1119,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       final workflow = result.resources.last;
       expect(workflow.status, SyncResourceStatus.dependencyFailed);
     },
@@ -1174,7 +1185,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((r) => r.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.dependencyFailed,
@@ -1237,7 +1248,7 @@ void main() {
 
       final result = await client.sync();
 
-      expect(result.status, SyncStatus.upToDate);
+      expect(result.status, SyncStatus.error);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.dependencyFailed,
@@ -1301,7 +1312,7 @@ void main() {
 
     final result = await client.sync();
 
-    expect(result.status, SyncStatus.updated);
+    expect(result.status, SyncStatus.error);
     expect(result.resources.map((resource) => resource.resourceVersionId), [
       'model-version-2',
       'workflow-version-2.0.0',
