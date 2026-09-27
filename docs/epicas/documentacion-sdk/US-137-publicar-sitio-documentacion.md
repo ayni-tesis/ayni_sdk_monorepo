@@ -12,8 +12,8 @@ fuente.
 
 ### Ubicación
 
-Aplicación de documentación del monorepo (propuesta: `apps/docs`), desplegada
-en su propio dominio o subruta pública.
+Aplicación `apps/docs` del monorepo, construida con Astro y Starlight y
+desplegada en Vercel como sitio estático en su propio dominio.
 
 ### Elementos y texto visible
 
@@ -67,15 +67,21 @@ Scenario: Abrir una ruta inexistente
 
 ## Criterios de aceptación
 
-- Un ADR (`docs/adr/0002-…`) registra la herramienta elegida tras un spike que
-  instala las versiones concretas y compila en CI; la investigación recomienda
-  Fumadocs y deja Starlight como alternativa.
+- Un ADR (`docs/adr/0002-…`) registra la decisión: Astro con Starlight,
+  desplegado en Vercel. Antes lo valida un spike que instala las versiones
+  concretas, compila en CI y hace un despliegue de vista previa.
 - El sitio se compila con `bun run build` desde la raíz y el paso existente de
-  CI lo cubre.
+  CI lo cubre; la salida de Astro (`dist/`) queda en la caché de Turborepo.
+- El sitio se genera como estático y se despliega en Vercel sin adaptador. El
+  proyecto de Vercel usa `apps/docs` como raíz y su configuración queda
+  versionada en `apps/docs/vercel.json`, como en `apps/server`.
+- Cada pull request obtiene un despliegue de vista previa, y `main` publica en
+  producción.
 - La navegación tiene los cinco grupos de la investigación y ninguna página
   queda fuera de la barra lateral.
-- El diseño usa los tokens de `apps/web` (`tokens.css`, `DESIGN.md`) y respeta
-  el tema elegido; el contraste cumple WCAG AA en ambos temas.
+- El tema de Starlight se personaliza con los colores y la tipografía de
+  `apps/web` (`tokens.css`, `DESIGN.md`) y respeta el tema elegido; el
+  contraste cumple WCAG AA en ambos temas.
 - La navegación, la tabla de contenidos y el botón `Copiar` funcionan con
   teclado y tienen nombres accesibles.
 - El sitio se ve sin desplazamiento horizontal desde 360 px de ancho.

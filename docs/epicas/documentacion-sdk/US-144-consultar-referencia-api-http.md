@@ -64,7 +64,9 @@ Scenario: Endpoint sin documentar
   prefijo `ayni_sk_`, no un JWT.
 - `openapi:verify` se amplía para detectar rutas `/sdk/*` del servidor que no
   estén en la especificación, y corre en CI.
-- La referencia del sitio se genera desde la especificación; no se copian
-  esquemas a mano.
+- La referencia del sitio se genera desde la especificación con el complemento
+  `starlight-openapi`; no se copian esquemas a mano. Si el complemento no
+  representa bien las rutas `/sdk/*`, el sitio enlaza la referencia Scalar que
+  publica el servidor en `/docs`, y el ADR 0002 registra el cambio.
 - Las rutas internas del dashboard (autenticadas por sesión) quedan fuera; solo
   se documenta el contrato que usa el SDK.

@@ -55,8 +55,11 @@ Scenario: Símbolo público sin documentar
   comentarios `///` con descripción, parámetros y resultado.
 - `packages/sdk_flutter` habilita la regla `public_member_api_docs` en
   `analysis_options.yaml` y `dart analyze` pasa en CI.
-- La referencia se genera con `dart doc` en la compilación del sitio; no se
-  escribe a mano.
+- La referencia se genera con `dart doc`; no se escribe a mano.
+- El entorno de compilación de Vercel no trae el SDK de Dart. La salida de
+  `dart doc` se genera en un paso de CI con Dart (GitHub Actions ya lo instala),
+  o instalando Dart en el `installCommand` de Vercel, y se incorpora al
+  sitio estático de Astro. El ADR 0002 registra cuál de las dos opciones se usa.
 - La referencia documenta la superficie pública que fije US-090; lo que US-090
   declare interno deja de exportarse o se marca como tal.
 - Cuando el paquete se publique en pub.dev (US-096), el sitio enlaza también a
