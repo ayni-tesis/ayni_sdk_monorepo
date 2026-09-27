@@ -840,9 +840,19 @@ class AyniSdk {
     for (final item in remote['workflows'] as List) {
       final workflow = _Workflow.fromJson(item);
       final previous = workflow == null ? null : workflows[workflow.id];
+      final sameInstalledWorkflow =
+          workflow != null &&
+          previous != null &&
+          previous.workflowVersionId == workflow.workflowVersionId &&
+          previous.version == workflow.version &&
+          previous.name == workflow.name &&
+          previous.modelVersionIds.length == workflow.modelVersionIds.length &&
+          previous.modelVersionIds.asMap().entries.every(
+            (entry) => entry.value == workflow.modelVersionIds[entry.key],
+          );
       if (workflow == null ||
           !workflow.modelVersionIds.every(models.containsKey) ||
-          (previous?.workflowVersionId != workflow.workflowVersionId &&
+          (!sameInstalledWorkflow &&
               workflow.modelVersionIds.any(invalidModelIds.contains))) {
         resources.add(_invalidResource(SyncResourceType.workflow, item));
         continue;

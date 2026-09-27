@@ -376,45 +376,79 @@ void main() {
   );
 
   test(
-    'rejects a same-version model hash conflict and keeps the local copy',
+    'rejects model hash conflicts when an installed workflow record changes',
     () async {
       final client = sdk();
       final inventory = await seedInventory(client);
-      final before = await inventory.readAsString();
-      responseBody = jsonEncode({
-        'workflows': [
-          {
-            'workflowId': 'workflow-1',
-            'workflowVersionId': 'workflow-version-2.0.0',
-            'name': 'Clasificar hoja',
-            'version': '2.0.0',
-            'modelVersionIds': ['model-version-1'],
-          },
-        ],
-        'models': [
-          {
-            'modelVersionId': 'model-version-1',
-            'version': '1.0.0',
-            'sha256': 'b' * 64,
-          },
-        ],
+      final local = jsonDecode(await inventory.readAsString()) as Map;
+      (local['models'] as List).add({
+        'modelVersionId': 'model-version-2',
+        'version': '1.0.0',
+        'sha256': 'c' * 64,
       });
+      await inventory.writeAsString(jsonEncode(local));
+      final before = await inventory.readAsString();
       final requestsBeforeSync = requests.length;
 
-      final result = await client.sync();
+      Future<SyncResult> syncWithWorkflow({
+        required String version,
+        required List<String> modelVersionIds,
+      }) async {
+        responseBody = jsonEncode({
+          'workflows': [
+            {
+              'workflowId': 'workflow-1',
+              'workflowVersionId': 'workflow-version-1.0.0',
+              'name': 'Clasificar hoja',
+              'version': version,
+              'modelVersionIds': modelVersionIds,
+            },
+          ],
+          'models': [
+            {
+              'modelVersionId': 'model-version-1',
+              'version': '1.0.0',
+              'sha256': 'a' * 64,
+            },
+            {
+              'modelVersionId': 'model-version-2',
+              'version': '1.0.0',
+              'sha256': 'd' * 64,
+            },
+          ],
+        });
+        return client.sync();
+      }
 
-      expect(result.status, SyncStatus.upToDate);
-      expect(result.resources.map((resource) => resource.status), [
+      final dependencyChange = await syncWithWorkflow(
+        version: '1.0.0',
+        modelVersionIds: ['model-version-1', 'model-version-2'],
+      );
+
+      expect(dependencyChange.status, SyncStatus.upToDate);
+      expect(dependencyChange.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
         SyncResourceStatus.invalidRemoteResource,
         SyncResourceStatus.invalidRemoteResource,
       ]);
       expect(
-        result.resources.first.message,
+        dependencyChange.resources[1].message,
         'La actualización no coincide con la versión instalada; '
         'se conservará la copia local.',
       );
       expect(await inventory.readAsString(), before);
-      expect(requests.length, requestsBeforeSync + 1);
+
+      final versionChange = await syncWithWorkflow(
+        version: '2.0.0',
+        modelVersionIds: ['model-version-1', 'model-version-2'],
+      );
+      expect(versionChange.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.invalidRemoteResource,
+        SyncResourceStatus.invalidRemoteResource,
+      ]);
+      expect(await inventory.readAsString(), before);
+      expect(requests.length, requestsBeforeSync + 2);
     },
   );
 
