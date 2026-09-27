@@ -78,6 +78,40 @@ class BooleanResult extends WorkflowValue {
   final bool value;
 }
 
+bool workflowBranchReachesOutput({
+  required String conditionId,
+  required String branchPort,
+  required Map<String, Map> nodes,
+  required Map<String, List<String>> outgoing,
+  required List<Map> connections,
+}) {
+  final pending = <String>[
+    ...connections
+        .where(
+          (edge) =>
+              edge['sourceNodeId'] == conditionId &&
+              edge['sourcePort'] == branchPort,
+        )
+        .map((edge) => edge['targetNodeId'] as String),
+    ...nodes.entries
+        .where(
+          (entry) =>
+              entry.value['type'] == 'output' &&
+              entry.value['sourceNodeId'] == conditionId &&
+              entry.value['sourcePort'] == branchPort,
+        )
+        .map((entry) => entry.key),
+  ];
+  final visited = <String>{};
+  while (pending.isNotEmpty) {
+    final id = pending.removeLast();
+    if (!visited.add(id)) continue;
+    if (nodes[id]?['type'] == 'output') return true;
+    pending.addAll(outgoing[id] ?? const []);
+  }
+  return false;
+}
+
 class WorkflowExecutor {
   WorkflowExecutor(this.storageDirectory);
   final Directory storageDirectory;
@@ -170,6 +204,18 @@ class WorkflowExecutor {
               );
               values[id] = BooleanResult(id, truth);
               final port = truth ? 'true' : 'false';
+              if (!workflowBranchReachesOutput(
+                conditionId: id,
+                branchPort: port,
+                nodes: byId,
+                outgoing: outgoing,
+                connections: connections,
+              )) {
+                throw WorkflowError(
+                  WorkflowErrorCategory.invalidWorkflow,
+                  nodeId: id,
+                );
+              }
               active.addAll(
                 connections
                     .where(
