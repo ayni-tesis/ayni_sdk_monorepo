@@ -7,7 +7,7 @@
 <script>
   for (const button of document.querySelectorAll("[data-open-search]")) {
     button.addEventListener("click", () => {
-      document.querySelector<HTMLButtonElement>("site-search [data-open-modal]")?.click();
+      document.querySelector<HTMLButtonElement>("[data-search-open]")?.click();
     });
   }
 </script>

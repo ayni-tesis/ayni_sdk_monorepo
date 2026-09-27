@@ -25,6 +25,7 @@ This file provides context about the project for AI assistants.
 - `apps/docs`: Astro 7 + Starlight, static output deployed on Vercel (project `ayni-docs`, root `apps/docs`) without an adapter; see `docs/adr/0002-sitio-documentacion-astro-starlight-vercel.md`
 - Sidebar groups live in `apps/docs/src/navigation.ts` and autogenerate from `src/content/docs/<group>/`; UI string overrides in `src/content/i18n/es.json`; theme tokens in `src/styles/theme.css` (contrast checked by `src/theme.test.ts`)
 - Pages document only shipped behavior (epic rule, `docs/epicas/documentacion-sdk/README.md`)
+- Search (US-138): `src/components/Search.astro` overrides Starlight's `Search` with a dialog over Pagefind's JS API (`src/search/`); the `searchIndexCoverage` integration fails `astro build` when a built page (except the 404) is missing from the Pagefind index. The dialog tests run in jsdom (`// @vitest-environment jsdom`, a docs devDependency), which lacks `showModal()`, so they stub it
 
 ### Backend
 
