@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
 
+import '../lib/src/sdk_internal.dart';
+
 void main() {
   late Directory storageDirectory;
   late HttpServer server;
@@ -16,10 +18,13 @@ void main() {
   Duration? responseDelay;
   final requests = <HttpRequest>[];
 
-  File installedDefinition(String versionId) => File(
-    '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
-    '${Platform.pathSeparator}${base64Url.encode(utf8.encode(versionId))}.json',
-  );
+  // Two files per download: the downloader streams the definition into its
+  // own `.part` attempt file (reported as `temporaryDefinition` and validated
+  // there), and only a valid definition is renamed to the installed path
+  // below. The installed path comes from the production builder, not a
+  // re-implemented base64Url encoding.
+  File installedDefinitionFile(String versionId) =>
+      installedWorkflowDefinitionFile(storageDirectory, versionId);
 
   setUp(() async {
     requests.clear();
@@ -67,6 +72,8 @@ void main() {
   AyniSdk sdk({
     Duration? timeout,
     Future<void> Function()? onBeforeInventoryPersist,
+    void Function(String message)? onProgress,
+    void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   }) => AyniSdk(
     serverUrl: Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
@@ -76,6 +83,8 @@ void main() {
     syncTimeout: timeout ?? const Duration(seconds: 30),
     allowInsecureLoopback: true,
     onBeforeInventoryPersist: onBeforeInventoryPersist,
+    onProgress: onProgress,
+    onWorkflowDownload: onWorkflowDownload,
   );
 
   Future<SyncStatus> syncStatus(AyniSdk client) async =>
@@ -93,13 +102,7 @@ void main() {
     () async {
       final messages = <String>[];
       final downloads = <WorkflowVersionDownloadResult>[];
-      final client = AyniSdk(
-        serverUrl: Uri.parse(
-          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
-        ),
-        credential: 'ayni_sk_test',
-        storageDirectory: storageDirectory,
-        allowInsecureLoopback: true,
+      final client = sdk(
         onProgress: messages.add,
         onWorkflowDownload: downloads.add,
       );
@@ -124,7 +127,7 @@ void main() {
         isFalse,
       );
       expect(
-        await installedDefinition('workflow-version-1.0.0').readAsString(),
+        await installedDefinitionFile('workflow-version-1.0.0').readAsString(),
         workflowResponseBody,
       );
 
@@ -232,15 +235,7 @@ void main() {
         ],
       });
       final downloads = <WorkflowVersionDownloadResult>[];
-      final client = AyniSdk(
-        serverUrl: Uri.parse(
-          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
-        ),
-        credential: 'ayni_sk_test',
-        storageDirectory: storageDirectory,
-        allowInsecureLoopback: true,
-        onWorkflowDownload: downloads.add,
-      );
+      final client = sdk(onWorkflowDownload: downloads.add);
 
       final result = await client.sync();
 
@@ -311,19 +306,13 @@ void main() {
       responseBody = _manifest(workflowVersion: '2.0.0');
       workflowResponseBody = _cyclicWorkflowDefinition();
       final downloads = <WorkflowVersionDownloadResult>[];
-      final rejectingClient = AyniSdk(
-        serverUrl: Uri.parse(
-          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
-        ),
-        credential: 'ayni_sk_test',
-        storageDirectory: storageDirectory,
-        allowInsecureLoopback: true,
-        onWorkflowDownload: downloads.add,
-      );
+      final rejectingClient = sdk(onWorkflowDownload: downloads.add);
 
       final result = await rejectingClient.sync();
 
-      expect(result.status, SyncStatus.updated);
+      // Only the workflow 2.0.0 was a candidate change, validation rejected
+      // it, and nothing was installed: the sync reports `upToDate`.
+      expect(result.status, SyncStatus.upToDate);
       expect(result.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
         SyncResourceStatus.invalidWorkflow,
@@ -351,11 +340,11 @@ void main() {
         isFalse,
       );
       expect(
-        await installedDefinition('workflow-version-1.0.0').exists(),
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
         isTrue,
       );
       expect(
-        await installedDefinition('workflow-version-2.0.0').exists(),
+        await installedDefinitionFile('workflow-version-2.0.0').exists(),
         isFalse,
       );
 
@@ -376,7 +365,13 @@ void main() {
         SyncResourceStatus.updated,
         SyncResourceStatus.invalidWorkflow,
       ]);
-      expect(result.resources.last.message, isNotNull);
+      // Nothing was previously installed for this workflow, so the rejection
+      // says so instead of claiming a valid version was kept.
+      expect(
+        result.resources.last.message,
+        'La actualización de Clasificar hoja no es compatible. '
+        'No se instaló ninguna versión.',
+      );
       final inventory = await File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       ).readAsString();
@@ -391,7 +386,7 @@ void main() {
         ],
       });
       expect(
-        await installedDefinition('workflow-version-1.0.0').exists(),
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
         isFalse,
       );
       final leftovers = await storageDirectory
@@ -412,15 +407,7 @@ void main() {
       final downloads = <WorkflowVersionDownloadResult>[];
       workflowStatusCode = HttpStatus.notFound;
 
-      final unavailableClient = AyniSdk(
-        serverUrl: Uri.parse(
-          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
-        ),
-        credential: 'ayni_sk_test',
-        storageDirectory: storageDirectory,
-        allowInsecureLoopback: true,
-        onWorkflowDownload: downloads.add,
-      );
+      final unavailableClient = sdk(onWorkflowDownload: downloads.add);
 
       expect((await unavailableClient.sync()).status, SyncStatus.error);
       expect(

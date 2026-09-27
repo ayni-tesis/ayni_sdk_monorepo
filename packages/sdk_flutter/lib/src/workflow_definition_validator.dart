@@ -1,6 +1,10 @@
+import 'sdk_internal.dart';
+
 /// The machine-readable outcome of validating a downloaded workflow
 /// definition. Only this status ever reaches the app: the definition's JSON is
-/// never included.
+/// never included. The SDK acts on `valid` versus any rejection identically;
+/// the distinct rejection reasons exist so the internal tests can assert *why*
+/// a definition was refused, matching the checks below.
 enum WorkflowValidationStatus {
   valid,
   invalidSchema,
@@ -9,20 +13,71 @@ enum WorkflowValidationStatus {
   missingNode,
   cycle,
   incompatiblePort,
-  duplicatePort,
 }
 
 /// Checks a published workflow definition (`{ nodes, connections }`) before the
-/// SDK installs it: well-formed nodes and connections, only the supported node
-/// types, edges that join compatible ports (a model image input taking a single
-/// connection), an acyclic graph counting each condition's and output's stored
-/// source as an edge, and model versions declared in the manifest.
+/// SDK installs it: the exact schema the server publishes (no unknown or
+/// missing fields on the definition, its nodes, or its connections), only the
+/// supported node types, edges that join compatible ports (a model image input
+/// taking a single connection), an acyclic graph counting each condition's and
+/// output's stored source as an edge, and model versions declared in the
+/// manifest.
+///
+/// The graph rules are a faithful Dart mirror of the server's source of truth,
+/// `packages/api/src/workflow-graph.ts` (`workflowEdges`,
+/// `areWorkflowPortsCompatible`, `isConditionSourceCompatible`,
+/// `isOutputSourceCompatible`, and the cycle guarantee US-033 enforces on
+/// writes), so a definition the dashboard could publish is exactly one the SDK
+/// accepts. Keep the two in lockstep: change the rules in `workflow-graph.ts`
+/// first, then port them here. The published shape — which this validator
+/// treats as required and complete — comes from
+/// `apps/server/src/workflow-version-store.ts`
+/// (`definition = { nodes, connections }`, never `layout`) and the node types
+/// in `apps/server/src/workflow-store.ts` (`WorkflowNode`).
 class WorkflowDefinitionValidator {
   static const _nodeTypes = {
     'input.image',
     'model.tflite',
     'condition',
     'output',
+  };
+
+  /// The exact fields a published node carries per type; anything unknown or
+  /// missing is a schema violation.
+  static const _nodeFields = {
+    'input.image': {'id', 'type', 'outputs'},
+    'model.tflite': {
+      'id',
+      'type',
+      'modelVersionId',
+      'modelName',
+      'version',
+      'inputs',
+      'outputs',
+    },
+    'condition': {
+      'id',
+      'type',
+      'sourceNodeId',
+      'label',
+      'operator',
+      'threshold',
+      'branches',
+    },
+    'output': {
+      'id',
+      'type',
+      'name',
+      'sourceNodeId',
+      'sourcePort',
+      'resultType',
+    },
+  };
+  static const _connectionFields = {
+    'sourceNodeId',
+    'sourcePort',
+    'targetNodeId',
+    'targetPort',
   };
   static const _conditionOperators = {'gte', 'gt', 'lte', 'lt'};
   static const _modelOutputTypes = {'classification', 'detection'};
@@ -32,162 +87,244 @@ class WorkflowDefinitionValidator {
     required Object? definition,
     required Set<String> declaredModelVersionIds,
   }) {
-    if (definition is! Map) return WorkflowValidationStatus.invalidSchema;
-    final rawNodes = definition['nodes'];
-    if (rawNodes is! List) return WorkflowValidationStatus.invalidSchema;
-    final rawConnections = definition['connections'];
-    if (rawConnections != null && rawConnections is! List) {
-      return WorkflowValidationStatus.invalidSchema;
-    }
-
-    final nodes = <String, Map>{};
-    final modelOutputTypes = <String, String>{};
-    final modelLabels = <String, Set<String>>{};
-    for (final item in rawNodes) {
-      final failure = _readNode(
-        item,
-        nodes,
-        modelOutputTypes,
-        modelLabels,
-        declaredModelVersionIds,
-      );
-      if (failure != null) return failure;
-    }
-
+    final shape = _readNodes(definition, declaredModelVersionIds);
+    if (shape.failure != null) return shape.failure!;
+    final nodes = shape.nodes;
     final edges = <(String, String)>[];
-    for (final entry in nodes.entries) {
-      final type = entry.value['type'];
-      if (type == 'condition' || type == 'output') {
-        final sourceNodeId = entry.value['sourceNodeId'] as String;
-        if (!nodes.containsKey(sourceNodeId)) {
+    for (final node in nodes.values) {
+      if (node.type == 'condition' || node.type == 'output') {
+        if (!nodes.containsKey(node.sourceNodeId)) {
           return WorkflowValidationStatus.missingNode;
         }
-        edges.add((sourceNodeId, entry.key));
+        edges.add((node.sourceNodeId!, node.id));
       }
     }
 
-    final connections = <Map>[];
-    for (final item in rawConnections ?? const []) {
-      if (item is! Map ||
-          !_isNonEmptyString(item['sourceNodeId']) ||
-          !_isNonEmptyString(item['sourcePort']) ||
-          !_isNonEmptyString(item['targetNodeId']) ||
-          !_isNonEmptyString(item['targetPort'])) {
+    final connections = <_Connection>[];
+    for (final item in shape.connections) {
+      final connection = _readConnection(item);
+      if (connection == null) {
         return WorkflowValidationStatus.invalidSchema;
       }
-      final sourceNodeId = item['sourceNodeId'] as String;
-      final targetNodeId = item['targetNodeId'] as String;
-      if (!nodes.containsKey(sourceNodeId) ||
-          !nodes.containsKey(targetNodeId)) {
+      if (!nodes.containsKey(connection.sourceNodeId) ||
+          !nodes.containsKey(connection.targetNodeId)) {
         return WorkflowValidationStatus.missingNode;
       }
-      connections.add(item);
-      edges.add((sourceNodeId, targetNodeId));
+      connections.add(connection);
+      edges.add((connection.sourceNodeId, connection.targetNodeId));
     }
 
     if (_hasCycle(nodes.keys.toSet(), edges)) {
       return WorkflowValidationStatus.cycle;
     }
 
-    final takenInputs = <String>{};
+    final portFailure = _checkPorts(nodes, connections);
+    if (portFailure != null) return portFailure;
+    return WorkflowValidationStatus.valid;
+  }
+
+  /// Parses the definition schema and every node, returning the nodes keyed by
+  /// id, the raw connection list, and the first failure (`null` when the shape
+  /// is sound).
+  _ParsedNodes _readNodes(
+    Object? definition,
+    Set<String> declaredModelVersionIds,
+  ) {
+    if (definition is! Map ||
+        !_hasExactFields(
+          definition,
+          const {'nodes', 'connections'},
+          optional: const {'connections'},
+        )) {
+      return _ParsedNodes.invalid();
+    }
+    final rawNodes = definition['nodes'];
+    final rawConnections = definition['connections'];
+    if (rawNodes is! List ||
+        (rawConnections != null && rawConnections is! List)) {
+      return _ParsedNodes.invalid();
+    }
+
+    final nodes = <String, _Node>{};
+    for (final item in rawNodes) {
+      final parsed = _readNode(item, declaredModelVersionIds);
+      if (parsed.node == null) {
+        return _ParsedNodes.rejected(parsed.failure!);
+      }
+      final node = parsed.node!;
+      if (nodes.containsKey(node.id)) {
+        return _ParsedNodes.invalid();
+      }
+      nodes[node.id] = node;
+    }
+    return _ParsedNodes.accepted(nodes, rawConnections ?? const []);
+  }
+
+  ({WorkflowValidationStatus? failure, _Node? node}) _readNode(
+    Object? item,
+    Set<String> declaredModelVersionIds,
+  ) {
+    if (item is! Map) {
+      return (failure: WorkflowValidationStatus.invalidSchema, node: null);
+    }
+    final id = item['id'];
+    final type = item['type'];
+    if (!isNonEmptyString(id) || !isNonEmptyString(type)) {
+      return (failure: WorkflowValidationStatus.invalidSchema, node: null);
+    }
+    final nodeType = type as String;
+    if (!_nodeTypes.contains(nodeType)) {
+      return (failure: WorkflowValidationStatus.unknownNodeType, node: null);
+    }
+    if (!_hasExactFields(item, _nodeFields[nodeType]!)) {
+      return (failure: WorkflowValidationStatus.invalidSchema, node: null);
+    }
+    final node = _Node(id: id as String, type: nodeType);
+
+    final failure = switch (nodeType) {
+      'input.image' => _readImageInput(node, item),
+      'model.tflite' => _readModel(node, item, declaredModelVersionIds),
+      'condition' => _readCondition(node, item),
+      'output' => _readOutput(node, item),
+      _ => WorkflowValidationStatus.unknownNodeType,
+    };
+    if (failure != null) {
+      return (failure: failure, node: null);
+    }
+    return (failure: null, node: node);
+  }
+
+  WorkflowValidationStatus? _readImageInput(_Node node, Map item) {
+    final outputs = item['outputs'];
+    if (outputs is! Map ||
+        !_hasExactFields(outputs, const {'imagen'}) ||
+        outputs['imagen'] != 'image') {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    return null;
+  }
+
+  WorkflowValidationStatus? _readModel(
+    _Node node,
+    Map item,
+    Set<String> declaredModelVersionIds,
+  ) {
+    final modelVersionId = item['modelVersionId'];
+    final inputs = item['inputs'];
+    final outputs = item['outputs'];
+    final result = outputs is Map ? outputs['result'] : null;
+    final resultType = result is Map ? result['type'] : null;
+    final labels = result is Map ? result['labels'] : null;
+    if (!isNonEmptyString(modelVersionId) ||
+        !isNonEmptyString(item['modelName']) ||
+        !isNonEmptyString(item['version']) ||
+        inputs is! Map ||
+        !_hasExactFields(inputs, const {'image'}) ||
+        inputs['image'] is! Map ||
+        outputs is! Map ||
+        !_hasExactFields(outputs, const {'result'}) ||
+        result is! Map ||
+        !_hasExactFields(result, const {'type', 'labels'}) ||
+        !_modelOutputTypes.contains(resultType) ||
+        labels is! List ||
+        !labels.every((label) => label is String)) {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    if (!declaredModelVersionIds.contains(modelVersionId)) {
+      return WorkflowValidationStatus.undeclaredModelVersion;
+    }
+    node.modelResultType = resultType as String;
+    node.modelLabels = labels.cast<String>().toSet();
+    return null;
+  }
+
+  WorkflowValidationStatus? _readCondition(_Node node, Map item) {
+    final threshold = item['threshold'];
+    final branches = item['branches'];
+    if (!isNonEmptyString(item['sourceNodeId']) ||
+        !isNonEmptyString(item['label']) ||
+        !_conditionOperators.contains(item['operator']) ||
+        threshold is! num ||
+        threshold < 0 ||
+        threshold > 1 ||
+        branches is! Map ||
+        !_hasExactFields(branches, const {'true', 'false'})) {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    node.sourceNodeId = item['sourceNodeId'] as String;
+    node.label = item['label'] as String;
+    return null;
+  }
+
+  WorkflowValidationStatus? _readOutput(_Node node, Map item) {
+    final resultType = item['resultType'];
+    if (!isNonEmptyString(item['name']) ||
+        !isNonEmptyString(item['sourceNodeId']) ||
+        !isNonEmptyString(item['sourcePort']) ||
+        !_resultTypes.contains(resultType)) {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    node.sourceNodeId = item['sourceNodeId'] as String;
+    node.sourcePort = item['sourcePort'] as String;
+    node.resultType = resultType as String;
+    return null;
+  }
+
+  _Connection? _readConnection(Object? item) {
+    if (item is! Map ||
+        !_hasExactFields(item, _connectionFields) ||
+        !item.values.every(isNonEmptyString)) {
+      return null;
+    }
+    return _Connection(
+      sourceNodeId: item['sourceNodeId'] as String,
+      sourcePort: item['sourcePort'] as String,
+      targetNodeId: item['targetNodeId'] as String,
+      targetPort: item['targetPort'] as String,
+    );
+  }
+
+  /// Port rules mirroring `workflowPortCompatibility` and
+  /// `areWorkflowPortsCompatible`: every connection is the image output of the
+  /// input feeding a model's single image input; every condition reads a
+  /// classification label off its source model; every output reads a
+  /// compatible result or boolean branch off its source.
+  WorkflowValidationStatus? _checkPorts(
+    Map<String, _Node> nodes,
+    List<_Connection> connections,
+  ) {
+    final takenImageInputs = <String>{};
     for (final connection in connections) {
-      final source = nodes[connection['sourceNodeId']]!;
-      final target = nodes[connection['targetNodeId']]!;
+      final source = nodes[connection.sourceNodeId]!;
+      final target = nodes[connection.targetNodeId]!;
       final compatible =
-          source['type'] == 'input.image' &&
-          connection['sourcePort'] == 'imagen' &&
-          target['type'] == 'model.tflite' &&
-          connection['targetPort'] == 'image';
-      if (!compatible) return WorkflowValidationStatus.incompatiblePort;
-      final input = '${connection['targetNodeId']}:${connection['targetPort']}';
-      if (!takenInputs.add(input)) {
-        return WorkflowValidationStatus.duplicatePort;
+          source.type == 'input.image' &&
+          connection.sourcePort == 'imagen' &&
+          target.type == 'model.tflite' &&
+          connection.targetPort == 'image';
+      if (!compatible || !takenImageInputs.add(connection.targetNodeId)) {
+        return WorkflowValidationStatus.incompatiblePort;
       }
     }
 
     for (final node in nodes.values) {
-      switch (node['type']) {
-        case 'condition':
-          final sourceId = node['sourceNodeId'] as String;
-          if (nodes[sourceId]!['type'] != 'model.tflite' ||
-              modelOutputTypes[sourceId] != 'classification' ||
-              !modelLabels[sourceId]!.contains(node['label'])) {
-            return WorkflowValidationStatus.incompatiblePort;
-          }
-        case 'output':
-          final sourceId = node['sourceNodeId'] as String;
-          final resultType = node['resultType'] as String;
-          final sourceType = nodes[sourceId]!['type'];
-          final compatible = resultType == 'boolean'
-              ? sourceType == 'condition' &&
-                    (node['sourcePort'] == 'true' ||
-                        node['sourcePort'] == 'false')
-              : sourceType == 'model.tflite' &&
-                    node['sourcePort'] == 'result' &&
-                    modelOutputTypes[sourceId] == resultType;
-          if (!compatible) return WorkflowValidationStatus.incompatiblePort;
-      }
+      final source = switch (node.type) {
+        'condition' || 'output' => nodes[node.sourceNodeId!]!,
+        _ => null,
+      };
+      if (source == null) continue;
+      final compatible = node.type == 'condition'
+          ? source.type == 'model.tflite' &&
+                source.modelResultType == 'classification' &&
+                source.modelLabels!.contains(node.label)
+          : node.resultType == 'boolean'
+          ? source.type == 'condition' &&
+                (node.sourcePort == 'true' || node.sourcePort == 'false')
+          : source.type == 'model.tflite' &&
+                node.sourcePort == 'result' &&
+                source.modelResultType == node.resultType;
+      if (!compatible) return WorkflowValidationStatus.incompatiblePort;
     }
-    return WorkflowValidationStatus.valid;
-  }
-
-  WorkflowValidationStatus? _readNode(
-    Object? item,
-    Map<String, Map> nodes,
-    Map<String, String> modelOutputTypes,
-    Map<String, Set<String>> modelLabels,
-    Set<String> declaredModelVersionIds,
-  ) {
-    if (item is! Map) return WorkflowValidationStatus.invalidSchema;
-    final id = item['id'];
-    final type = item['type'];
-    if (!_isNonEmptyString(id) || !_isNonEmptyString(type)) {
-      return WorkflowValidationStatus.invalidSchema;
-    }
-    if (!_nodeTypes.contains(type)) {
-      return WorkflowValidationStatus.unknownNodeType;
-    }
-    if (nodes.containsKey(id)) return WorkflowValidationStatus.invalidSchema;
-    final nodeId = id as String;
-
-    switch (type) {
-      case 'model.tflite':
-        final modelVersionId = item['modelVersionId'];
-        final outputs = item['outputs'];
-        final result = outputs is Map ? outputs['result'] : null;
-        final resultType = result is Map ? result['type'] : null;
-        final labels = result is Map ? result['labels'] : null;
-        if (!_isNonEmptyString(modelVersionId) ||
-            resultType is! String ||
-            !_modelOutputTypes.contains(resultType) ||
-            labels is! List ||
-            !labels.every((label) => label is String)) {
-          return WorkflowValidationStatus.invalidSchema;
-        }
-        if (!declaredModelVersionIds.contains(modelVersionId)) {
-          return WorkflowValidationStatus.undeclaredModelVersion;
-        }
-        modelOutputTypes[nodeId] = resultType;
-        modelLabels[nodeId] = labels.cast<String>().toSet();
-      case 'condition':
-        final threshold = item['threshold'];
-        if (!_isNonEmptyString(item['sourceNodeId']) ||
-            !_isNonEmptyString(item['label']) ||
-            !_conditionOperators.contains(item['operator']) ||
-            threshold is! num ||
-            threshold < 0 ||
-            threshold > 1) {
-          return WorkflowValidationStatus.invalidSchema;
-        }
-      case 'output':
-        if (!_isNonEmptyString(item['name']) ||
-            !_isNonEmptyString(item['sourceNodeId']) ||
-            !_isNonEmptyString(item['sourcePort']) ||
-            !_resultTypes.contains(item['resultType'])) {
-          return WorkflowValidationStatus.invalidSchema;
-        }
-    }
-    nodes[nodeId] = item;
     return null;
   }
 
@@ -214,6 +351,75 @@ class WorkflowDefinitionValidator {
     }
     return visited != nodeIds.length;
   }
+
+  /// Whether [map] carries exactly the allowed keys: none unknown, none of the
+  /// required ones missing. [optional] keys (such as a definition's
+  /// `connections`) may be absent but never foreign.
+  bool _hasExactFields(
+    Map map,
+    Set<String> allowed, {
+    Set<String> optional = const {},
+  }) {
+    if (!map.keys.every((key) => key is String && allowed.contains(key))) {
+      return false;
+    }
+    return allowed.difference(optional).every(map.containsKey);
+  }
 }
 
-bool _isNonEmptyString(Object? value) => value is String && value.isNotEmpty;
+/// The definition shape reduced to parseable nodes: the nodes keyed by id and
+/// the raw connection list, or the status that rejected the shape.
+class _ParsedNodes {
+  _ParsedNodes._(this.failure, this.nodes, this.connections);
+
+  factory _ParsedNodes.accepted(
+    Map<String, _Node> nodes,
+    List<Object?> connections,
+  ) => _ParsedNodes._(null, nodes, connections);
+
+  factory _ParsedNodes.rejected(WorkflowValidationStatus failure) =>
+      _ParsedNodes._(failure, const {}, const []);
+
+  factory _ParsedNodes.invalid() =>
+      _ParsedNodes.rejected(WorkflowValidationStatus.invalidSchema);
+
+  final WorkflowValidationStatus? failure;
+  final Map<String, _Node> nodes;
+  final List<Object?> connections;
+}
+
+/// A published node reduced to the fields the graph rules read.
+class _Node {
+  _Node({required this.id, required this.type});
+
+  final String id;
+  final String type;
+
+  /// model.tflite: the contract output type and its classification labels.
+  String? modelResultType;
+  Set<String>? modelLabels;
+
+  /// condition/output: the node its source edge starts from.
+  String? sourceNodeId;
+
+  /// condition: the classification label it tests.
+  String? label;
+
+  /// output: the source port it reads and the declared result type.
+  String? sourcePort;
+  String? resultType;
+}
+
+class _Connection {
+  _Connection({
+    required this.sourceNodeId,
+    required this.sourcePort,
+    required this.targetNodeId,
+    required this.targetPort,
+  });
+
+  final String sourceNodeId;
+  final String sourcePort;
+  final String targetNodeId;
+  final String targetPort;
+}

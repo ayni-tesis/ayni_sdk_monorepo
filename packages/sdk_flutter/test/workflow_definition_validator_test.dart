@@ -1,4 +1,4 @@
-import 'package:ayni_sdk/ayni_sdk.dart';
+import '../lib/src/workflow_definition_validator.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -146,6 +146,109 @@ void main() {
     );
     expect(
       validate(definition(nodes: [definition()])),
+      WorkflowValidationStatus.invalidSchema,
+    );
+  });
+
+  test('rejects unknown top-level fields beyond nodes and connections', () {
+    expect(
+      validate({
+        'nodes': const <Object>[],
+        'connections': const <Object>[],
+        'layout': {
+          'input-1': {'x': 0, 'y': 0},
+        },
+      }),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate({'nodes': const <Object>[], 'draftRevision': 1}),
+      WorkflowValidationStatus.invalidSchema,
+    );
+  });
+
+  test('rejects nodes with unknown or missing published fields', () {
+    expect(
+      validate(
+        definition(
+          nodes: [
+            const {
+              'id': 'input-1',
+              'type': 'input.image',
+              'outputs': {'imagen': 'image'},
+              'position': {'x': 0, 'y': 0},
+            },
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(
+        definition(
+          nodes: [
+            const {
+              'id': 'model-1',
+              'type': 'model.tflite',
+              'modelVersionId': 'model-version-1',
+              'modelName': 'Clasificador',
+              'version': '1.0.0',
+              'outputs': {
+                'result': {'type': 'classification', 'labels': []},
+              },
+            },
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(
+        definition(
+          nodes: [
+            const {
+              'id': 'condition-1',
+              'type': 'condition',
+              'sourceNodeId': 'model-1',
+              'label': 'perro',
+              'operator': 'gte',
+              'threshold': 0.8,
+              'branches': {'true': 'Verdadero'},
+            },
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+  });
+
+  test('rejects connections with unknown or missing fields', () {
+    expect(
+      validate(
+        definition(
+          nodes: [imageInput(), model()],
+          connections: [
+            const {
+              'sourceNodeId': 'input-1',
+              'sourcePort': 'imagen',
+              'targetNodeId': 'model-1',
+              'targetPort': 'image',
+              'id': 'connection-1',
+            },
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(
+        definition(
+          nodes: [imageInput(), model()],
+          connections: [
+            const {'sourceNodeId': 'input-1', 'targetNodeId': 'model-1'},
+          ],
+        ),
+      ),
       WorkflowValidationStatus.invalidSchema,
     );
   });
@@ -417,7 +520,7 @@ void main() {
           ],
         ),
       ),
-      WorkflowValidationStatus.duplicatePort,
+      WorkflowValidationStatus.incompatiblePort,
     );
     expect(
       validate(
@@ -426,7 +529,7 @@ void main() {
           connections: [imageConnection(), imageConnection()],
         ),
       ),
-      WorkflowValidationStatus.duplicatePort,
+      WorkflowValidationStatus.incompatiblePort,
     );
   });
 
