@@ -175,6 +175,46 @@ void main() {
     },
   );
 
+  test('attributes TFLite load failures to the model node', () async {
+    final client = sdk();
+    await File(
+      '${storageDirectory.path}/sync-inventory.json',
+    ).writeAsString(_manifest(workflowVersion: '1.0.0'));
+    await installedDefinitionFile(
+      'workflow-version-1.0.0',
+    ).create(recursive: true);
+    await installedDefinitionFile(
+      'workflow-version-1.0.0',
+    ).writeAsString(_validWorkflowDefinition());
+    final modelDirectory = Directory(
+      '${storageDirectory.path}/model-version-1',
+    );
+    await modelDirectory.create();
+    final artifact = File('${modelDirectory.path}/model-version-1.tflite');
+    final bytes = utf8.encode('not a tflite model');
+    await artifact.writeAsBytes(bytes);
+    await File('${modelDirectory.path}/model-version-1.json').writeAsString(
+      jsonEncode({
+        'modelId': 'model-version-1',
+        'modelVersionId': 'model-version-1',
+        'sha256': sha256.convert(bytes).toString(),
+      }),
+    );
+    await expectLater(
+      client.run(
+        'workflow-1',
+        Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1))),
+      ),
+      throwsA(
+        isA<WorkflowError>().having(
+          (e) => (e.category, e.nodeId, e.modelVersionId),
+          'model error context',
+          (WorkflowErrorCategory.runtimeError, 'model-1', 'model-version-1'),
+        ),
+      ),
+    );
+  });
+
   test(
     'installs the validated workflow, commits it, and skips its download',
     () async {

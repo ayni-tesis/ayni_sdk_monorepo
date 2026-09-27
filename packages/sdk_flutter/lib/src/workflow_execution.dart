@@ -82,39 +82,26 @@ class WorkflowExecutor {
   WorkflowExecutor(this.storageDirectory);
   final Directory storageDirectory;
 
-  void validateInputAndContracts(
+  img.Image validateInputAndContracts(
     Map<String, dynamic> definition,
     Uint8List bytes,
   ) {
-    if (bytes.isEmpty || img.decodeImage(bytes) == null) {
+    final decoded = bytes.isEmpty ? null : img.decodeImage(bytes);
+    if (decoded == null) {
       throw const WorkflowError(WorkflowErrorCategory.invalidInput);
     }
     for (final node in (definition['nodes'] as List).cast<Map>()) {
       if (node['type'] != 'model.tflite') continue;
-      final contract = (node['inputs'] as Map)['image'];
-      if (contract is! Map ||
-          contract['type'] != 'image' ||
-          contract['width'] is! int ||
-          contract['height'] is! int ||
-          ![1, 3, 4].contains(contract['channels']) ||
-          ![
-            'none',
-            'zero_to_one',
-            'minus_one_to_one',
-          ].contains(contract['normalization'])) {
-        throw WorkflowError(
-          WorkflowErrorCategory.unsupportedInputContract,
-          nodeId: node['id'] as String?,
-        );
-      }
+      _parseInputContract(node, node['id'] as String);
     }
+    return decoded;
   }
 
   Future<WorkflowResult> execute({
     required String workflowId,
     required String workflowVersion,
     required Map<String, dynamic> definition,
-    required Uint8List imageBytes,
+    required img.Image decodedImage,
   }) async {
     try {
       final nodes = (definition['nodes'] as List).cast<Map>();
@@ -156,18 +143,18 @@ class WorkflowExecutor {
         if (active.contains(id))
           switch (node['type']) {
             case 'input.image':
-              values[id] = imageBytes;
+              values[id] = decodedImage;
             case 'model.tflite':
               final parent = (incoming[id] ?? []).firstWhere(
                 (p) => byId[p]!['type'] == 'input.image',
                 orElse: () => '',
               );
-              if (parent.isEmpty || values[parent] is! Uint8List)
+              if (parent.isEmpty || values[parent] is! img.Image)
                 throw WorkflowError(
                   WorkflowErrorCategory.invalidWorkflow,
                   nodeId: id,
                 );
-              values[id] = await _infer(node, values[parent] as Uint8List, id);
+              values[id] = await _infer(node, decodedImage, id);
             case 'condition':
               final source = values[node['sourceNodeId']];
               if (source is! ClassificationResult ||
@@ -252,24 +239,46 @@ class WorkflowExecutor {
     }
   }
 
-  Future<WorkflowValue> _infer(Map node, Uint8List bytes, String nodeId) async {
-    final contract = (node['inputs'] as Map)['image'] as Map;
-    final width = contract['width'],
-        height = contract['height'],
-        channels = contract['channels'];
-    if (contract['type'] != 'image' ||
-        width is! int ||
-        height is! int ||
-        channels is! int ||
-        ![1, 3, 4].contains(channels)) {
+  ({int width, int height, int channels, String normalization})
+  _parseInputContract(Map node, String nodeId) {
+    final inputs = node['inputs'];
+    final contract = inputs is Map ? inputs['image'] : null;
+    if (contract is! Map ||
+        contract['type'] != 'image' ||
+        contract['width'] is! int ||
+        contract['width'] < 1 ||
+        contract['width'] > 8192 ||
+        contract['height'] is! int ||
+        contract['height'] < 1 ||
+        contract['height'] > 8192 ||
+        ![1, 3, 4].contains(contract['channels']) ||
+        ![
+          'none',
+          'zero_to_one',
+          'minus_one_to_one',
+        ].contains(contract['normalization'])) {
       throw WorkflowError(
         WorkflowErrorCategory.unsupportedInputContract,
         nodeId: nodeId,
       );
     }
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null)
-      throw const WorkflowError(WorkflowErrorCategory.invalidInput);
+    return (
+      width: contract['width'] as int,
+      height: contract['height'] as int,
+      channels: contract['channels'] as int,
+      normalization: contract['normalization'] as String,
+    );
+  }
+
+  Future<WorkflowValue> _infer(
+    Map node,
+    img.Image decoded,
+    String nodeId,
+  ) async {
+    final contract = _parseInputContract(node, nodeId);
+    final width = contract.width,
+        height = contract.height,
+        channels = contract.channels;
     final resized = img.copyResize(decoded, width: width, height: height);
     final input = Float32List(width * height * channels);
     var index = 0;
@@ -280,7 +289,7 @@ class WorkflowExecutor {
         for (var c = 0; c < channels; c++) {
           var v = values[channels == 1 ? 0 : c].toDouble();
           if (channels == 1) v = (pixel.r + pixel.g + pixel.b) / 3;
-          input[index++] = switch (contract['normalization']) {
+          input[index++] = switch (contract.normalization) {
             'none' => v,
             'zero_to_one' => v / 255,
             'minus_one_to_one' => v / 127.5 - 1,
@@ -432,8 +441,28 @@ class WorkflowExecutor {
           nodeId: nodeId,
         );
       return DetectionResult(nodeId, detections);
+    } on WorkflowError catch (error) {
+      throw WorkflowError(
+        error.category,
+        nodeId: error.nodeId ?? nodeId,
+        modelVersionId: error.modelVersionId ?? versionId,
+      );
+    } on FileSystemException {
+      throw WorkflowError(
+        WorkflowErrorCategory.modelNotAvailable,
+        nodeId: nodeId,
+        modelVersionId: versionId,
+      );
+    } catch (_) {
+      throw WorkflowError(
+        WorkflowErrorCategory.runtimeError,
+        nodeId: nodeId,
+        modelVersionId: versionId,
+      );
     } finally {
-      interpreter?.close();
+      try {
+        interpreter?.close();
+      } catch (_) {}
     }
   }
 
