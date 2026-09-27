@@ -467,6 +467,15 @@ class AyniSdk {
         return false;
       }
 
+      final modelDirectory = Directory(
+        '${storageDirectory.path}${Platform.pathSeparator}$modelVersionId',
+      );
+      final artifactPath =
+          '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.tflite';
+      final metadataPath =
+          '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.json';
+      final preExisting = File(artifactPath).existsSync();
+
       final installResult = await installer.install(
         modelId: modelVersionId,
         version: model.version,
@@ -479,18 +488,10 @@ class AyniSdk {
         return false;
       }
 
-      installedModelFiles.add(
-        File(
-          '${storageDirectory.path}${Platform.pathSeparator}'
-          '$modelVersionId${Platform.pathSeparator}$modelVersionId.tflite',
-        ),
-      );
-      installedModelFiles.add(
-        File(
-          '${storageDirectory.path}${Platform.pathSeparator}'
-          '$modelVersionId${Platform.pathSeparator}$modelVersionId.json',
-        ),
-      );
+      if (!preExisting) {
+        installedModelFiles.add(File(artifactPath));
+        installedModelFiles.add(File(metadataPath));
+      }
     }
 
     return true;

@@ -18,6 +18,7 @@ void main() {
   late String responseBody;
   late String workflowResponseBody;
   late String modelManifestResponseBody;
+  late Map<String, String> modelManifestResponses;
   late List<int> modelArtifactBytes;
   Uri? redirectUrl;
   Duration? responseDelay;
@@ -37,6 +38,7 @@ void main() {
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
     modelManifestStatusCode = null;
+    modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
     workflowResponseBody = _validWorkflowDefinition();
     modelArtifactBytes = utf8.encode('tflite-model-artifact-content');
@@ -72,8 +74,13 @@ void main() {
             request.response.statusCode = workflowStatusCode ?? statusCode;
             request.response.write(workflowResponseBody);
           } else if (isModelManifest) {
-            request.response.statusCode = modelManifestStatusCode ?? statusCode;
-            request.response.write(modelManifestResponseBody);
+            final segments = request.uri.pathSegments;
+            final mvId = segments.length >= 3 ? segments[2] : '';
+            final body =
+                modelManifestResponses[mvId] ?? modelManifestResponseBody;
+            request.response.statusCode =
+                modelManifestStatusCode ?? statusCode;
+            request.response.write(body);
           } else {
             request.response.statusCode = statusCode;
             if (redirectUrl != null) {
@@ -1049,6 +1056,44 @@ void main() {
   );
 
   test('cleans up model files when inventory persistence fails', () async {
+    // Two models: model-version-1 installs successfully, model-version-2
+    // manifest returns a bad size so download fails.
+    responseBody = jsonEncode({
+      'workflows': [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-1.0.0',
+          'name': 'Clasificar hoja',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-1', 'model-version-2'],
+        },
+      ],
+      'models': [
+        {
+          'modelVersionId': 'model-version-1',
+          'version': '1.0.0',
+          'sha256': sha256.convert(modelArtifactBytes).toString(),
+        },
+        {
+          'modelVersionId': 'model-version-2',
+          'version': '1.0.0',
+          'sha256': 'b' * 64,
+        },
+      ],
+    });
+    // model-version-2 gets a manifest with sizeBytes=0 → download fails.
+    modelManifestResponses['model-version-2'] = jsonEncode({
+      'modelVersionId': 'model-version-2',
+      'version': '1.0.0',
+      'sha256': 'b' * 64,
+      'sizeBytes': 0,
+      'downloadUrl': 'https://invalid.example/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
+
     final client = sdk(
       onBeforeInventoryPersist: () =>
           Future<void>.error(StateError('persistence failed')),
@@ -1058,16 +1103,19 @@ void main() {
 
     expect(result.status, SyncStatus.error);
 
-    final modelDirs = await storageDirectory
+    // model-version-1 was installed by this sync and must be cleaned up.
+    // model-version-2 was never installed (download failed).
+    final modelFiles = await storageDirectory
         .list(recursive: true)
         .where(
           (entry) =>
               entry is File &&
-              entry.path.contains('model-version-1') &&
+              (entry.path.contains('model-version-1') ||
+                  entry.path.contains('model-version-2')) &&
               (entry.path.endsWith('.tflite') || entry.path.endsWith('.json')),
         )
         .toList();
-    expect(modelDirs, isEmpty);
+    expect(modelFiles, isEmpty);
   });
 }
 
