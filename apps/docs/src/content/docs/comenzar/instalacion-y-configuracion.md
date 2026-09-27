@@ -29,26 +29,7 @@ dependencies:
 ## Inicialización
 
 Para preparar el SDK, inicialízalo con `AyniSdk.initialize(...)` pasando un
-`AyniConfig`:
-
-```dart
-final result = await AyniSdk.initialize(
-  AyniConfig(
-    serverUrl: Uri.parse('https://api.ayni.dev'),
-    credential: credential,
-    storageDirectory: storageDirectory,
-  ),
-);
-
-if (!result.isSuccess) {
-  // Muestra el mensaje si falta algún dato obligatorio:
-  print(result.message); // "Revisa la configuración del SDK antes de continuar."
-  return;
-}
-
-// El SDK queda listo para sincronizar o ejecutar:
-await AyniSdk.instance.sync();
-```
+`AyniConfig`.
 
 `AyniSdk.initialize` valida los parámetros obligatorios antes de iniciar cualquier
 operación de red o inferencia. Si la configuración es incompleta o inválida, devuelve

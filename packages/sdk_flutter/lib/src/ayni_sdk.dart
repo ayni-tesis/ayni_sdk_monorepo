@@ -140,6 +140,16 @@ class AyniConfig {
   /// Optional downloader used for fetching workflow versions.
   final WorkflowVersionDownloader? workflowVersionDownloader;
 
+  /// Whether this configuration is complete and valid for SDK initialization.
+  bool get isValid =>
+      credential.trim().isNotEmpty &&
+      storageDirectory.path.trim().isNotEmpty &&
+      !syncTimeout.isNegative &&
+      AyniSdk._canSendCredentialTo(
+        serverUrl,
+        allowInsecureLoopback: allowInsecureLoopback,
+      );
+
   @override
   String toString() =>
       'AyniConfig('
@@ -275,7 +285,7 @@ class AyniSdk {
   /// If initialization fails, no operative SDK instance is retained.
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
-      if (!_isValidConfig(config)) {
+      if (!config.isValid) {
         _instance = null;
         return AyniInitializationResult(
           status: InitializationStatus.incompleteConfiguration,
@@ -310,29 +320,19 @@ class AyniSdk {
     }
   }
 
-  static bool _isValidConfig(AyniConfig config) {
-    if (config.credential.trim().isEmpty) {
-      return false;
-    }
-    if (config.storageDirectory.path.trim().isEmpty) {
-      return false;
-    }
-    if (config.syncTimeout.isNegative) {
-      return false;
-    }
-    final url = config.serverUrl;
-    if (url.host.trim().isEmpty) {
-      return false;
-    }
-    final isHttps = url.scheme == 'https';
-    final isAllowedHttpLoopback =
-        config.allowInsecureLoopback &&
-        url.scheme == 'http' &&
-        _isLoopbackHost(url.host);
-    if (!isHttps && !isAllowedHttpLoopback) {
-      return false;
-    }
-    return true;
+  /// Checks whether [url] is a permitted destination for SDK credentials.
+  ///
+  /// Requires HTTPS unless [allowInsecureLoopback] is true and [url] targets
+  /// a loopback host.
+  static bool _canSendCredentialTo(
+    Uri url, {
+    required bool allowInsecureLoopback,
+  }) {
+    if (url.host.trim().isEmpty) return false;
+    return url.scheme == 'https' ||
+        (allowInsecureLoopback &&
+            url.scheme == 'http' &&
+            _isLoopbackHost(url.host));
   }
 
   static bool _isLoopbackHost(String host) {
@@ -442,7 +442,10 @@ class AyniSdk {
     final deadline = _SyncDeadline();
     var timedOut = false;
     try {
-      if (!_canSendCredentialTo(serverUrl)) {
+      if (!_canSendCredentialTo(
+        serverUrl,
+        allowInsecureLoopback: allowInsecureLoopback,
+      )) {
         return const SyncResult(SyncStatus.error);
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
@@ -1039,12 +1042,6 @@ class AyniSdk {
               _WorkflowManifestEntry(workflow.workflowVersionId, workflow.name),
         );
   }
-
-  bool _canSendCredentialTo(Uri url) =>
-      url.scheme == 'https' ||
-      (allowInsecureLoopback &&
-          url.scheme == 'http' &&
-          _isLoopbackHost(url.host));
 
   bool _isInventory(Object? value) =>
       value is Map &&

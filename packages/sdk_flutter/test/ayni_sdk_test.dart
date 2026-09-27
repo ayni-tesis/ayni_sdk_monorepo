@@ -1746,6 +1746,62 @@ void main() {
       expect(AyniSdk.isInitialized, isFalse);
     });
 
+    test(
+      'AyniConfig.isValid validates required fields and endpoint security',
+      () {
+        final validConfig = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+        expect(validConfig.isValid, isTrue);
+
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: '   ',
+            storageDirectory: storageDirectory,
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: Directory('   '),
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('http://insecure.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            allowInsecureLoopback: false,
+          ).isValid,
+          isFalse,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('http://localhost:8080'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            allowInsecureLoopback: true,
+          ).isValid,
+          isTrue,
+        );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            syncTimeout: const Duration(seconds: -1),
+          ).isValid,
+          isFalse,
+        );
+      },
+    );
+
     test('does not expose credential in AyniConfig.toString()', () {
       const secret = 'ayni_sk_super_secret_never_leak_this';
       final config = AyniConfig(
