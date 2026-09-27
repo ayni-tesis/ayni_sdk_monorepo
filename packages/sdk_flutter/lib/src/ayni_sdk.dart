@@ -51,7 +51,7 @@ class SyncResourceResult {
 
   String? get message => switch (status) {
     SyncResourceStatus.invalidRemoteResource =>
-      'Se mantuvo la versión local porque la actualización no es válida.',
+      'La actualización no coincide con la versión instalada; se conservará la copia local.',
     SyncResourceStatus.invalidWorkflow when previousVersionRetained =>
       'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
     SyncResourceStatus.invalidWorkflow =>
@@ -801,6 +801,7 @@ class AyniSdk {
     final models = {...local.models};
     final resources = <SyncResourceResult>[];
     final acceptedWorkflows = <_Workflow>[];
+    final invalidModelIds = <String>{};
 
     for (final item in remote['models'] as List) {
       final model = _Model.fromJson(item);
@@ -809,7 +810,14 @@ class AyniSdk {
         continue;
       }
       final previous = models[model.id];
-      final status = previous?.version == model.version
+      final sameVersion = previous?.version == model.version;
+      final hashConflict =
+          sameVersion &&
+          previous!.sha256.toLowerCase() != model.sha256.toLowerCase();
+      if (hashConflict) invalidModelIds.add(model.id);
+      final status = hashConflict
+          ? SyncResourceStatus.invalidRemoteResource
+          : sameVersion
           ? SyncResourceStatus.upToDate
           : SyncResourceStatus.updated;
       if (status == SyncResourceStatus.updated) models[model.id] = model;
@@ -825,13 +833,15 @@ class AyniSdk {
 
     for (final item in remote['workflows'] as List) {
       final workflow = _Workflow.fromJson(item);
+      final previous = workflow == null ? null : workflows[workflow.id];
       if (workflow == null ||
-          !workflow.modelVersionIds.every(models.containsKey)) {
+          !workflow.modelVersionIds.every(models.containsKey) ||
+          (previous?.workflowVersionId != workflow.workflowVersionId &&
+              workflow.modelVersionIds.any(invalidModelIds.contains))) {
         resources.add(_invalidResource(SyncResourceType.workflow, item));
         continue;
       }
       acceptedWorkflows.add(workflow);
-      final previous = workflows[workflow.id];
       final status = previous?.version == workflow.version
           ? SyncResourceStatus.upToDate
           : SyncResourceStatus.updated;
