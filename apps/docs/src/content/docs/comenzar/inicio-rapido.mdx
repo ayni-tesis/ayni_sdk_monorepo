@@ -62,8 +62,13 @@ Quien la tenga puede sincronizar los recursos de tu aplicación hasta que la
 revoques en el dashboard.
 :::
 
-**Resultado esperado:** la credencial solo aparece en el comando con el que
-ejecutas la app; ningún archivo de tu repositorio la contiene.
+`--dart-define` incorpora el valor en la app compilada, así que una app
+distribuida puede contener la credencial. Si se expone, revócala en el
+dashboard y genera una nueva (ver
+[Credenciales del SDK](/conceptos/credenciales-del-sdk/#revocación)).
+
+**Resultado esperado:** la credencial no aparece en el código fuente ni en
+ningún archivo de tu repositorio.
 
 ## 3. Crea el cliente
 

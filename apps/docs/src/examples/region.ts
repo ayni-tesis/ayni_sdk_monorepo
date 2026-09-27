@@ -25,6 +25,7 @@ export function exampleRegion(source: string, name: string): string {
   return code.map((line) => line.slice(indent)).join("\n");
 }
 
+/** The indexes of the lines that consist only of `marker`. */
 function markerLines(lines: string[], marker: string): number[] {
   return lines.flatMap((line, index) => (line.trim() === marker ? [index] : []));
 }
