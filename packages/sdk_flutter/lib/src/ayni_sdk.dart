@@ -2,11 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 
 enum SyncStatus { updated, upToDate, offline, error }
 
-enum SyncResourceStatus { updated, upToDate, invalidRemoteResource }
+enum SyncResourceStatus {
+  updated,
+  upToDate,
+  invalidRemoteResource,
+  invalidWorkflow,
+}
 
 enum SyncResourceType { workflow, model }
 
@@ -16,16 +22,22 @@ class SyncResourceResult {
     required this.status,
     this.resourceVersionId,
     this.version,
+    this.name,
   });
 
   final SyncResourceType type;
   final SyncResourceStatus status;
   final String? resourceVersionId;
   final String? version;
+  final String? name;
 
-  String? get message => status == SyncResourceStatus.invalidRemoteResource
-      ? 'Se mantuvo la versión local porque la actualización no es válida.'
-      : null;
+  String? get message => switch (status) {
+    SyncResourceStatus.invalidRemoteResource =>
+      'Se mantuvo la versión local porque la actualización no es válida.',
+    SyncResourceStatus.invalidWorkflow =>
+      'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
+    _ => null,
+  };
 }
 
 class SyncResult {
@@ -63,6 +75,8 @@ class AyniSdk {
   final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
   final String _credential;
   final WorkflowVersionDownloader _workflowVersionDownloader;
+  final WorkflowDefinitionValidator _workflowDefinitionValidator =
+      WorkflowDefinitionValidator();
 
   Future<SyncResult> sync() async {
     if (!_canSendCredentialTo(serverUrl))
@@ -122,41 +136,33 @@ class AyniSdk {
       return SyncResult(SyncStatus.upToDate, comparison.resources);
     }
 
-    final downloadOutcome = await _downloadNewWorkflowVersions(
-      comparison.acceptedWorkflows,
+    final inventory = await _installDownloadedWorkflowVersions(
+      local,
+      comparison,
       inventoryFile,
       client,
       deadline,
     );
-    if (downloadOutcome == _WorkflowDownloadOutcome.failed) {
-      return const SyncResult(SyncStatus.error);
-    }
-    // US-042 validates and installs the temporary definition. Until then this
-    // manifest must stay uncommitted so the SDK retries the unvalidated version.
-    return await _persistInventory(
-          inventoryFile,
-          downloadOutcome == _WorkflowDownloadOutcome.downloaded
-              ? _Inventory(local.workflows, comparison.inventory.models)
-              : comparison.inventory,
-          deadline,
-        )
+    if (inventory == null) return const SyncResult(SyncStatus.error);
+    return await _persistInventory(inventoryFile, inventory, deadline)
         ? SyncResult(SyncStatus.updated, comparison.resources)
         : const SyncResult(SyncStatus.error);
   }
 
-  Future<_WorkflowDownloadOutcome> _downloadNewWorkflowVersions(
-    Iterable<_Workflow> workflows,
+  Future<_Inventory?> _installDownloadedWorkflowVersions(
+    _Inventory local,
+    _Comparison comparison,
     File inventoryFile,
     HttpClient client,
     _SyncDeadline deadline,
   ) async {
     final localVersionIds = await _localWorkflowVersionIds(inventoryFile);
-    var downloaded = false;
-    for (final workflow in workflows) {
-      if (deadline.expired) return _WorkflowDownloadOutcome.failed;
+    final workflows = Map<String, _Workflow>.of(comparison.inventory.workflows);
+    for (final workflow in comparison.acceptedWorkflows) {
+      if (deadline.expired) return null;
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
 
-      final temporaryDefinition = File(
+      final installedDefinition = File(
         '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
         '${Platform.pathSeparator}${base64Url.encode(utf8.encode(workflow.workflowVersionId))}.json',
       );
@@ -165,7 +171,7 @@ class AyniSdk {
         credential: _credential,
         workflowVersionId: workflow.workflowVersionId,
         workflowName: workflow.name,
-        temporaryDefinition: temporaryDefinition,
+        temporaryDefinition: installedDefinition,
         allowInsecureLoopback: allowInsecureLoopback,
         onProgress: onProgress,
         httpClient: client,
@@ -173,16 +179,84 @@ class AyniSdk {
       try {
         onWorkflowDownload?.call(result);
       } catch (_) {
-        return _WorkflowDownloadOutcome.failed;
+        return null;
       }
-      if (result.status != WorkflowVersionDownloadStatus.downloaded)
-        return _WorkflowDownloadOutcome.failed;
-      downloaded = true;
+      if (result.status != WorkflowVersionDownloadStatus.downloaded) {
+        return null;
+      }
+      final temporaryFile = File(result.temporaryDefinition!);
+      if (deadline.expired) {
+        await _deleteTemporaryDefinition(temporaryFile);
+        return null;
+      }
+      final validation = await _validateDownloadedDefinition(
+        temporaryFile,
+        workflow.modelVersionIds,
+      );
+      if (validation == WorkflowValidationStatus.valid) {
+        try {
+          await temporaryFile.rename(installedDefinition.path);
+        } on FileSystemException {
+          if (!await installedDefinition.exists()) rethrow;
+          await installedDefinition.delete();
+          await temporaryFile.rename(installedDefinition.path);
+        }
+      } else {
+        await _deleteTemporaryDefinition(temporaryFile);
+        _rejectWorkflowResource(comparison.resources, workflow);
+        final previous = local.workflows[workflow.id];
+        if (previous == null) {
+          workflows.remove(workflow.id);
+        } else {
+          workflows[workflow.id] = previous;
+        }
+      }
     }
-    if (deadline.expired) return _WorkflowDownloadOutcome.failed;
-    return downloaded
-        ? _WorkflowDownloadOutcome.downloaded
-        : _WorkflowDownloadOutcome.unchanged;
+    if (deadline.expired) return null;
+    return _Inventory(workflows, comparison.inventory.models);
+  }
+
+  Future<WorkflowValidationStatus> _validateDownloadedDefinition(
+    File definition,
+    List<String> declaredModelVersionIds,
+  ) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(await definition.readAsString());
+    } on FormatException {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    return _workflowDefinitionValidator.validate(
+      definition: decoded,
+      declaredModelVersionIds: declaredModelVersionIds.toSet(),
+    );
+  }
+
+  Future<void> _deleteTemporaryDefinition(File file) async {
+    try {
+      await file.delete();
+    } on IOException {
+      // The rejection stands even when the download cannot be removed.
+    }
+  }
+
+  void _rejectWorkflowResource(
+    List<SyncResourceResult> resources,
+    _Workflow workflow,
+  ) {
+    final index = resources.indexWhere(
+      (resource) =>
+          resource.type == SyncResourceType.workflow &&
+          resource.resourceVersionId == workflow.workflowVersionId,
+    );
+    if (index < 0) return;
+    resources[index] = SyncResourceResult(
+      type: SyncResourceType.workflow,
+      status: SyncResourceStatus.invalidWorkflow,
+      resourceVersionId: workflow.workflowVersionId,
+      version: workflow.version,
+      name: workflow.name,
+    );
   }
 
   Future<Set<String>> _localWorkflowVersionIds(File inventoryFile) async {
@@ -285,6 +359,7 @@ class AyniSdk {
           status: status,
           resourceVersionId: workflow.workflowVersionId,
           version: workflow.version,
+          name: workflow.name,
         ),
       );
     }
@@ -478,5 +553,3 @@ class _WorkflowManifestEntry {
   final String versionId;
   final String name;
 }
-
-enum _WorkflowDownloadOutcome { unchanged, downloaded, failed }

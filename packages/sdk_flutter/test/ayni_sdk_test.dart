@@ -11,9 +11,15 @@ void main() {
   late int statusCode;
   int? workflowStatusCode;
   late String responseBody;
+  late String workflowResponseBody;
   Uri? redirectUrl;
   Duration? responseDelay;
   final requests = <HttpRequest>[];
+
+  File installedDefinition(String versionId) => File(
+    '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
+    '${Platform.pathSeparator}${base64Url.encode(utf8.encode(versionId))}.json',
+  );
 
   setUp(() async {
     requests.clear();
@@ -21,6 +27,7 @@ void main() {
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
     responseBody = _manifest(workflowVersion: '1.0.0');
+    workflowResponseBody = _validWorkflowDefinition();
     redirectUrl = null;
     responseDelay = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -29,8 +36,10 @@ void main() {
         requests.add(request);
         if (responseDelay != null) await Future<void>.delayed(responseDelay!);
         try {
-          request.response.statusCode =
-              request.uri.path.startsWith('/sdk/workflow-versions/')
+          final isWorkflow = request.uri.path.startsWith(
+            '/sdk/workflow-versions/',
+          );
+          request.response.statusCode = isWorkflow
               ? (workflowStatusCode ?? statusCode)
               : statusCode;
           if (redirectUrl != null) {
@@ -40,9 +49,7 @@ void main() {
             );
           }
           request.response.write(
-            request.uri.path.startsWith('/sdk/workflow-versions/')
-                ? '{"nodes":[],"connections":[]}'
-                : responseBody,
+            isWorkflow ? workflowResponseBody : responseBody,
           );
           await request.response.close();
         } on HttpException {
@@ -82,28 +89,58 @@ void main() {
   }
 
   test(
-    'posts its private credential and reports updated then up to date',
+    'installs the validated workflow, commits it, and skips its download',
     () async {
-      final client = sdk();
+      final messages = <String>[];
+      final downloads = <WorkflowVersionDownloadResult>[];
+      final client = AyniSdk(
+        serverUrl: Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
+        ),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        allowInsecureLoopback: true,
+        onProgress: messages.add,
+        onWorkflowDownload: downloads.add,
+      );
 
       final updated = await client.sync();
       final retried = await client.sync();
       expect(updated.status, SyncStatus.updated);
-      expect(retried.status, SyncStatus.updated);
+      expect(retried.status, SyncStatus.upToDate);
       expect(updated.resources.map((resource) => resource.status), [
         SyncResourceStatus.updated,
         SyncResourceStatus.updated,
       ]);
       expect(retried.resources.map((resource) => resource.status), [
         SyncResourceStatus.upToDate,
-        SyncResourceStatus.updated,
+        SyncResourceStatus.upToDate,
       ]);
+
+      expect(messages, ['Descargando workflow Clasificar hoja…']);
+      expect(downloads.single.status, WorkflowVersionDownloadStatus.downloaded);
+      expect(
+        await File(downloads.single.temporaryDefinition!).exists(),
+        isFalse,
+      );
+      expect(
+        await installedDefinition('workflow-version-1.0.0').readAsString(),
+        workflowResponseBody,
+      );
 
       final inventory = await File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       ).readAsString();
       expect(jsonDecode(inventory), {
-        'workflows': [],
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['model-version-1'],
+          },
+        ],
         'models': [
           {
             'modelVersionId': 'model-version-1',
@@ -118,7 +155,6 @@ void main() {
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1.0.0',
         '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1.0.0',
       ]);
     },
   );
@@ -268,48 +304,101 @@ void main() {
   });
 
   test(
-    'downloads an unvalidated workflow version again without advancing the inventory',
+    'keeps the last valid workflow when a new version fails validation',
     () async {
-      responseBody = _manifest(workflowVersion: '1.0.0');
-      final messages = <String>[];
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      workflowResponseBody = _cyclicWorkflowDefinition();
       final downloads = <WorkflowVersionDownloadResult>[];
-      final client = AyniSdk(
+      final rejectingClient = AyniSdk(
         serverUrl: Uri.parse(
           'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
         ),
         credential: 'ayni_sk_test',
         storageDirectory: storageDirectory,
         allowInsecureLoopback: true,
-        onProgress: messages.add,
         onWorkflowDownload: downloads.add,
       );
 
-      expect((await client.sync()).status, SyncStatus.updated);
-      expect(messages, ['Descargando workflow Clasificar hoja…']);
-      expect(downloads.single.status, WorkflowVersionDownloadStatus.downloaded);
+      final result = await rejectingClient.sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.invalidWorkflow,
+      ]);
+      final rejected = result.resources.last;
+      expect(rejected.resourceVersionId, 'workflow-version-2.0.0');
+      expect(rejected.version, '2.0.0');
+      expect(
+        rejected.message,
+        'La actualización de Clasificar hoja no es compatible. '
+        'Se mantuvo la última versión válida.',
+      );
+      expect(rejected.message, isNot(contains('condition-1')));
+      expect(jsonDecode(await inventory.readAsString())['workflows'], [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-1.0.0',
+          'name': 'Clasificar hoja',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-1'],
+        },
+      ]);
       expect(
         await File(downloads.single.temporaryDefinition!).exists(),
+        isFalse,
+      );
+      expect(
+        await installedDefinition('workflow-version-1.0.0').exists(),
         isTrue,
       );
-      expect(requests.map((request) => request.uri.path), [
-        '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1.0.0',
-      ]);
       expect(
-        await File(
-          '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
-        ).readAsString(),
-        contains('"workflows":[]'),
+        await installedDefinition('workflow-version-2.0.0').exists(),
+        isFalse,
       );
 
-      expect((await client.sync()).status, SyncStatus.updated);
+      await rejectingClient.sync();
       expect(downloads, hasLength(2));
-      expect(requests.map((request) => request.uri.path), [
-        '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1.0.0',
-        '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1.0.0',
+    },
+  );
+
+  test(
+    'commits other resources when a never-installed workflow fails validation',
+    () async {
+      workflowResponseBody = _unknownNodeTypeWorkflowDefinition();
+
+      final result = await sdk().sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.invalidWorkflow,
       ]);
+      expect(result.resources.last.message, isNotNull);
+      final inventory = await File(
+        '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+      ).readAsString();
+      expect(jsonDecode(inventory), {
+        'workflows': [],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+        ],
+      });
+      expect(
+        await installedDefinition('workflow-version-1.0.0').exists(),
+        isFalse,
+      );
+      final leftovers = await storageDirectory
+          .list(recursive: true)
+          .where((entry) => entry is File && entry.path.endsWith('.part'))
+          .toList();
+      expect(leftovers, isEmpty);
     },
   );
 
@@ -540,6 +629,76 @@ String _manifest({required String workflowVersion}) => jsonEncode({
       'sha256': 'a' * 64,
     },
   ],
+});
+
+String _validWorkflowDefinition() => jsonEncode({
+  'nodes': [
+    {
+      'id': 'input-1',
+      'type': 'input.image',
+      'outputs': {'imagen': 'image'},
+    },
+    {
+      'id': 'model-1',
+      'type': 'model.tflite',
+      'modelVersionId': 'model-version-1',
+      'modelName': 'Clasificador',
+      'version': '1.0.0',
+      'inputs': {
+        'image': {
+          'type': 'image',
+          'width': 224,
+          'height': 224,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        },
+      },
+      'outputs': {
+        'result': {
+          'type': 'classification',
+          'labels': ['perro', 'gato'],
+        },
+      },
+    },
+    {
+      'id': 'output-1',
+      'type': 'output',
+      'name': 'Resultado',
+      'sourceNodeId': 'model-1',
+      'sourcePort': 'result',
+      'resultType': 'classification',
+    },
+  ],
+  'connections': [
+    {
+      'sourceNodeId': 'input-1',
+      'sourcePort': 'imagen',
+      'targetNodeId': 'model-1',
+      'targetPort': 'image',
+    },
+  ],
+});
+
+String _cyclicWorkflowDefinition() => jsonEncode({
+  'nodes': [
+    {
+      'id': 'condition-1',
+      'type': 'condition',
+      'sourceNodeId': 'condition-1',
+      'label': 'perro',
+      'operator': 'gte',
+      'threshold': 0.8,
+      'branches': {'true': 'Verdadero', 'false': 'Falso'},
+    },
+  ],
+  'connections': [],
+});
+
+String _unknownNodeTypeWorkflowDefinition() => jsonEncode({
+  'nodes': [
+    {'id': 'capture-1', 'type': 'dataset.capture'},
+  ],
+  'connections': [],
 });
 
 class _RecordingHttpClient implements HttpClient {
