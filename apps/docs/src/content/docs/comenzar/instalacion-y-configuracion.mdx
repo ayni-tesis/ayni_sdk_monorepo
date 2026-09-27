@@ -1,0 +1,193 @@
+---
+title: Instalación y configuración
+description: Requisitos del SDK de Ayni, cómo instalarlo y cada parámetro de AyniSdk en producción y en desarrollo local.
+sidebar:
+  order: 3
+---
+
+import { Code, TabItem, Tabs } from "@astrojs/starlight/components";
+import { configuration } from "../../../examples/configuration";
+
+Esta página reúne los requisitos del SDK de Ayni, las formas de instalarlo y
+todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por el
+[Inicio rápido](/comenzar/inicio-rapido/).
+
+## Requisitos
+
+| Requisito | Valor |
+| --- | --- |
+| Paquete | `ayni_sdk` `0.1.0` |
+| Dart | `>=3.8.0 <4.0.0` |
+| Flutter | Una versión que incluya Dart 3.8 o superior. El SDK depende de `tflite_flutter`, un plugin de Flutter. |
+| Dependencias | `crypto`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
+| Plataformas | El paquete todavía no declara plataformas compatibles ni versiones mínimas. Usa `dart:io`, así que no funciona en Flutter web. |
+
+## Instalar
+
+`ayni_sdk` todavía no está publicado en pub.dev. Agrégalo al `pubspec.yaml` de
+tu app de una de estas formas:
+
+<Tabs>
+<TabItem label="Desde Git">
+
+Usa esta forma si tu app vive en su propio repositorio:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  ayni_sdk:
+    git:
+      url: https://github.com/ayni-tesis/ayni_sdk_monorepo.git
+      path: packages/sdk_flutter
+```
+
+Para fijar una versión concreta del SDK, añade `ref:` con el commit que
+quieras usar.
+
+</TabItem>
+<TabItem label="Ruta local">
+
+Usa esta forma si tu app vive dentro del monorepo de Ayni o tienes una copia
+local del repositorio. La ruta es relativa al `pubspec.yaml` de tu app:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  ayni_sdk:
+    path: ../../packages/sdk_flutter
+```
+
+</TabItem>
+</Tabs>
+
+Luego resuelve las dependencias:
+
+```sh
+flutter pub get
+```
+
+## Configurar el cliente
+
+Para producción basta con la URL `https` de tu servidor de Ayni, la credencial
+del SDK y un directorio persistente de la app. El resto de parámetros tiene un
+valor por defecto adecuado:
+
+<Code code={configuration.production} lang="dart" />
+
+| Parámetro | Tipo | Obligatorio | Por defecto | Propósito |
+| --- | --- | --- | --- | --- |
+| `serverUrl` | `Uri` | Sí | — | URL de tu servidor de Ayni. Debe usar `https`, salvo en [desarrollo local](#entorno-de-desarrollo-local). |
+| `credential` | `String` | Sí | — | [Credencial del SDK](/conceptos/credenciales-del-sdk/) de la aplicación (`ayni_sk_…`). |
+| `storageDirectory` | `Directory` | Sí | — | Directorio donde el SDK guarda los workflows, los modelos y su inventario (ver [Directorio de almacenamiento](#directorio-de-almacenamiento)). |
+| `syncTimeout` | `Duration` | No | 30 segundos | Tiempo máximo de una sincronización completa, incluidas las descargas. |
+| `allowInsecureLoopback` | `bool` | No | `false` | Permite `http` solo hacia tu propio equipo, para [desarrollo local](#entorno-de-desarrollo-local). |
+| `onBeforeInventoryPersist` | `Future<void> Function()?` | No | Ninguno | Se ejecuta justo antes de guardar el inventario. Existe para las pruebas del SDK; una app no lo necesita. |
+| `onProgress` | `void Function(String message)?` | No | Ninguno | Recibe mensajes de actividad, como `Descargando workflow <nombre>…`. |
+| `onWorkflowDownload` | `void Function(WorkflowVersionDownloadResult result)?` | No | Ninguno | Recibe cada definición de workflow descargada o no disponible durante la sincronización. |
+| `workflowVersionDownloader` | `WorkflowVersionDownloader?` | No | Ninguno | Reemplaza el descargador de definiciones de workflow. Existe para las pruebas del SDK; sin él, el SDK usa su propio descargador. |
+
+Crear el cliente no conecta con el servidor: la conexión empieza al llamar a
+`sync()`.
+
+### Cuándo envía el SDK la credencial
+
+El SDK envía la credencial en cada petición a `serverUrl`, así que solo se
+conecta cuando esa URL es segura:
+
+- Con `https`, siempre.
+- Con `http`, solo si `allowInsecureLoopback` es `true` **y** el host es
+  `localhost` o una dirección IP de loopback, como `127.0.0.1` o `[::1]`.
+
+En cualquier otro caso, `sync()` devuelve `SyncStatus.error` sin abrir ninguna
+conexión, así que la credencial nunca sale del dispositivo. Por ejemplo, con
+`http://mi-servidor.example` la sincronización falla siempre, aunque el
+servidor responda. Para corregirlo, usa la URL `https` del servidor.
+
+El SDK usa solo el esquema, el host y el puerto de `serverUrl`: construye cada
+ruta (por ejemplo, `/sdk/sync`) a partir de la raíz del servidor, así que una
+ruta o una consulta que añadas a `serverUrl` no se usa.
+
+### Valores no admitidos
+
+Con un valor no admitido, `sync()` no lanza una excepción. Esto es lo que
+devuelve en cada caso:
+
+| Parámetro | Valor | Resultado |
+| --- | --- | --- |
+| `serverUrl` | `http` hacia un host que no es loopback, u otro esquema distinto de `https` | `SyncStatus.error`, sin conectarse ni enviar la credencial. |
+| `serverUrl` | `http` hacia loopback con `allowInsecureLoopback` en `false` | `SyncStatus.error`, sin conectarse ni enviar la credencial. |
+| `serverUrl` | Una URL que responde con una redirección | `SyncStatus.error`. El SDK no sigue redirecciones, para no reenviar la credencial a otro destino. |
+| `credential` | Una credencial inválida o revocada | `SyncStatus.error`: el servidor responde `401`. |
+| `storageDirectory` | Un directorio donde la app no puede escribir | `SyncStatus.error` cuando hay una versión nueva que guardar. |
+| `syncTimeout` | Una duración menor que lo que tarda la sincronización | `SyncStatus.error`. Se mantienen las versiones que ya estaban guardadas. |
+| `allowInsecureLoopback` | `false` cuando el servidor entrega un modelo por `http` hacia loopback | El workflow que usa el modelo termina con `SyncResourceStatus.dependencyFailed`. Las descargas de modelos siguen la misma regla que `serverUrl`. |
+
+Encontrarás cómo resolver cada caso en
+[Solucionar problemas de sincronización](/guias/solucionar-problemas-de-sincronizacion/).
+
+## Directorio de almacenamiento
+
+El SDK guarda en `storageDirectory` todo lo que necesita para trabajar sin
+conexión:
+
+- `sync-inventory.json`: el inventario de los workflows y modelos instalados,
+  con sus versiones.
+- `workflow-definitions/`: la definición validada de cada versión de workflow
+  instalada.
+- Una carpeta por versión de modelo, con el archivo `.tflite` y sus metadatos
+  `.json`.
+- Archivos temporales de las descargas en curso, como los de `model-downloads/`.
+
+Si el directorio no existe, el SDK lo crea.
+
+Usa un directorio **persistente y propio de la app**, por ejemplo el que
+devuelve `getApplicationSupportDirectory()` del paquete `path_provider`. No uses
+un directorio temporal o de caché: el sistema puede vaciarlo, y entonces los
+workflows y modelos dejan de estar disponibles sin conexión hasta que la
+siguiente sincronización los vuelva a descargar.
+
+## Entorno de desarrollo local
+
+Para probar la integración contra el servidor de Ayni en tu equipo, que por
+defecto escucha en `http://localhost:3000`, apunta `serverUrl` a `localhost` y
+activa `allowInsecureLoopback`:
+
+<Code code={configuration.localDevelopment} lang="dart" />
+
+:::danger
+Nunca actives `allowInsecureLoopback` en producción.
+
+Con `http`, la credencial viaja sin cifrar. Actívalo solo en las compilaciones
+que usas para desarrollar.
+:::
+
+Con `http` hacia loopback, el SDK se conecta directamente, sin pasar por el
+proxy del sistema.
+
+`localhost` es el propio dispositivo donde corre la app:
+
+- En el **emulador de Android** o en un dispositivo Android conectado por USB,
+  ejecuta `adb reverse tcp:3000 tcp:3000` para que `localhost:3000` llegue a tu
+  equipo. No uses `10.0.2.2`: no es una dirección de loopback y el SDK
+  rechaza la conexión.
+- En el **simulador de iOS**, `localhost` ya es tu equipo.
+- En un **iPhone físico**, `localhost` no llega a tu equipo: usa una URL
+  `https`.
+
+## Configuración por plataforma
+
+### Android
+
+`ayni_sdk` no añade ajustes propios en Android y todavía no declara una
+versión mínima de Android. Los requisitos vienen de su dependencia
+`tflite_flutter` 0.12.1, que ejecuta los modelos:
+
+- Compila con `compileSdkVersion 36`, y el plugin indica que las apps que lo
+  usan deben compilar con esa versión. Si tu app usa un `compileSdk` menor,
+  súbelo a 36 en `android/app/build.gradle`.
+- Declara `minSdkVersion 19`.
+
+### iOS
+
+`ayni_sdk` no añade ajustes propios en iOS y todavía no declara una versión
+mínima de iOS. Su dependencia `tflite_flutter` 0.12.1 agrega TensorFlow Lite
+con CocoaPods (`TensorFlowLiteSwift`) y exige iOS 11.0 o superior como
+destino de tu app.

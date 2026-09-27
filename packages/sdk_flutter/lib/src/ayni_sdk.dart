@@ -86,6 +86,8 @@ class SyncResult {
 }
 
 class AyniSdk {
+  /// [workflowVersionDownloader] replaces the SDK's own workflow definition
+  /// downloader; it exists for the SDK's tests.
   AyniSdk({
     required this.serverUrl,
     required String credential,
@@ -104,6 +106,8 @@ class AyniSdk {
   final Directory storageDirectory;
   final Duration syncTimeout;
   final bool allowInsecureLoopback;
+
+  /// Runs right before the inventory is saved; it exists for the SDK's tests.
   final Future<void> Function()? onBeforeInventoryPersist;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
