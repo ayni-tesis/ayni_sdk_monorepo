@@ -26,9 +26,15 @@ describe("exampleRegion", () => {
     );
   });
 
+  it("drops the blank lines dart format leaves around a region", () => {
+    const padded = "// #region resultado\n\nString message() => 'ok';\n\n// #endregion resultado";
+
+    expect(exampleRegion(padded, "resultado")).toBe("String message() => 'ok';");
+  });
+
   it("fails when the example has no region with that name", () => {
     expect(() => exampleRegion(source, "ejecutar")).toThrow(
-      "El ejemplo no tiene la región «ejecutar».",
+      'The example has no "ejecutar" region.',
     );
   });
 
@@ -36,7 +42,13 @@ describe("exampleRegion", () => {
     const twice = `${source}\n// #region sincronizar\nother();\n// #endregion sincronizar`;
 
     expect(() => exampleRegion(twice, "sincronizar")).toThrow(
-      "El ejemplo repite la región «sincronizar».",
+      'The example repeats the "sincronizar" region.',
     );
+  });
+
+  it("fails when a region has no code", () => {
+    const empty = "// #region vacia\n\n// #endregion vacia";
+
+    expect(() => exampleRegion(empty, "vacia")).toThrow('The example\'s "vacia" region is empty.');
   });
 });

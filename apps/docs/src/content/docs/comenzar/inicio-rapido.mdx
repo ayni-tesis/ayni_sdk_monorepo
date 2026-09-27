@@ -96,9 +96,6 @@ Convierte `result.status` en un mensaje para quien usa tu app con un `switch`:
 
 <Code code={quickstart.checkResult} lang="dart" />
 
-**Resultado esperado:** la app muestra `Sincronización completada.` la primera
-vez y `Ya estás al día.` cuando repites la sincronización.
-
 Si ves `No se completó la sincronización. Revisa los recursos afectados.`,
 revisa la credencial: una credencial revocada o mal copiada hace que `sync()`
 devuelva `SyncStatus.error`. Encontrarás las causas y cómo resolverlas en
@@ -108,6 +105,9 @@ Si un recurso no se actualizó, su propiedad `message` explica por qué (ver
 
 El ejemplo completo está en
 [`packages/sdk_flutter/example/quickstart.dart`](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/quickstart.dart).
+
+**Resultado esperado:** la app muestra `Sincronización completada.` la primera
+vez y `Ya estás al día.` cuando repites la sincronización.
 
 ## Siguientes pasos
 
