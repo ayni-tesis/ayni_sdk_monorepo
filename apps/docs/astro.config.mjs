@@ -5,9 +5,23 @@ import { searchIndexCoverage } from "./src/search/index-coverage.ts";
 
 const repository = "https://github.com/ayni-tesis/ayni_sdk_monorepo";
 
+/**
+ * Starlight's `<Tabs>` renders with `satteri`, a native module. Bundled into
+ * the prerender chunks, it cannot find its platform binding under Bun's
+ * isolated linker, so pages load it from `node_modules` instead (a direct
+ * dependency for that reason). Astro replaces `vite.ssr.external`, hence a
+ * plugin (US-140).
+ */
+const externalizeSatteri = {
+  name: "externalize-satteri",
+  configEnvironment: (name) =>
+    name === "ssr" || name === "prerender" ? { resolve: { external: ["satteri"] } } : undefined,
+};
+
 // Static output (Astro's default): Vercel serves `dist/` without an adapter (ADR 0002).
 export default defineConfig({
   site: "https://ayni-docs.vercel.app",
+  vite: { plugins: [externalizeSatteri] },
   integrations: [
     starlight({
       title: "Ayni Docs",
