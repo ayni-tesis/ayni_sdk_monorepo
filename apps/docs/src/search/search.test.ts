@@ -128,6 +128,20 @@ describe("toHits", () => {
     ]);
   });
 
+  it("drops results that would leave the documentation site", () => {
+    const outside = ["https://example.com/", "//example.com/x", "javascript:alert(1)", "guias/"];
+
+    expect(
+      outside.flatMap((url) => toHits({ url, meta: { title: "Fuera" }, excerpt: "" })),
+    ).toEqual([]);
+    expect(
+      toHits({
+        ...page,
+        sub_results: [{ title: "Fuera", url: "//example.com/#x", excerpt: "", locations: [1] }],
+      }),
+    ).toEqual([]);
+  });
+
   it("falls back to the page itself when it has no sections", () => {
     expect(toHits({ url: "/", meta: { title: "Documentación de Ayni" }, excerpt: "Ayni" })).toEqual(
       [{ title: "Documentación de Ayni", section: "Inicio", excerpt: "Ayni", url: "/" }],

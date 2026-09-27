@@ -222,6 +222,11 @@ import { searchText } from "../search/search";
     overflow-y: auto;
   }
 
+  /* Results of the previous term while the new one is searched. */
+  .search-results[aria-busy="true"] {
+    opacity: 0.6;
+  }
+
   .search-results :global([role="option"]) {
     display: flex;
     flex-direction: column;

@@ -70,8 +70,18 @@ export type PagefindResultData = {
 
 const sectionsPerPage = 3;
 
-/** One hit per matching section of the page, the sections with most matches first. */
+/** Pagefind records root-relative URLs; anything else would take the reader off the site. */
+const isSitePath = (url: string) => url.startsWith("/") && !url.startsWith("//");
+
+/**
+ * One hit per matching section of the page, the sections with most matches
+ * first. Hits whose URL is not a path of this site are dropped.
+ */
 export function toHits(page: PagefindResultData): SearchHit[] {
+  return pageHits(page).filter((hit) => isSitePath(hit.url));
+}
+
+function pageHits(page: PagefindResultData): SearchHit[] {
   const title = page.meta.title ?? page.url;
   const group = sidebarGroups.find(({ directory }) => page.url.startsWith(`/${directory}/`));
   const sectionOf = (heading?: string) =>

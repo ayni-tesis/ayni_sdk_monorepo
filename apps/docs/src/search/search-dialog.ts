@@ -50,6 +50,9 @@ export function setupSearch(root: ParentNode, { loadPagefind, navigate }: Search
   let hits: SearchHit[] = [];
   let selected = -1;
   let latestSearch = 0;
+  let searching = false;
+  /** Enter was pressed while searching: open the first result of that search. */
+  let openWhenFound = false;
   let returnFocus: HTMLElement | null = null;
 
   /**
@@ -92,8 +95,10 @@ export function setupSearch(root: ParentNode, { loadPagefind, navigate }: Search
 
   function render(state: SearchState) {
     status.textContent = statusMessage(state);
+    searching = state.kind === "loading";
+    results.setAttribute("aria-busy", String(searching));
     // The previous results stay until the new ones arrive, so the list does not flicker.
-    if (state.kind === "loading") return;
+    if (searching) return;
     hits = state.kind === "results" ? state.hits : [];
     results.replaceChildren(
       ...hits.map((hit, index) => {
@@ -129,6 +134,8 @@ export function setupSearch(root: ParentNode, { loadPagefind, navigate }: Search
   async function search() {
     const term = input.value.trim();
     const id = ++latestSearch;
+    // A new term makes an earlier Enter stale.
+    openWhenFound = false;
     if (term === "") {
       render({ kind: "idle" });
       return;
@@ -143,8 +150,14 @@ export function setupSearch(root: ParentNode, { loadPagefind, navigate }: Search
       if (id !== latestSearch) return;
       const found = pages.flatMap(toHits);
       render(found.length > 0 ? { kind: "results", hits: found } : { kind: "empty", term });
+      if (openWhenFound) {
+        openWhenFound = false;
+        openSelected();
+      }
     } catch {
-      if (id === latestSearch) render({ kind: "error" });
+      if (id !== latestSearch) return;
+      openWhenFound = false;
+      render({ kind: "error" });
     }
   }
 
@@ -192,7 +205,9 @@ export function setupSearch(root: ParentNode, { loadPagefind, navigate }: Search
       select(moveSelection(selected, hits.length, event.key === "ArrowDown" ? 1 : -1));
     } else if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault();
-      openSelected();
+      // The results on screen belong to the previous term until this search ends.
+      if (searching) openWhenFound = true;
+      else openSelected();
     } else if (event.key === "Escape") {
       // A search field would spend the first Esc clearing its text.
       event.preventDefault();

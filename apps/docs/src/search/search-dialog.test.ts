@@ -170,6 +170,64 @@ describe("searching", () => {
     expect(options()).toHaveLength(2);
   });
 
+  it("opens a result of the new term when Enter is pressed while it is searched", async () => {
+    const credenciales: PagefindResultData = {
+      url: "/conceptos/credenciales-del-sdk/",
+      meta: { title: "Credenciales del SDK" },
+      excerpt: "<mark>credentialRevoked</mark>",
+    };
+    const found = fakePagefind([estados, credenciales]);
+    let finish: () => void = () => {};
+    let calls = 0;
+    mount(async () => ({
+      ...found,
+      debouncedSearch: (term) =>
+        ++calls === 1
+          ? found.debouncedSearch(term)
+          : new Promise((resolve) => {
+              finish = () => resolve(found.debouncedSearch(term));
+            }),
+    }));
+    press("k", { ctrlKey: true });
+    type("upToDate");
+    await vi.waitFor(() => expect(options()).toHaveLength(2));
+    type("credentialRevoked");
+    expect(document.querySelector("[data-search-results]")?.getAttribute("aria-busy")).toBe("true");
+
+    press("Enter", {}, input());
+    await vi.waitFor(() => expect(calls).toBe(2));
+    expect(navigate).not.toHaveBeenCalled();
+    finish();
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/conceptos/credenciales-del-sdk/"),
+    );
+  });
+
+  it("forgets a pending Enter once the term changes", async () => {
+    let finish: () => void = () => {};
+    let calls = 0;
+    const found = fakePagefind([estados]);
+    mount(async () => ({
+      ...found,
+      debouncedSearch: (term) =>
+        new Promise((resolve) => {
+          calls++;
+          finish = () => resolve(found.debouncedSearch(term));
+        }),
+    }));
+    press("k", { ctrlKey: true });
+    type("upToDat");
+    press("Enter", {}, input());
+
+    type("upToDate");
+    await vi.waitFor(() => expect(calls).toBe(2));
+    finish();
+
+    await vi.waitFor(() => expect(options()).toHaveLength(2));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("names the term that found nothing", async () => {
     mount();
     press("k", { ctrlKey: true });
