@@ -171,7 +171,7 @@ describe("US-132: deleting several nodes at once", () => {
     for (const nodeId of ["image", "model-a", "model-b", "condition"])
       expect(screen.getByTestId(`workflow-node-${nodeId}`)).toBeTruthy();
     // The selection stays, so the deletion can be tried again.
-    expect(deleteNodesButton()).toBeTruthy();
+    await waitFor(() => expect(deleteNodesButton()).toBeTruthy());
   });
 
   it("shows the draft conflict notice when someone else changed the draft", async () => {
