@@ -9,6 +9,7 @@ import {
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
 import {
+  applicationCollectionPolicy,
   type ModelVersionContract,
   model,
   modelVersion,
@@ -97,6 +98,11 @@ export type WorkflowNode =
       sourceNodeId: string;
       sourcePort: string;
       resultType: "classification" | "detection" | "boolean";
+    }
+  | {
+      id: string;
+      type: "dataset.capture";
+      inputs: { image: "image"; result: "inference" };
     };
 export type WorkflowConnection = {
   sourceNodeId: string;
@@ -504,6 +510,51 @@ export async function addImageInputNode(
     };
     return { draft: appendWorkflowNode(draft, node, position) };
   });
+}
+
+export type AddDatasetCaptureNodeInput = WorkflowDraftChangeInput & {
+  position?: WorkflowNodePosition;
+};
+type AddDatasetCaptureNodeRefusal = { reason: "collectionDisabled" };
+export type AddDatasetCaptureNodeResult = WorkflowDraftChangeResult<AddDatasetCaptureNodeRefusal>;
+
+type CollectionPolicyLookupExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        limit: (count: number) => {
+          for: (strength: "update") => Promise<Record<string, unknown>[]>;
+        };
+      };
+    };
+  };
+};
+
+/** Adds the fixed capture node; its image and inference-result inputs are wired separately. */
+export async function addDatasetCaptureNode(
+  database: WorkflowDatabase,
+  { position, ...input }: AddDatasetCaptureNodeInput,
+): Promise<AddDatasetCaptureNodeResult> {
+  return changeWorkflowDraft<AddDatasetCaptureNodeRefusal>(
+    database,
+    input,
+    async (draft, tx, applicationId) => {
+      const policies = tx as CollectionPolicyLookupExecutor;
+      const rows = (await policies
+        .select({ enabled: applicationCollectionPolicy.enabled })
+        .from(applicationCollectionPolicy)
+        .where(eq(applicationCollectionPolicy.applicationId, applicationId))
+        .limit(1)
+        .for("update")) as { enabled: boolean }[];
+      if (!rows[0]?.enabled) return { reason: "collectionDisabled" as const };
+      const node: WorkflowNode = {
+        id: crypto.randomUUID(),
+        type: "dataset.capture",
+        inputs: { image: "image", result: "inference" },
+      };
+      return { draft: appendWorkflowNode(draft, node, position) };
+    },
+  );
 }
 
 export type AddModelNodeInput = WorkflowDraftChangeInput & {

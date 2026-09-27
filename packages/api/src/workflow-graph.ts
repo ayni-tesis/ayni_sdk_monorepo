@@ -12,7 +12,7 @@ export type WorkflowEdge = {
 };
 
 type WorkflowGraphNode =
-  | { id: string; type: "input.image" | "model.tflite" }
+  | { id: string; type: "input.image" | "model.tflite" | "dataset.capture" }
   | { id: string; type: "condition"; sourceNodeId: string }
   | { id: string; type: "output"; sourceNodeId: string; sourcePort: string };
 
@@ -91,6 +91,7 @@ export type WorkflowPortNode =
         result: { type: "classification" | "detection"; labels: readonly string[] };
       };
     }
+  | { id: string; type: "dataset.capture" }
   | { id: string; type: "condition"; sourceNodeId: string; label: string }
   | {
       id: string;
@@ -126,8 +127,18 @@ export function areWorkflowPortsCompatible(draft: WorkflowPortDraft, connection:
   const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
   const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
   const outputType = workflowOutputPortType(source, connection.sourcePort);
+  if (
+    target?.type === "dataset.capture" &&
+    connection.targetPort === "result" &&
+    source?.type === "model.tflite" &&
+    connection.sourcePort === "result"
+  )
+    return true;
   const inputType =
-    target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
+    (target?.type === "model.tflite" || target?.type === "dataset.capture") &&
+    connection.targetPort === "image"
+      ? "image"
+      : undefined;
   return Boolean(outputType && outputType === inputType);
 }
 

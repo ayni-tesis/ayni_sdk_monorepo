@@ -31,6 +31,14 @@ export function workflowNodePorts(node: WorkflowCanvasNode): {
       return { inputs: [port("source")], outputs: [port("true"), port("false")] };
     case "output":
       return { inputs: [port("source")], outputs: [] };
+    case "dataset.capture":
+      return {
+        inputs: [
+          { id: "image", label: "imagen" },
+          { id: "result", label: "resultado" },
+        ],
+        outputs: [],
+      };
   }
 }
 

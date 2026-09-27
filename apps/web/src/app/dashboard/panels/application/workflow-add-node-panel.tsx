@@ -49,6 +49,8 @@ export type WorkflowAddNodePanelProps = {
   onRetryModels: () => void;
   /** True while a node is being added or positions save or arrange: nothing can be added. */
   busy: boolean;
+  /** Whether the application currently permits evidence collection. */
+  collectionEnabled?: boolean;
   /** The output the node is added after (US-128): only compatible types, with it as their source. */
   origin?: WorkflowNodeOrigin;
   onAdd: (node: WorkflowNewNode) => void;
@@ -62,6 +64,7 @@ export function WorkflowAddNodePanel({
   modelsError,
   onRetryModels,
   busy,
+  collectionEnabled = false,
   origin,
   onAdd,
   onClose,
@@ -72,7 +75,7 @@ export function WorkflowAddNodePanel({
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
 
-  const catalog = workflowNodeCatalog(draft, models, origin);
+  const catalog = workflowNodeCatalog(draft, models, origin, collectionEnabled);
   const found = searchWorkflowNodeCatalog(catalog, query);
   const searching = query.trim() !== "";
   const originNode = origin && draft.nodes.find((node) => node.id === origin.sourceNodeId);

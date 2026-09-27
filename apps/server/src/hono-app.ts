@@ -53,6 +53,7 @@ import { createTelemetryPolicyApp } from "./telemetry-policy";
 import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
 import {
   addConditionNode,
+  addDatasetCaptureNode,
   addImageInputNode,
   addModelNode,
   addOutputNode,
@@ -193,6 +194,9 @@ const workflows = {
   },
   addImageInput(input: Parameters<typeof addImageInputNode>[1]) {
     return addImageInputNode(db, input);
+  },
+  addDatasetCapture(input: Parameters<typeof addDatasetCaptureNode>[1]) {
+    return addDatasetCaptureNode(db, input);
   },
   addModelNode(input: Parameters<typeof addModelNode>[1]) {
     return addModelNode(db, input);

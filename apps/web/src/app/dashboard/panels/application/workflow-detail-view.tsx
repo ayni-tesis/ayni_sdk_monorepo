@@ -87,6 +87,7 @@ export type WorkflowDetailItem = {
 /** What a saved draft change answers: the draft and its new revision. */
 type DraftChanged = { draft: WorkflowCanvasDraft; draftRevision: number };
 type PositionsSaved = { positions: WorkflowCanvasPositions; draftRevision: number };
+type CollectionPolicyResponse = { policy: { enabled: boolean } };
 
 type WorkflowValidationResult = {
   publishable: boolean;
@@ -118,6 +119,7 @@ const WORKFLOW_NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el workflow.";
 const ADD_NODE_MESSAGES: Record<WorkflowNewNode["type"], { success: string; failure: string }> = {
   "input.image": { success: "Nodo agregado.", failure: "No pudimos agregar el nodo." },
   "model.tflite": { success: "Nodo de modelo agregado.", failure: "No pudimos agregar el nodo." },
+  "dataset.capture": { success: "Nodo agregado.", failure: "No pudimos agregar el nodo." },
   condition: { success: "Condición agregada.", failure: "No pudimos agregar la condición." },
   output: { success: "Nodo de salida agregado.", failure: "No pudimos agregar la salida." },
 };
@@ -402,6 +404,7 @@ export function WorkflowDetailView({
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
   const [modelOptionsError, setModelOptionsError] = useState("");
   const [modelOptionsReload, setModelOptionsReload] = useState(0);
+  const [collectionEnabled, setCollectionEnabled] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
   // The new source of a condition or an output while it saves (US-131).
   const [pendingSource, setPendingSource] = useState<WorkflowConnectionItem | null>(null);
@@ -528,6 +531,27 @@ export function WorkflowDetailView({
       active = false;
     };
   }, [application.id, application.status, canManage, modelOptionsReload]);
+
+  useEffect(() => {
+    let active = true;
+    if (!canManage || application.status !== "active") {
+      setCollectionEnabled(false);
+      return () => {
+        active = false;
+      };
+    }
+    void httpClient
+      .get<CollectionPolicyResponse>(`/applications/${application.id}/collection-policy`)
+      .then(({ data }) => {
+        if (active) setCollectionEnabled(data.policy.enabled);
+      })
+      .catch(() => {
+        if (active) setCollectionEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [application.id, application.status, canManage]);
 
   function openRenameWorkflow(currentName: string) {
     setRenameName(currentName);
@@ -1388,6 +1412,7 @@ export function WorkflowDetailView({
                         modelsError={modelOptionsError}
                         onRetryModels={() => setModelOptionsReload((value) => value + 1)}
                         busy={loading || addingNode || savingPositions || arrangingNodes}
+                        collectionEnabled={collectionEnabled}
                         origin={addNodeOrigin ?? undefined}
                         onAdd={(node) =>
                           void (addNodeOrigin

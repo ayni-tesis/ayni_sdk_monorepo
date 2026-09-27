@@ -6,6 +6,8 @@ import type {
 } from "./workflow-canvas";
 
 export const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
+export const COLLECTION_DISABLED_MESSAGE =
+  "Habilita la recolección de evidencia en la configuración de la aplicación.";
 
 export type WorkflowModelVersionContract = {
   input: { type: "image"; width: number; height: number; channels: number; normalization: string };
@@ -115,8 +117,9 @@ export function workflowNodeCatalog(
   draft: WorkflowCanvasDraft,
   models: WorkflowModelOption[],
   origin?: WorkflowNodeOrigin,
+  collectionEnabled = false,
 ): WorkflowNodeCatalogItem[] {
-  const catalog = fullWorkflowNodeCatalog(draft, models);
+  const catalog = fullWorkflowNodeCatalog(draft, models, collectionEnabled);
   if (!origin) return catalog;
   const source = draft.nodes.find((node) => node.id === origin.sourceNodeId);
   const type = workflowOutputPortType(source, origin.sourcePort);
@@ -130,13 +133,18 @@ export function workflowNodeCatalog(
           : [];
   // The port itself is the source, so nothing is missing from the canvas.
   return catalog
-    .filter((item) => accepted.includes(item.category))
+    // Capture needs both an image and an inference result, so it is added from
+    // the regular catalog and wired explicitly instead of after one port.
+    .filter(
+      (item) => accepted.includes(item.category) && item.node?.type !== "dataset.capture",
+    )
     .map((item) => ({ ...item, disabledReason: undefined }));
 }
 
 function fullWorkflowNodeCatalog(
   draft: WorkflowCanvasDraft,
   models: WorkflowModelOption[],
+  collectionEnabled: boolean,
 ): WorkflowNodeCatalogItem[] {
   return [
     {
@@ -187,6 +195,15 @@ function fullWorkflowNodeCatalog(
       disabledReason:
         workflowOutputSources(draft).length === 0 ? OUTPUT_SOURCE_MISSING_MESSAGE : undefined,
       configure: "output",
+    },
+    {
+      key: "dataset.capture",
+      category: "logic",
+      typeName: "Capturar evidencia",
+      name: "Capturar para dataset",
+      description: "Guarda la imagen y el resultado de inferencia como evidencia.",
+      disabledReason: collectionEnabled ? undefined : COLLECTION_DISABLED_MESSAGE,
+      node: { type: "dataset.capture" },
     },
   ];
 }

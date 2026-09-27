@@ -5,6 +5,8 @@ import type { Application } from "./applications";
 import type {
   AddConditionNodeInput,
   AddConditionNodeResult,
+  AddDatasetCaptureNodeInput,
+  AddDatasetCaptureNodeResult,
   AddImageInputInput,
   AddImageInputResult,
   AddModelNodeInput,
@@ -63,6 +65,8 @@ const CONDITION_INCOMPATIBLE_MESSAGE =
 const OUTPUT_INCOMPATIBLE_MESSAGE = "El resultado seleccionado no es compatible con la salida.";
 const DRAFT_CONFLICT_MESSAGE = "Otra persona modificó este borrador. Recarga para ver los cambios.";
 const DRAFT_REVISION_REQUIRED_MESSAGE = "Recarga el borrador e inténtalo nuevamente.";
+const COLLECTION_DISABLED_MESSAGE =
+  "Habilita la recolección de evidencia en la configuración de la aplicación.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),
@@ -141,6 +145,7 @@ type Dependencies = {
     rename: (input: RenameWorkflowInput) => Promise<RenameWorkflowResult>;
     archive: (input: ArchiveWorkflowInput) => Promise<ArchiveWorkflowResult>;
     addImageInput: (input: AddImageInputInput) => Promise<AddImageInputResult>;
+    addDatasetCapture: (input: AddDatasetCaptureNodeInput) => Promise<AddDatasetCaptureNodeResult>;
     addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
     addConditionNode: (input: AddConditionNodeInput) => Promise<AddConditionNodeResult>;
     addOutputNode: (input: AddOutputNodeInput) => Promise<AddOutputNodeResult>;
@@ -160,7 +165,11 @@ type Dependencies = {
   };
 };
 
-export function createWorkflowsApp({ getSession, applications, workflows }: Dependencies) {
+export function createWorkflowsApp({
+  getSession,
+  applications,
+  workflows,
+}: Dependencies) {
   const app = new Hono();
   const getMemberApplication = async (applicationId: string, userId: string) => {
     const application = await applications.get(applicationId);
@@ -362,7 +371,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (
       typeof body !== "object" ||
       body === null ||
-      !["input.image", "model.tflite", "condition", "output"].includes(
+      !["input.image", "model.tflite", "condition", "output", "dataset.capture"].includes(
         (body as { type?: string }).type ?? "",
       )
     ) {
@@ -386,6 +395,23 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       position = parsedPosition.data;
     }
     const nodeType = (body as { type: string }).type;
+    if (nodeType === "dataset.capture") {
+      const result = await workflows.addDatasetCapture({ ...workflowInput, position });
+      if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+      if (result.reason === "collectionDisabled")
+        return c.json({ message: COLLECTION_DISABLED_MESSAGE }, 409);
+      if (result.reason === "draftConflict") return draftConflict(c);
+      if (result.reason === "forbidden")
+        return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
+      if (result.reason === "archived")
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      if (result.reason === "workflowNotFound")
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+    }
     if (nodeType === "output") {
       const parsed = outputNodeSchema.safeParse(body);
       if (!parsed.success) {

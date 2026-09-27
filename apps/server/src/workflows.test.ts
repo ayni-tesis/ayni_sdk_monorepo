@@ -125,6 +125,19 @@ function makeApp({
     draft: { nodes: [{ id: "node-1", type: "input.image", outputs: { imagen: "image" } }] },
     draftRevision: NEXT_REVISION,
   }),
+  addDatasetCapture = async (): Promise<import("./workflow-store").AddDatasetCaptureNodeResult> => ({
+    ok: true,
+    draft: {
+      nodes: [
+        {
+          id: "capture-1",
+          type: "dataset.capture",
+          inputs: { image: "image", result: "inference" },
+        },
+      ],
+    },
+    draftRevision: NEXT_REVISION,
+  }),
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
   addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
@@ -175,6 +188,9 @@ function makeApp({
   rename?: (input: RenameInput) => Promise<RenameWorkflowResult>;
   archive?: (input: ArchiveInput) => Promise<ArchiveWorkflowResult>;
   addImageInput?: (input: AddImageInputInput) => Promise<AddImageInputResult>;
+  addDatasetCapture?: (
+    input: import("./workflow-store").AddDatasetCaptureNodeInput,
+  ) => Promise<import("./workflow-store").AddDatasetCaptureNodeResult>;
   addModelNode?: (input: {
     applicationId: string;
     workflowId: string;
@@ -213,6 +229,7 @@ function makeApp({
   const renameMock = vi.fn(rename);
   const archiveMock = vi.fn(archive);
   const addImageInputMock = vi.fn(addImageInput);
+  const addDatasetCaptureMock = vi.fn(addDatasetCapture);
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
   const addOutputNodeMock = vi.fn(addOutputNode);
@@ -230,6 +247,7 @@ function makeApp({
     rename: renameMock,
     archive: archiveMock,
     addImageInput: addImageInputMock,
+    addDatasetCapture: addDatasetCaptureMock,
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
     addOutputNode: addOutputNodeMock,
@@ -253,6 +271,7 @@ function makeApp({
         rename: renameMock,
         archive: archiveMock,
         addImageInput: addImageInputMock,
+        addDatasetCapture: addDatasetCaptureMock,
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
         addOutputNode: addOutputNodeMock,
@@ -608,6 +627,70 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
 }
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
+  it("adds a dataset capture node when collection is enabled", async () => {
+    const draft = {
+      nodes: [
+        {
+          id: "capture-1",
+          type: "dataset.capture" as const,
+          inputs: { image: "image" as const, result: "inference" as const },
+        },
+      ],
+    };
+    const addDatasetCapture = vi.fn(async () => ({ ok: true as const, draft, draftRevision: NEXT_REVISION }));
+    const { request } = makeApp({ addDatasetCapture });
+
+    const response = await postWorkflowNode(request, {
+      type: "dataset.capture",
+      position: { x: 160, y: 240 },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ draft, draftRevision: NEXT_REVISION });
+    expect(addDatasetCapture).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      draftRevision: BASE_REVISION,
+      position: { x: 160, y: 240 },
+    });
+  });
+
+  it("rejects a dataset capture node while collection is disabled without changing the draft", async () => {
+    const addDatasetCapture = vi.fn(async () => ({
+      ok: false as const,
+      reason: "collectionDisabled" as const,
+    }));
+    const { request } = makeApp({ addDatasetCapture });
+
+    const response = await postWorkflowNode(request, { type: "dataset.capture" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Habilita la recolección de evidencia en la configuración de la aplicación.",
+    });
+    expect(addDatasetCapture).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      draftRevision: BASE_REVISION,
+      position: undefined,
+    });
+  });
+
+  it("does not reveal a disabled collection policy to a workspace member", async () => {
+    const addDatasetCapture = vi.fn(async () => ({ ok: false as const, reason: "forbidden" as const }));
+    const { request } = makeApp({ membershipRole: "member", addDatasetCapture });
+
+    const response = await postWorkflowNode(request, { type: "dataset.capture" });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: "No tienes permiso para editar este workflow.",
+    });
+    expect(addDatasetCapture).toHaveBeenCalledOnce();
+  });
+
   it("validates and dispatches a typed classification condition", async () => {
     const addConditionNode = vi.fn(async () => ({
       ok: true as const,

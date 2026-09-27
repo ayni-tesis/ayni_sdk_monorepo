@@ -75,6 +75,19 @@ describe("workflow node ports", () => {
       inputs: [{ id: "source", label: "Origen" }],
       outputs: [],
     });
+    expect(
+      workflowNodePorts({
+        id: "capture",
+        type: "dataset.capture",
+        inputs: { image: "image", result: "inference" },
+      }),
+    ).toEqual({
+      inputs: [
+        { id: "image", label: "imagen" },
+        { id: "result", label: "resultado" },
+      ],
+      outputs: [],
+    });
   });
 });
 

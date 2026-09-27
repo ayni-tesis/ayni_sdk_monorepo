@@ -146,6 +146,30 @@ describe("publishWorkflowVersion", () => {
     expect(store.inserted).toHaveLength(0);
   });
 
+  it("does not create a version for a draft containing a dataset capture", async () => {
+    const store = makePublishDb({
+      draft: {
+        ...publishableDraft,
+        nodes: [
+          ...publishableDraft.nodes,
+          {
+            id: "capture",
+            type: "dataset.capture",
+            inputs: { image: "image", result: "inference" },
+          },
+        ],
+      },
+    });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result).toMatchObject({ ok: false, reason: "invalidDraft" });
+    expect(result.ok === false && result.reason === "invalidDraft" && result.errors).toContainEqual(
+      expect.objectContaining({ code: "unsupportedNode", nodeId: "capture" }),
+    );
+    expect(store.inserted).toHaveLength(0);
+  });
+
   it("rejects a version identifier already used by the workflow, keeping the existing versions", async () => {
     const store = makePublishDb({ existingVersions: ["1.0.0"] });
 

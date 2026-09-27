@@ -39,6 +39,24 @@ const modelNode = (id: string, contract: WorkflowModelVersionContract): Workflow
 });
 
 describe("workflowNodeCatalog", () => {
+  it("lists dataset capture only when collection is enabled", () => {
+    const disabled = workflowNodeCatalog(empty, []).find((item) => item.key === "dataset.capture");
+    const enabled = workflowNodeCatalog(empty, [], undefined, true).find(
+      (item) => item.key === "dataset.capture",
+    );
+
+    expect(disabled).toMatchObject({
+      name: "Capturar para dataset",
+      disabledReason:
+        "Habilita la recolección de evidencia en la configuración de la aplicación.",
+    });
+    expect(enabled).toMatchObject({
+      name: "Capturar para dataset",
+      disabledReason: undefined,
+      node: { type: "dataset.capture" },
+    });
+  });
+
   it("offers the image input until the workflow has one", () => {
     const [available] = workflowNodeCatalog(empty, []).filter((item) => item.category === "input");
     expect(available).toMatchObject({ name: "Entrada de imagen", disabledReason: undefined });
@@ -85,7 +103,7 @@ describe("workflowNodeCatalog", () => {
   it("asks for a source on the canvas before offering a condition or an output", () => {
     const configured = (draft: WorkflowCanvasDraft) =>
       workflowNodeCatalog(draft, []).filter(
-        (item) => item.category === "logic" || item.category === "output",
+        (item) => item.key === "condition" || item.key === "output",
       );
 
     expect(configured(empty)).toMatchObject([

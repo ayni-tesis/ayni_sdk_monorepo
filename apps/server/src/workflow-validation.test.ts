@@ -57,6 +57,11 @@ const inputToClassifier: WorkflowConnection = {
   targetNodeId: "classifier",
   targetPort: "image",
 };
+const capture: WorkflowNode = {
+  id: "capture",
+  type: "dataset.capture",
+  inputs: { image: "image", result: "inference" },
+};
 
 describe("validateWorkflowDraft", () => {
   it("confirms that a complete DAG with an input, connected nodes and a reachable output is publishable", () => {
@@ -66,6 +71,26 @@ describe("validateWorkflowDraft", () => {
     };
 
     expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
+  });
+
+  it("does not allow publishing a draft that contains a dataset capture until SDK execution supports it", () => {
+    const draft: WorkflowDraft = {
+      nodes: [input, classifier, diagnosis, capture],
+      connections: [inputToClassifier],
+    };
+
+    expect(validateWorkflowDraft(draft)).toEqual({
+      publishable: false,
+      errors: [
+        {
+          code: "unsupportedNode",
+          nodeId: "capture",
+          nodeName: "Capturar evidencia",
+          port: null,
+          message: 'El nodo "Capturar evidencia" todavía no se puede publicar.',
+        },
+      ],
+    });
   });
 
   it("reports the node and port of a required input left unconnected and marks the draft unpublishable", () => {

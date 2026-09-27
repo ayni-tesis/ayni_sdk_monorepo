@@ -146,6 +146,23 @@ describe("workflowPortCompatibility", () => {
     ).toBe("incompatible");
   });
 
+  it("accepts image and inference results as the two typed inputs of a dataset capture", () => {
+    const withCapture: WorkflowPortDraft = {
+      ...draft,
+      nodes: [...draft.nodes, { id: "capture", type: "dataset.capture" }],
+    };
+
+    expect(
+      workflowPortCompatibility(withCapture, connect("image", "imagen", "capture", "image")),
+    ).toBe("compatible");
+    expect(
+      workflowPortCompatibility(withCapture, connect("detector", "result", "capture", "result")),
+    ).toBe("compatible");
+    expect(
+      workflowPortCompatibility(withCapture, connect("condition", "true", "capture", "result")),
+    ).toBe("incompatible");
+  });
+
   it("rejects missing nodes, unknown ports, and a node connected to itself", () => {
     expect(
       workflowPortCompatibility(draft, connect("missing", "imagen", "detector", "image")),

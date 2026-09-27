@@ -16,7 +16,8 @@ export type WorkflowValidationError = {
     | "missingTarget"
     | "incompatibleType"
     | "cycle"
-    | "unreachableOutput";
+    | "unreachableOutput"
+    | "unsupportedNode";
   nodeId: string | null;
   nodeName: string | null;
   port: string | null;
@@ -32,7 +33,8 @@ function workflowNodeName(node: WorkflowNode) {
   if (node.type === "input.image") return "Imagen de entrada";
   if (node.type === "model.tflite") return node.modelName;
   if (node.type === "condition") return `Condición: ${node.label}`;
-  return node.name;
+  if (node.type === "output") return node.name;
+  return "Capturar evidencia";
 }
 
 function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
@@ -86,6 +88,16 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
     addError("missingInput", null, null, "El workflow necesita un nodo de entrada de imagen.");
   if (!draft.nodes.some((node) => node.type === "output"))
     addError("missingOutput", null, null, "El workflow necesita al menos un nodo de salida.");
+
+  for (const node of draft.nodes) {
+    if (node.type === "dataset.capture")
+      addError(
+        "unsupportedNode",
+        node,
+        null,
+        'El nodo "Capturar evidencia" todavía no se puede publicar.',
+      );
+  }
 
   for (const connection of connections) {
     const target = nodesById.get(connection.targetNodeId);
