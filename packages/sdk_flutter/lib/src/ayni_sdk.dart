@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
@@ -8,6 +9,7 @@ import 'model_artifact_integrity_verifier.dart';
 import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
+import 'workflow_execution.dart';
 
 enum SyncStatus { updated, upToDate, offline, error }
 
@@ -103,6 +105,72 @@ class AyniSdk {
   final WorkflowVersionDownloader _workflowVersionDownloader;
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
+
+  /// Executes the last locally installed, validated version of [workflowId].
+  /// [input] is the encoded image bytes (for example JPEG or PNG).
+  Future<WorkflowResult> run(String workflowId, Uint8List input) async {
+    try {
+      final inventoryFile = File(
+        '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+      );
+      final inventory = await _readInventory(inventoryFile);
+      final workflow = inventory.workflows[workflowId];
+      if (workflow == null) {
+        throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
+      }
+      final definitionFile = installedWorkflowDefinitionFile(
+        storageDirectory,
+        workflow.workflowVersionId,
+      );
+      if (!await definitionFile.exists()) {
+        throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
+      }
+      final decoded = jsonDecode(await definitionFile.readAsString());
+      if (_workflowDefinitionValidator.validate(
+            definition: decoded,
+            declaredModelVersionIds: workflow.modelVersionIds.toSet(),
+          ) !=
+          WorkflowValidationStatus.valid) {
+        throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+      }
+      final executor = WorkflowExecutor(storageDirectory);
+      executor.validateInputAndContracts(
+        decoded as Map<String, dynamic>,
+        input,
+      );
+      // Preflight every dependency before opening an interpreter, so a missing
+      // later model can never leave a partially executed workflow.
+      final installer = ModelArtifactInstaller(
+        storageDirectory: storageDirectory,
+      );
+      for (final modelVersionId in workflow.modelVersionIds) {
+        if (!await installer.isVersionAvailable(
+          modelId: modelVersionId,
+          modelVersionId: modelVersionId,
+        )) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelNotAvailable,
+            modelVersionId: modelVersionId,
+          );
+        }
+      }
+      onProgress?.call('Usando recursos guardados en este dispositivo.');
+      return await executor.execute(
+        workflowId: workflowId,
+        workflowVersion: workflow.version,
+        definition: decoded,
+        imageBytes: input,
+      );
+    } on WorkflowError {
+      rethrow;
+    } on FormatException {
+      throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+    } on FileSystemException {
+      throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
+    } catch (_) {
+      throw const WorkflowError(WorkflowErrorCategory.runtimeError);
+    }
+  }
 
   Future<SyncResult> sync() async {
     if (!_canSendCredentialTo(serverUrl))

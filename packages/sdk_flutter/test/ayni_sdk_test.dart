@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:image/image.dart' as img;
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
 
@@ -144,6 +146,34 @@ void main() {
       '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
     );
   }
+
+  test(
+    'run preflights every cached model before opening an interpreter',
+    () async {
+      final client = sdk();
+      final inventory = File('${storageDirectory.path}/sync-inventory.json');
+      await inventory.writeAsString(_manifest(workflowVersion: '1.0.0'));
+      await installedDefinitionFile(
+        'workflow-version-1.0.0',
+      ).create(recursive: true);
+      await installedDefinitionFile(
+        'workflow-version-1.0.0',
+      ).writeAsString(_validWorkflowDefinition());
+      await expectLater(
+        client.run(
+          'workflow-1',
+          Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1))),
+        ),
+        throwsA(
+          isA<WorkflowError>().having(
+            (e) => e.category,
+            'category',
+            WorkflowErrorCategory.modelNotAvailable,
+          ),
+        ),
+      );
+    },
+  );
 
   test(
     'installs the validated workflow, commits it, and skips its download',
