@@ -78,8 +78,7 @@ void main() {
             final mvId = segments.length >= 3 ? segments[2] : '';
             final body =
                 modelManifestResponses[mvId] ?? modelManifestResponseBody;
-            request.response.statusCode =
-                modelManifestStatusCode ?? statusCode;
+            request.response.statusCode = modelManifestStatusCode ?? statusCode;
             request.response.write(body);
           } else {
             request.response.statusCode = statusCode;
@@ -1094,14 +1093,25 @@ void main() {
           .toIso8601String(),
     });
 
+    bool? modelAvailableAtPersist;
     final client = sdk(
-      onBeforeInventoryPersist: () =>
-          Future<void>.error(StateError('persistence failed')),
+      onBeforeInventoryPersist: () async {
+        modelAvailableAtPersist =
+            await ModelArtifactInstaller(
+              storageDirectory: storageDirectory,
+            ).isVersionAvailable(
+              modelId: 'model-version-1',
+              modelVersionId: 'model-version-1',
+            );
+        throw StateError('persistence failed');
+      },
     );
 
     final result = await client.sync();
 
     expect(result.status, SyncStatus.error);
+    // model-version-1 was installed before persistence ran.
+    expect(modelAvailableAtPersist, isTrue);
 
     // model-version-1 was installed by this sync and must be cleaned up.
     // model-version-2 was never installed (download failed).
