@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'model_artifact_downloader.dart';
+import 'model_artifact_installer.dart';
+import 'model_artifact_integrity_verifier.dart';
 import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
@@ -14,6 +17,7 @@ enum SyncResourceStatus {
   invalidRemoteResource,
   invalidWorkflow,
   installationFailed,
+  dependencyFailed,
 }
 
 enum SyncResourceType { workflow, model }
@@ -26,6 +30,7 @@ class SyncResourceResult {
     this.version,
     this.name,
     this.previousVersionRetained = false,
+    this.dependencyName,
   });
 
   final SyncResourceType type;
@@ -39,6 +44,9 @@ class SyncResourceResult {
   /// message below.
   final bool previousVersionRetained;
 
+  /// The name of the failed dependency for `dependencyFailed` status (US-044).
+  final String? dependencyName;
+
   String? get message => switch (status) {
     SyncResourceStatus.invalidRemoteResource =>
       'Se mantuvo la versión local porque la actualización no es válida.',
@@ -50,6 +58,10 @@ class SyncResourceResult {
       'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
     SyncResourceStatus.installationFailed =>
       'No se pudo guardar la actualización. No se instaló ninguna versión.',
+    SyncResourceStatus.dependencyFailed when previousVersionRetained =>
+      'No se pudo preparar $name: $dependencyName. Se mantuvo la última versión válida.',
+    SyncResourceStatus.dependencyFailed =>
+      'No se pudo preparar $name: $dependencyName.',
     _ => null,
   };
 }
@@ -173,6 +185,9 @@ class AyniSdk {
       for (final file in installation.promotedFiles) {
         await _deleteDownloadedDefinition(file);
       }
+      for (final file in installation.installedModelFiles) {
+        await _deleteDownloadedDefinition(file);
+      }
     }
     return persisted
         ? SyncResult(SyncStatus.updated, installation.resources)
@@ -190,6 +205,7 @@ class AyniSdk {
     final workflows = Map<String, _Workflow>.of(comparison.inventory.workflows);
     final rejections = <_WorkflowRejection>[];
     final promotedFiles = <File>[];
+    final installedModelFiles = <File>[];
     for (final workflow in comparison.acceptedWorkflows) {
       if (deadline.expired) return null;
       if (localVersionIds.contains(workflow.workflowVersionId)) continue;
@@ -230,6 +246,31 @@ class AyniSdk {
         workflow.modelVersionIds,
       );
       if (validation == WorkflowValidationStatus.valid) {
+        var failedDependency = 'modelo desconocido';
+        final depsOk = await _installModelDependencies(
+          workflow,
+          comparison.inventory.models,
+          client,
+          deadline,
+          (name) => failedDependency = name,
+          installedModelFiles,
+        );
+        if (!depsOk) {
+          await _rejectWorkflow(
+            workflow,
+            downloadedFile,
+            local,
+            workflows,
+            rejections,
+            dependencyFailed: true,
+            dependencyName: failedDependency,
+          );
+          continue;
+        }
+        if (deadline.expired) {
+          await _deleteDownloadedDefinition(downloadedFile);
+          return null;
+        }
         try {
           await _promoteToInstalledDefinition(downloadedFile, installedFile);
           promotedFiles.add(installedFile);
@@ -244,7 +285,13 @@ class AyniSdk {
           );
         }
       } else {
-        await _rejectWorkflow(workflow, downloadedFile, local, workflows, rejections);
+        await _rejectWorkflow(
+          workflow,
+          downloadedFile,
+          local,
+          workflows,
+          rejections,
+        );
       }
     }
     if (deadline.expired) return null;
@@ -252,6 +299,7 @@ class AyniSdk {
       inventory: _Inventory(workflows, comparison.inventory.models),
       resources: _resourcesWithRejections(comparison.resources, rejections),
       promotedFiles: promotedFiles,
+      installedModelFiles: installedModelFiles,
     );
   }
 
@@ -265,6 +313,8 @@ class AyniSdk {
     Map<String, _Workflow> workflows,
     List<_WorkflowRejection> rejections, {
     bool installationFailed = false,
+    bool dependencyFailed = false,
+    String? dependencyName,
   }) async {
     await _deleteDownloadedDefinition(downloadedFile);
     final previous = local.workflows[workflow.id];
@@ -278,6 +328,8 @@ class AyniSdk {
         workflow,
         previousVersionRetained: previous != null,
         installationFailed: installationFailed,
+        dependencyFailed: dependencyFailed,
+        dependencyName: dependencyName,
       ),
     );
   }
@@ -331,6 +383,160 @@ class AyniSdk {
       definition: decoded,
       declaredModelVersionIds: declaredModelVersionIds.toSet(),
     );
+  }
+
+  /// Downloads and installs model versions required by a workflow that are
+  /// not yet available locally (US-044). Each newly installed model file is
+  /// added to [installedModelFiles] immediately after installation so that
+  /// the caller can clean them up even if a later dependency fails. Returns
+  /// `false` when a dependency could not be installed.
+  Future<bool> _installModelDependencies(
+    _Workflow workflow,
+    Map<String, _Model> models,
+    HttpClient client,
+    _SyncDeadline deadline,
+    void Function(String name) setFailedDependency,
+    List<File> installedModelFiles,
+  ) async {
+    final installer = ModelArtifactInstaller(
+      storageDirectory: storageDirectory,
+    );
+    final downloader = ModelArtifactDownloader();
+    final verifier = ModelArtifactIntegrityVerifier();
+
+    for (final modelVersionId in workflow.modelVersionIds) {
+      if (deadline.expired) return false;
+
+      final available = await installer.isVersionAvailable(
+        modelId: modelVersionId,
+        modelVersionId: modelVersionId,
+      );
+      if (available) continue;
+
+      final model = models[modelVersionId];
+      if (model == null) {
+        setFailedDependency(modelVersionId);
+        return false;
+      }
+
+      onProgress?.call('Descargando modelos para ${workflow.name}…');
+
+      final manifestResult = await _fetchModelManifest(modelVersionId, client);
+      if (manifestResult == null) {
+        setFailedDependency(modelVersionId);
+        return false;
+      }
+      if (deadline.expired) return false;
+
+      final temporaryArtifact = File(
+        '${storageDirectory.path}${Platform.pathSeparator}'
+        'model-downloads${Platform.pathSeparator}$modelVersionId.tflite',
+      );
+      final verifiedArtifact = File('${temporaryArtifact.path}.verified');
+
+      final downloadResult = await downloader.download(
+        manifest: manifestResult,
+        temporaryArtifact: temporaryArtifact,
+        httpClient: client,
+        allowInsecureLoopback: allowInsecureLoopback,
+      );
+      if (downloadResult.status != ModelArtifactDownloadStatus.downloaded) {
+        await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
+        setFailedDependency(modelVersionId);
+        return false;
+      }
+      if (deadline.expired) {
+        await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
+        return false;
+      }
+
+      final integrityResult = await verifier.verify(
+        modelVersionId: modelVersionId,
+        temporaryArtifact: File(downloadResult.temporaryArtifact!),
+        verifiedArtifact: verifiedArtifact,
+        expectedSha256: manifestResult.sha256,
+        isDownloadComplete: true,
+      );
+      if (!integrityResult.isVerified) {
+        await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
+        setFailedDependency(modelVersionId);
+        return false;
+      }
+      if (deadline.expired) {
+        await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
+        return false;
+      }
+
+      final modelDirectory = Directory(
+        '${storageDirectory.path}${Platform.pathSeparator}$modelVersionId',
+      );
+      final artifactPath =
+          '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.tflite';
+      final metadataPath =
+          '${modelDirectory.path}${Platform.pathSeparator}$modelVersionId.json';
+      final preExisting = File(artifactPath).existsSync();
+
+      final installResult = await installer.install(
+        modelId: modelVersionId,
+        version: model.version,
+        verifiedArtifact: verifiedArtifact,
+        integrity: integrityResult,
+      );
+      if (installResult.status != ModelArtifactInstallStatus.availableOffline) {
+        await _cleanupModelFiles(temporaryArtifact, verifiedArtifact);
+        setFailedDependency(modelVersionId);
+        return false;
+      }
+
+      if (!preExisting) {
+        installedModelFiles.add(File(artifactPath));
+        installedModelFiles.add(File(metadataPath));
+      }
+    }
+
+    return true;
+  }
+
+  Future<ModelDownloadManifest?> _fetchModelManifest(
+    String modelVersionId,
+    HttpClient client,
+  ) async {
+    try {
+      final request = await client.getUrl(
+        serverUrl.resolve('/sdk/model-versions/$modelVersionId/manifest'),
+      );
+      request.followRedirects = false;
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $_credential',
+      );
+      final response = await request.close();
+      final body = await utf8.decoder.bind(response).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      return ModelDownloadManifest.fromJson(
+        jsonDecode(body) as Map<String, dynamic>,
+      );
+    } on IOException {
+      return null;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
+  Future<void> _cleanupModelFiles(
+    File temporaryArtifact,
+    File verifiedArtifact,
+  ) async {
+    try {
+      if (await temporaryArtifact.exists()) await temporaryArtifact.delete();
+    } on IOException {}
+    try {
+      if (await verifiedArtifact.exists()) await verifiedArtifact.delete();
+    } on IOException {}
   }
 
   Future<void> _deleteDownloadedDefinition(File file) async {
@@ -618,11 +824,13 @@ class _Installation {
     required this.inventory,
     required this.resources,
     required this.promotedFiles,
+    this.installedModelFiles = const [],
   });
 
   final _Inventory inventory;
   final List<SyncResourceResult> resources;
   final List<File> promotedFiles;
+  final List<File> installedModelFiles;
 }
 
 /// A workflow whose downloaded definition failed validation or whose
@@ -634,21 +842,28 @@ class _WorkflowRejection {
     this.workflow, {
     required this.previousVersionRetained,
     this.installationFailed = false,
+    this.dependencyFailed = false,
+    this.dependencyName,
   });
 
   final _Workflow workflow;
   final bool previousVersionRetained;
   final bool installationFailed;
+  final bool dependencyFailed;
+  final String? dependencyName;
 
   SyncResourceResult toResult() => SyncResourceResult(
     type: SyncResourceType.workflow,
-    status: installationFailed
+    status: dependencyFailed
+        ? SyncResourceStatus.dependencyFailed
+        : installationFailed
         ? SyncResourceStatus.installationFailed
         : SyncResourceStatus.invalidWorkflow,
     resourceVersionId: workflow.workflowVersionId,
     version: workflow.version,
     name: workflow.name,
     previousVersionRetained: previousVersionRetained,
+    dependencyName: dependencyName,
   );
 }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
 
@@ -10,10 +11,15 @@ import '../lib/src/sdk_internal.dart';
 void main() {
   late Directory storageDirectory;
   late HttpServer server;
+  late HttpServer artifactServer;
   late int statusCode;
   int? workflowStatusCode;
+  int? modelManifestStatusCode;
   late String responseBody;
   late String workflowResponseBody;
+  late String modelManifestResponseBody;
+  late Map<String, String> modelManifestResponses;
+  late List<int> modelArtifactBytes;
   Uri? redirectUrl;
   Duration? responseDelay;
   final requests = <HttpRequest>[];
@@ -31,11 +37,28 @@ void main() {
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
+    modelManifestStatusCode = null;
+    modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
     workflowResponseBody = _validWorkflowDefinition();
+    modelArtifactBytes = utf8.encode('tflite-model-artifact-content');
+    final artifactSha256 = sha256.convert(modelArtifactBytes).toString();
     redirectUrl = null;
     responseDelay = null;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    artifactServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    modelManifestResponseBody = jsonEncode({
+      'modelVersionId': 'model-version-1',
+      'version': '1.0.0',
+      'sha256': artifactSha256,
+      'sizeBytes': modelArtifactBytes.length,
+      'downloadUrl':
+          'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
     unawaited(
       server.forEach((request) async {
         requests.add(request);
@@ -44,28 +67,53 @@ void main() {
           final isWorkflow = request.uri.path.startsWith(
             '/sdk/workflow-versions/',
           );
-          request.response.statusCode = isWorkflow
-              ? (workflowStatusCode ?? statusCode)
-              : statusCode;
-          if (redirectUrl != null) {
-            request.response.headers.set(
-              HttpHeaders.locationHeader,
-              redirectUrl!.toString(),
-            );
-          }
-          request.response.write(
-            isWorkflow ? workflowResponseBody : responseBody,
+          final isModelManifest = request.uri.path.startsWith(
+            '/sdk/model-versions/',
           );
+          if (isWorkflow) {
+            request.response.statusCode = workflowStatusCode ?? statusCode;
+            request.response.write(workflowResponseBody);
+          } else if (isModelManifest) {
+            final segments = request.uri.pathSegments;
+            final mvId = segments.length >= 3 ? segments[2] : '';
+            final body =
+                modelManifestResponses[mvId] ?? modelManifestResponseBody;
+            request.response.statusCode = modelManifestStatusCode ?? statusCode;
+            request.response.write(body);
+          } else {
+            request.response.statusCode = statusCode;
+            if (redirectUrl != null) {
+              request.response.headers.set(
+                HttpHeaders.locationHeader,
+                redirectUrl!.toString(),
+              );
+            }
+            request.response.write(responseBody);
+          }
           await request.response.close();
         } on HttpException {
           // The timed-out client has already closed its response stream.
         }
       }),
     );
+    unawaited(
+      artifactServer.forEach((request) async {
+        try {
+          request.response.statusCode = HttpStatus.ok;
+          request.response.headers.set(
+            HttpHeaders.contentTypeHeader,
+            'application/octet-stream',
+          );
+          request.response.add(modelArtifactBytes);
+          await request.response.close();
+        } on HttpException {}
+      }),
+    );
   });
 
   tearDown(() async {
     await server.close(force: true);
+    await artifactServer.close(force: true);
     await storageDirectory.delete(recursive: true);
   });
 
@@ -120,7 +168,10 @@ void main() {
         SyncResourceStatus.upToDate,
       ]);
 
-      expect(messages, ['Descargando workflow Clasificar hoja…']);
+      expect(messages, [
+        'Descargando workflow Clasificar hoja…',
+        'Descargando modelos para Clasificar hoja…',
+      ]);
       expect(downloads.single.status, WorkflowVersionDownloadStatus.downloaded);
       expect(
         await File(downloads.single.temporaryDefinition!).exists(),
@@ -157,6 +208,7 @@ void main() {
       expect(requests.map((request) => request.uri.path), [
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1.0.0',
+        '/sdk/model-versions/model-version-1/manifest',
         '/sdk/sync',
       ]);
     },
@@ -643,7 +695,10 @@ void main() {
         failed.message,
         'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
       );
-      expect(await inventory.readAsString(), contains('workflow-version-1.0.0'));
+      expect(
+        await inventory.readAsString(),
+        contains('workflow-version-1.0.0'),
+      );
       expect(
         await installedDefinitionFile('workflow-version-1.0.0').exists(),
         isTrue,
@@ -698,52 +753,380 @@ void main() {
     },
   );
 
+  test('installs a validated workflow as an atomic unit', () async {
+    final client = sdk();
+    await seedInventory(client);
+
+    // The installed definition file must not exist before the second sync.
+    expect(
+      await installedDefinitionFile('workflow-version-1.0.0').exists(),
+      isTrue,
+    );
+
+    // A new version is available.
+    responseBody = _manifest(workflowVersion: '2.0.0');
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    expect(result.resources.map((r) => r.status), [
+      SyncResourceStatus.upToDate,
+      SyncResourceStatus.updated,
+    ]);
+
+    // The new definition is fully installed (not partially available).
+    expect(
+      await installedDefinitionFile('workflow-version-2.0.0').exists(),
+      isTrue,
+    );
+    expect(
+      await installedDefinitionFile('workflow-version-2.0.0').readAsString(),
+      workflowResponseBody,
+    );
+
+    // The previous version is still present.
+    expect(
+      await installedDefinitionFile('workflow-version-1.0.0').exists(),
+      isTrue,
+    );
+
+    // No .part files remain after a successful install.
+    final leftovers = await storageDirectory
+        .list(recursive: true)
+        .where((entry) => entry is File && entry.path.endsWith('.part'))
+        .toList();
+    expect(leftovers, isEmpty);
+  });
+
+  // ── US-044: Synchronize model dependencies of a workflow ─────────────
+
   test(
-    'installs a validated workflow as an atomic unit',
+    'downloads and installs model dependencies for a new workflow',
     () async {
-      final client = sdk();
-      await seedInventory(client);
+      final messages = <String>[];
+      final client = sdk(onProgress: messages.add);
 
-      // The installed definition file must not exist before the second sync.
-      expect(
-        await installedDefinitionFile('workflow-version-1.0.0').exists(),
-        isTrue,
-      );
-
-      // A new version is available.
-      responseBody = _manifest(workflowVersion: '2.0.0');
       final result = await client.sync();
 
       expect(result.status, SyncStatus.updated);
       expect(result.resources.map((r) => r.status), [
-        SyncResourceStatus.upToDate,
+        SyncResourceStatus.updated,
         SyncResourceStatus.updated,
       ]);
+      expect(messages, contains('Descargando modelos para Clasificar hoja…'));
 
-      // The new definition is fully installed (not partially available).
+      final installer = ModelArtifactInstaller(
+        storageDirectory: storageDirectory,
+      );
       expect(
-        await installedDefinitionFile('workflow-version-2.0.0').exists(),
+        await installer.isVersionAvailable(
+          modelId: 'model-version-1',
+          modelVersionId: 'model-version-1',
+        ),
         isTrue,
       );
-      expect(
-        await installedDefinitionFile('workflow-version-2.0.0').readAsString(),
-        workflowResponseBody,
-      );
 
-      // The previous version is still present.
       expect(
         await installedDefinitionFile('workflow-version-1.0.0').exists(),
         isTrue,
       );
-
-      // No .part files remain after a successful install.
-      final leftovers = await storageDirectory
-          .list(recursive: true)
-          .where((entry) => entry is File && entry.path.endsWith('.part'))
-          .toList();
-      expect(leftovers, isEmpty);
     },
   );
+
+  test(
+    'skips model download when the model is already available locally',
+    () async {
+      final client = sdk();
+      await client.sync();
+
+      final manifestRequests = requests
+          .where((r) => r.uri.path.startsWith('/sdk/model-versions/'))
+          .length;
+      expect(manifestRequests, 1);
+
+      final secondResult = await client.sync();
+      expect(secondResult.status, SyncStatus.upToDate);
+
+      final secondManifestRequests = requests
+          .where((r) => r.uri.path.startsWith('/sdk/model-versions/'))
+          .length;
+      expect(secondManifestRequests, manifestRequests);
+    },
+  );
+
+  test('rejects a workflow when its model dependency download fails', () async {
+    modelManifestStatusCode = HttpStatus.internalServerError;
+    final client = sdk();
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    expect(result.resources.first.type, SyncResourceType.model);
+    expect(result.resources.first.status, SyncResourceStatus.updated);
+    final workflow = result.resources.last;
+    expect(workflow.type, SyncResourceType.workflow);
+    expect(workflow.status, SyncResourceStatus.dependencyFailed);
+    expect(workflow.resourceVersionId, 'workflow-version-1.0.0');
+    expect(workflow.name, 'Clasificar hoja');
+    expect(
+      workflow.message,
+      'No se pudo preparar Clasificar hoja: model-version-1.',
+    );
+    expect(
+      await installedDefinitionFile('workflow-version-1.0.0').exists(),
+      isFalse,
+    );
+  });
+
+  test('rejects a workflow when model integrity verification fails', () async {
+    modelManifestResponseBody = jsonEncode({
+      'modelVersionId': 'model-version-1',
+      'version': '1.0.0',
+      'sha256': 'bad' * 22,
+      'sizeBytes': modelArtifactBytes.length,
+      'downloadUrl':
+          'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
+    final client = sdk();
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.updated);
+    final workflow = result.resources.last;
+    expect(workflow.status, SyncResourceStatus.dependencyFailed);
+    expect(
+      workflow.message,
+      'No se pudo preparar Clasificar hoja: model-version-1.',
+    );
+    expect(
+      await installedDefinitionFile('workflow-version-1.0.0').exists(),
+      isFalse,
+    );
+  });
+
+  test(
+    'rejects a workflow when model artifact download returns wrong size',
+    () async {
+      modelManifestResponseBody = jsonEncode({
+        'modelVersionId': 'model-version-1',
+        'version': '1.0.0',
+        'sha256': sha256.convert(modelArtifactBytes).toString(),
+        'sizeBytes': modelArtifactBytes.length + 100,
+        'downloadUrl':
+            'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/model.tflite',
+        'downloadUrlExpiresAt': DateTime.now()
+            .add(const Duration(hours: 1))
+            .toUtc()
+            .toIso8601String(),
+      });
+      final client = sdk();
+
+      final result = await client.sync();
+
+      expect(result.status, SyncStatus.updated);
+      final workflow = result.resources.last;
+      expect(workflow.status, SyncResourceStatus.dependencyFailed);
+    },
+  );
+
+  test(
+    'keeps a valid local workflow when its new version has a dependency failure',
+    () async {
+      final client = sdk();
+      await seedInventory(client);
+
+      // Keep model-version-1 (already installed, passes validation) and add
+      // model-version-2 (not installed, manifest returns 500).
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-2.0.0',
+            'name': 'Clasificar hoja',
+            'version': '2.0.0',
+            'modelVersionIds': ['model-version-1', 'model-version-2'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+          {
+            'modelVersionId': 'model-version-2',
+            'version': '1.0.0',
+            'sha256': 'b' * 64,
+          },
+        ],
+      });
+      modelManifestStatusCode = HttpStatus.internalServerError;
+
+      final result = await client.sync();
+
+      // The workflow version changed (1.0.0 → 2.0.0), so the inventory
+      // marks it as `updated`, even though the dependency install failed.
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((r) => r.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.updated,
+        SyncResourceStatus.dependencyFailed,
+      ]);
+      final failed = result.resources.last;
+      expect(failed.previousVersionRetained, isTrue);
+      expect(
+        failed.message,
+        'No se pudo preparar Clasificar hoja: model-version-2. '
+        'Se mantuvo la última versión válida.',
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isTrue,
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-2.0.0').exists(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'keeps valid local models when a dependency fails for a different workflow',
+    () async {
+      final client = sdk();
+      await client.sync();
+
+      final installer = ModelArtifactInstaller(
+        storageDirectory: storageDirectory,
+      );
+      expect(
+        await installer.isVersionAvailable(
+          modelId: 'model-version-1',
+          modelVersionId: 'model-version-1',
+        ),
+        isTrue,
+      );
+
+      responseBody = jsonEncode({
+        'workflows': [
+          {
+            'workflowId': 'workflow-1',
+            'workflowVersionId': 'workflow-version-1.0.0',
+            'name': 'Clasificar hoja',
+            'version': '1.0.0',
+            'modelVersionIds': ['model-version-1'],
+          },
+          {
+            'workflowId': 'workflow-2',
+            'workflowVersionId': 'workflow-version-2.0.0',
+            'name': 'Nuevo workflow',
+            'version': '2.0.0',
+            'modelVersionIds': ['model-version-2'],
+          },
+        ],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+          {
+            'modelVersionId': 'model-version-2',
+            'version': '1.0.0',
+            'sha256': 'b' * 64,
+          },
+        ],
+      });
+      modelManifestStatusCode = HttpStatus.internalServerError;
+
+      await client.sync();
+
+      expect(
+        await installer.isVersionAvailable(
+          modelId: 'model-version-1',
+          modelVersionId: 'model-version-1',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test('cleans up model files when inventory persistence fails', () async {
+    // Two models: model-version-1 installs successfully, model-version-2
+    // manifest returns a bad size so download fails.
+    responseBody = jsonEncode({
+      'workflows': [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-1.0.0',
+          'name': 'Clasificar hoja',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-1', 'model-version-2'],
+        },
+      ],
+      'models': [
+        {
+          'modelVersionId': 'model-version-1',
+          'version': '1.0.0',
+          'sha256': sha256.convert(modelArtifactBytes).toString(),
+        },
+        {
+          'modelVersionId': 'model-version-2',
+          'version': '1.0.0',
+          'sha256': 'b' * 64,
+        },
+      ],
+    });
+    // model-version-2 gets a manifest with sizeBytes=0 → download fails.
+    modelManifestResponses['model-version-2'] = jsonEncode({
+      'modelVersionId': 'model-version-2',
+      'version': '1.0.0',
+      'sha256': 'b' * 64,
+      'sizeBytes': 0,
+      'downloadUrl': 'https://invalid.example/model.tflite',
+      'downloadUrlExpiresAt': DateTime.now()
+          .add(const Duration(hours: 1))
+          .toUtc()
+          .toIso8601String(),
+    });
+
+    bool? modelAvailableAtPersist;
+    final client = sdk(
+      onBeforeInventoryPersist: () async {
+        modelAvailableAtPersist =
+            await ModelArtifactInstaller(
+              storageDirectory: storageDirectory,
+            ).isVersionAvailable(
+              modelId: 'model-version-1',
+              modelVersionId: 'model-version-1',
+            );
+        throw StateError('persistence failed');
+      },
+    );
+
+    final result = await client.sync();
+
+    expect(result.status, SyncStatus.error);
+    // model-version-1 was installed before persistence ran.
+    expect(modelAvailableAtPersist, isTrue);
+
+    // model-version-1 was installed by this sync and must be cleaned up.
+    // model-version-2 was never installed (download failed).
+    final modelFiles = await storageDirectory
+        .list(recursive: true)
+        .where(
+          (entry) =>
+              entry is File &&
+              (entry.path.contains('model-version-1') ||
+                  entry.path.contains('model-version-2')) &&
+              (entry.path.endsWith('.tflite') || entry.path.endsWith('.json')),
+        )
+        .toList();
+    expect(modelFiles, isEmpty);
+  });
 }
 
 String _manifest({required String workflowVersion}) => jsonEncode({
