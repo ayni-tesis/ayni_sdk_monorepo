@@ -28,4 +28,4 @@ el repositorio (ver [Instalación y configuración](/comenzar/instalacion-y-conf
 | Componente | Versión |
 | --- | --- |
 | Dart | `>=3.8.0 <4.0.0` |
-| Plataforma probada | Android |
+| Alcance de CI | Android (`apps/native`) |

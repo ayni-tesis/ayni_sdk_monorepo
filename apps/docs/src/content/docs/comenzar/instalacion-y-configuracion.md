@@ -11,7 +11,7 @@ sidebar:
 | --- | --- |
 | Paquete | `ayni_sdk` 0.1.0 |
 | Dart | `>=3.8.0 <4.0.0` |
-| Plataforma probada | Android |
+| Alcance de CI | Android (`apps/native`) |
 | Dependencias | `crypto` |
 
 ## Instalación

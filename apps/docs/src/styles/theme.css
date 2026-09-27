@@ -2,6 +2,8 @@
  * Ayni palette and type for Starlight, taken from apps/web/DESIGN.md and the
  * shadcn tokens in apps/web/src/index.css: jet black and petrol surfaces,
  * signal cyan reserved for links, focus and the current page, and Geist.
+ * Light accent-high is the only derived shade: a darker frosted blue 700
+ * for text on light accent-low backgrounds.
  * src/theme.test.ts checks the WCAG AA contrast of these colors.
  */
 
@@ -15,9 +17,9 @@
   --sl-color-gray-5: rgb(32 50 70);
   --sl-color-gray-6: rgb(16 25 35);
   --sl-color-black: rgb(16 17 20);
-  --sl-color-accent-low: rgb(16 48 56);
+  --sl-color-accent-low: rgb(33 69 59);
   --sl-color-accent: rgb(54 182 201);
-  --sl-color-accent-high: rgb(158 223 233);
+  --sl-color-accent-high: rgb(94 196 212);
 }
 
 :root[data-theme="light"] {
