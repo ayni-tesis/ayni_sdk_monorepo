@@ -1,0 +1,44 @@
+---
+title: Notas de versión y compatibilidad
+description: Qué cambió en cada versión del SDK de Ayni, cómo migrar y con qué versiones del servidor y de los workflows es compatible.
+sidebar:
+  order: 1
+---
+
+import CompatibilityTable from "../../../components/CompatibilityTable.astro";
+import ReleaseNotes from "../../../components/ReleaseNotes.astro";
+
+Esta página muestra qué cambió en cada versión de `ayni_sdk` y con qué
+versiones del servidor y de los workflows funciona, para que decidas cuándo y
+cómo actualizar. Las notas salen del `CHANGELOG.md` del paquete, el archivo que
+se publica en [pub.dev](https://pub.dev/packages/ayni_sdk/changelog) con cada
+versión.
+
+## Versiones
+
+De la más reciente a la más antigua. Una versión `Prerelease` lleva un
+identificador preliminar, como `-beta.1`, y es para pruebas piloto: puede
+cambiar. Una versión `Estable` no lo lleva. Para actualizar desde una versión
+anterior, lee las notas de cada versión posterior a la tuya y sigue sus pasos
+de `Cómo migrar`.
+
+<ReleaseNotes />
+
+## Compatibilidad
+
+<CompatibilityTable />
+
+- **Versión mínima del servidor**: la versión más antigua de la API HTTP de
+  Ayni con la que funciona el SDK. El servidor la publica en `info.version` de
+  `/openapi.json`.
+- **Versión del esquema de workflow**: los workflows aún no declaran una
+  versión de esquema, así que cada versión del SDK acepta los workflows cuyos
+  tipos de nodo están en su fila.
+- **Tipos de nodo admitidos**: los tipos de nodo que esa versión del SDK puede
+  instalar y ejecutar.
+
+Si un workflow usa un tipo de nodo que tu versión del SDK no admite, busca la
+versión más antigua cuya fila lo incluye y actualiza al menos hasta ella.
+Mientras tanto, `sync()` rechaza ese workflow y conserva la versión anterior
+cuando el dispositivo tenía una (ver
+[Tipos de nodo sin soporte](/referencia/esquema-de-workflow/#tipos-de-nodo-sin-soporte)).

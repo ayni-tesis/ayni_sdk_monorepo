@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
 import { tableRows } from "../markdown-table";
+import { nodeTypeSince } from "../resources/compatibility";
 import { validationRejections, validatorNodeFields, validatorSource } from "./workflow-schema";
 
 const docsRoot = join(import.meta.dirname, "..", "content", "docs");
@@ -26,11 +27,6 @@ function section(heading: string): string {
 }
 
 const nodeFields = validatorNodeFields(validatorSource);
-
-/** The SDK versions `Notas de versión y compatibilidad` has notes for. */
-const releasedVersions = [
-  ...read("recursos/notas-de-version.md").matchAll(/^## `ayni_sdk` (\S+)$/gm),
-].map(([, version]) => version);
 
 /**
  * How the page names each reason the validator rejects a definition. A new
@@ -73,13 +69,10 @@ describe("Esquema de workflow (US-145)", () => {
     );
   });
 
-  it("declares a released SDK version for every node type", () => {
+  it("gives each node type the SDK version the compatibility table dates it from", () => {
     const since = tableRows(section("## Tipos de nodo")).map((row) => row[2] ?? "");
 
-    expect(since).toHaveLength(Object.keys(nodeFields).length);
-    for (const version of since) {
-      expect(releasedVersions.map((released) => `\`${released}\``)).toContain(version);
-    }
+    expect(since).toEqual(Object.keys(nodeFields).map((type) => `\`${nodeTypeSince[type]}\``));
   });
 
   it("describes each field of each node type", () => {

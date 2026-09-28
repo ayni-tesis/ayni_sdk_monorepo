@@ -1,0 +1,58 @@
+---
+/**
+ * The versions of `ayni_sdk` from `packages/sdk_flutter/CHANGELOG.md`, newest
+ * first, each with its date, stability badge and four sections (US-148).
+ */
+import { Aside, Badge } from "@astrojs/starlight/components";
+import { noReleasesMessage } from "../resources/changelog";
+import { releases as loadReleases } from "../resources/releases";
+
+const releases = await loadReleases();
+const longDate = new Intl.DateTimeFormat("es", { dateStyle: "long", timeZone: "UTC" });
+---
+
+{releases.length === 0 && <p>{noReleasesMessage}</p>}
+{
+  releases.map((release) => (
+    <section class="release" aria-labelledby={`v${release.version}`}>
+      <h3 id={`v${release.version}`}>
+        <code>{release.version}</code>
+        <Badge
+          text={release.stability}
+          variant={release.stability === "Estable" ? "success" : "caution"}
+        />
+      </h3>
+      <p class="release-date">
+        <time datetime={release.date}>{longDate.format(new Date(`${release.date}T00:00:00Z`))}</time>
+      </p>
+      {release.breaking && (
+        <Aside type="caution" title="Advertencia">
+          Esta versión tiene cambios incompatibles. Sigue los pasos de «Cómo migrar» antes de
+          actualizar.
+        </Aside>
+      )}
+      <Fragment set:html={release.summary} />
+      {release.sections.map((section) => (
+        <>
+          <h4>{section.title}</h4>
+          <Fragment set:html={section.html} />
+        </>
+      ))}
+    </section>
+  ))
+}
+
+<style>
+  .release h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .release-date {
+    margin-top: 0.25rem;
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+  }
+</style>
