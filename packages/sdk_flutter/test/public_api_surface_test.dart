@@ -40,11 +40,16 @@ String stripComments(String source) {
 
 Map<String, Set<String>> exportedSymbols(String barrelSource) {
   final source = stripComments(barrelSource);
-  final pattern = RegExp(r"export\s+'([^']+)'\s*([^;]*);", multiLine: true);
+  // Dart accepts single- or double-quoted URIs; both must be recognized so a
+  // leaking export cannot hide behind the other quote style.
+  final pattern = RegExp(
+    r'''export\s+(['"])([^'"]+)\1\s*([^;]*);''',
+    multiLine: true,
+  );
   final exports = <String, Set<String>>{};
   for (final match in pattern.allMatches(source)) {
-    final uri = match.group(1)!;
-    final clause = (match.group(2) ?? '').trim();
+    final uri = match.group(2)!;
+    final clause = (match.group(3) ?? '').trim();
     if (clause.isEmpty) {
       fail(
         "export '$uri' is a whole-library export; narrow it with an explicit "
@@ -74,42 +79,43 @@ Map<String, Set<String>> exportedSymbols(String barrelSource) {
   return exports;
 }
 
+List<String> contractProblems(Map<String, Set<String>> actual) {
+  final problems = <String>[];
+  for (final entry in expectedExports.entries) {
+    final actualNames = actual[entry.key];
+    if (actualNames == null) {
+      problems.add("missing export of '${entry.key}'");
+      continue;
+    }
+    final leaked = actualNames.difference(entry.value).toList()..sort();
+    if (leaked.isNotEmpty) {
+      problems.add(
+        "'${entry.key}' exports symbols outside the US-090 contract: "
+        '${leaked.join(', ')}',
+      );
+    }
+    final missing = entry.value.difference(actualNames).toList()..sort();
+    if (missing.isNotEmpty) {
+      problems.add(
+        "'${entry.key}' does not export contract symbols: "
+        '${missing.join(', ')}',
+      );
+    }
+  }
+  for (final entry in actual.entries) {
+    if (!expectedExports.containsKey(entry.key)) {
+      final names = entry.value.toList()..sort();
+      problems.add("unexpected export of '${entry.key}': ${names.join(', ')}");
+    }
+  }
+  return problems;
+}
+
 void main() {
   group('US-090 public export surface', () {
     test('the barrel exports exactly the contract symbols', () {
       final barrel = File('lib/ayni_sdk.dart').readAsStringSync();
-      final actual = exportedSymbols(barrel);
-      final problems = <String>[];
-
-      for (final entry in expectedExports.entries) {
-        final actualNames = actual[entry.key];
-        if (actualNames == null) {
-          problems.add("missing export of '${entry.key}'");
-          continue;
-        }
-        final leaked = actualNames.difference(entry.value).toList()..sort();
-        if (leaked.isNotEmpty) {
-          problems.add(
-            "'${entry.key}' exports symbols outside the US-090 contract: "
-            '${leaked.join(', ')}',
-          );
-        }
-        final missing = entry.value.difference(actualNames).toList()..sort();
-        if (missing.isNotEmpty) {
-          problems.add(
-            "'${entry.key}' does not export contract symbols: "
-            '${missing.join(', ')}',
-          );
-        }
-      }
-      for (final entry in actual.entries) {
-        if (!expectedExports.containsKey(entry.key)) {
-          final names = entry.value.toList()..sort();
-          problems.add(
-            "unexpected export of '${entry.key}': ${names.join(', ')}",
-          );
-        }
-      }
+      final problems = contractProblems(exportedSymbols(barrel));
 
       expect(
         problems,
@@ -118,6 +124,27 @@ void main() {
             'lib/ayni_sdk.dart must export exactly the US-090 contract '
             '(US-090). Problems:\n'
             '${problems.map((problem) => '- $problem').join('\n')}',
+      );
+    });
+
+    test('an extra export written with double quotes fails the comparison', () {
+      final barrel = File('lib/ayni_sdk.dart').readAsStringSync();
+      final withLeak =
+          "$barrel\n"
+          'export "src/package_validator.dart" show PackageValidator;';
+      final problems = contractProblems(exportedSymbols(withLeak));
+
+      expect(
+        problems,
+        hasLength(1),
+        reason:
+            'a double-quoted export outside the contract must be reported '
+            'exactly once, found:\n${problems.join('\n')}',
+      );
+      expect(
+        problems.single,
+        contains('src/package_validator.dart'),
+        reason: 'the report must name the leaking export',
       );
     });
 

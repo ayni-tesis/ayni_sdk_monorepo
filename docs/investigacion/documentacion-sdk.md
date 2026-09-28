@@ -75,9 +75,9 @@ Estado del código el 2026-09-27:
 | API pública | `AyniSdk` (`serverUrl`, `credential`, `storageDirectory`, `syncTimeout`, `allowInsecureLoopback`, `onProgress`, `onBeforeInventoryPersist`) y `sync()` | `lib/src/ayni_sdk.dart` |
 | Resultado | `SyncResult` con `SyncStatus` (`updated`, `upToDate`, `offline`, `error`) y `SyncResourceResult` con `SyncResourceStatus` y `message` en español | `lib/src/ayni_sdk.dart:12-74` |
 | Exportaciones | `lib/ayni_sdk.dart` exporta solo el contrato de US-090 (`AyniConfig`, `AyniSdk`, `initialize`/`sync`/`run`, los tipos de inicialización y sincronización, y `WorkflowResult`/`WorkflowError` con sus valores tipados); `WorkflowVersionDownloader`, `ModelArtifactInstaller` y `ModelArtifactIntegrityVerifier` ya no se exportan | `lib/ayni_sdk.dart` |
-| Ejecución local | No implementada (US-049 a US-062); no hay API para ejecutar workflows | búsqueda en `lib/` |
+| Ejecución local | Implementada: `AyniSdk.run(workflowId, imagen)` ejecuta el workflow instalado sin conexión y devuelve `WorkflowResult` con valores tipados; el README la documenta | `lib/src/ayni_sdk.dart`, `packages/sdk_flutter/README.md` |
 | Comentarios de documentación | Parciales: algunos campos tienen `///` y la clase `AyniSdk` no | `lib/src/ayni_sdk.dart` |
-| README del SDK | No existe (US-095 abierta, issue #58) | `packages/sdk_flutter/` |
+| README del SDK | Existe e documenta la API pública (`initialize`/`sync`/`run`, `WorkflowResult`/`WorkflowError`) y la regla de no importar archivos `src/`; US-095 sigue abierta para la guía de integración completa (issue #58) | `packages/sdk_flutter/README.md` |
 | API HTTP del SDK | `POST /sdk/sync`, `GET /sdk/workflow-versions/:workflowVersionId`, `GET /sdk/model-versions/:modelVersionId/manifest`, con `Authorization: Bearer ayni_sk_…` | `apps/server/src/sdk-sync.ts`, `sdk-workflow-versions.ts`, `sdk-model-versions.ts` |
 | Errores HTTP | `401` con `invalidCredential` o `credentialRevoked`; `404` con `workflowVersionNotFound` o `modelVersionNotFound`; cuerpo `{ message, code }` | mismos archivos |
 | Descarga de modelos | El archivo `.tflite` se descarga de `downloadUrl`, una URL firmada del almacenamiento de objetos (R2), sin la credencial | `lib/src/model_artifact_downloader.dart:109`, `apps/server/src/model-version-storage.ts` |
