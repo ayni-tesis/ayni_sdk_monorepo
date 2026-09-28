@@ -16,11 +16,9 @@ Prelanzamiento para aplicaciones piloto. Esta versión es para pruebas piloto y 
   definición antes de instalarlos.
 - Descarga de los modelos que usa cada workflow y verificación de su
   integridad con SHA-256.
+- Ejecución local de workflows sincronizados e instalados previamente, sin
+  conexión a internet.
 - Conservación de la última versión válida cuando una actualización falla.
-
-### Todavía no incluye
-
-- Ejecución de workflows en el dispositivo sin conexión.
 
 ### Compatibilidad
 
