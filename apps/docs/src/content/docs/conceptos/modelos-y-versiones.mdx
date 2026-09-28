@@ -1,0 +1,51 @@
+---
+title: Modelos y versiones
+description: Qué es un modelo, qué es una versión de modelo y por qué una versión publicada no cambia.
+sidebar:
+  order: 3
+---
+
+import Definition from "../../../components/Definition.astro";
+import Diagram from "../../../components/Diagram.astro";
+
+## Modelo
+
+<Definition term="Model" />
+
+Hoy el único runtime admitido es TensorFlow Lite.
+
+## Versión de modelo
+
+<Definition term="Model Version" />
+
+<Diagram
+  steps={[
+    "Se sube un .tflite con una etiqueta SemVer",
+    "El servidor valida el formato y calcula su SHA-256",
+    "Un workflow usa la versión",
+    "El SDK la descarga y verifica su SHA-256",
+  ]}
+  alt="Un administrador sube un archivo .tflite con una etiqueta SemVer; el servidor valida que sea un modelo TensorFlow Lite y calcula su SHA-256; un workflow usa esa versión; al sincronizar, el SDK la descarga y comprueba que su SHA-256 coincida antes de instalarla."
+/>
+
+Un administrador puede definir el contrato de cada versión: qué entrada recibe
+y qué resultado devuelve.
+
+## Reglas
+
+- Una versión publicada es inmutable.
+- Su archivo no se puede sobrescribir ni reemplazar: un cambio en el modelo se
+  sube como una versión nueva.
+- Cada versión tiene una etiqueta SemVer (por ejemplo, `1.0.0`) única dentro
+  de su modelo.
+- El servidor rechaza un archivo que no es un modelo TensorFlow Lite válido.
+- Solo se puede eliminar una versión que ningún borrador de workflow usa.
+- El SDK instala una versión solo si su SHA-256 coincide con el publicado, y
+  no vuelve a descargar una versión que ya tiene instalada.
+
+## Términos relacionados
+
+- [Modelo](/conceptos/glosario/#modelo)
+- [Versión de modelo](/conceptos/glosario/#version-de-modelo)
+- [Workflows DAG](/conceptos/workflows-dag/)
+- [Sincronización offline](/conceptos/sincronizacion-offline/)

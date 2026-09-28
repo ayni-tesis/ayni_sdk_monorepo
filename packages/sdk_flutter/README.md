@@ -33,26 +33,21 @@ El paquete mantiene una configuración completamente genérica e independiente. 
 El SDK recibe su configuración dinámicamente en tiempo de ejecución mediante `AyniSdk.initialize(AyniConfig(...))` (US-049). La aplicación host obtiene la credencial y la configuración desde almacenamiento seguro o su entorno de ejecución en runtime, manteniendo el paquete desacoplado y libre de secretos hardcodeados:
 
 ```dart
-// Obtén la credencial dinámicamente en runtime (p. ej. desde almacenamiento seguro)
-final credential = await secureStorage.read(key: 'ayni_credential');
-
-final config = AyniConfig(
-  serverUrl: Uri.parse('https://api.ayni.dev'),
-  credential: credential ?? '',
-  storageDirectory: storageDirectory,
+final result = AyniSdk.initialize(
+  AyniConfig(
+    serverUrl: Uri.parse('https://tu-servidor-ayni.example'),
+    credential: credential,
+    storageDirectory: storageDirectory,
+  ),
 );
-
-final result = AyniSdk.initialize(config);
-
-if (result.isReady) {
-  final sdk = AyniSdk.instance;
-  // Sincroniza workflows o ejecuta modelos locales
-  final syncResult = await sdk.sync();
-} else {
-  // Manejo de configuración incompleta o errores: result.message
-  print('Error al inicializar el SDK: ${result.message}');
+if (!result.isReady) {
+  showMessage(result.message);
+  return null;
 }
+return AyniSdk.instance;
 ```
+
+El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/initialize.dart`.
 
 Una vez completada la inicialización de forma exitosa (`result.isReady`), se accede a la instancia compartida a través de `AyniSdk.instance`. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.
 
@@ -74,6 +69,8 @@ try {
   print('Error de ejecución: ${error.category}');
 }
 ```
+
+El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/run_workflow.dart`.
 
 `WorkflowResult` expone `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult` o `BooleanResult`) bajo el nombre de salida publicado. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
 

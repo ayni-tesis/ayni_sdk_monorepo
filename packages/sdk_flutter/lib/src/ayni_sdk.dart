@@ -11,21 +11,105 @@ import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
 
-enum SyncStatus { updated, upToDate, offline, error }
-
-enum SyncResourceStatus {
+/// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
+///
+/// Whatever the status, the workflow and model versions the device already
+/// had stay installed, so [AyniSdk.run] keeps working offline.
+enum SyncStatus {
+  /// The device saved at least one new workflow or model version (see
+  /// [SyncResourceStatus.updated]).
+  ///
+  /// When another resource failed in the same sync, the status is [error]
+  /// instead.
   updated,
+
+  /// Nothing new was installed.
+  ///
+  /// The device already had every published version, the server acknowledged
+  /// the credential without listing resources, or the only rejections were
+  /// incompatible workflow definitions
+  /// ([SyncResourceStatus.invalidWorkflow]).
   upToDate,
+
+  /// The server could not be reached, for example because the device has no
+  /// network connection.
+  offline,
+
+  /// The sync did not complete.
+  ///
+  /// It happens when [AyniSdk.serverUrl] cannot receive the credential (see
+  /// [AyniConfig.serverUrl]), the server answers with a non-2xx status (such
+  /// as a revoked credential), the response is not a valid inventory,
+  /// [AyniSdk.syncTimeout] elapses, the device storage fails, or a resource
+  /// update fails. [SyncResult.resources] names the failed resources, if any.
+  error,
+}
+
+/// The outcome of one workflow or model during an [AyniSdk.sync], in
+/// [SyncResourceResult.status].
+enum SyncResourceStatus {
+  /// The device saved the resource's new published version.
+  ///
+  /// A workflow's new definition is installed. A model's new file is
+  /// downloaded only when a workflow that needs it is installed; until then
+  /// only its new version is recorded.
+  updated,
+
+  /// The installed version is the published one, so nothing changed.
+  ///
+  /// A model also reports it when its new version was rolled back because a
+  /// workflow that needed it failed; the previous version stays installed.
+  upToDate,
+
+  /// The server listed the resource with invalid data, so the local version
+  /// was kept.
+  ///
+  /// It happens when the entry lacks a required field or has an invalid one,
+  /// when a workflow needs a model that is neither listed nor installed or
+  /// that is itself invalid, or when a model keeps its installed version
+  /// number but changes its SHA-256 hash
+  /// ([SyncResourceResult.remoteHashConflict]).
   invalidRemoteResource,
+
+  /// The downloaded workflow definition failed the SDK's validation (invalid
+  /// schema, unknown node type, undeclared model, missing node, cycle, or
+  /// incompatible port), so it was not installed.
+  ///
+  /// It does not turn [SyncResult.status] into [SyncStatus.error].
+  /// [SyncResourceResult.previousVersionRetained] tells whether the last
+  /// valid version is still installed.
   invalidWorkflow,
+
+  /// The workflow definition was valid but could not be saved on the device.
   installationFailed,
+
+  /// A model the workflow needs could not be downloaded, verified, or
+  /// installed; [SyncResourceResult.dependencyName] names it.
   dependencyFailed,
+
+  /// The server no longer serves the workflow version it listed (it answered
+  /// `404 Not Found`).
   workflowUnavailable,
 }
 
-enum SyncResourceType { workflow, model }
+/// The kind of resource a [SyncResourceResult] describes.
+enum SyncResourceType {
+  /// A published workflow version.
+  workflow,
 
+  /// An on-device model version that a workflow needs.
+  model,
+}
+
+/// The outcome of one workflow or model during an [AyniSdk.sync].
+///
+/// Show [message] when it is not `null`: it explains, in Spanish, what
+/// happened and whether the previous version is still installed.
 class SyncResourceResult {
+  /// Creates the result of one resource.
+  ///
+  /// The SDK creates these results during [AyniSdk.sync]; apps only read
+  /// them.
   const SyncResourceResult({
     required this.type,
     required this.status,
@@ -37,21 +121,54 @@ class SyncResourceResult {
     this.remoteHashConflict = false,
   });
 
+  /// Whether this result describes a workflow or a model.
   final SyncResourceType type;
+
+  /// What happened to the resource during the sync.
   final SyncResourceStatus status;
+
+  /// The ID of the workflow version or model version, or `null` when the
+  /// server listed the resource without a valid one.
   final String? resourceVersionId;
+
+  /// The version the server published, such as `1.2.0`, or `null` when the
+  /// server listed the resource without a valid one.
+  ///
+  /// For a model rolled back to its installed version, it is the installed
+  /// version.
   final String? version;
+
+  /// The workflow's name, or `null` for models and for invalid server
+  /// entries.
   final String? name;
 
   /// Whether a valid local version of this workflow was kept when the update
-  /// was rejected by validation (US-042); it selects the `invalidWorkflow`
-  /// message below.
+  /// was rejected (US-042).
+  ///
+  /// It applies to [SyncResourceStatus.invalidWorkflow],
+  /// [SyncResourceStatus.installationFailed],
+  /// [SyncResourceStatus.dependencyFailed], and
+  /// [SyncResourceStatus.workflowUnavailable], and selects their [message].
+  /// Defaults to `false`.
   final bool previousVersionRetained;
 
-  /// The name of the failed dependency for `dependencyFailed` status (US-044).
+  /// The model version ID of the dependency that failed, for
+  /// [SyncResourceStatus.dependencyFailed] (US-044); `null` otherwise.
   final String? dependencyName;
+
+  /// Whether the server published a model with the installed version number
+  /// but a different SHA-256 hash.
+  ///
+  /// Only an [SyncResourceStatus.invalidRemoteResource] model sets it; the
+  /// installed copy is kept. Defaults to `false`.
   final bool remoteHashConflict;
 
+  /// A Spanish message that explains the outcome, or `null` when [status] is
+  /// [SyncResourceStatus.updated] or [SyncResourceStatus.upToDate].
+  ///
+  /// For example, an [SyncResourceStatus.invalidWorkflow] whose previous
+  /// version was kept returns `La actualización de <name> no es compatible.
+  /// Se mantuvo la última versión válida.`
   String? get message =>
       status == SyncResourceStatus.invalidRemoteResource && remoteHashConflict
       ? 'La actualización no coincide con la versión instalada; se conservará la copia local.'
@@ -78,10 +195,34 @@ class SyncResourceResult {
         };
 }
 
+/// The outcome of an [AyniSdk.sync] call.
+///
+/// ```dart
+/// final result = await sdk.sync();
+/// if (result.status == SyncStatus.offline) {
+///   showMessage('Sin conexión. Se usarán los workflows instalados.');
+/// }
+/// for (final resource in result.resources) {
+///   final message = resource.message;
+///   if (message != null) showMessage(message);
+/// }
+/// ```
 class SyncResult {
+  /// Creates a sync result with its overall [status] and the outcome of each
+  /// resource.
+  ///
+  /// [resources] defaults to an empty list. The SDK creates these results;
+  /// apps only read them.
   const SyncResult(this.status, [this.resources = const []]);
 
+  /// The overall outcome of the sync.
   final SyncStatus status;
+
+  /// The outcome of every workflow and model the server listed, except a new
+  /// model that was removed again because the workflow that needed it failed.
+  ///
+  /// It is empty when the sync stopped before comparing the server's list
+  /// with the device, for example when [status] is [SyncStatus.offline].
   final List<SyncResourceResult> resources;
 }
 
@@ -98,8 +239,18 @@ enum InitializationStatus {
 }
 
 /// Configuration required to initialize the Ayni SDK.
+///
+/// Pass it to [AyniSdk.initialize], which checks [isValid] before creating
+/// the shared [AyniSdk.instance]. Its [toString] never shows the credential.
 class AyniConfig {
   /// Creates an SDK configuration instance.
+  ///
+  /// [serverUrl], [credential], and [storageDirectory] are required.
+  /// [syncTimeout] defaults to 30 seconds and [allowInsecureLoopback] to
+  /// `false`; the [onProgress] and [onBeforeInventoryPersist] callbacks are
+  /// optional.
+  /// The constructor never throws: [AyniSdk.initialize] reports an invalid
+  /// configuration.
   AyniConfig({
     required this.serverUrl,
     required this.credential,
@@ -112,27 +263,49 @@ class AyniConfig {
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
   /// when [allowInsecureLoopback] is true).
+  ///
+  /// A URL without a host, or with any scheme other than `https` outside that
+  /// loopback case, makes the configuration invalid.
   final Uri serverUrl;
 
   /// The SDK secret credential (`ayni_sk_...`).
+  ///
+  /// A blank credential makes the configuration invalid. Read it at runtime,
+  /// for example from secure storage; never hard-code it.
   final String credential;
 
   /// Directory where the SDK stores workflows, models, and sync inventory.
+  ///
+  /// A directory with a blank path makes the configuration invalid.
   final Directory storageDirectory;
 
   /// Maximum duration for a sync operation. Defaults to 30 seconds.
+  ///
+  /// It must be positive; see [AyniSdk.syncTimeout] for what happens when it
+  /// elapses.
   final Duration syncTimeout;
 
   /// Whether insecure HTTP is permitted for local loopback development.
+  ///
+  /// Defaults to `false`. When `true`, [serverUrl] may use `http` only for
+  /// `localhost` or a loopback address.
   final bool allowInsecureLoopback;
 
   /// Optional callback to receive human-readable progress messages.
+  ///
+  /// See [AyniSdk.onProgress].
   final void Function(String message)? onProgress;
 
   /// Optional callback invoked before writing inventory to disk.
+  ///
+  /// It exists for the SDK's tests; see [AyniSdk.onBeforeInventoryPersist].
   final Future<void> Function()? onBeforeInventoryPersist;
 
   /// Whether this configuration is complete and valid for SDK initialization.
+  ///
+  /// It is `true` when [credential] and the [storageDirectory] path are not
+  /// blank, [syncTimeout] is positive, and [serverUrl] can receive the
+  /// credential.
   bool get isValid =>
       credential.trim().isNotEmpty &&
       storageDirectory.path.trim().isNotEmpty &&
@@ -169,6 +342,9 @@ class AyniInitializationResult {
   final InitializationStatus status;
 
   /// Human-readable message describing the initialization outcome.
+  ///
+  /// It is `SDK listo.` when [status] is [InitializationStatus.ready], and
+  /// `Revisa la configuración del SDK antes de continuar.` otherwise.
   final String message;
 
   /// Whether initialization was successful and the SDK is ready for use.
@@ -194,8 +370,37 @@ class AyniInitializationResult {
 typedef InitializationResult = AyniInitializationResult;
 
 /// Manages synchronization and offline execution of workflows.
+///
+/// Create the client with [initialize], which validates an [AyniConfig] and
+/// keeps the shared [instance], or with the constructor. Then call [sync] to
+/// install the application's published workflows and their models, and [run]
+/// to execute an installed workflow on the device, even without a network
+/// connection.
+///
+/// ```dart
+/// final result = AyniSdk.initialize(
+///   AyniConfig(
+///     serverUrl: Uri.parse('https://tu-servidor-ayni.example'),
+///     credential: credential,
+///     storageDirectory: storageDirectory,
+///   ),
+/// );
+/// if (!result.isReady) {
+///   showMessage(result.message);
+///   return null;
+/// }
+/// return AyniSdk.instance;
+/// ```
 class AyniSdk {
   /// Creates a new [AyniSdk] instance directly.
+  ///
+  /// [serverUrl], [credential], and [storageDirectory] are required and mean
+  /// the same as in [AyniConfig]. [syncTimeout] defaults to 30 seconds and
+  /// [allowInsecureLoopback] to `false`.
+  ///
+  /// Unlike [initialize], the constructor does not validate its arguments and
+  /// does not set [instance]: a [serverUrl] that cannot receive the credential
+  /// makes every [sync] return [SyncStatus.error].
   ///
   /// Every parameter is part of the US-090 public contract: it references only
   /// types exported by `package:ayni_sdk/ayni_sdk.dart`.
@@ -228,6 +433,9 @@ class AyniSdk {
   static bool get isInitialized => _instance != null;
 
   /// Resets the shared SDK singleton for testing.
+  ///
+  /// Afterwards [isInitialized] is `false` and [instance] throws until the
+  /// next successful [initialize].
   static void resetForTesting() {
     _instance = null;
   }
@@ -241,6 +449,26 @@ class AyniSdk {
   ///
   /// Does not initiate network operations or model inference.
   /// If initialization fails, no operative SDK instance is retained.
+  ///
+  /// It never throws. An invalid configuration ([AyniConfig.isValid] is
+  /// `false`) returns [InitializationStatus.incompleteConfiguration], and an
+  /// unexpected failure returns [InitializationStatus.error]; in both cases
+  /// [AyniInitializationResult.sdk] is `null` and [isInitialized] is `false`.
+  ///
+  /// ```dart
+  /// final result = AyniSdk.initialize(
+  ///   AyniConfig(
+  ///     serverUrl: Uri.parse('https://tu-servidor-ayni.example'),
+  ///     credential: credential,
+  ///     storageDirectory: storageDirectory,
+  ///   ),
+  /// );
+  /// if (!result.isReady) {
+  ///   showMessage(result.message);
+  ///   return null;
+  /// }
+  /// return AyniSdk.instance;
+  /// ```
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
       if (!config.isValid) {
@@ -307,15 +535,37 @@ class AyniSdk {
     return InternetAddress.tryParse(normalized)?.isLoopback == true;
   }
 
+  /// The Ayni server the SDK syncs with; [sync] posts to its `/sdk/sync`
+  /// path.
+  ///
+  /// It must use HTTPS, or HTTP to a loopback host when
+  /// [allowInsecureLoopback] is `true`; otherwise [sync] returns
+  /// [SyncStatus.error] without sending the credential.
   final Uri serverUrl;
+
+  /// The directory where the SDK keeps the installed workflow definitions,
+  /// models, and the sync inventory that [run] reads.
   final Directory storageDirectory;
+
+  /// The longest a [sync] call may take. Defaults to 30 seconds.
+  ///
+  /// When it elapses, [sync] stops its downloads and returns a [SyncResult]
+  /// with [SyncStatus.error] and no resources. The inventory keeps the
+  /// versions installed before that sync, so [run] keeps using them. A later
+  /// [sync] starts once the abandoned one has finished.
   final Duration syncTimeout;
+
+  /// Whether [serverUrl] may use plain HTTP to `localhost` or a loopback
+  /// address, for local development. Defaults to `false`.
   final bool allowInsecureLoopback;
 
   /// Runs right before the inventory is saved; it exists for the SDK's tests.
   final Future<void> Function()? onBeforeInventoryPersist;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
+  ///
+  /// Other messages include `Descargando modelos para <nombre>…` during
+  /// [sync] and `Usando recursos guardados en este dispositivo.` during [run].
   final void Function(String message)? onProgress;
 
   final String _credential;
@@ -336,6 +586,34 @@ class AyniSdk {
 
   /// Executes the last locally installed, validated version of [workflowId].
   /// [input] is the encoded image bytes (for example JPEG or PNG).
+  ///
+  /// It runs entirely on the device, without a network connection, and
+  /// completes with a [WorkflowResult] whose [WorkflowResult.outputs] hold the
+  /// value of each output node the workflow reached.
+  ///
+  /// It throws a [WorkflowError] whose [WorkflowError.category] says why the
+  /// workflow could not run; see [WorkflowErrorCategory] for every case.
+  /// A workflow that was never synced, for example, throws
+  /// [WorkflowErrorCategory.workflowNotAvailable], and an [input] that is not
+  /// an image throws [WorkflowErrorCategory.invalidInput].
+  ///
+  /// ```dart
+  /// try {
+  ///   final result = await sdk.run(workflowId, image);
+  ///   return [
+  ///     for (final MapEntry(key: name, value: value) in result.outputs.entries)
+  ///       switch (value) {
+  ///         ClassificationResult(:final label, :final confidence) =>
+  ///           '$name: $label ($confidence)',
+  ///         DetectionResult(:final detections) =>
+  ///           '$name: ${detections.length} objetos',
+  ///         BooleanResult(value: final passed) => '$name: $passed',
+  ///       },
+  ///   ];
+  /// } on WorkflowError catch (error) {
+  ///   return ['No se pudo ejecutar el workflow: ${error.category.name}'];
+  /// }
+  /// ```
   Future<WorkflowResult> run(String workflowId, Uint8List input) async {
     try {
       final inventoryFile = File(
@@ -400,6 +678,33 @@ class AyniSdk {
     }
   }
 
+  /// Downloads and installs the workflow versions published for the
+  /// credential's application, with the models they need.
+  ///
+  /// The SDK sends the credential to [serverUrl], compares the published
+  /// versions with the ones installed in [storageDirectory], and downloads,
+  /// validates, and installs only what changed. A rejected update never
+  /// replaces a valid installed version.
+  ///
+  /// Network, server, and storage failures do not throw: the returned
+  /// [SyncResult] reports the overall [SyncStatus] and the outcome of each
+  /// resource in [SyncResult.resources]. It returns [SyncStatus.error] when
+  /// [syncTimeout] elapses, and [SyncStatus.offline] when the server cannot
+  /// be reached.
+  ///
+  /// Calls never overlap: a call made while another sync is running starts
+  /// when the previous one finishes.
+  ///
+  /// ```dart
+  /// final result = await sdk.sync();
+  /// if (result.status == SyncStatus.offline) {
+  ///   showMessage('Sin conexión. Se usarán los workflows instalados.');
+  /// }
+  /// for (final resource in result.resources) {
+  ///   final message = resource.message;
+  ///   if (message != null) showMessage(message);
+  /// }
+  /// ```
   Future<SyncResult> sync() {
     final previousSync = _syncQueue;
     final syncFinished = Completer<void>();

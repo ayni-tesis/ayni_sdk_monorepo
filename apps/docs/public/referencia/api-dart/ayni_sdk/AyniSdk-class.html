@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the AyniSdk class from the ayni_sdk library, for the Dart programming language.">
+  <title>AyniSdk class - ayni_sdk library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.1.0</a></li>
+    <li><a href="../ayni_sdk/">ayni_sdk.dart</a></li>
+    <li class="self-crumb">AyniSdk class</li>
+  </ol>
+  <div class="self-name">AyniSdk</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content" lang="en" data-pagefind-body
+    class="main-content"
+    data-above-sidebar="ayni_sdk&#47;ayni_sdk-library-sidebar.html"
+    data-below-sidebar="ayni_sdk&#47;AyniSdk-class-sidebar.html">
+    <div>
+<h1><span class="kind-class">AyniSdk</span> class 
+ 
+</h1></div>
+
+    
+<section class="desc markdown">
+  <p>Manages synchronization and offline execution of workflows.</p>
+<p>Create the client with <a href="../ayni_sdk/AyniSdk/initialize.html">initialize</a>, which validates an <a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a> and
+keeps the shared <a href="../ayni_sdk/AyniSdk/instance.html">instance</a>, or with the constructor. Then call <a href="../ayni_sdk/AyniSdk/sync.html">sync</a> to
+install the application's published workflows and their models, and <a href="../ayni_sdk/AyniSdk/run.html">run</a>
+to execute an installed workflow on the device, even without a network
+connection.</p>
+<pre class="language-dart"><code class="language-dart">final result = AyniSdk.initialize(
+  AyniConfig(
+    serverUrl: Uri.parse('https://tu-servidor-ayni.example'),
+    credential: credential,
+    storageDirectory: storageDirectory,
+  ),
+);
+if (!result.isReady) {
+  showMessage(result.message);
+  return null;
+}
+return AyniSdk.instance;
+</code></pre>
+</section>
+
+
+
+    
+  <section class="summary offset-anchor" id="constructors">
+    <h2>Constructors</h2>
+    <dl class="constructor-summary-list">
+        <dt id="AyniSdk.new" class="callable">
+          <span class="name"><a href="../ayni_sdk/AyniSdk/AyniSdk.html">AyniSdk</a></span><span class="signature">({<span class="parameter" id="param-serverUrl"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Uri-class.html">Uri</a></span> <span class="parameter-name">serverUrl</span>, </span><span class="parameter" id="param-credential"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">credential</span>, </span><span class="parameter" id="param-storageDirectory"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/Directory-class.html">Directory</a></span> <span class="parameter-name">storageDirectory</span>, </span><span class="parameter" id="param-syncTimeout"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Duration-class.html">Duration</a></span> <span class="parameter-name">syncTimeout</span> = <span class="default-value">const Duration(seconds: 30)</span>, </span><span class="parameter" id="param-allowInsecureLoopback"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">allowInsecureLoopback</span> = <span class="default-value">false</span>, </span><span class="parameter" id="param-onBeforeInventoryPersist"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter">void</span>&gt;</span></span> <span class="parameter-name">onBeforeInventoryPersist</span>()?, </span><span class="parameter" id="param-onProgress"><span class="type-annotation">void</span> <span class="parameter-name">onProgress</span>(<span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span>)?</span>})</span>
+        </dt>
+        <dd>
+          Creates a new <a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a> instance directly.
+        </dd>
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-properties">
+    <h2>Properties</h2>
+    <dl class="properties">
+        <dt id="allowInsecureLoopback" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/allowInsecureLoopback.html">allowInsecureLoopback</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span>
+  
+
+</dt>
+<dd>
+  Whether <a href="../ayni_sdk/AyniSdk/serverUrl.html">serverUrl</a> may use plain HTTP to <code>localhost</code> or a loopback
+address, for local development. Defaults to <code>false</code>.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+        <dt id="hashCode" class="property inherited">
+  <span class="name"><a href="https://api.flutter.dev/flutter/dart-core/Object/hashCode.html">hashCode</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  The hash code for this object.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="onBeforeInventoryPersist" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/onBeforeInventoryPersist.html">onBeforeInventoryPersist</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter">void</span>&gt;</span> Function<span class="signature">()</span>?</span>
+  
+
+</dt>
+<dd>
+  Runs right before the inventory is saved; it exists for the SDK's tests.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+        <dt id="onProgress" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/onProgress.html">onProgress</a></span>
+  <span class="signature">&#8594; void Function<span class="signature">(<span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span>)</span>?</span>
+  
+
+</dt>
+<dd>
+  Reports SDK activity, including <code>Descargando workflow &lt;nombre&gt;…</code>.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+        <dt id="runtimeType" class="property inherited">
+  <span class="name"><a href="https://api.flutter.dev/flutter/dart-core/Object/runtimeType.html">runtimeType</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/Type-class.html">Type</a></span>
+  
+
+</dt>
+<dd class="inherited">
+  A representation of the runtime type of the object.
+  <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="serverUrl" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/serverUrl.html">serverUrl</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/Uri-class.html">Uri</a></span>
+  
+
+</dt>
+<dd>
+  The Ayni server the SDK syncs with; <a href="../ayni_sdk/AyniSdk/sync.html">sync</a> posts to its <code>/sdk/sync</code>
+path.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+        <dt id="storageDirectory" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-io/Directory-class.html">Directory</a></span>
+  
+
+</dt>
+<dd>
+  The directory where the SDK keeps the installed workflow definitions,
+models, and the sync inventory that <a href="../ayni_sdk/AyniSdk/run.html">run</a> reads.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+        <dt id="syncTimeout" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/syncTimeout.html">syncTimeout</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/Duration-class.html">Duration</a></span>
+  
+
+</dt>
+<dd>
+  The longest a <a href="../ayni_sdk/AyniSdk/sync.html">sync</a> call may take. Defaults to 30 seconds.
+  <div class="features"><span class="feature">final</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+
+    
+  <section
+      class="summary offset-anchor"
+      id="instance-methods">
+    <h2>Methods</h2>
+    <dl class="callables">
+        <dt id="noSuchMethod" class="callable inherited">
+  <span class="name"><a href="https://api.flutter.dev/flutter/dart-core/Object/noSuchMethod.html">noSuchMethod</a></span><span class="signature">(<wbr><span class="parameter" id="noSuchMethod-param-invocation"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Invocation-class.html">Invocation</a></span> <span class="parameter-name">invocation</span></span>)
+    <span class="returntype parameter">&#8594; dynamic</span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  Invoked when a nonexistent method or property is accessed.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="run" class="callable">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/run.html">run</a></span><span class="signature">(<wbr><span class="parameter" id="run-param-workflowId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">workflowId</span>, </span><span class="parameter" id="run-param-input"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-typed_data/Uint8List-class.html">Uint8List</a></span> <span class="parameter-name">input</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/WorkflowResult-class.html">WorkflowResult</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Executes the last locally installed, validated version of <code>workflowId</code>.
+<code>input</code> is the encoded image bytes (for example JPEG or PNG).
+  
+
+</dd>
+
+        <dt id="sync" class="callable">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/sync.html">sync</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/SyncResult-class.html">SyncResult</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Downloads and installs the workflow versions published for the
+credential's application, with the models they need.
+  
+
+</dd>
+
+        <dt id="toString" class="callable inherited">
+  <span class="name"><a href="https://api.flutter.dev/flutter/dart-core/Object/toString.html">toString</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  A string representation of this object.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+  <section
+      class="summary offset-anchor inherited"
+      id="operators">
+    <h2>Operators</h2>
+    <dl class="callables">
+        <dt id="operator ==" class="callable inherited">
+  <span class="name"><a href="https://api.flutter.dev/flutter/dart-core/Object/operator_equals.html">operator ==</a></span><span class="signature">(<wbr><span class="parameter" id="==-param-other"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Object-class.html">Object</a></span> <span class="parameter-name">other</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span>
+  </span>
+  
+
+</dt>
+<dd class="inherited">
+  The equality operator.
+  <div class="features"><span class="feature">inherited</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+  <section class="summary offset-anchor" id="static-properties">
+    <h2>Static Properties</h2>
+    <dl class="properties">
+        <dt id="instance" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/instance.html">instance</a></span>
+  <span class="signature">&#8594; <a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a></span>
+  
+
+</dt>
+<dd>
+  Returns the shared <a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a> instance configured by <a href="../ayni_sdk/AyniSdk/initialize.html">initialize</a>.
+  <div class="features"><span class="feature">no setter</span></div>
+
+</dd>
+
+        <dt id="isInitialized" class="property">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span>
+  
+
+</dt>
+<dd>
+  Whether the SDK has been successfully initialized.
+  <div class="features"><span class="feature">no setter</span></div>
+
+</dd>
+
+    </dl>
+  </section>
+    
+  <section class="summary offset-anchor" id="static-methods">
+    <h2>Static Methods</h2>
+    <dl class="callables">
+        <dt id="initialize" class="callable">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/initialize.html">initialize</a></span><span class="signature">(<wbr><span class="parameter" id="initialize-param-config"><span class="type-annotation"><a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a></span> <span class="parameter-name">config</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Initializes the shared <a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a> singleton with the provided <code>config</code>.
+  
+
+</dd>
+
+        <dt id="initializeAsync" class="callable">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/initializeAsync.html">initializeAsync</a></span><span class="signature">(<wbr><span class="parameter" id="initializeAsync-param-config"><span class="type-annotation"><a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a></span> <span class="parameter-name">config</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Asynchronously initializes the shared <a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a> singleton with <code>config</code>.
+  
+
+</dd>
+
+        <dt id="resetForTesting" class="callable">
+  <span class="name"><a href="../ayni_sdk/AyniSdk/resetForTesting.html">resetForTesting</a></span><span class="signature">(<wbr>)
+    <span class="returntype parameter">&#8594; void</span>
+  </span>
+  
+
+</dt>
+<dd>
+  Resets the shared SDK singleton for testing.
+  
+
+</dd>
+
+    </dl>
+  </section>
+    
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">ayni_sdk</a></li>
+    <li><a href="../ayni_sdk/">ayni_sdk</a></li>
+    <li class="self-crumb">AyniSdk class</li>
+</ol>
+
+    <h5>ayni_sdk library</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+  </div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    ayni_sdk
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

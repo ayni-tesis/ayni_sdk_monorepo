@@ -1,0 +1,34 @@
+---
+/**
+ * A dashboard screenshot. The captures are not taken yet, so it shows a
+ * visible "Captura pendiente" box described by `alt`, which must say what the
+ * capture will show (US-142).
+ */
+interface Props {
+  alt: string;
+}
+
+const { alt } = Astro.props;
+---
+
+<figure class="screenshot not-content">
+  <p><strong>Captura pendiente</strong></p>
+  <figcaption>{alt}</figcaption>
+</figure>
+
+<style>
+  .screenshot {
+    margin-block: 1.5rem;
+    padding: 1rem;
+    border: 2px dashed var(--sl-color-gray-4);
+    border-radius: 0.5rem;
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+  }
+
+  .screenshot p {
+    margin: 0 0 0.25rem;
+    color: var(--sl-color-white);
+  }
+</style>

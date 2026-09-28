@@ -5,10 +5,16 @@ import { gunzipSync } from "node:zlib";
 import type { AstroIntegration } from "astro";
 
 /**
- * Built pages that search must not return: the 404 of any locale. A page that
+ * Built pages that search must not return: the 404 of any locale, and the
+ * parts of the Dart reference (US-143) that are not content: the sidebar
+ * fragments its script loads and its own search results page. A page that
  * sets `pagefind: false` in its frontmatter must be added here too.
  */
-const unsearchablePages = [/(^|\/)404\.html$/];
+const unsearchablePages = [
+  /(^|\/)404\.html$/,
+  /^referencia\/api-dart\/.*-sidebar\.html$/,
+  /^referencia\/api-dart\/search\.html$/,
+];
 
 /** The URL Pagefind records for a built HTML file (a path relative to `dist`). */
 export function pageUrl(htmlFile: string): string {

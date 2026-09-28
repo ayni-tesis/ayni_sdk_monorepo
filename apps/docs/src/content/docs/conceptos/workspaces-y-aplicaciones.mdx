@@ -1,0 +1,48 @@
+---
+title: Workspaces y aplicaciones
+description: Cómo Ayni separa los recursos de cada workspace y de cada aplicación.
+sidebar:
+  order: 1
+---
+
+import Definition from "../../../components/Definition.astro";
+import Diagram from "../../../components/Diagram.astro";
+
+## Workspace
+
+<Definition term="Workspace" />
+
+Los miembros de un workspace tienen un rol:
+
+<Definition term="Administrator" />
+
+Los miembros con rol `member` ven las aplicaciones del workspace, pero no las
+gestionan.
+
+## Aplicación
+
+<Definition term="Application" />
+
+<Diagram
+  steps={["Workspace", "Aplicación", ["Modelos y sus versiones", "Workflows y sus versiones", "Credenciales del SDK"]]}
+  alt="Un workspace contiene aplicaciones, y cada aplicación agrupa sus propios modelos con sus versiones, sus workflows con sus versiones y sus credenciales del SDK."
+/>
+
+Una app Flutter se conecta a una sola aplicación de Ayni: la credencial del
+SDK que usa pertenece a esa aplicación y solo sincroniza sus recursos.
+
+## Reglas
+
+- Nada de un workspace es visible desde otro.
+- Solo los administradores crean, renombran o archivan aplicaciones.
+- Una aplicación archivada no acepta credenciales, modelos ni workflows nuevos
+  (`applicationArchived`), y el SDK ya no recibe sus workflows al sincronizar.
+
+## Términos relacionados
+
+- [Workspace](/conceptos/glosario/#workspace)
+- [Organización](/conceptos/glosario/#organizacion)
+- [Administrador](/conceptos/glosario/#administrador)
+- [Aplicación](/conceptos/glosario/#aplicacion)
+- [Slug](/conceptos/glosario/#slug)
+- [Credenciales del SDK](/conceptos/credenciales-del-sdk/)

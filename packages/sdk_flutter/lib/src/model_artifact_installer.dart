@@ -6,30 +6,61 @@ import 'package:crypto/crypto.dart' as crypto;
 
 import 'model_artifact_integrity_verifier.dart';
 
-/// Installs integrity-verified model artifacts for offline workflow execution.
-enum ModelArtifactInstallStatus { installing, availableOffline, notAvailable }
+/// The state of a model installation by [ModelArtifactInstaller.install].
+enum ModelArtifactInstallStatus {
+  /// The installation started; reported through `onStateChanged` only.
+  installing,
 
+  /// The model version is installed and can run offline.
+  availableOffline,
+
+  /// The model version could not be installed; the message says why.
+  notAvailable,
+}
+
+/// A state reported by [ModelArtifactInstaller.install].
 class ModelArtifactInstallResult {
+  /// Creates an installation state with its Spanish [message].
   const ModelArtifactInstallResult({
     required this.status,
     required this.message,
   });
 
+  /// The installation state.
   final ModelArtifactInstallStatus status;
+
+  /// A Spanish message about the state, such as `Modelo <versión> disponible
+  /// offline.` or `No hay espacio suficiente para instalar el modelo.`
   final String message;
 }
 
+/// Installs integrity-verified model artifacts for offline workflow execution.
+///
+/// Each model version is stored as `<modelId>/<modelVersionId>.tflite` with a
+/// `.json` metadata file under [storageDirectory]. [AyniSdk.sync] and
+/// [AyniSdk.run] use it internally; apps do not need to call it.
 class ModelArtifactInstaller {
+  /// Creates an installer that stores models under [storageDirectory].
   ModelArtifactInstaller({required this.storageDirectory});
 
   static final Map<String, Future<void>> _installQueues = {};
 
+  /// The directory that holds one subdirectory per model.
   final Directory storageDirectory;
 
   /// Installs [verifiedArtifact] when its verification result and hash match.
   ///
   /// A model version gets its own immutable path, so a failed installation of
   /// another version cannot replace an already available offline version.
+  ///
+  /// [integrity] must be a verified [ModelArtifactIntegrityResult] for the
+  /// same file, and [modelId] and the model version ID may contain only
+  /// letters, digits, `_`, and `-`. [onStateChanged] receives
+  /// [ModelArtifactInstallStatus.installing] before the files are copied.
+  /// The result is [ModelArtifactInstallStatus.availableOffline] when the
+  /// version is installed, including when it already was, and
+  /// [ModelArtifactInstallStatus.notAvailable] otherwise; file errors do not
+  /// throw.
   Future<ModelArtifactInstallResult> install({
     required String modelId,
     required String version,
@@ -163,6 +194,10 @@ class ModelArtifactInstaller {
   }
 
   /// Returns whether the exact model version is present and hash-valid offline.
+  ///
+  /// It is `false` when either file is missing, the metadata does not name
+  /// [modelId] and [modelVersionId], the file's hash differs from the stored
+  /// one, or the storage cannot be read.
   Future<bool> isVersionAvailable({
     required String modelId,
     required String modelVersionId,

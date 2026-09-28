@@ -1,10 +1,12 @@
 /// The public integration contract of `package:ayni_sdk` (US-090).
 ///
-/// Import this library — never `package:ayni_sdk/src/...` — to initialize the
-/// SDK (`AyniSdk.initialize`), synchronize its resources (`AyniSdk.sync`) and
-/// execute workflows (`AyniSdk.run`) together with the result and error types
-/// those operations return. Everything under `lib/src/` is internal
-/// implementation and is deliberately not exported.
+/// Create the client with [AyniSdk.initialize], install the application's
+/// published workflows and their models with [AyniSdk.sync], and execute one
+/// with [AyniSdk.run]. [SyncStatus], [SyncResourceStatus], and
+/// [WorkflowErrorCategory] describe every outcome.
+///
+/// Import this library — never `package:ayni_sdk/src/...` — everything under
+/// `lib/src/` is internal implementation and is deliberately not exported.
 library;
 
 export 'src/ayni_sdk.dart'

@@ -43,10 +43,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Pinned: the committed Dart API reference is `dart doc` output, which
+      # changes with the SDK's dartdoc (US-143, ADR 0002).
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.44.8
           cache: true
 
       - name: Resolve SDK dependencies
@@ -60,6 +63,21 @@ jobs:
       - name: Test SDK package
         working-directory: packages/sdk_flutter
         run: dart test
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Check Dart API reference is up to date
+        working-directory: apps/docs
+        run: |
+          bun src/reference/generate.ts
+          if [ -n "$(git status --porcelain -- public/referencia/api-dart)" ]; then
+            git status --porcelain -- public/referencia/api-dart
+            echo "::error::The Dart API reference is out of date. With Flutter 3.44.8, run 'dart pub get' in packages/sdk_flutter and 'bun run reference:dart' in apps/docs, then commit public/referencia/api-dart."
+            exit 1
+          fi
 
       - name: Resolve demo app dependencies
         working-directory: apps/native

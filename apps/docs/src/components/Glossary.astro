@@ -1,0 +1,31 @@
+---
+import { Badge } from "@astrojs/starlight/components";
+import { glossary, termAnchor } from "../glossary/glossary";
+import CodeText from "./CodeText.astro";
+
+/** Every `CONTEXT.md` term in Spanish, with the terms it replaces (US-141). */
+---
+
+{
+  glossary.map((entry) => (
+    <section>
+      <h2 id={termAnchor(entry.term)}>
+        {entry.term}
+        {entry.comingSoon && " "}
+        {entry.comingSoon && <Badge text="Próximamente" variant="caution" />}
+      </h2>
+      <p>
+        <CodeText text={entry.definition} />
+      </p>
+      {entry.comingSoon && <p>{entry.comingSoon}</p>}
+      <p>
+        <strong>Evita:</strong> {entry.avoid.join(", ")}.
+      </p>
+      {entry.concept && (
+        <p>
+          <a href={entry.concept}>Ver el concepto</a>
+        </p>
+      )}
+    </section>
+  ))
+}

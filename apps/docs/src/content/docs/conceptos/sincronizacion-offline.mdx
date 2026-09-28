@@ -1,0 +1,64 @@
+---
+title: Sincronización offline
+description: Cómo el SDK descarga, valida e instala los workflows y modelos para usarlos sin red.
+sidebar:
+  order: 5
+---
+
+import Definition from "../../../components/Definition.astro";
+import Diagram from "../../../components/Diagram.astro";
+
+<Definition term="Offline Sync" />
+
+## Cómo funciona
+
+<Diagram
+  steps={[
+    "La app llama a sync()",
+    "Compara con el servidor",
+    "Descarga lo que cambió",
+    "Valida workflows y verifica modelos",
+    "Instala todo o nada",
+  ]}
+  alt="La app llama a sync(); el SDK se autentica con la credencial y compara las versiones publicadas del servidor con las que ya tiene; descarga solo las que cambiaron; valida la definición de cada workflow y verifica el SHA-256 de cada modelo; instala cada workflow junto con todos sus modelos o no instala nada de él."
+/>
+
+Cuando termina, `sync()` devuelve un resultado con un estado general y el
+estado de cada recurso revisado. Consulta
+[Estados y errores](/referencia/estados-y-errores/).
+
+## Instalación atómica
+
+Una versión de workflow se instala junto con todas las versiones de modelo que
+usa, o no se instala. Si una actualización falla (una definición no válida,
+un modelo que no se descarga o cuyo SHA-256 no coincide, o un error al
+guardar), se conserva la última combinación válida de workflow y modelos. El
+dispositivo nunca queda con un workflow nuevo y los modelos de la versión
+anterior.
+
+## Uso sin red
+
+Lo instalado queda en el almacenamiento de la app. La app puede seguir usando
+la última versión válida de cada workflow sin conexión. Si un workflow o uno de
+sus modelos no está instalado, el SDK no lo ejecuta a medias: informa que el
+recurso no está disponible.
+
+## Reglas
+
+- La app decide cuándo sincronizar: el SDK no sincroniza en segundo plano.
+- El SDK descarga solo versiones publicadas, y solo las que el dispositivo aún
+  no tiene.
+- Un workflow cuya definición no es válida o no es compatible con el SDK no se
+  instala.
+- Un modelo se instala solo si su SHA-256 coincide con el publicado.
+- Si falla la red, se agota el tiempo de espera o no se puede guardar,
+  `sync()` no lanza una excepción: devuelve `offline` o `error` y lo instalado
+  se mantiene.
+- Lo instalado se usa sin red.
+
+## Términos relacionados
+
+- [Sincronización offline](/conceptos/glosario/#sincronizacion-offline)
+- [Versión de workflow](/conceptos/workflows-dag/)
+- [Versión de modelo](/conceptos/modelos-y-versiones/)
+- [Credencial del SDK](/conceptos/credenciales-del-sdk/)

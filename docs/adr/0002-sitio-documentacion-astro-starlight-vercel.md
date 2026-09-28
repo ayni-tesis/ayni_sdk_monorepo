@@ -68,8 +68,63 @@ encajaba mejor con el stack de `apps/web`, pero el equipo eligió Starlight el
   archivos.
 - **Referencia de la API Dart (US-143).** La imagen de compilación de Vercel no
   incluye Dart, así que `dart doc` debe correr en GitHub Actions o instalarse en
-  el `installCommand`. Esta decisión queda para US-143, que actualiza este ADR;
-  US-137 no publica la referencia Dart.
+  el `installCommand`. US-143 eligió la primera opción; ver "Referencia de la
+  API Dart (US-143)".
+
+## Referencia de la API Dart (US-143)
+
+**Decisión (2026-09-27):** la salida de `dart doc` se genera fuera de Vercel y
+se versiona en `apps/docs/public/referencia/api-dart/`; el job `sdk` de CI la
+regenera y falla si difiere de la versionada. Vercel sirve esos archivos
+estáticos sin instalar nada.
+
+- **Por qué no instalar Dart en Vercel.** `ayni_sdk` depende de
+  `tflite_flutter`, que depende del SDK de Flutter, así que `dart pub get` y
+  `dart doc` necesitan Flutter completo, no solo Dart. Instalarlo en el
+  `installCommand` descarga cerca de 1 GB en cada despliegue, obliga a
+  instalarlo también en el job `ci` (que compila el sitio) y no se puede probar
+  fuera de Vercel.
+- **Generación.** `bun run reference:dart` (en `apps/docs`) borra
+  `packages/sdk_flutter/doc/api`, ejecuta `dart doc` y copia la salida a
+  `public/referencia/api-dart/`, adaptando cada página con
+  `prepareReferencePage` (`src/reference/dart-reference.ts`): `lang="es"`,
+  `data-pagefind-body` en el contenido (salvo la página de búsqueda de
+  `dart doc`), las migas `Ayni Docs` y `ayni_sdk <versión>` en el encabezado, y
+  la insignia `Obsoleto` en los símbolos obsoletos, que `dart doc` solo tacha.
+  Omite la 404 de `dart doc` y la redirección `ayni_sdk-library.html`.
+- **Frescura.** El job `sdk` fija Flutter 3.44.8 (Dart 3.12.2), porque la
+  salida cambia con la versión de dartdoc, ejecuta el generador y falla si
+  `git status` muestra cambios en `public/referencia/api-dart/`. Quien cambie
+  la API pública o sus `///` debe regenerar con esa versión de Flutter.
+- **Búsqueda.** Pagefind indexa cada página de la referencia en el mismo índice
+  `es` del sitio; `searchIndexCoverage` excluye solo los fragmentos
+  `*-sidebar.html` y la página `search.html` de `dart doc`.
+- **Navegación.** `Referencia` → `API del SDK (Dart)` enlaza a
+  `/referencia/api-dart/ayni_sdk/`, el índice de la librería. La interfaz propia
+  de `dart doc` (`Properties`, `Methods`, su buscador) queda en inglés.
+- **Idioma de los `///`.** Se escriben en inglés, como el resto de los
+  comentarios del paquete y como los lee pub.dev; los mensajes en español que
+  devuelve el SDK se citan tal cual. Cada página declara `lang="es"`, para que
+  Pagefind la ponga en el índice del sitio, y su contenido principal
+  `lang="en"`, para que los lectores de pantalla lo pronuncien en inglés.
+- **Ejemplos.** El analizador de Dart 3.12 marca `{@example}` como directiva
+  desconocida, así que los ejemplos son bloques ```` ```dart ```` en los `///`
+  y en el `README.md` del paquete (que `dart doc` publica como página del
+  paquete). `test/doc_examples_test.dart` exige que cada bloque sea una
+  `// #region` de un archivo en `packages/sdk_flutter/example/`, que
+  `dart analyze` comprueba (US-150).
+- **Superficie pública (US-090).** US-090 aún no decide qué es interno, así
+  que la referencia documenta lo que exporta hoy `package:ayni_sdk/ayni_sdk.dart`,
+  incluidos los descargadores, el instalador y el verificador; sus `///` y los
+  de los parámetros de prueba (`onBeforeInventoryPersist`,
+  `workflowVersionDownloader`, `resetForTesting`) dicen que son de uso interno
+  o de prueba. Cuando US-090 fije la superficie, se dejan de exportar y se
+  regenera la referencia.
+- **Costo asumido.** Unos 170 archivos generados (1,8 MB) en el repositorio;
+  Biome los ignora.
+- **pub.dev (US-096).** El paquete aún no se publica (`publish_to: none`);
+  cuando se publique, el sitio enlazará también a la referencia de pub.dev de
+  la misma versión.
 
 ## Resultado del spike (2026-09-27, US-137)
 

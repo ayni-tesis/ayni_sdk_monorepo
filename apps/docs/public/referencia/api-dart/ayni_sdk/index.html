@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="ayni_sdk library API docs, for the Dart programming language.">
+  <title>ayni_sdk library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.1.0</a></li>
+    <li class="self-crumb">ayni_sdk.dart</li>
+  </ol>
+  <div class="self-name">ayni_sdk</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content" lang="en" data-pagefind-body
+    class="main-content"
+    data-above-sidebar=""
+    data-below-sidebar="ayni_sdk&#47;ayni_sdk-library-sidebar.html">
+  
+    <div>
+      
+
+      <h1>
+        <span class="kind-library">ayni_sdk</span>
+        library 
+ 
+
+      </h1>
+    </div>
+
+    
+<section class="desc markdown">
+  <p>The public integration contract of <code>package:ayni_sdk</code> (US-090).</p>
+<p>Create the client with <a href="../ayni_sdk/AyniSdk/initialize.html">AyniSdk.initialize</a>, install the application's
+published workflows and their models with <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a>, and execute one
+with <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>. <a href="../ayni_sdk/SyncStatus.html">SyncStatus</a>, <a href="../ayni_sdk/SyncResourceStatus.html">SyncResourceStatus</a>, and
+<a href="../ayni_sdk/WorkflowErrorCategory.html">WorkflowErrorCategory</a> describe every outcome.</p>
+<p>Import this library — never <code>package:ayni_sdk/src/...</code> — everything under
+<code>lib/src/</code> is internal implementation and is deliberately not exported.</p>
+</section>
+
+
+    <section class="summary offset-anchor" id="classes">
+      <h2>Classes</h2>
+      <dl>
+          <dt id="AyniConfig">
+  <span class="name "><a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a></span> 
+
+</dt>
+<dd>
+  Configuration required to initialize the Ayni SDK.
+</dd>
+
+          <dt id="AyniInitializationResult">
+  <span class="name "><a href="../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a></span> 
+
+</dt>
+<dd>
+  The result of an SDK initialization attempt.
+</dd>
+
+          <dt id="AyniSdk">
+  <span class="name "><a href="../ayni_sdk/AyniSdk-class.html">AyniSdk</a></span> 
+
+</dt>
+<dd>
+  Manages synchronization and offline execution of workflows.
+</dd>
+
+          <dt id="BooleanResult">
+  <span class="name "><a href="../ayni_sdk/BooleanResult-class.html">BooleanResult</a></span> 
+
+</dt>
+<dd>
+  The output of a condition node.
+</dd>
+
+          <dt id="ClassificationResult">
+  <span class="name "><a href="../ayni_sdk/ClassificationResult-class.html">ClassificationResult</a></span> 
+
+</dt>
+<dd>
+  The output of a classification model node.
+</dd>
+
+          <dt id="Detection">
+  <span class="name "><a href="../ayni_sdk/Detection-class.html">Detection</a></span> 
+
+</dt>
+<dd>
+  One object found by a detection model node.
+</dd>
+
+          <dt id="DetectionResult">
+  <span class="name "><a href="../ayni_sdk/DetectionResult-class.html">DetectionResult</a></span> 
+
+</dt>
+<dd>
+  The output of a detection model node.
+</dd>
+
+          <dt id="SyncResourceResult">
+  <span class="name "><a href="../ayni_sdk/SyncResourceResult-class.html">SyncResourceResult</a></span> 
+
+</dt>
+<dd>
+  The outcome of one workflow or model during an <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a>.
+</dd>
+
+          <dt id="SyncResult">
+  <span class="name "><a href="../ayni_sdk/SyncResult-class.html">SyncResult</a></span> 
+
+</dt>
+<dd>
+  The outcome of an <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> call.
+</dd>
+
+          <dt id="WorkflowResult">
+  <span class="name "><a href="../ayni_sdk/WorkflowResult-class.html">WorkflowResult</a></span> 
+
+</dt>
+<dd>
+  The outputs of a successful <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>.
+</dd>
+
+          <dt id="WorkflowValue">
+  <span class="name "><a href="../ayni_sdk/WorkflowValue-class.html">WorkflowValue</a></span> 
+
+</dt>
+<dd>
+  A value a workflow node produced: a <a href="../ayni_sdk/ClassificationResult-class.html">ClassificationResult</a>, a
+<a href="../ayni_sdk/DetectionResult-class.html">DetectionResult</a>, or a <a href="../ayni_sdk/BooleanResult-class.html">BooleanResult</a>.
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="enums">
+      <h2>Enums</h2>
+      <dl>
+          <dt id="InitializationStatus">
+  <span class="name "><a href="../ayni_sdk/InitializationStatus.html">InitializationStatus</a></span> 
+
+</dt>
+<dd>
+  Status indicating the outcome of SDK initialization.
+</dd>
+
+          <dt id="SyncResourceStatus">
+  <span class="name "><a href="../ayni_sdk/SyncResourceStatus.html">SyncResourceStatus</a></span> 
+
+</dt>
+<dd>
+  The outcome of one workflow or model during an <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a>, in
+<a href="../ayni_sdk/SyncResourceResult/status.html">SyncResourceResult.status</a>.
+</dd>
+
+          <dt id="SyncResourceType">
+  <span class="name "><a href="../ayni_sdk/SyncResourceType.html">SyncResourceType</a></span> 
+
+</dt>
+<dd>
+  The kind of resource a <a href="../ayni_sdk/SyncResourceResult-class.html">SyncResourceResult</a> describes.
+</dd>
+
+          <dt id="SyncStatus">
+  <span class="name "><a href="../ayni_sdk/SyncStatus.html">SyncStatus</a></span> 
+
+</dt>
+<dd>
+  The overall outcome of an <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> call, in <a href="../ayni_sdk/SyncResult/status.html">SyncResult.status</a>.
+</dd>
+
+          <dt id="WorkflowErrorCategory">
+  <span class="name "><a href="../ayni_sdk/WorkflowErrorCategory.html">WorkflowErrorCategory</a></span> 
+
+</dt>
+<dd>
+  Why <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a> could not execute a workflow, in
+<a href="../ayni_sdk/WorkflowError/category.html">WorkflowError.category</a>.
+</dd>
+
+      </dl>
+    </section>
+
+
+
+
+
+
+
+    <section class="summary offset-anchor" id="typedefs">
+      <h2>Typedefs</h2>
+      <dl>
+          
+  <dt id="AyniSdkConfig" class="">
+  <span class="name"><a href="../ayni_sdk/AyniSdkConfig.html">AyniSdkConfig</a></span>
+    = <a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a>
+  </span>
+  
+
+</dt>
+<dd>
+  Alias for <a href="../ayni_sdk/AyniConfig-class.html">AyniConfig</a>.
+  
+
+</dd>
+
+
+          
+  <dt id="InitializationResult" class="">
+  <span class="name"><a href="../ayni_sdk/InitializationResult.html">InitializationResult</a></span>
+    = <a href="../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a>
+  </span>
+  
+
+</dt>
+<dd>
+  Alias for <a href="../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a>.
+  
+
+</dd>
+
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="exceptions">
+      <h2>Exceptions / Errors</h2>
+      <dl>
+          <dt id="WorkflowError">
+  <span class="name "><a href="../ayni_sdk/WorkflowError-class.html">WorkflowError</a></span> 
+
+</dt>
+<dd>
+  The error <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a> throws when a workflow cannot be executed.
+</dd>
+
+      </dl>
+    </section>
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">ayni_sdk</a></li>
+    <li class="self-crumb">ayni_sdk.dart</li>
+</ol>
+
+    <h5><span class="package-name">ayni_sdk</span> <span class="package-kind">package</span></h5>
+    <ol>
+      <li class="section-title">Libraries</li>
+      <li><a href="../ayni_sdk/">ayni_sdk</a></li>
+</ol>
+
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+    <h5>ayni_sdk library</h5>
+  </div><!--/sidebar-offcanvas-right-->
+</main>
+<footer>
+  <span class="no-break">
+    ayni_sdk
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+
