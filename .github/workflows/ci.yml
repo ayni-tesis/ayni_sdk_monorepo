@@ -39,6 +39,37 @@ jobs:
       - name: Test
         run: bun run test
 
+  docs:
+    name: Documentación
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The same Flutter as the `sdk` job, which the Dart reference pins.
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      # Dart examples (`dart analyze`), the workflow JSON example, the contracts
+      # the pages quote, `openapi:verify`, the build with its internal links
+      # and anchors, and a non-blocking check of external links (US-150).
+      - name: Verificar documentación
+        working-directory: apps/docs
+        run: bun run verify
+
   sdk:
     name: Flutter SDK (Android scope)
     runs-on: ubuntu-latest

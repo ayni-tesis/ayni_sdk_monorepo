@@ -1,7 +1,9 @@
+import { fileURLToPath } from "node:url";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightOpenAPI from "starlight-openapi";
 import { docsPages } from "../web/src/lib/docs-pages.ts";
+import { internalLinkCoverage } from "./src/links/internal-links.ts";
 import { productLinkCoverage } from "./src/links/product-links.ts";
 import { httpReferenceSidebarGroup, sidebar } from "./src/navigation.ts";
 import { httpReferenceBase, writeSdkContract } from "./src/reference/http-reference.ts";
@@ -29,6 +31,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Ayni Docs",
+      // The dashboard's icon; Starlight otherwise links a `/favicon.svg` the site lacks.
+      favicon: "/favicon.ico",
       description:
         "Orquesta workflows de IA en el dispositivo para apps Flutter, con ejecución offline.",
       defaultLocale: "root",
@@ -65,5 +69,7 @@ export default defineConfig({
     searchIndexCoverage(),
     // The landing and the dashboard link to these pages and anchors (US-149).
     productLinkCoverage(Object.values(docsPages)),
+    // Every internal link and anchor of the built site, with its page and line (US-150).
+    internalLinkCoverage(fileURLToPath(new URL("./src/content/docs", import.meta.url))),
   ],
 });
