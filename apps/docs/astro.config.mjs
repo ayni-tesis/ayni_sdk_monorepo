@@ -1,6 +1,8 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightOpenAPI from "starlight-openapi";
+import { docsPages } from "../web/src/lib/docs-pages.ts";
+import { productLinkCoverage } from "./src/links/product-links.ts";
 import { httpReferenceSidebarGroup, sidebar } from "./src/navigation.ts";
 import { httpReferenceBase, writeSdkContract } from "./src/reference/http-reference.ts";
 import { searchIndexCoverage } from "./src/search/index-coverage.ts";
@@ -61,5 +63,7 @@ export default defineConfig({
       },
     }),
     searchIndexCoverage(),
+    // The landing and the dashboard link to these pages and anchors (US-149).
+    productLinkCoverage(Object.values(docsPages)),
   ],
 });

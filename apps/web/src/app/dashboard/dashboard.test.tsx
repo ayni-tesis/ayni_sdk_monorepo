@@ -2035,6 +2035,36 @@ describe("Dashboard", () => {
     expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
   });
 
+  it("links the generated credential to the quick start step without closing the dialog", async () => {
+    await renderOpenApplicationDetail();
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-1",
+          applicationId: "app-1",
+          secret: "ayni_sk_abcd1234secret",
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId("generate-credential-trigger"));
+    expect(screen.queryByRole("link", { name: /cómo usar esta credencial en el sdk/i })).toBeNull();
+    fireEvent.click(screen.getByTestId("generate-credential-submit"));
+
+    const dialog = await screen.findByRole("dialog", { name: "Generar credencial SDK" });
+    const link = within(dialog).getByRole("link", {
+      name: "Cómo usar esta credencial en el SDK (se abre en una pestaña nueva)",
+    });
+    expect(link.getAttribute("href")).toMatch(
+      /\/comenzar\/inicio-rapido\/#2-guarda-la-credencial$/,
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+
+    fireEvent.click(link);
+    expect(screen.getByRole("dialog", { name: "Generar credencial SDK" })).toBeTruthy();
+    expect(screen.getByTestId("credential-secret").textContent).toBe("ayni_sk_abcd1234secret");
+  });
+
   it("shows 'Generando credencial…' while the credential request is in flight", async () => {
     await renderOpenApplicationDetail();
     let resolveCreate: (value: unknown) => void = () => {};
@@ -2938,6 +2968,41 @@ describe("Dashboard", () => {
       ),
     );
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("links the regenerated credential to the quick start step", async () => {
+    await renderOpenApplicationDetail({
+      credentials: [
+        {
+          id: "cred-1",
+          applicationId: "app-1",
+          prefix: "ayni_sk_abcd",
+          status: "active",
+          createdAt: "2026-09-18T12:00:00.000Z",
+          lastUsedAt: null,
+        },
+      ],
+    });
+    client.post.mockResolvedValueOnce({
+      data: {
+        credential: {
+          id: "cred-2",
+          applicationId: "app-1",
+          secret: "ayni_sk_newsecret99999",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("regenerate-credential-cred-1"));
+    fireEvent.click(screen.getByTestId("regenerate-credential-submit"));
+
+    await screen.findByTestId("regenerated-credential-secret");
+    const link = screen.getByRole("link", {
+      name: "Cómo usar esta credencial en el SDK (se abre en una pestaña nueva)",
+    });
+    expect(link.getAttribute("href")).toMatch(
+      /\/comenzar\/inicio-rapido\/#2-guarda-la-credencial$/,
+    );
   });
 
   it("requires an explicit close before discarding the regenerated secret", async () => {

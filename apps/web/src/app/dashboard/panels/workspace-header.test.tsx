@@ -131,4 +131,17 @@ describe("WorkspaceHeader", () => {
     fireEvent.click(allItem);
     expect(onNavigateHome).toHaveBeenCalled();
   });
+
+  it("opens the documentation from the Ayuda menu in a new tab", async () => {
+    renderHeader({ activeView: "applications" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ayuda" }));
+
+    const item = await screen.findByRole("menuitem", {
+      name: "Documentación (se abre en una pestaña nueva)",
+    });
+    expect(item.tagName).toBe("A");
+    expect(item.getAttribute("href")).toMatch(/^https?:\/\/[^/]+\/$/);
+    expect(item.getAttribute("target")).toBe("_blank");
+  });
 });

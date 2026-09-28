@@ -94,6 +94,44 @@ describe("ApplicationsPanel", () => {
     expect(screen.getByRole("button", { name: /crear aplicación/i })).toBeTruthy();
   });
 
+  it("links the empty state to the guide for administrators and members alike", () => {
+    for (const canManage of [true, false]) {
+      render(
+        <TooltipProvider>
+          <ApplicationsPanel
+            applications={[]}
+            canManage={canManage}
+            onSelectApplication={vi.fn()}
+            onCreateApplication={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+
+      const link = screen.getByRole("link", {
+        name: "Guía: preparar una aplicación (se abre en una pestaña nueva)",
+      });
+      expect(link.getAttribute("href")).toMatch(
+        /\/guias\/preparar-una-aplicacion-en-el-dashboard\/$/,
+      );
+      expect(link.getAttribute("target")).toBe("_blank");
+      cleanup();
+    }
+  });
+
+  it("does not show the guide link once the workspace has applications", () => {
+    render(
+      <TooltipProvider>
+        <ApplicationsPanel
+          applications={mockApplications}
+          onSelectApplication={vi.fn()}
+          onCreateApplication={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByRole("link", { name: /guía: preparar una aplicación/i })).toBeNull();
+  });
+
   it("opens create application dialog and submits with name", async () => {
     const onCreate = vi.fn().mockResolvedValue(true);
     render(

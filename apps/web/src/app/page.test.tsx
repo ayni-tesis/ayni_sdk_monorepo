@@ -1,8 +1,13 @@
-﻿// @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-vi.mock("@ayni/env/web", () => ({ env: { NEXT_PUBLIC_SERVER_URL: "http://localhost:3000" } }));
+vi.mock("@ayni/env/web", () => ({
+  env: {
+    NEXT_PUBLIC_SERVER_URL: "http://localhost:3000",
+    NEXT_PUBLIC_DOCS_URL: "https://docs.ayni.test",
+  },
+}));
 vi.mock("next/link", async () => {
   const React = await import("react");
   return {
@@ -54,5 +59,39 @@ describe("home landing page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /search ayni/i }));
     expect(screen.getByRole("dialog", { name: "Search Ayni" })).toBeTruthy();
+  });
+
+  it("links to the documentation from the main navigation in a new tab", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const Home = (await import("./page")).default;
+    render(<Home />);
+
+    const navigation = screen.getByRole("navigation", { name: "Main navigation" });
+    const link = within(navigation).getByRole("link", {
+      name: "Documentación (se abre en una pestaña nueva)",
+    });
+    expect(link.getAttribute("href")).toBe("https://docs.ayni.test/");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
+
+  it("finds the documentation from the search dialog", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const Home = (await import("./page")).default;
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /search ayni/i }));
+    const dialog = screen.getByRole("dialog", { name: "Search Ayni" });
+    fireEvent.change(within(dialog).getByLabelText("Find a page"), {
+      target: { value: "documentación" },
+    });
+
+    const results = within(dialog).getAllByRole("link");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.getAttribute("href")).toBe("https://docs.ayni.test/");
+    expect(results[0]?.getAttribute("target")).toBe("_blank");
+    expect(results[0]?.textContent).toMatch(/Documentación.*\(se abre en una pestaña nueva\)/);
+
+    fireEvent.click(results[0] as HTMLElement);
+    expect((dialog as HTMLDialogElement).open).toBe(false);
   });
 });

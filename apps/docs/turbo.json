@@ -3,7 +3,12 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "inputs": ["$TURBO_DEFAULT$", ".env*", "$TURBO_ROOT$/packages/api/src/openapi.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "$TURBO_ROOT$/packages/api/src/openapi.json",
+        "$TURBO_ROOT$/apps/web/src/lib/docs-pages.ts"
+      ]
     }
   }
 }

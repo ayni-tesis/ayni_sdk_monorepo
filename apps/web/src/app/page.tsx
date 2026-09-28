@@ -1,14 +1,22 @@
 "use client";
 
 import { env } from "@ayni/env/web";
+import type { Route } from "next";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { DocsLink } from "@/components/docs-link";
+import type { DocsPage } from "@/lib/docs-pages";
 import styles from "./page.module.css";
 import "./tokens.css";
 
 type HealthCheck = "checking" | "connected" | "disconnected";
 
-const destinations = [
+type Destination = { label: string; description: string } & (
+  | { href: Route }
+  | { docsPage: DocsPage }
+);
+
+const destinations: readonly Destination[] = [
   { label: "Create your workspace", href: "/register", description: "Set up Ayni for your team" },
   {
     label: "Go to dashboard",
@@ -20,7 +28,12 @@ const destinations = [
     href: "#workflow",
     description: "Follow a model from workflow to device",
   },
-] as const;
+  {
+    label: "Documentación",
+    docsPage: "home",
+    description: "Guías y referencia del SDK",
+  },
+];
 
 export default function Home() {
   const [health, setHealth] = useState<HealthCheck>("checking");
@@ -85,6 +98,9 @@ export default function Home() {
             <Link className={styles.navLink} href="/dashboard">
               Dashboard
             </Link>
+            <DocsLink className={styles.navLink} page="home">
+              Documentación
+            </DocsLink>
             <Link className={styles.navAction} href="/register">
               Get started <span aria-hidden="true">↗</span>
             </Link>
@@ -281,20 +297,36 @@ export default function Home() {
           <p className={styles.resultHeading}>PAGES</p>
           <div className={styles.resultList}>
             {results.length > 0 ? (
-              results.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={styles.resultLink}
-                  onClick={() => dialogRef.current?.close()}
-                >
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                  <span aria-hidden="true">↗</span>
-                </Link>
-              ))
+              results.map((item) => {
+                const content = (
+                  <>
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>{item.description}</small>
+                    </span>
+                    <span aria-hidden="true">↗</span>
+                  </>
+                );
+                return "docsPage" in item ? (
+                  <DocsLink
+                    key={item.label}
+                    page={item.docsPage}
+                    className={styles.resultLink}
+                    onClick={() => dialogRef.current?.close()}
+                  >
+                    {content}
+                  </DocsLink>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={styles.resultLink}
+                    onClick={() => dialogRef.current?.close()}
+                  >
+                    {content}
+                  </Link>
+                );
+              })
             ) : (
               <p className={styles.noResults}>No matching pages. Try “dashboard” or “workspace”.</p>
             )}
