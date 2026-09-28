@@ -16,16 +16,23 @@ todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por e
 
 | Requisito | Valor |
 | --- | --- |
-| Paquete | `ayni_sdk` `0.1.0` |
+| Paquete | `ayni_sdk` `0.1.0-beta.1` (prelanzamiento para pruebas piloto) |
 | Dart | `>=3.8.0 <4.0.0` |
 | Flutter | Una versión que incluya Dart 3.8 o superior. El SDK depende de `tflite_flutter`, un plugin de Flutter. |
 | Dependencias | `crypto`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
-| Plataformas | El paquete todavía no declara plataformas compatibles ni versiones mínimas. Usa `dart:io`, así que no funciona en Flutter web. |
+| Plataformas | Android 8.0 (API 26+) e iOS 11+. No funciona en Flutter web. |
 
 ## Instalar
 
-`ayni_sdk` todavía no está publicado en pub.dev. Agrégalo al `pubspec.yaml` de
-tu app de una de estas formas:
+Para instalar la versión preliminar desde pub.dev, agrega al `pubspec.yaml` de
+tu app:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  ayni_sdk: ^0.1.0-beta.1
+```
+
+También puedes instalarlo desde Git o desde una copia local:
 
 <Tabs>
 <TabItem label="Desde Git">
