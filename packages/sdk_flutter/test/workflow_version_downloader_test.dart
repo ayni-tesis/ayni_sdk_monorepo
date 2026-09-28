@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:ayni_sdk/src/workflow_version_downloader.dart';
 import 'package:test/test.dart';
-
-import '../lib/src/workflow_version_downloader.dart';
 
 void main() {
   late Directory temporaryDirectory;

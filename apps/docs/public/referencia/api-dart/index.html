@@ -24,7 +24,7 @@
 <header id="title">
   <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
   <ol class="breadcrumbs gt-separated dark hidden-xs">
-    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.1.0</li>
+    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.1.0-beta.1</li>
   </ol>
   <div class="self-name">ayni_sdk</div>
   <form class="search navbar-right" role="search">
@@ -47,18 +47,20 @@
 <p>Offline-first SDK primitives for Ayni Flutter integrations.</p>
 <p>El paquete <code>ayni_sdk</code> permite integrar modelos de IA en aplicaciones Flutter con arquitectura offline-first. Los workflows versionados se sincronizan desde la plataforma y se ejecutan localmente en el dispositivo sin conexión obligatoria a internet ni dependencias en tiempo de compilación con el dashboard.</p>
 <h2 id="instalacin">Instalación</h2>
+<p>Android 8.0 (API 26) o posterior es obligatorio; configura <code>minSdkVersion 26</code> en la app Flutter.</p>
 <p>Agrega <code>ayni_sdk</code> a las dependencias de tu proyecto Flutter en <code>pubspec.yaml</code>:</p>
 <pre class="language-yaml"><code class="language-yaml">dependencies:
-  ayni_sdk:
-    path: ../../packages/sdk_flutter
+  ayni_sdk: ^0.1.0-beta.1
 </code></pre>
+<p>Esta versión es para pruebas piloto y puede cambiar.</p>
 <h2 id="api-pblica">API Pública</h2>
 <p>Importa la librería pública oficial:</p>
 <pre class="language-dart"><code class="language-dart">import 'package:ayni_sdk/ayni_sdk.dart';
 </code></pre>
 <blockquote>
-<p><strong>Nota:</strong> No importes archivos internos de <code>package:ayni_sdk/src/...</code>. La interfaz pública se expone a través de <code>package:ayni_sdk/ayni_sdk.dart</code>.</p>
+<p><strong>Nota:</strong> No importes archivos src internos. La interfaz pública se expone a través de <code>package:ayni_sdk/ayni_sdk.dart</code>.</p>
 </blockquote>
+<p>La API pública estable que consume tu aplicación se compone de <code>AyniSdk.initialize</code> para configurar el SDK, <code>sync()</code> para actualizar workflows y modelos, <code>run()</code> para ejecutarlos localmente, y los tipos <code>WorkflowResult</code> y <code>WorkflowError</code> para leer el resultado de la ejecución. Las clases internas de <code>lib/src/</code> no forman parte del contrato de integración y pueden cambiar sin previo aviso.</p>
 <h2 id="configuracin-genrica-e-inicializacin">Configuración genérica e inicialización</h2>
 <p>El paquete mantiene una configuración completamente genérica e independiente. No contiene secretos, tokens ni configuración de una aplicación concreta.</p>
 <p>El SDK recibe su configuración dinámicamente en tiempo de ejecución mediante <code>AyniSdk.initialize(AyniConfig(...))</code> (US-049). La aplicación host obtiene la credencial y la configuración desde almacenamiento seguro o su entorno de ejecución en runtime, manteniendo el paquete desacoplado y libre de secretos hardcodeados:</p>
@@ -77,6 +79,23 @@ return AyniSdk.instance;
 </code></pre>
 <p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/initialize.dart</code>.</p>
 <p>Una vez completada la inicialización de forma exitosa (<code>result.isReady</code>), se accede a la instancia compartida a través de <code>AyniSdk.instance</code>. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.</p>
+<h2 id="ejecucin-local-de-workflows">Ejecución local de workflows</h2>
+<p>Con el SDK inicializado y sincronizado, ejecuta un workflow instalado con <code>run()</code>. La ejecución es local: no hace peticiones de red y la aplicación nunca interpreta el JSON del DAG.</p>
+<pre class="language-dart"><code class="language-dart">final sdk = AyniSdk.instance;
+
+try {
+  // Devuelve la última versión instalada del workflow, sin conexión
+  final WorkflowResult result = await sdk.run(workflowId, imageBytes);
+
+  // Salidas publicadas: Map&lt;String, WorkflowValue&gt;
+  print(result.outputs);
+} on WorkflowError catch (error) {
+  // error.category (WorkflowErrorCategory), error.nodeId, error.modelVersionId
+  print('Error de ejecución: ${error.category}');
+}
+</code></pre>
+<p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/run_workflow.dart</code>.</p>
+<p><code>WorkflowResult</code> expone <code>workflowId</code>, <code>workflowVersion</code>, <code>outputs</code> y <code>usingOfflineCache</code>. Cada valor de <code>outputs</code> es un <code>WorkflowValue</code> (<code>ClassificationResult</code>, <code>DetectionResult</code> o <code>BooleanResult</code>) bajo el nombre de salida publicado. Si la ejecución falla, <code>run()</code> lanza <code>WorkflowError</code> con su <code>category</code>, <code>nodeId</code> y <code>modelVersionId</code>; no devuelve el error como valor.</p>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>
@@ -86,10 +105,13 @@ return AyniSdk.instance;
 <li><code>bin/package.dart</code>: Herramienta de empaquetado y verificación de reglas de distribución.</li>
 </ul>
 <h2 id="plataformas-compatibles">Plataformas compatibles</h2>
+<p>Plataformas compatibles con ayni_sdk 0.1.0-beta.1: Android e iOS.</p>
 <ul>
-<li>Android</li>
-<li>iOS</li>
+<li>Android 8.0 (API 26) o posterior.</li>
+<li>iOS 11.0 o posterior.</li>
 </ul>
+<p>Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Consulta también los requisitos de <a href="https://pub.dev/packages/tflite_flutter">tflite_flutter</a> al actualizar esa dependencia.</p>
+<p><code>AyniSdk.initialize</code> rechaza otras plataformas con <code>InitializationStatus.unsupportedPlatform</code> y el mensaje <code>Esta plataforma no es compatible con ayni_sdk.</code>. El SDK no carga un modelo en esa situación.</p>
 </section>
 
 
@@ -100,7 +122,7 @@ return AyniSdk.instance;
   <span class="name"><a href="ayni_sdk/">ayni_sdk</a></span> 
 
 </dt>
-<dd>Runs Ayni workflows on the device, even without a network connection.
+<dd>The public integration contract of <code>package:ayni_sdk</code> (US-090).
 </dd>
 
         </dl>
@@ -130,7 +152,7 @@ return AyniSdk.instance;
 <footer>
   <span class="no-break">
     ayni_sdk
-      0.1.0
+      0.1.0-beta.1
   </span>
   
 </footer>

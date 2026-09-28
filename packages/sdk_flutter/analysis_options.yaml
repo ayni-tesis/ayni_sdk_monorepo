@@ -8,3 +8,5 @@ linter:
 analyzer:
   errors:
     public_member_api_docs: error
+  exclude:
+    - test/fixtures/**

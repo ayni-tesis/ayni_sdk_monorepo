@@ -24,7 +24,7 @@
 <header id="title">
   <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
   <ol class="breadcrumbs gt-separated dark hidden-xs">
-    <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.1.0</a></li>
+    <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.1.0-beta.1</a></li>
     <li><a href="../ayni_sdk/">ayni_sdk.dart</a></li>
     <li class="self-crumb">AyniConfig class</li>
   </ol>
@@ -66,7 +66,7 @@ the shared <a href="../ayni_sdk/AyniSdk/instance.html">AyniSdk.instance</a>. Its
     <h2>Constructors</h2>
     <dl class="constructor-summary-list">
         <dt id="AyniConfig.new" class="callable">
-          <span class="name"><a href="../ayni_sdk/AyniConfig/AyniConfig.html">AyniConfig</a></span><span class="signature">({<span class="parameter" id="param-serverUrl"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Uri-class.html">Uri</a></span> <span class="parameter-name">serverUrl</span>, </span><span class="parameter" id="param-credential"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">credential</span>, </span><span class="parameter" id="param-storageDirectory"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/Directory-class.html">Directory</a></span> <span class="parameter-name">storageDirectory</span>, </span><span class="parameter" id="param-syncTimeout"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Duration-class.html">Duration</a></span> <span class="parameter-name">syncTimeout</span> = <span class="default-value">const Duration(seconds: 30)</span>, </span><span class="parameter" id="param-allowInsecureLoopback"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">allowInsecureLoopback</span> = <span class="default-value">false</span>, </span><span class="parameter" id="param-onProgress"><span class="type-annotation">void</span> <span class="parameter-name">onProgress</span>(<span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span>)?, </span><span class="parameter" id="param-onWorkflowDownload"><span class="type-annotation">void</span> <span class="parameter-name">onWorkflowDownload</span>(<span class="parameter" id="param-result"><span class="type-annotation"><a href="../ayni_sdk/WorkflowVersionDownloadResult-class.html">WorkflowVersionDownloadResult</a></span> <span class="parameter-name">result</span></span>)?, </span><span class="parameter" id="param-onBeforeInventoryPersist"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter">void</span>&gt;</span></span> <span class="parameter-name">onBeforeInventoryPersist</span>()?, </span><span class="parameter" id="param-workflowVersionDownloader"><span class="type-annotation"><a href="../ayni_sdk/WorkflowVersionDownloader-class.html">WorkflowVersionDownloader</a>?</span> <span class="parameter-name">workflowVersionDownloader</span></span>})</span>
+          <span class="name"><a href="../ayni_sdk/AyniConfig/AyniConfig.html">AyniConfig</a></span><span class="signature">({<span class="parameter" id="param-serverUrl"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Uri-class.html">Uri</a></span> <span class="parameter-name">serverUrl</span>, </span><span class="parameter" id="param-credential"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">credential</span>, </span><span class="parameter" id="param-storageDirectory"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/Directory-class.html">Directory</a></span> <span class="parameter-name">storageDirectory</span>, </span><span class="parameter" id="param-syncTimeout"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Duration-class.html">Duration</a></span> <span class="parameter-name">syncTimeout</span> = <span class="default-value">const Duration(seconds: 30)</span>, </span><span class="parameter" id="param-allowInsecureLoopback"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">allowInsecureLoopback</span> = <span class="default-value">false</span>, </span><span class="parameter" id="param-onProgress"><span class="type-annotation">void</span> <span class="parameter-name">onProgress</span>(<span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span>)?</span>})</span>
         </dt>
         <dd>
           Creates an SDK configuration instance.
@@ -127,18 +127,6 @@ the shared <a href="../ayni_sdk/AyniSdk/instance.html">AyniSdk.instance</a>. Its
 
 </dd>
 
-        <dt id="onBeforeInventoryPersist" class="property">
-  <span class="name"><a href="../ayni_sdk/AyniConfig/onBeforeInventoryPersist.html">onBeforeInventoryPersist</a></span>
-  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter">void</span>&gt;</span> Function<span class="signature">()</span>?</span>
-  
-
-</dt>
-<dd>
-  Optional callback invoked before writing inventory to disk.
-  <div class="features"><span class="feature">final</span></div>
-
-</dd>
-
         <dt id="onProgress" class="property">
   <span class="name"><a href="../ayni_sdk/AyniConfig/onProgress.html">onProgress</a></span>
   <span class="signature">&#8594; void Function<span class="signature">(<span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span>)</span>?</span>
@@ -147,18 +135,6 @@ the shared <a href="../ayni_sdk/AyniSdk/instance.html">AyniSdk.instance</a>. Its
 </dt>
 <dd>
   Optional callback to receive human-readable progress messages.
-  <div class="features"><span class="feature">final</span></div>
-
-</dd>
-
-        <dt id="onWorkflowDownload" class="property">
-  <span class="name"><a href="../ayni_sdk/AyniConfig/onWorkflowDownload.html">onWorkflowDownload</a></span>
-  <span class="signature">&#8594; void Function<span class="signature">(<span class="parameter" id="param-result"><span class="type-annotation"><a href="../ayni_sdk/WorkflowVersionDownloadResult-class.html">WorkflowVersionDownloadResult</a></span> <span class="parameter-name">result</span></span>)</span>?</span>
-  
-
-</dt>
-<dd>
-  Optional callback to receive downloaded workflow definitions.
   <div class="features"><span class="feature">final</span></div>
 
 </dd>
@@ -208,18 +184,6 @@ when <a href="../ayni_sdk/AyniConfig/allowInsecureLoopback.html">allowInsecureLo
 </dt>
 <dd>
   Maximum duration for a sync operation. Defaults to 30 seconds.
-  <div class="features"><span class="feature">final</span></div>
-
-</dd>
-
-        <dt id="workflowVersionDownloader" class="property">
-  <span class="name"><a href="../ayni_sdk/AyniConfig/workflowVersionDownloader.html">workflowVersionDownloader</a></span>
-  <span class="signature">&#8594; <a href="../ayni_sdk/WorkflowVersionDownloader-class.html">WorkflowVersionDownloader</a>?</span>
-  
-
-</dt>
-<dd>
-  Optional downloader used for fetching workflow versions.
   <div class="features"><span class="feature">final</span></div>
 
 </dd>
@@ -309,7 +273,7 @@ when <a href="../ayni_sdk/AyniConfig/allowInsecureLoopback.html">allowInsecureLo
 <footer>
   <span class="no-break">
     ayni_sdk
-      0.1.0
+      0.1.0-beta.1
   </span>
   
 </footer>

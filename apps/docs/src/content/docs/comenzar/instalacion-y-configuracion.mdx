@@ -16,16 +16,23 @@ todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por e
 
 | Requisito | Valor |
 | --- | --- |
-| Paquete | `ayni_sdk` `0.1.0` |
+| Paquete | `ayni_sdk` `0.1.0-beta.1` (prelanzamiento para pruebas piloto) |
 | Dart | `>=3.8.0 <4.0.0` |
 | Flutter | Una versión que incluya Dart 3.8 o superior. El SDK depende de `tflite_flutter`, un plugin de Flutter. |
 | Dependencias | `crypto`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
-| Plataformas | El paquete todavía no declara plataformas compatibles ni versiones mínimas. Usa `dart:io`, así que no funciona en Flutter web. |
+| Plataformas | Android 8.0 (API 26+) e iOS 11+. No funciona en Flutter web. |
 
 ## Instalar
 
-`ayni_sdk` todavía no está publicado en pub.dev. Agrégalo al `pubspec.yaml` de
-tu app de una de estas formas:
+Puedes ver el paquete y sus versiones en [pub.dev](https://pub.dev/packages/ayni_sdk).
+Para instalar la versión preliminar, agrega al `pubspec.yaml` de tu app:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  ayni_sdk: ^0.1.0-beta.1
+```
+
+También puedes instalarlo desde Git o desde una copia local:
 
 <Tabs>
 <TabItem label="Desde Git">
@@ -79,10 +86,7 @@ valor por defecto adecuado:
 | `storageDirectory` | `Directory` | Sí | — | Directorio donde el SDK guarda los workflows, los modelos y su inventario (ver [Directorio de almacenamiento](#directorio-de-almacenamiento)). |
 | `syncTimeout` | `Duration` | No | 30 segundos | Tiempo máximo de una sincronización completa, incluidas las descargas. |
 | `allowInsecureLoopback` | `bool` | No | `false` | Permite `http` solo hacia tu propio equipo, para [desarrollo local](#entorno-de-desarrollo-local). |
-| `onBeforeInventoryPersist` | `Future<void> Function()?` | No | Ninguno | Se ejecuta justo antes de guardar el inventario. Existe para las pruebas del SDK; una app no lo necesita. |
 | `onProgress` | `void Function(String message)?` | No | Ninguno | Recibe mensajes de actividad, como `Descargando workflow <nombre>…`. |
-| `onWorkflowDownload` | `void Function(WorkflowVersionDownloadResult result)?` | No | Ninguno | Recibe cada definición de workflow descargada o no disponible durante la sincronización. |
-| `workflowVersionDownloader` | `WorkflowVersionDownloader?` | No | Ninguno | Reemplaza el descargador de definiciones de workflow. Existe para las pruebas del SDK; sin él, el SDK usa su propio descargador. |
 
 Crear el cliente no conecta con el servidor: la conexión empieza al llamar a
 `sync()`.

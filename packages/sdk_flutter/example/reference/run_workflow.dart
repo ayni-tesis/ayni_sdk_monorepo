@@ -1,6 +1,8 @@
-// Example of the Dart API reference (US-143). The `///` comments of
-// `AyniSdk.run` show the `ejecutar` region, and `test/doc_examples_test.dart`
-// fails if they drift from it, so `dart analyze` checks the snippet.
+// Example of the Dart API reference (US-143) and of the README (US-090). The
+// `///` comments of `AyniSdk.run` show the `ejecutar` region and the README's
+// execution section shows `ejecutar-readme`; `dart test` runs
+// `test/doc_examples_test.dart`, which fails when a snippet drifts from its
+// region, while `dart analyze` checks that this file compiles.
 import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
@@ -28,4 +30,22 @@ Future<List<String>> describeOutputs(
     return ['No se pudo ejecutar el workflow: ${error.category.name}'];
   }
   // #endregion ejecutar
+}
+
+/// Prints the outputs of the locally installed [workflowId] version.
+Future<void> printOutputs(String workflowId, Uint8List imageBytes) async {
+  // #region ejecutar-readme
+  final sdk = AyniSdk.instance;
+
+  try {
+    // Devuelve la última versión instalada del workflow, sin conexión
+    final WorkflowResult result = await sdk.run(workflowId, imageBytes);
+
+    // Salidas publicadas: Map<String, WorkflowValue>
+    print(result.outputs);
+  } on WorkflowError catch (error) {
+    // error.category (WorkflowErrorCategory), error.nodeId, error.modelVersionId
+    print('Error de ejecución: ${error.category}');
+  }
+  // #endregion ejecutar-readme
 }

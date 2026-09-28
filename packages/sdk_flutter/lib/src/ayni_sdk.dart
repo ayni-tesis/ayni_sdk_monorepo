@@ -10,6 +10,9 @@ import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'supported_platform_stub.dart'
+    if (dart.library.ui) 'supported_platform_flutter.dart'
+    as platform;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -236,6 +239,9 @@ enum InitializationStatus {
 
   /// An unexpected error occurred during initialization.
   error,
+
+  /// The SDK is running on a platform other than Android or iOS.
+  unsupportedPlatform,
 }
 
 /// Configuration required to initialize the Ayni SDK.
@@ -247,7 +253,7 @@ class AyniConfig {
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required.
   /// [syncTimeout] defaults to 30 seconds and [allowInsecureLoopback] to
-  /// `false`; the callbacks and [workflowVersionDownloader] are optional.
+  /// `false`; the [onProgress] callback is optional.
   /// The constructor never throws: [AyniSdk.initialize] reports an invalid
   /// configuration.
   AyniConfig({
@@ -257,9 +263,6 @@ class AyniConfig {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
-    this.onWorkflowDownload,
-    this.onBeforeInventoryPersist,
-    this.workflowVersionDownloader,
   });
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
@@ -296,22 +299,6 @@ class AyniConfig {
   ///
   /// See [AyniSdk.onProgress].
   final void Function(String message)? onProgress;
-
-  /// Optional callback to receive downloaded workflow definitions.
-  ///
-  /// See [AyniSdk.onWorkflowDownload].
-  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
-
-  /// Optional callback invoked before writing inventory to disk.
-  ///
-  /// It exists for the SDK's tests; see [AyniSdk.onBeforeInventoryPersist].
-  final Future<void> Function()? onBeforeInventoryPersist;
-
-  /// Optional downloader used for fetching workflow versions.
-  ///
-  /// It exists for the SDK's tests; when `null`, the SDK uses its own
-  /// [WorkflowVersionDownloader].
-  final WorkflowVersionDownloader? workflowVersionDownloader;
 
   /// Whether this configuration is complete and valid for SDK initialization.
   ///
@@ -355,8 +342,12 @@ class AyniInitializationResult {
 
   /// Human-readable message describing the initialization outcome.
   ///
-  /// It is `SDK listo.` when [status] is [InitializationStatus.ready], and
-  /// `Revisa la configuración del SDK antes de continuar.` otherwise.
+  /// It is `SDK listo.` for [InitializationStatus.ready],
+  /// `Revisa la configuración del SDK antes de continuar.` for
+  /// [InitializationStatus.incompleteConfiguration] and
+  /// [InitializationStatus.error], and
+  /// `Esta plataforma no es compatible con ayni_sdk.` for
+  /// [InitializationStatus.unsupportedPlatform].
   final String message;
 
   /// Whether initialization was successful and the SDK is ready for use.
@@ -414,21 +405,16 @@ class AyniSdk {
   /// does not set [instance]: a [serverUrl] that cannot receive the credential
   /// makes every [sync] return [SyncStatus.error].
   ///
-  /// [workflowVersionDownloader] replaces the SDK's own workflow definition
-  /// downloader; it exists for the SDK's tests.
+  /// Every parameter is part of the US-090 public contract: it references only
+  /// types exported by `package:ayni_sdk/ayni_sdk.dart`.
   AyniSdk({
     required this.serverUrl,
     required String credential,
     required this.storageDirectory,
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
-    this.onBeforeInventoryPersist,
     this.onProgress,
-    this.onWorkflowDownload,
-    WorkflowVersionDownloader? workflowVersionDownloader,
-  }) : _credential = credential,
-       _workflowVersionDownloader =
-           workflowVersionDownloader ?? WorkflowVersionDownloader();
+  }) : _credential = credential;
 
   static AyniSdk? _instance;
 
@@ -465,11 +451,16 @@ class AyniSdk {
   ///
   /// Does not initiate network operations or model inference.
   /// If initialization fails, no operative SDK instance is retained.
+  /// On an unsupported platform, it returns
+  /// [InitializationStatus.unsupportedPlatform] with
+  /// `Esta plataforma no es compatible con ayni_sdk.` before checking the
+  /// configuration. On a supported platform, an invalid configuration
+  /// ([AyniConfig.isValid] is `false`) returns
+  /// [InitializationStatus.incompleteConfiguration]; an unexpected failure
+  /// returns [InitializationStatus.error]. Both results have a `null`
+  /// [AyniInitializationResult.sdk] and leave [isInitialized] `false`.
   ///
-  /// It never throws. An invalid configuration ([AyniConfig.isValid] is
-  /// `false`) returns [InitializationStatus.incompleteConfiguration], and an
-  /// unexpected failure returns [InitializationStatus.error]; in both cases
-  /// [AyniInitializationResult.sdk] is `null` and [isInitialized] is `false`.
+  /// It never throws.
   ///
   /// ```dart
   /// final result = AyniSdk.initialize(
@@ -487,6 +478,13 @@ class AyniSdk {
   /// ```
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
+      if (!platform.isSupported) {
+        _instance = null;
+        return const AyniInitializationResult(
+          status: InitializationStatus.unsupportedPlatform,
+          message: 'Esta plataforma no es compatible con ayni_sdk.',
+        );
+      }
       if (!config.isValid) {
         _instance = null;
         return AyniInitializationResult(
@@ -502,9 +500,6 @@ class AyniSdk {
         syncTimeout: config.syncTimeout,
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
-        onWorkflowDownload: config.onWorkflowDownload,
-        onBeforeInventoryPersist: config.onBeforeInventoryPersist,
-        workflowVersionDownloader: config.workflowVersionDownloader,
       );
       _instance = sdk;
       return AyniInitializationResult(
@@ -577,8 +572,9 @@ class AyniSdk {
   /// address, for local development. Defaults to `false`.
   final bool allowInsecureLoopback;
 
-  /// Runs right before the inventory is saved; it exists for the SDK's tests.
-  final Future<void> Function()? onBeforeInventoryPersist;
+  /// Runs right before the inventory is saved; it exists for the SDK's tests,
+  /// which attach it through [createAyniSdkForTesting].
+  Future<void> Function()? _onBeforeInventoryPersist;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
   ///
@@ -586,13 +582,18 @@ class AyniSdk {
   /// [sync] and `Usando recursos guardados en este dispositivo.` during [run].
   final void Function(String message)? onProgress;
 
+  final String _credential;
+
   /// Receives each downloaded or unavailable workflow definition during sync.
   ///
-  /// It runs before the SDK validates the definition. If it throws, the sync
-  /// stops and returns [SyncStatus.error].
-  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
-  final String _credential;
-  final WorkflowVersionDownloader _workflowVersionDownloader;
+  /// Its type is internal, so it is deliberately not part of the US-090
+  /// contract; tests attach it through [createAyniSdkForTesting].
+  void Function(WorkflowVersionDownloadResult result)? _onWorkflowDownload;
+
+  /// Fetches workflow definitions during sync; tests may replace it through
+  /// [createAyniSdkForTesting].
+  WorkflowVersionDownloader _workflowVersionDownloader =
+      WorkflowVersionDownloader();
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
   Future<void> _syncQueue = Future<void>.value();
@@ -925,7 +926,7 @@ class AyniSdk {
         return abort();
       }
       try {
-        onWorkflowDownload?.call(result);
+        _onWorkflowDownload?.call(result);
       } catch (_) {
         return abort(
           result.temporaryDefinition == null
@@ -1456,7 +1457,7 @@ class AyniSdk {
   ) async {
     if (deadline.expired) return false;
     try {
-      await onBeforeInventoryPersist?.call();
+      await _onBeforeInventoryPersist?.call();
     } catch (_) {
       return false;
     }
@@ -1480,6 +1481,43 @@ class AyniSdk {
       if (await temporaryFile.exists()) await temporaryFile.delete();
     }
   }
+}
+
+/// Creates an [AyniSdk] with the test-only hooks that US-090 keeps out of the
+/// public contract.
+///
+/// `onWorkflowDownload` and `workflowVersionDownloader` mention internal
+/// types, so neither the public [AyniSdk] constructor nor [AyniConfig] may
+/// declare them: `package:ayni_sdk/ayni_sdk.dart` exports only nameable
+/// types. `onBeforeInventoryPersist` has a nameable type but exists only for
+/// the SDK's tests, so it stays out of the stable API for the same reason.
+/// This factory stays in `lib/src/` and is deliberately not exported, so only
+/// the SDK's own tests can reach it and integrating apps never see it.
+AyniSdk createAyniSdkForTesting({
+  required Uri serverUrl,
+  required String credential,
+  required Directory storageDirectory,
+  Duration syncTimeout = const Duration(seconds: 30),
+  bool allowInsecureLoopback = false,
+  Future<void> Function()? onBeforeInventoryPersist,
+  void Function(String message)? onProgress,
+  void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
+  WorkflowVersionDownloader? workflowVersionDownloader,
+}) {
+  final sdk = AyniSdk(
+    serverUrl: serverUrl,
+    credential: credential,
+    storageDirectory: storageDirectory,
+    syncTimeout: syncTimeout,
+    allowInsecureLoopback: allowInsecureLoopback,
+    onProgress: onProgress,
+  );
+  sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
+  sdk._onWorkflowDownload = onWorkflowDownload;
+  if (workflowVersionDownloader != null) {
+    sdk._workflowVersionDownloader = workflowVersionDownloader;
+  }
+  return sdk;
 }
 
 class _Inventory {

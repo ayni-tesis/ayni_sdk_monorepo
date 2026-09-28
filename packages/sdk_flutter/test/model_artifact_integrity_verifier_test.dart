@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:ayni_sdk/ayni_sdk.dart';
+import 'package:ayni_sdk/src/model_artifact_integrity_verifier.dart';
 import 'package:test/test.dart';
 
 void main() {

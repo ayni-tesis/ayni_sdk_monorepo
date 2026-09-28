@@ -102,7 +102,10 @@ abstract final class PackageValidator {
     if (!pubspec.existsSync()) return false;
     try {
       final content = pubspec.readAsStringSync();
-      return RegExp(r'^\s*name:\s*ayni_sdk\s*$', multiLine: true).hasMatch(content);
+      return RegExp(
+        r'^\s*name:\s*ayni_sdk\s*$',
+        multiLine: true,
+      ).hasMatch(content);
     } catch (_) {
       return false;
     }
@@ -184,12 +187,16 @@ abstract final class PackageValidator {
     }
 
     // Reject dependencies pointing to applications or dashboard/backend
-    if (RegExp(r'path:\s*.*apps[/\\]', caseSensitive: false)
-            .hasMatch(pubspecContent) ||
+    if (RegExp(
+          r'path:\s*.*apps[/\\]',
+          caseSensitive: false,
+        ).hasMatch(pubspecContent) ||
         pubspecContent.contains('better_fullstack_app') ||
         pubspecContent.contains('@ayni/api') ||
-        RegExp(r'apps[/\\](web|server|native|docs)', caseSensitive: false)
-            .hasMatch(pubspecContent) ||
+        RegExp(
+          r'apps[/\\](web|server|native|docs)',
+          caseSensitive: false,
+        ).hasMatch(pubspecContent) ||
         RegExp(
           r'^\s*(?:better_fullstack_app|ayni_web|ayni_server)\s*:',
           multiLine: true,
@@ -201,20 +208,28 @@ abstract final class PackageValidator {
     }
 
     // 4. Reject forbidden application configuration files
-    for (final entity in packageDir.listSync(recursive: true, followLinks: false)) {
+    for (final entity in packageDir.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
       final normalizedEntityPath = entity.path.replaceAll(r'\', '/');
-      final relativePath = normalizedEntityPath.startsWith(normalizedPackagePath)
+      final relativePath =
+          normalizedEntityPath.startsWith(normalizedPackagePath)
           ? normalizedEntityPath
-              .substring(normalizedPackagePath.length)
-              .replaceFirst(RegExp(r'^/'), '')
+                .substring(normalizedPackagePath.length)
+                .replaceFirst(RegExp(r'^/'), '')
           : normalizedEntityPath;
       final pathSegments = relativePath.split('/');
-      if (pathSegments.any((seg) => seg == '.git' || seg == '.dart_tool' || seg == 'build')) {
+      if (pathSegments.any(
+        (seg) => seg == '.git' || seg == '.dart_tool' || seg == 'build',
+      )) {
         continue;
       }
 
       if (entity is File) {
-        final segments = entity.uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        final segments = entity.uri.pathSegments
+            .where((s) => s.isNotEmpty)
+            .toList();
         final fileName = segments.isNotEmpty
             ? segments.last
             : entity.path.split(RegExp(r'[/\\]')).last;
@@ -233,11 +248,16 @@ abstract final class PackageValidator {
     // 5. Scan lib/ Dart files for hardcoded secrets and application IDs
     final libDir = Directory('$normalizedPackagePath/lib');
     if (libDir.existsSync()) {
-      for (final entity in libDir.listSync(recursive: true, followLinks: false)) {
+      for (final entity in libDir.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
         if (entity is File && entity.path.endsWith('.dart')) {
           final normalizedEntityPath = entity.path.replaceAll(r'\', '/');
           // Skip validator self to avoid false-positives on regex patterns or docstrings
-          if (normalizedEntityPath.endsWith('/lib/src/package_validator.dart')) {
+          if (normalizedEntityPath.endsWith(
+            '/lib/src/package_validator.dart',
+          )) {
             continue;
           }
 
@@ -282,7 +302,8 @@ abstract final class PackageValidator {
           buffer.write(source[i]);
           i++;
           final quoteChar = source[i];
-          final isTriple = i + 2 < length &&
+          final isTriple =
+              i + 2 < length &&
               source[i + 1] == quoteChar &&
               source[i + 2] == quoteChar;
           if (isTriple) {
@@ -320,7 +341,8 @@ abstract final class PackageValidator {
       // Regular string literal: ' or "
       if (source[i] == "'" || source[i] == '"') {
         final quoteChar = source[i];
-        final isTriple = i + 2 < length &&
+        final isTriple =
+            i + 2 < length &&
             source[i + 1] == quoteChar &&
             source[i + 2] == quoteChar;
         if (isTriple) {

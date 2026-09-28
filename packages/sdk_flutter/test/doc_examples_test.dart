@@ -194,10 +194,7 @@ List<String> snippetsOutsideExamples(
   final regions = {for (final example in examples) ...exampleRegions(example)};
   return [
     for (final MapEntry(key: path, value: source) in sources.entries)
-      for (final snippet in docSnippets(
-        source,
-        markdown: path.endsWith('.md'),
-      ))
+      for (final snippet in docSnippets(source, markdown: path.endsWith('.md')))
         if (!regions.contains(snippet.code)) '$path:${snippet.line}',
   ];
 }
