@@ -10,6 +10,9 @@ import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'supported_platform_stub.dart'
+    if (dart.library.ui) 'supported_platform_flutter.dart'
+    as platform;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -236,6 +239,9 @@ enum InitializationStatus {
 
   /// An unexpected error occurred during initialization.
   error,
+
+  /// The SDK is running on a platform other than Android or iOS.
+  unsupportedPlatform,
 }
 
 /// Configuration required to initialize the Ayni SDK.
@@ -336,8 +342,12 @@ class AyniInitializationResult {
 
   /// Human-readable message describing the initialization outcome.
   ///
-  /// It is `SDK listo.` when [status] is [InitializationStatus.ready], and
-  /// `Revisa la configuración del SDK antes de continuar.` otherwise.
+  /// It is `SDK listo.` for [InitializationStatus.ready],
+  /// `Revisa la configuración del SDK antes de continuar.` for
+  /// [InitializationStatus.incompleteConfiguration] and
+  /// [InitializationStatus.error], and
+  /// `Esta plataforma no es compatible con ayni_sdk.` for
+  /// [InitializationStatus.unsupportedPlatform].
   final String message;
 
   /// Whether initialization was successful and the SDK is ready for use.
@@ -441,11 +451,16 @@ class AyniSdk {
   ///
   /// Does not initiate network operations or model inference.
   /// If initialization fails, no operative SDK instance is retained.
+  /// On an unsupported platform, it returns
+  /// [InitializationStatus.unsupportedPlatform] with
+  /// `Esta plataforma no es compatible con ayni_sdk.` before checking the
+  /// configuration. On a supported platform, an invalid configuration
+  /// ([AyniConfig.isValid] is `false`) returns
+  /// [InitializationStatus.incompleteConfiguration]; an unexpected failure
+  /// returns [InitializationStatus.error]. Both results have a `null`
+  /// [AyniInitializationResult.sdk] and leave [isInitialized] `false`.
   ///
-  /// It never throws. An invalid configuration ([AyniConfig.isValid] is
-  /// `false`) returns [InitializationStatus.incompleteConfiguration], and an
-  /// unexpected failure returns [InitializationStatus.error]; in both cases
-  /// [AyniInitializationResult.sdk] is `null` and [isInitialized] is `false`.
+  /// It never throws.
   ///
   /// ```dart
   /// final result = AyniSdk.initialize(
@@ -463,6 +478,13 @@ class AyniSdk {
   /// ```
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
+      if (!platform.isSupported) {
+        _instance = null;
+        return const AyniInitializationResult(
+          status: InitializationStatus.unsupportedPlatform,
+          message: 'Esta plataforma no es compatible con ayni_sdk.',
+        );
+      }
       if (!config.isValid) {
         _instance = null;
         return AyniInitializationResult(

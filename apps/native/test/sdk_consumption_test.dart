@@ -4,6 +4,8 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  final supportsSdkPlatform = Platform.isAndroid || Platform.isIOS;
+
   group('better_fullstack_app ayni_sdk consumption', () {
     late Directory tempStorage;
 
@@ -50,6 +52,27 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
+        if (!supportsSdkPlatform) {
+          expect(
+            result.status,
+            equals(InitializationStatus.unsupportedPlatform),
+          );
+          expect(
+            result.message,
+            equals('Esta plataforma no es compatible con ayni_sdk.'),
+          );
+          expect(result.sdk, isNull);
+          expect(AyniSdk.isInitialized, isFalse);
+          expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+          expect(
+            tempStorage.listSync(),
+            isEmpty,
+            reason:
+                'Initialization must not access or install model artifacts.',
+          );
+          return;
+        }
+
         expect(result.status, equals(InitializationStatus.ready));
         expect(result.isSuccess, isTrue);
         expect(result.message, equals('SDK listo.'));
@@ -59,7 +82,10 @@ void main() {
           AyniSdk.instance.serverUrl,
           equals(Uri.parse('https://ayni.example.com')),
         );
-        expect(AyniSdk.instance.storageDirectory.path, equals(tempStorage.path));
+        expect(
+          AyniSdk.instance.storageDirectory.path,
+          equals(tempStorage.path),
+        );
       },
     );
 
@@ -78,7 +104,11 @@ void main() {
 
         expect(
           result.status,
-          equals(InitializationStatus.incompleteConfiguration),
+          equals(
+            supportsSdkPlatform
+                ? InitializationStatus.incompleteConfiguration
+                : InitializationStatus.unsupportedPlatform,
+          ),
         );
         expect(result.isSuccess, isFalse);
         expect(AyniSdk.isInitialized, isFalse);
