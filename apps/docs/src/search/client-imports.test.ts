@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +17,9 @@ function packageImports(from: string): Record<string, string[]> {
       ...source.matchAll(/^\s*(?:import|export)\b(?!\s+type\b)[^"']*?from\s*["']([^"']+)["']/gm),
     ]
       .map(([, specifier]) => specifier ?? "")
-      .concat([...source.matchAll(/^\s*import\s*["']([^"']+)["']/gm)].map(([, s]) => s ?? ""));
+      .concat([...source.matchAll(/^\s*import\s*["']([^"']+)["']/gm)].map(([, s]) => s ?? ""))
+      // Dynamic `import("…")` with a literal specifier, which also ends up in the bundle.
+      .concat([...source.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map(([, s]) => s ?? ""));
     found[file] = specifiers.filter((specifier) => !specifier.startsWith("."));
     for (const specifier of specifiers.filter((s) => s.startsWith("."))) {
       visit(join(dirname(file), `${specifier.replace(/\.ts$/, "")}.ts`));
@@ -25,6 +28,26 @@ function packageImports(from: string): Record<string, string[]> {
   visit(from);
   return found;
 }
+
+describe("packageImports", () => {
+  it("finds the packages a module imports dynamically and follows its dynamic relative imports", () => {
+    const dir = mkdtempSync(join(tmpdir(), "client-imports-"));
+    try {
+      writeFileSync(
+        join(dir, "dialog.ts"),
+        'export async function load() {\n  await import("./lazy");\n  return import( "starlight-openapi" );\n}\n',
+      );
+      writeFileSync(join(dir, "lazy.ts"), 'export const bytes = () => import("node:crypto");\n');
+
+      expect(packageImports(join(dir, "dialog.ts"))).toEqual({
+        [join(dir, "dialog.ts")]: ["starlight-openapi"],
+        [join(dir, "lazy.ts")]: ["node:crypto"],
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("search dialog modules", () => {
   it("import no package, so the browser never loads Node-only code such as starlight-openapi", () => {
