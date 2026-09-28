@@ -286,7 +286,7 @@ describe("US-131: reassigning the Origen of a condition or an output", () => {
     connectOrigin("model-b", "Resultado", "Condición: perro");
 
     expect(await screen.findByTestId("workflow-draft-conflict")).toBeTruthy();
-    expect(edgePath("model-a", "result", "condition")).not.toBeNull();
+    await waitFor(() => expect(edgePath("model-a", "result", "condition")).not.toBeNull());
     expect(edgePath("model-b", "result", "condition")).toBeNull();
     expect(toastMock.error).not.toHaveBeenCalled();
   });
