@@ -27,7 +27,8 @@
       "!**/wrangler.jsonc",
       "!**/.source",
       "!**/convex/_generated",
-      "!apps/docs/public/referencia/api-dart"
+      "!apps/docs/public/referencia/api-dart",
+      "!**/doc/api"
     ]
   },
   "formatter": {
