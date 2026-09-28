@@ -72,9 +72,9 @@ Estado del código el 2026-09-27:
 | --- | --- | --- |
 | Paquete Dart | `ayni_sdk` 0.1.0, `publish_to: none`, Dart `>=3.8.0 <4.0.0`, única dependencia `crypto` | `packages/sdk_flutter/pubspec.yaml` |
 | Instalación | No está en pub.dev; se instala como dependencia `path` o `git` hasta US-096 | `pubspec.yaml`, `apps/native/pubspec.yaml` |
-| API pública | `AyniSdk` (`serverUrl`, `credential`, `storageDirectory`, `syncTimeout`, `allowInsecureLoopback`, `onProgress`, `onWorkflowDownload`) y `sync()` | `lib/src/ayni_sdk.dart:76-107` |
+| API pública | `AyniSdk` (`serverUrl`, `credential`, `storageDirectory`, `syncTimeout`, `allowInsecureLoopback`, `onProgress`, `onBeforeInventoryPersist`) y `sync()` | `lib/src/ayni_sdk.dart` |
 | Resultado | `SyncResult` con `SyncStatus` (`updated`, `upToDate`, `offline`, `error`) y `SyncResourceResult` con `SyncResourceStatus` y `message` en español | `lib/src/ayni_sdk.dart:12-74` |
-| Exportaciones | La librería exporta además `WorkflowVersionDownloader`, `ModelArtifactInstaller` y `ModelArtifactIntegrityVerifier` | `lib/ayni_sdk.dart` |
+| Exportaciones | `lib/ayni_sdk.dart` exporta solo el contrato de US-090 (`AyniConfig`, `AyniSdk`, `initialize`/`sync`/`run`, los tipos de inicialización y sincronización, y `WorkflowResult`/`WorkflowError` con sus valores tipados); `WorkflowVersionDownloader`, `ModelArtifactInstaller` y `ModelArtifactIntegrityVerifier` ya no se exportan | `lib/ayni_sdk.dart` |
 | Ejecución local | No implementada (US-049 a US-062); no hay API para ejecutar workflows | búsqueda en `lib/` |
 | Comentarios de documentación | Parciales: algunos campos tienen `///` y la clase `AyniSdk` no | `lib/src/ayni_sdk.dart` |
 | README del SDK | No existe (US-095 abierta, issue #58) | `packages/sdk_flutter/` |
@@ -92,7 +92,7 @@ Estado del código el 2026-09-27:
 | Especificación OpenAPI incompleta | Las tres rutas `/sdk/*` no están en `openapi.json`; la referencia HTTP no puede generarse sin ellas. `verify-openapi.ts` (script `openapi:verify` de `packages/api`) compara el documento generado con el versionado, pero `.github/workflows/ci.yml` no lo ejecuta | US-144 |
 | Esquema de seguridad | `securitySchemes.bearerAuth` declara `bearerFormat: "JWT"`, pero la credencial del SDK es un secreto opaco `ayni_sk_…` | US-144 |
 | Comentarios `///` | La mayoría de los símbolos públicos, empezando por `AyniSdk` y `sync()`, no tienen `///`; sus páginas de `dart doc` quedan sin descripción. La regla `public_member_api_docs` del analizador puede exigirlos | US-143 |
-| Superficie pública | `onBeforeInventoryPersist` y `workflowVersionDownloader` parecen puntos de prueba, pero son parámetros públicos del constructor; decidir qué es API pública corresponde a US-090, y la referencia debe reflejar esa decisión | US-143, US-090 |
+| Superficie pública | US-090 resolvió la duda: los puntos de prueba `onWorkflowDownload` y `workflowVersionDownloader` salieron del constructor y de `AyniConfig` hacia `createAyniSdkForTesting` (solo en `lib/src/`), y `onBeforeInventoryPersist` se queda público porque su tipo es exportable; la referencia debe seguir esa decisión | US-143, US-090 |
 | Manifiesto de modelo desalineado (defecto de código) | El servidor responde `{ manifest: {...} }` (`apps/server/src/sdk-model-versions.ts:55`), pero el SDK lee los campos en la raíz (`ModelDownloadManifest.fromJson`, `lib/src/model_artifact_downloader.dart:14-24`; su servidor de prueba devuelve el manifiesto sin envolver). Contra el servidor real, cada workflow con un modelo termina en `dependencyFailed`. Se corrige en el issue #258 antes de documentar el contrato | US-144, US-044 |
 | Códigos no visibles en el SDK | Ante un `401` el SDK devuelve `SyncStatus.error` sin distinguir `credentialRevoked`; la guía de errores debe explicar el síntoma real, no un código que la app no recibe | US-146 |
 
