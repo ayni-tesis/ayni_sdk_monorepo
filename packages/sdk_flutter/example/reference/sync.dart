@@ -15,7 +15,11 @@ Future<void> syncAyni(
     case SyncStatus.offline:
       showMessage('Sin conexión. Se usarán los workflows instalados.');
     case SyncStatus.error:
-      showMessage('La sincronización terminó con errores. Revisa cada recurso.');
+      showMessage(
+        result.resources.isNotEmpty
+            ? 'La sincronización terminó con errores. Revisa cada recurso.'
+            : 'La sincronización terminó con errores.',
+      );
     case SyncStatus.updated:
     case SyncStatus.upToDate:
       break;
