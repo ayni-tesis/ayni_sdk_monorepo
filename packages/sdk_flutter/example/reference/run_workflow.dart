@@ -1,7 +1,8 @@
 // Example of the Dart API reference (US-143) and of the README (US-090). The
 // `///` comments of `AyniSdk.run` show the `ejecutar` region and the README's
-// execution section shows `ejecutar-readme`; `test/doc_examples_test.dart`
-// fails if either drifts from its snippet, so `dart analyze` checks them.
+// execution section shows `ejecutar-readme`; `dart test` runs
+// `test/doc_examples_test.dart`, which fails when a snippet drifts from its
+// region, while `dart analyze` checks that this file compiles.
 import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';

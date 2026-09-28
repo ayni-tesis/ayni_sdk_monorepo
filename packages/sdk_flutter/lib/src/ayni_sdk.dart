@@ -247,8 +247,7 @@ class AyniConfig {
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required.
   /// [syncTimeout] defaults to 30 seconds and [allowInsecureLoopback] to
-  /// `false`; the [onProgress] and [onBeforeInventoryPersist] callbacks are
-  /// optional.
+  /// `false`; the [onProgress] callback is optional.
   /// The constructor never throws: [AyniSdk.initialize] reports an invalid
   /// configuration.
   AyniConfig({
@@ -258,7 +257,6 @@ class AyniConfig {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
-    this.onBeforeInventoryPersist,
   });
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
@@ -295,11 +293,6 @@ class AyniConfig {
   ///
   /// See [AyniSdk.onProgress].
   final void Function(String message)? onProgress;
-
-  /// Optional callback invoked before writing inventory to disk.
-  ///
-  /// It exists for the SDK's tests; see [AyniSdk.onBeforeInventoryPersist].
-  final Future<void> Function()? onBeforeInventoryPersist;
 
   /// Whether this configuration is complete and valid for SDK initialization.
   ///
@@ -410,7 +403,6 @@ class AyniSdk {
     required this.storageDirectory,
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
-    this.onBeforeInventoryPersist,
     this.onProgress,
   }) : _credential = credential;
 
@@ -486,7 +478,6 @@ class AyniSdk {
         syncTimeout: config.syncTimeout,
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
-        onBeforeInventoryPersist: config.onBeforeInventoryPersist,
       );
       _instance = sdk;
       return AyniInitializationResult(
@@ -559,8 +550,9 @@ class AyniSdk {
   /// address, for local development. Defaults to `false`.
   final bool allowInsecureLoopback;
 
-  /// Runs right before the inventory is saved; it exists for the SDK's tests.
-  final Future<void> Function()? onBeforeInventoryPersist;
+  /// Runs right before the inventory is saved; it exists for the SDK's tests,
+  /// which attach it through [createAyniSdkForTesting].
+  Future<void> Function()? _onBeforeInventoryPersist;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
   ///
@@ -1443,7 +1435,7 @@ class AyniSdk {
   ) async {
     if (deadline.expired) return false;
     try {
-      await onBeforeInventoryPersist?.call();
+      await _onBeforeInventoryPersist?.call();
     } catch (_) {
       return false;
     }
@@ -1475,8 +1467,10 @@ class AyniSdk {
 /// `onWorkflowDownload` and `workflowVersionDownloader` mention internal
 /// types, so neither the public [AyniSdk] constructor nor [AyniConfig] may
 /// declare them: `package:ayni_sdk/ayni_sdk.dart` exports only nameable
-/// types. This factory stays in `lib/src/` and is deliberately not exported,
-/// so only the SDK's own tests can reach it and integrating apps never see it.
+/// types. `onBeforeInventoryPersist` has a nameable type but exists only for
+/// the SDK's tests, so it stays out of the stable API for the same reason.
+/// This factory stays in `lib/src/` and is deliberately not exported, so only
+/// the SDK's own tests can reach it and integrating apps never see it.
 AyniSdk createAyniSdkForTesting({
   required Uri serverUrl,
   required String credential,
@@ -1494,9 +1488,9 @@ AyniSdk createAyniSdkForTesting({
     storageDirectory: storageDirectory,
     syncTimeout: syncTimeout,
     allowInsecureLoopback: allowInsecureLoopback,
-    onBeforeInventoryPersist: onBeforeInventoryPersist,
     onProgress: onProgress,
   );
+  sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
   sdk._onWorkflowDownload = onWorkflowDownload;
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;
