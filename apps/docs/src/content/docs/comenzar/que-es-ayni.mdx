@@ -1,0 +1,59 @@
+---
+title: ¿Qué es Ayni?
+description: Qué hace Ayni, cómo llegan los workflows al dispositivo y qué hace y no hace hoy el SDK para Flutter.
+sidebar:
+  order: 1
+---
+
+import Diagram from "../../../components/Diagram.astro";
+
+Ayni es una plataforma offline-first para orquestar y desplegar workflows de
+modelos de IA en el dispositivo, dentro de aplicaciones móviles Flutter.
+
+## Cómo encajan las piezas
+
+<Diagram
+  steps={[
+    "Dashboard/API",
+    "Sincronización",
+    "SDK Flutter en el dispositivo",
+  ]}
+  alt="Los administradores preparan aplicaciones, modelos y workflows en el dashboard, que la API guarda como versiones publicadas; la sincronización lleva esas versiones al SDK Flutter, que las guarda y las usa en el dispositivo."
+/>
+
+- **Dashboard/API.** En la aplicación web, los administradores de un workspace
+  crean aplicaciones, registran modelos (por ejemplo, TensorFlow Lite), diseñan
+  workflows y generan las credenciales del SDK. El servidor guarda las
+  versiones publicadas de los workflows y de los modelos.
+- **Sincronización.** El SDK se autentica con una credencial del SDK y
+  descarga las versiones publicadas que todavía no tiene. Consulta
+  [Sincronización offline](/conceptos/sincronizacion-offline/).
+- **SDK Flutter en el dispositivo.** El paquete Dart `ayni_sdk` guarda esas
+  versiones en el almacenamiento de la app, para que sigan disponibles sin
+  conexión.
+
+:::note
+El dashboard no ejecuta los modelos: la inferencia ocurre en el dispositivo.
+:::
+
+## Qué hace el SDK
+
+La versión 0.1.0 del SDK:
+
+- sincroniza con `sync()` las versiones publicadas de los workflows de una
+  aplicación y los modelos que usan, y descarga solo lo que cambió;
+- valida la definición de cada workflow y verifica la integridad de cada
+  modelo con SHA-256 antes de instalarlos;
+- conserva la última combinación válida de workflow y modelos cuando una
+  actualización falla;
+- ejecuta con `run()`, sin red, la última versión instalada de un workflow
+  sobre una imagen, con modelos TensorFlow Lite de clasificación o detección y
+  sus condiciones.
+
+## Qué no hace el SDK
+
+- No ejecuta nada en el servidor ni en el dashboard.
+- No sincroniza por su cuenta: la app decide cuándo llamar a `sync()`.
+- No descarga ni ejecuta borradores: solo versiones publicadas.
+- No envía telemetría ni captura imágenes para datasets.
+- No entrena ni modifica modelos.

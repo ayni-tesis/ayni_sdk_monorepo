@@ -1,0 +1,27 @@
+---
+import { glossary } from "../glossary/glossary";
+import CodeText from "./CodeText.astro";
+
+/**
+ * The glossary definition of a `CONTEXT.md` term, so a concept page never
+ * words it differently from the glossary (US-141).
+ */
+interface Props {
+  term: string;
+}
+
+const entry = glossary.find(({ source }) => source === Astro.props.term);
+if (!entry) throw new Error(`The glossary has no "${Astro.props.term}" term.`);
+---
+
+<p class="definition">
+  <strong>{entry.term}:</strong>{" "}
+  <CodeText text={entry.definition} />
+</p>
+
+<style>
+  .definition {
+    padding-inline-start: 1rem;
+    border-inline-start: 3px solid var(--sl-color-accent);
+  }
+</style>

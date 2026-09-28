@@ -1,0 +1,65 @@
+---
+title: Workflows DAG
+description: Qué es un workflow, de qué nodos se compone y cómo pasa de borrador a versión publicada.
+sidebar:
+  order: 4
+---
+
+import Definition from "../../../components/Definition.astro";
+import Diagram from "../../../components/Diagram.astro";
+
+<Definition term="Workflow" />
+
+## Nodos
+
+Un workflow combina estos nodos:
+
+- **Entrada de imagen:** la imagen que la app entrega al workflow.
+- **Modelo:** una versión de un modelo TensorFlow Lite que clasifica la imagen
+  o detecta objetos en ella.
+- **Condición:** compara la confianza de una clasificación con un umbral y
+  sigue la rama verdadera o la falsa.
+- **Salida:** el resultado con nombre que recibe la app.
+
+<Diagram
+  steps={[
+    "Entrada de imagen",
+    "Modelo de clasificación",
+    "Condición: confianza ≥ 0,8",
+    ["Salida si se cumple", "Salida si no se cumple"],
+  ]}
+  alt="Ejemplo de workflow: la entrada de imagen alimenta un modelo de clasificación; una condición compara su confianza con 0,8 y conecta una salida para cuando se cumple y otra para cuando no se cumple."
+/>
+
+## Del borrador a la versión publicada
+
+<Diagram
+  steps={["Borrador", "Validación", "Versión publicada 1.0.0", "Sincronización"]}
+  alt="Un administrador diseña el workflow como borrador; el servidor valida el borrador; si es válido, se publica como una versión inmutable con etiqueta SemVer, por ejemplo 1.0.0; el SDK sincroniza esa versión publicada."
+/>
+
+<Definition term="Draft Revision" />
+
+<Definition term="Workflow Version" />
+
+## Reglas
+
+- Un workflow pertenece a una sola aplicación.
+- Se diseña como borrador en el lienzo del dashboard, que solo editan los
+  administradores.
+- Un borrador necesita un nodo de entrada de imagen y al menos un nodo de
+  salida, y no admite ciclos.
+- Solo se publica un borrador que pasa la validación, con una etiqueta SemVer
+  que el workflow no haya usado antes.
+- Una versión publicada es inmutable. Los cambios posteriores del borrador no
+  la alteran: para cambiar lo que recibe el SDK, publica una versión nueva.
+- El SDK recibe solo la versión publicada más reciente de cada workflow no
+  archivado. Los borradores nunca salen del servidor.
+
+## Términos relacionados
+
+- [Workflow](/conceptos/glosario/#workflow)
+- [Revisión del borrador](/conceptos/glosario/#revision-del-borrador)
+- [Versión de workflow](/conceptos/glosario/#version-de-workflow)
+- [Modelos y versiones](/conceptos/modelos-y-versiones/)
+- [Sincronización offline](/conceptos/sincronizacion-offline/)

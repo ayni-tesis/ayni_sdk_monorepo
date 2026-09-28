@@ -40,6 +40,14 @@ _Avoid_: Pipeline, flow, chain
 A counter on a Workflow's draft that grows by one with every accepted draft change. Each change from the canvas names the revision it was based on; a change based on an older revision is rejected with `draftConflict` and changes nothing, so nobody overwrites another administrator's work with a stale view. Published versions never carry it.
 _Avoid_: Draft version (a published Workflow version is a different thing), ETag
 
+**Workflow Version**:
+An immutable snapshot of a Workflow's draft, published by an administrator under a SemVer tag unique within that Workflow. Only a draft that passes validation can be published (`workflowInvalid` otherwise); publishing in an archived Application is rejected with `applicationArchived` and reusing a tag with `versionExists`. Later draft changes never alter a published version. The SDK receives only the most recently published version of each non-archived Workflow; drafts never leave the server.
+_Avoid_: Release, deployment, draft version
+
+**Offline Sync**:
+The SDK process that authenticates with an SDK Credential, compares the Workflow Versions and Model Versions the server offers with those already on the device, and downloads only what changed. Before installing, it validates each Workflow Version's definition and verifies each Model Version's SHA-256 checksum. A Workflow Version is installed together with all of its Model Versions or not at all: when an update fails, the device keeps the last valid combination of Workflow Version and Model Versions, which the app can keep using without a network.
+_Avoid_: Download, deploy, update, OTA
+
 **Telemetry Policy**:
 The per-Application setting that says whether the SDK may send technical telemetry and how many days its traces are kept. Only administrators change it. Without a saved policy, telemetry is disabled. It never authorizes collecting images or raw inputs.
 _Avoid_: Tracking settings, analytics consent
