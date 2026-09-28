@@ -95,6 +95,13 @@ return AyniSdk.instance;
   <h2><span>Implementation</span></h2>
   <pre class="language-dart"><code class="language-dart">static AyniInitializationResult initialize(AyniConfig config) {
   try {
+    if (!platform.isSupported) {
+      _instance = null;
+      return const AyniInitializationResult(
+        status: InitializationStatus.unsupportedPlatform,
+        message: &#39;Esta plataforma no es compatible con ayni_sdk.&#39;,
+      );
+    }
     if (!config.isValid) {
       _instance = null;
       return AyniInitializationResult(

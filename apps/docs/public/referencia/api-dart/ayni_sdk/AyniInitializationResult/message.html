@@ -63,8 +63,12 @@
       
 <section class="desc markdown">
   <p>Human-readable message describing the initialization outcome.</p>
-<p>It is <code>SDK listo.</code> when <a href="../../ayni_sdk/AyniInitializationResult/status.html">status</a> is <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.ready</a>, and
-<code>Revisa la configuración del SDK antes de continuar.</code> otherwise.</p>
+<p>It is <code>SDK listo.</code> for <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.ready</a>,
+<code>Revisa la configuración del SDK antes de continuar.</code> for
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a> and
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.error</a>, and
+<code>Esta plataforma no es compatible con ayni_sdk.</code> for
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a>.</p>
 </section>
 
       
