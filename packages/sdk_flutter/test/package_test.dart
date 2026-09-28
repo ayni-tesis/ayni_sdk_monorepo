@@ -27,6 +27,9 @@ void createValidMinimalPackage(
 name: ayni_sdk
 description: Test SDK package
 version: 0.1.0
+
+dependencies:
+  tflite_flutter: ^0.12.1
 ''',
   );
   Directory('${dir.path}/lib').createSync(recursive: true);
@@ -229,6 +232,67 @@ dependencies:
       final result = PackageValidator.validate(tempDir);
       expect(result.isValid, isFalse);
       expect(result.message, equals(_appConfigRejectionMessage));
+    });
+
+    test('rejects pubspec lacking tflite_flutter runtime dependency (US-092)', () {
+      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
+name: ayni_sdk
+description: Test SDK package without runtime dependency
+version: 0.1.0
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(result.message, equals(_appConfigRejectionMessage));
+      expect(
+        result.detail,
+        equals(
+          'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+        ),
+      );
+    });
+
+    test('rejects pubspec with tflite_flutter only under dev_dependencies', () {
+      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
+name: ayni_sdk
+description: Test SDK package
+version: 0.1.0
+dependencies:
+  crypto: ^3.0.6
+dev_dependencies:
+  tflite_flutter: ^0.12.1
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(result.message, equals(_appConfigRejectionMessage));
+      expect(
+        result.detail,
+        equals(
+          'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+        ),
+      );
+    });
+
+    test('rejects pubspec with tflite_flutter in comments only', () {
+      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
+name: ayni_sdk
+description: Test SDK package
+version: 0.1.0
+dependencies:
+  crypto: ^3.0.6
+  # tflite_flutter: ^0.12.1
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(result.message, equals(_appConfigRejectionMessage));
+      expect(
+        result.detail,
+        equals(
+          'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+        ),
+      );
     });
   });
 

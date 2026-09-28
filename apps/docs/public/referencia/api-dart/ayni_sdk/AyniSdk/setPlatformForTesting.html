@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
-  <meta name="description" content="API docs for the resetForTesting method from the AyniSdk class, for the Dart programming language.">
-  <title>resetForTesting method - AyniSdk class - ayni_sdk library - Dart API</title>
+  <meta name="description" content="API docs for the setPlatformForTesting method from the AyniSdk class, for the Dart programming language.">
+  <title>setPlatformForTesting method - AyniSdk class - ayni_sdk library - Dart API</title>
 
 
   
@@ -27,9 +27,9 @@
     <li><a href="/">Ayni Docs</a></li><li><a href="../../index.html">ayni_sdk 0.1.0-beta.1</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk.dart</a></li>
     <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
-    <li class="self-crumb">resetForTesting static method</li>
+    <li class="self-crumb">setPlatformForTesting static method</li>
   </ol>
-  <div class="self-name">resetForTesting</div>
+  <div class="self-name">setPlatformForTesting</div>
   <form class="search navbar-right" role="search">
     <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
   </form>
@@ -49,31 +49,42 @@
     data-above-sidebar="ayni_sdk&#47;AyniSdk-class-sidebar.html"
     data-below-sidebar="">
     <div>
-<h1><span class="kind-method">resetForTesting</span> static method 
+<h1><span class="kind-method">setPlatformForTesting</span> static method 
 </h1></div>
 
     <section class="multi-line-signature">
       
 <span class="returntype">void</span>
-<span class="name ">resetForTesting</span>(<wbr>)
+<span class="name ">setPlatformForTesting</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="setPlatformForTesting-param-androidSdkVersion"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a>?</span> <span class="parameter-name">androidSdkVersion</span>, </span></li>
+<li><span class="parameter" id="setPlatformForTesting-param-isAndroid"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a>?</span> <span class="parameter-name">isAndroid</span>, </span></li>
+<li><span class="parameter" id="setPlatformForTesting-param-isIos"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a>?</span> <span class="parameter-name">isIos</span>, </span></li>
+<li><span class="parameter" id="setPlatformForTesting-param-isWeb"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a>?</span> <span class="parameter-name">isWeb</span>, </span></li>
+</ol>})
 
       
 
     </section>
     
 <section class="desc markdown">
-  <p>Resets the shared SDK singleton for testing.</p>
-<p>Afterwards <a href="../../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a> is <code>false</code> and <a href="../../ayni_sdk/AyniSdk/instance.html">instance</a> throws until the
-next successful <a href="../../ayni_sdk/AyniSdk/initialize.html">initialize</a>.</p>
+  <p>Sets platform configuration overrides for testing.</p>
 </section>
 
 
     
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">static void resetForTesting() {
-  _instance = null;
-  platform.resetPlatformForTesting();
+  <pre class="language-dart"><code class="language-dart">static void setPlatformForTesting({
+  int? androidSdkVersion,
+  bool? isAndroid,
+  bool? isIos,
+  bool? isWeb,
+}) {
+  platform.setPlatformOverrideForTesting(
+    androidSdkVersion: androidSdkVersion,
+    isAndroid: isAndroid,
+    isIos: isIos,
+    isWeb: isWeb,
+  );
 }</code></pre>
 </section>
 
@@ -90,7 +101,7 @@ next successful <a href="../../ayni_sdk/AyniSdk/initialize.html">initialize</a>.
     <li><a href="../../index.html">ayni_sdk</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk</a></li>
     <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
-    <li class="self-crumb">resetForTesting static method</li>
+    <li class="self-crumb">setPlatformForTesting static method</li>
 </ol>
 
     <h5>AyniSdk class</h5>

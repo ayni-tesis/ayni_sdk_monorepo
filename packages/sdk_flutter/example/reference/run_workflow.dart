@@ -26,6 +26,8 @@ Future<List<String>> describeOutputs(
           BooleanResult(value: final passed) => '$name: $passed',
         },
     ];
+  } on UnsupportedError catch (error) {
+    return ['Plataforma no admitida: ${error.message}'];
   } on WorkflowError catch (error) {
     return ['No se pudo ejecutar el workflow: ${error.category.name}'];
   }
