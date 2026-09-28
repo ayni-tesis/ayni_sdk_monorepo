@@ -11,9 +11,20 @@ export const sidebarGroups = [
   { label: "Recursos", directory: "recursos" },
 ] as const;
 
+/**
+ * Pages that are not in a content directory, by group label. The Dart
+ * reference is `dart doc` output served from `public/` (US-143), so it is
+ * linked by hand to the index of the `ayni_sdk` library.
+ */
+const extraLinks: Partial<
+  Record<(typeof sidebarGroups)[number]["label"], { label: string; link: string }[]>
+> = {
+  Referencia: [{ label: "API del SDK (Dart)", link: "/referencia/api-dart/ayni_sdk/" }],
+};
+
 export const sidebar = sidebarGroups.map(({ label, directory }) => ({
   label,
-  items: [{ autogenerate: { directory } }],
+  items: [{ autogenerate: { directory } }, ...(extraLinks[label] ?? [])],
 }));
 
 /** The part of Starlight's sidebar route data the breadcrumbs read. */

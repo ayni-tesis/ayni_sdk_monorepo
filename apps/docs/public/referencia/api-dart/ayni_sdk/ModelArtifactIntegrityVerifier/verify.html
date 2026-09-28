@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the verify method from the ModelArtifactIntegrityVerifier class, for the Dart programming language.">
+  <title>verify method - ModelArtifactIntegrityVerifier class - ayni_sdk library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../../static-assets/styles.css?v1">
+  <link rel="icon" href="../../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="/">Ayni Docs</a></li><li><a href="../../index.html">ayni_sdk 0.1.0</a></li>
+    <li><a href="../../ayni_sdk/">ayni_sdk.dart</a></li>
+    <li><a href="../../ayni_sdk/ModelArtifactIntegrityVerifier-class.html">ModelArtifactIntegrityVerifier</a></li>
+    <li class="self-crumb">verify method</li>
+  </ol>
+  <div class="self-name">verify</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content" lang="en" data-pagefind-body
+    class="main-content"
+    data-above-sidebar="ayni_sdk&#47;ModelArtifactIntegrityVerifier-class-sidebar.html"
+    data-below-sidebar="">
+    <div>
+<h1><span class="kind-method">verify</span> method 
+</h1></div>
+
+    <section class="multi-line-signature">
+      
+<span class="returntype"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../../ayni_sdk/ModelArtifactIntegrityResult-class.html">ModelArtifactIntegrityResult</a></span>&gt;</span></span>
+<span class="name ">verify</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="verify-param-modelVersionId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">modelVersionId</span>, </span></li>
+<li><span class="parameter" id="verify-param-temporaryArtifact"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/File-class.html">File</a></span> <span class="parameter-name">temporaryArtifact</span>, </span></li>
+<li><span class="parameter" id="verify-param-verifiedArtifact"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/File-class.html">File</a></span> <span class="parameter-name">verifiedArtifact</span>, </span></li>
+<li><span class="parameter" id="verify-param-expectedSha256"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">expectedSha256</span>, </span></li>
+<li><span class="parameter" id="verify-param-isDownloadComplete"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">isDownloadComplete</span>, </span></li>
+</ol>})
+
+      
+
+    </section>
+    
+<section class="desc markdown">
+  <p>Checks <code>temporaryArtifact</code> against <code>expectedSha256</code> (hexadecimal, case
+insensitive) for model version <code>modelVersionId</code>.</p>
+<p>When the download is complete (<code>isDownloadComplete</code>) and the hash
+matches, the file is moved to <code>verifiedArtifact</code>, replacing any previous
+file there, and the result is <a href="../../ayni_sdk/ModelArtifactIntegrityStatus.html">ModelArtifactIntegrityStatus.verified</a>.
+Otherwise <code>temporaryArtifact</code> is deleted and the result is
+<a href="../../ayni_sdk/ModelArtifactIntegrityStatus.html">ModelArtifactIntegrityStatus.integrityFailed</a>; file errors are reported
+the same way.</p>
+</section>
+
+
+    
+<section class="summary source-code" id="source">
+  <h2><span>Implementation</span></h2>
+  <pre class="language-dart"><code class="language-dart">Future&lt;ModelArtifactIntegrityResult&gt; verify({
+  required String modelVersionId,
+  required File temporaryArtifact,
+  required File verifiedArtifact,
+  required String expectedSha256,
+  required bool isDownloadComplete,
+}) async {
+  if (!isDownloadComplete || !await temporaryArtifact.exists()) {
+    await _invalidate(temporaryArtifact);
+    return _integrityFailed(modelVersionId);
+  }
+
+  try {
+    final computedSha256 =
+        (await sha256.bind(temporaryArtifact.openRead()).first).toString();
+
+    if (computedSha256 != expectedSha256.trim().toLowerCase()) {
+      await _invalidate(temporaryArtifact);
+      return _integrityFailed(modelVersionId);
+    }
+
+    await _promote(temporaryArtifact, verifiedArtifact);
+    return ModelArtifactIntegrityResult._(
+      modelVersionId: modelVersionId,
+      status: ModelArtifactIntegrityStatus.verified,
+      sha256: computedSha256,
+    );
+  } on FileSystemException {
+    await _invalidate(temporaryArtifact);
+    return _integrityFailed(modelVersionId);
+  }
+}</code></pre>
+</section>
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../../index.html">ayni_sdk</a></li>
+    <li><a href="../../ayni_sdk/">ayni_sdk</a></li>
+    <li><a href="../../ayni_sdk/ModelArtifactIntegrityVerifier-class.html">ModelArtifactIntegrityVerifier</a></li>
+    <li class="self-crumb">verify method</li>
+</ol>
+
+    <h5>ModelArtifactIntegrityVerifier class</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div><!--/.sidebar-offcanvas-->
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+</div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    ayni_sdk
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../../static-assets/highlight.pack.js?v1"></script>
+<script src="../../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

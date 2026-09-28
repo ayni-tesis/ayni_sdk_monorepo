@@ -4,12 +4,19 @@ import 'dart:typed_data';
 
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+/// One output tensor of a model: its [shape] and its values, flattened.
 typedef WorkflowTensorOutput = ({List<int> shape, Float32List values});
+
+/// The outputs of a model run, or the name of the error that stopped it
+/// (a `WorkflowErrorCategory` name such as `modelNotAvailable`).
 typedef WorkflowInferenceResult = ({
   String? error,
   List<WorkflowTensorOutput> outputs,
 });
 
+/// Runs the TensorFlow Lite model at [modelPath] on [inputBytes] in a
+/// separate isolate. A model whose input is not a single float32 tensor with
+/// one of the [acceptedInputShapes] reports `unsupportedInputContract`.
 Future<WorkflowInferenceResult> runModel({
   required String modelPath,
   required Uint8List inputBytes,

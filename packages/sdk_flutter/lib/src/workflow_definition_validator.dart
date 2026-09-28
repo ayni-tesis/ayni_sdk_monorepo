@@ -6,12 +6,26 @@ import 'sdk_internal.dart';
 /// the distinct rejection reasons exist so the internal tests can assert *why*
 /// a definition was refused, matching the checks below.
 enum WorkflowValidationStatus {
+  /// The definition passes every check.
   valid,
+
+  /// The definition, a node, or a connection has unknown, missing, or
+  /// ill-typed fields.
   invalidSchema,
+
+  /// A node has a type the SDK cannot run.
   unknownNodeType,
+
+  /// A model node uses a model version the sync did not declare.
   undeclaredModelVersion,
+
+  /// A connection or a node's source names a node that does not exist.
   missingNode,
+
+  /// The graph has a cycle.
   cycle,
+
+  /// A connection or a node's source joins incompatible ports.
   incompatiblePort,
 }
 
@@ -83,6 +97,10 @@ class WorkflowDefinitionValidator {
   static const _modelOutputTypes = {'classification', 'detection'};
   static const _resultTypes = {'classification', 'detection', 'boolean'};
 
+  /// Checks [definition], the decoded JSON of a published workflow version,
+  /// whose model nodes may only use [declaredModelVersionIds].
+  ///
+  /// Returns [WorkflowValidationStatus.valid] or the first rule it breaks.
   WorkflowValidationStatus validate({
     required Object? definition,
     required Set<String> declaredModelVersionIds,

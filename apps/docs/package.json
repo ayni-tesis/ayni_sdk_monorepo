@@ -8,7 +8,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check-types": "astro check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reference:dart": "bun src/reference/generate.ts"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.4",

@@ -1,9 +1,26 @@
 import 'dart:io';
 import 'dart:math';
 
-enum WorkflowVersionDownloadStatus { downloaded, workflowUnavailable }
+/// The outcome of [WorkflowVersionDownloader.download].
+enum WorkflowVersionDownloadStatus {
+  /// The whole definition was saved to
+  /// [WorkflowVersionDownloadResult.temporaryDefinition].
+  downloaded,
 
+  /// The server answered `404 Not Found`: the workflow version is no longer
+  /// available.
+  workflowUnavailable,
+}
+
+/// The result of downloading one workflow version's definition.
+///
+/// The SDK passes each result to the `onWorkflowDownload` callback of
+/// [AyniConfig] during a sync.
 class WorkflowVersionDownloadResult {
+  /// Creates a download result for [workflowVersionId].
+  ///
+  /// [temporaryDefinition] is set only for
+  /// [WorkflowVersionDownloadStatus.downloaded].
   const WorkflowVersionDownloadResult({
     required this.workflowVersionId,
     required this.status,
@@ -11,8 +28,14 @@ class WorkflowVersionDownloadResult {
     this.temporaryDefinition,
   });
 
+  /// The ID of the workflow version that was requested.
   final String workflowVersionId;
+
+  /// Whether the definition was downloaded or is no longer available.
   final WorkflowVersionDownloadStatus status;
+
+  /// A Spanish message about the outcome: `Workflow <nombre> descargado.` or
+  /// `El workflow ya no está disponible. Se mantuvo la versión anterior.`
   final String message;
 
   /// The attempt-owned immutable definition. It is available only after a
@@ -21,7 +44,24 @@ class WorkflowVersionDownloadResult {
 }
 
 /// Downloads a published workflow definition without changing local storage.
+///
+/// [AyniSdk.sync] uses it internally; apps do not need to call it.
 class WorkflowVersionDownloader {
+  /// Downloads the definition of [workflowVersionId] from [serverUrl], using
+  /// [credential].
+  ///
+  /// The definition is written to a new attempt file next to
+  /// [temporaryDefinition] (a `<path>.<nonce>.part` file), whose path the
+  /// result returns; the caller validates it before installing it.
+  /// [onProgress] receives `Descargando workflow <workflowName>…` when the
+  /// download starts. [httpClient] is reused when given, and closed after the
+  /// download otherwise. [allowInsecureLoopback] defaults to `false`.
+  ///
+  /// Throws an [ArgumentError] when [serverUrl] is neither HTTPS nor an
+  /// allowed loopback HTTP URL, and an [HttpException] when the server
+  /// answers any non-2xx status other than `404`, which returns
+  /// [WorkflowVersionDownloadStatus.workflowUnavailable] instead. Network and
+  /// file errors are rethrown after the attempt file is deleted.
   Future<WorkflowVersionDownloadResult> download({
     required Uri serverUrl,
     required String credential,

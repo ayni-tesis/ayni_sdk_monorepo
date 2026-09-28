@@ -1,0 +1,6 @@
+# A `[symbol]` or link that points nowhere fails `dart doc`, so the site's Dart
+# reference never publishes a broken link (US-143, US-150).
+dartdoc:
+  errors:
+    - broken-link
+    - unresolved-doc-reference
