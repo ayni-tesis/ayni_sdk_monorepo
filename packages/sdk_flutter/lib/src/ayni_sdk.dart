@@ -632,6 +632,9 @@ class AyniSdk {
   /// completes with a [WorkflowResult] whose [WorkflowResult.outputs] hold the
   /// value of each output node the workflow reached.
   ///
+  /// It throws an [UnsupportedError] on unsupported platforms, including
+  /// Android devices below API 26, before workflow validation or inference.
+  ///
   /// It throws a [WorkflowError] whose [WorkflowError.category] says why the
   /// workflow could not run; see [WorkflowErrorCategory] for every case.
   /// A workflow that was never synced, for example, throws
@@ -651,6 +654,8 @@ class AyniSdk {
   ///         BooleanResult(value: final passed) => '$name: $passed',
   ///       },
   ///   ];
+  /// } on UnsupportedError catch (error) {
+  ///   return ['Plataforma no admitida: ${error.message}'];
   /// } on WorkflowError catch (error) {
   ///   return ['No se pudo ejecutar el workflow: ${error.category.name}'];
   /// }

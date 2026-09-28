@@ -69,6 +69,8 @@
 <p>It runs entirely on the device, without a network connection, and
 completes with a <a href="../../ayni_sdk/WorkflowResult-class.html">WorkflowResult</a> whose <a href="../../ayni_sdk/WorkflowResult/outputs.html">WorkflowResult.outputs</a> hold the
 value of each output node the workflow reached.</p>
+<p>It throws an <a href="https://api.flutter.dev/flutter/dart-core/UnsupportedError-class.html">UnsupportedError</a> on unsupported platforms, including
+Android devices below API 26, before workflow validation or inference.</p>
 <p>It throws a <a href="../../ayni_sdk/WorkflowError-class.html">WorkflowError</a> whose <a href="../../ayni_sdk/WorkflowError/category.html">WorkflowError.category</a> says why the
 workflow could not run; see <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErrorCategory</a> for every case.
 A workflow that was never synced, for example, throws
@@ -86,6 +88,8 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
         BooleanResult(value: final passed) =&gt; '$name: $passed',
       },
   ];
+} on UnsupportedError catch (error) {
+  return ['Plataforma no admitida: ${error.message}'];
 } on WorkflowError catch (error) {
   return ['No se pudo ejecutar el workflow: ${error.category.name}'];
 }
