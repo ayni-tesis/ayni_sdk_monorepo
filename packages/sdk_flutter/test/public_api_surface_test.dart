@@ -122,52 +122,80 @@ void main() {
     });
 
     test('every contract type is reachable from the public library', () {
-      final List<Type> contractTypes = <Type>[
-        AyniConfig,
-        AyniInitializationResult,
-        AyniSdk,
-        AyniSdkConfig,
-        InitializationResult,
-        InitializationStatus,
-        SyncResult,
-        SyncResourceResult,
-        SyncResourceStatus,
-        SyncResourceType,
-        SyncStatus,
-        BooleanResult,
-        ClassificationResult,
-        Detection,
-        DetectionResult,
-        WorkflowError,
-        WorkflowErrorCategory,
-        WorkflowResult,
-        WorkflowValue,
-      ];
-      final expectedCount = expectedExports.values.fold<int>(
-        0,
-        (total, names) => total + names.length,
+      // Each value references a contract symbol through the public import, so
+      // this file stops compiling if the barrel drops it, and the keys are
+      // compared against `expectedExports`, the single source of truth for
+      // the contract names — not against a count.
+      final contractTypes = <String, Type>{
+        'AyniConfig': AyniConfig,
+        'AyniInitializationResult': AyniInitializationResult,
+        'AyniSdk': AyniSdk,
+        'AyniSdkConfig': AyniSdkConfig,
+        'InitializationResult': InitializationResult,
+        'InitializationStatus': InitializationStatus,
+        'SyncResult': SyncResult,
+        'SyncResourceResult': SyncResourceResult,
+        'SyncResourceStatus': SyncResourceStatus,
+        'SyncResourceType': SyncResourceType,
+        'SyncStatus': SyncStatus,
+        'BooleanResult': BooleanResult,
+        'ClassificationResult': ClassificationResult,
+        'Detection': Detection,
+        'DetectionResult': DetectionResult,
+        'WorkflowError': WorkflowError,
+        'WorkflowErrorCategory': WorkflowErrorCategory,
+        'WorkflowResult': WorkflowResult,
+        'WorkflowValue': WorkflowValue,
+      };
+      final expectedNames = expectedExports.values
+          .expand((names) => names)
+          .toSet();
+
+      expect(
+        contractTypes.keys.toSet(),
+        expectedNames,
+        reason:
+            'every symbol of the US-090 contract must be referenced through '
+            'package:ayni_sdk/ayni_sdk.dart, and nothing else may appear here.',
       );
-      expect(contractTypes, hasLength(expectedCount));
     });
 
     test('initialize, sync and run keep their published signatures', () {
-      final AyniInitializationResult Function(AyniConfig) initialize =
-          AyniSdk.initialize;
-      final Future<SyncResult> Function(AyniSdk) sync = (AyniSdk sdk) =>
-          sdk.sync();
-      final Future<WorkflowResult> Function(AyniSdk, String, Uint8List) run =
-          (AyniSdk sdk, String workflowId, Uint8List input) =>
-              sdk.run(workflowId, input);
+      expect(
+        AyniSdk.initialize,
+        isA<AyniInitializationResult Function(AyniConfig)>(),
+      );
 
-      expect(initialize, isNotNull);
-      expect(sync, isNotNull);
-      expect(run, isNotNull);
+      final sdk = AyniSdk(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: Directory.systemTemp,
+      );
+      expect(sdk.sync, isA<Future<SyncResult> Function()>());
+      expect(
+        sdk.run,
+        isA<Future<WorkflowResult> Function(String, Uint8List)>(),
+      );
+    });
+  });
+
+  group('README documents the public API contract', () {
+    test('states the exact rule about internal src files', () {
+      final readme = File('README.md').readAsStringSync();
+
+      expect(
+        readme,
+        contains('No importes archivos src internos.'),
+        reason:
+            'US-090 requires the README to contain that exact sentence so '
+            'integrators know lib/src/ is not part of the contract.',
+      );
     });
   });
 
   group('internal implementation classes are not part of the contract', () {
     test(
-      'dart analyze rejects an app importing package:ayni_sdk/src/...',
+      'the standard lint set reports an app importing package:ayni_sdk/src/...',
       () async {
         final fixture = Directory('test/fixtures/internal_import');
         expect(
@@ -176,40 +204,58 @@ void main() {
           reason: 'the negative fixture must exist at ${fixture.path}',
         );
 
-        final packageConfig = File(
-          '${fixture.path}/.dart_tool/package_config.json',
+        // The fixture must model an app with the tooling it would really
+        // ship: `package:lints` recommended, the set `flutter_lints` builds
+        // on for Flutter apps. The diagnostic has to come from that standard
+        // rule set, not from this fixture configuring the rule by hand.
+        final options = File(
+          '${fixture.path}/analysis_options.yaml',
+        ).readAsStringSync();
+        expect(
+          options,
+          contains('package:lints/recommended.yaml'),
+          reason:
+              'the fixture must include the standard lint set, found:\n'
+              '$options',
         );
-        if (!packageConfig.existsSync()) {
-          final pubGet = await Process.run(Platform.resolvedExecutable, [
-            'pub',
-            'get',
-          ], workingDirectory: fixture.path);
-          expect(
-            pubGet.exitCode,
-            0,
-            reason:
-                'dart pub get failed for the fixture:\n'
-                '${pubGet.stdout}\n${pubGet.stderr}',
-          );
-        }
+        expect(
+          options,
+          isNot(contains('analyzer:')),
+          reason:
+              'the fixture must not escalate severities by hand, found:\n'
+              '$options',
+        );
+
+        // Always resolve: the fixture is its own package, and a stale
+        // package_config.json (for example after adding the `lints`
+        // dependency) would hide the real diagnostic behind an unresolved
+        // include.
+        final pubGet = await Process.run(Platform.resolvedExecutable, [
+          'pub',
+          'get',
+        ], workingDirectory: fixture.path);
+        expect(
+          pubGet.exitCode,
+          0,
+          reason:
+              'dart pub get failed for the fixture:\n'
+              '${pubGet.stdout}\n${pubGet.stderr}',
+        );
 
         final analyze = await Process.run(Platform.resolvedExecutable, [
           'analyze',
         ], workingDirectory: fixture.path);
         final output = 'stdout:\n${analyze.stdout}\nstderr:\n${analyze.stderr}';
 
-        expect(
-          analyze.exitCode,
-          isNot(0),
-          reason:
-              'importing package:ayni_sdk/src/... from an app must be an '
-              'analyze error, but dart analyze passed:\n$output',
-        );
+        // `implementation_imports` comes from `package:lints/recommended.yaml`
+        // and is reported at info severity, so `dart analyze` prints the
+        // diagnostic and exits 0 (`flutter analyze`, which apps like
+        // apps/native run, treats infos as fatal by default).
         expect(
           output,
           contains('implementation_imports'),
           reason:
-              'the fixture must fail with implementation_imports:\n'
+              'the standard lint set must report the internal import:\n'
               '$output',
         );
         expect(
