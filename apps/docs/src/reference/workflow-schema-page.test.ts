@@ -1,0 +1,142 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
+import { tableRows } from "../markdown-table";
+import { validationRejections, validatorNodeFields, validatorSource } from "./workflow-schema";
+
+const docsRoot = join(import.meta.dirname, "..", "content", "docs");
+
+/** A page under `content/docs`, with `\n` line endings. */
+function read(file: string): string {
+  return readFileSync(join(docsRoot, file), "utf8").replace(/\r\n/g, "\n");
+}
+
+const page = read("referencia/esquema-de-workflow.mdx");
+
+/** The text of the `heading` section (`## …` or `### …`), up to the next heading of its level or above. */
+function section(heading: string): string {
+  const level = heading.slice(0, heading.indexOf(" "));
+  const start = page.indexOf(`\n${heading}\n`);
+  if (start === -1) throw new Error(`The page has no "${heading}" section.`);
+  const next = [...page.slice(start + 1).matchAll(/\n(#{2,3}) /g)].find(
+    (match) => (match[1] ?? "").length <= level.length,
+  );
+  return page.slice(start, next?.index === undefined ? undefined : start + 1 + next.index);
+}
+
+const nodeFields = validatorNodeFields(validatorSource);
+
+/** The SDK versions `Notas de versión y compatibilidad` has notes for. */
+const releasedVersions = [
+  ...read("recursos/notas-de-version.md").matchAll(/^## `ayni_sdk` (\S+)$/gm),
+].map(([, version]) => version);
+
+/**
+ * How the page names each reason the validator rejects a definition. A new
+ * `WorkflowValidationStatus` fails the test until the page documents it.
+ */
+const ruleByRejection: Record<string, string> = {
+  invalidSchema: "Esquema exacto",
+  unknownNodeType: "Tipos de nodo compatibles",
+  undeclaredModelVersion: "Modelos declarados",
+  missingNode: "Nodos existentes",
+  cycle: "Grafo acíclico",
+  incompatiblePort: "Puertos compatibles",
+};
+
+/** The `invalidWorkflow` messages of `SyncResourceResult`, with `$name` as `<nombre>`. */
+const invalidWorkflowMessages = [
+  ...ayniSdkSource.matchAll(
+    /SyncResourceStatus\.invalidWorkflow(?: when previousVersionRetained)? =>\s*'([^']+)'/g,
+  ),
+].map(([, message]) => (message ?? "").replace("$name", "`<nombre>`"));
+
+describe("Esquema de workflow (US-145)", () => {
+  it("describes the definition as { nodes, connections } without the canvas layout", () => {
+    const structure = section("## Estructura general");
+
+    expect(structure).toContain("`{ nodes, connections }`");
+    expect(structure).toContain(
+      ":::note\nLa disposición del lienzo no forma parte de la versión publicada.\n:::",
+    );
+  });
+
+  it("lists every node type the SDK runs with its exact fields", () => {
+    const rows = tableRows(section("## Tipos de nodo")).map((row) => row.slice(0, 2));
+
+    expect(rows).toEqual(
+      Object.entries(nodeFields).map(([type, fields]) => [
+        `[\`${type}\`](#${type.replace(".", "")})`,
+        fields.map((field) => `\`${field}\``).join(", "),
+      ]),
+    );
+  });
+
+  it("declares a released SDK version for every node type", () => {
+    const since = tableRows(section("## Tipos de nodo")).map((row) => row[2] ?? "");
+
+    expect(since).toHaveLength(Object.keys(nodeFields).length);
+    for (const version of since) {
+      expect(releasedVersions.map((released) => `\`${released}\``)).toContain(version);
+    }
+  });
+
+  it("describes each field of each node type", () => {
+    for (const [type, fields] of Object.entries(nodeFields)) {
+      const rows = tableRows(section(`### \`${type}\``));
+
+      expect(
+        rows.map((row) => row[0]),
+        type,
+      ).toEqual(fields.map((field) => `\`${field}\``));
+      expect(rows.filter((row) => (row[2] ?? "").length === 0).map((row) => row[0])).toEqual([]);
+    }
+  });
+
+  it("explains the connection format, the compatible ports and the acyclic rule", () => {
+    const connections = section("## Conexiones");
+
+    for (const field of ["sourceNodeId", "sourcePort", "targetNodeId", "targetPort"]) {
+      expect(connections).toContain(`\`${field}\``);
+    }
+    expect(connections).toContain("### Puertos compatibles");
+    expect(connections).toContain("### Grafo acíclico");
+  });
+
+  it("documents one rule per reason the SDK rejects a definition", () => {
+    expect(Object.keys(ruleByRejection)).toEqual(validationRejections(validatorSource));
+
+    const rules = tableRows(section("## Reglas de validación")).map((row) => row[0]);
+
+    expect(rules).toEqual(Object.values(ruleByRejection));
+  });
+
+  it("gives the result and the messages the app receives for a rejected definition", () => {
+    const rules = section("## Reglas de validación");
+
+    expect(rules).toContain("`SyncResourceStatus.invalidWorkflow`");
+    expect(invalidWorkflowMessages).toHaveLength(2);
+    for (const message of invalidWorkflowMessages) {
+      expect(rules).toContain(message);
+    }
+  });
+
+  it("explains what happens with a node type the SDK version does not support", () => {
+    const unsupported = section("### Tipos de nodo sin soporte");
+
+    expect(unsupported).toContain("se conserva la versión anterior");
+    expect(unsupported).toContain(
+      "[Notas de versión y compatibilidad](/recursos/notas-de-version/)",
+    );
+  });
+
+  it("shows the complete example from the SDK package with a copy button", () => {
+    const example = section("## Ejemplo completo");
+
+    expect(page).toContain(
+      'import { workflowDefinition } from "../../../examples/workflow-definition";',
+    );
+    expect(example).toContain('<Code code={workflowDefinition} lang="json"');
+  });
+});

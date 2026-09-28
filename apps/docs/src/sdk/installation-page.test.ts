@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
+import { tableRows } from "../markdown-table";
 import { ayniSdkSource, constructorParameters } from "./dart-constructor";
 
 const page = readFileSync(
@@ -15,20 +16,6 @@ function section(heading: string): string {
   if (start === -1) throw new Error(`The page has no "${heading}" section.`);
   const end = page.indexOf("\n## ", start + 1);
   return page.slice(start, end === -1 ? undefined : end);
-}
-
-/** The body rows of the first Markdown table in `text`, cell by cell. */
-function tableRows(text: string): string[][] {
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.startsWith("|"));
-  if (start === -1) return [];
-  const end = lines.findIndex((line, index) => index > start && !line.startsWith("|"));
-  return lines.slice(start + 2, end === -1 ? undefined : end).map((line) =>
-    line
-      .slice(1, -1)
-      .split("|")
-      .map((cell) => cell.trim()),
-  );
 }
 
 /** How the page words each Dart default value of `AyniSdk`. */

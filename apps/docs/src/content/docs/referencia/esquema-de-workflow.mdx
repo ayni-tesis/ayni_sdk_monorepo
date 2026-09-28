@@ -1,0 +1,187 @@
+---
+title: Esquema de workflow
+description: Formato de un workflow publicado, sus nodos y conexiones, y las reglas con que el SDK lo valida antes de instalarlo.
+sidebar:
+  order: 2
+---
+
+import { Code } from "@astrojs/starlight/components";
+import { workflowDefinition } from "../../../examples/workflow-definition";
+
+Cuando `sync()` instala una versión publicada de un workflow, descarga su
+definición en JSON con `GET /sdk/workflow-versions/{id}` y la valida antes de
+guardarla en el dispositivo. Esta página describe ese formato y cada regla que
+comprueba el SDK.
+
+## Estructura general
+
+Una definición publicada es un objeto `{ nodes, connections }`:
+
+| Campo | Tipo | Descripción |
+| --- | --- | --- |
+| `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
+| `connections` | Lista de conexiones | Las conexiones entre la entrada de imagen y los modelos. El servidor la publica vacía si no hay ninguna. |
+
+:::note
+La disposición del lienzo no forma parte de la versión publicada.
+:::
+
+La posición de cada nodo en el lienzo del dashboard se queda en el servidor:
+la definición no incluye un campo `layout`, y el SDK rechaza una definición que
+tenga campos que no aparecen en esta página.
+
+## Tipos de nodo
+
+Cada nodo tiene un `id` y un `type`; el resto de sus campos depende del tipo.
+Un nodo debe tener exactamente los campos de su tipo, ni uno más ni uno menos.
+
+| Tipo | Campos | Desde la versión del SDK |
+| --- | --- | --- |
+| [`input.image`](#inputimage) | `id`, `type`, `outputs` | `0.1.0` |
+| [`model.tflite`](#modeltflite) | `id`, `type`, `modelVersionId`, `modelName`, `version`, `inputs`, `outputs` | `0.1.0` |
+| [`condition`](#condition) | `id`, `type`, `sourceNodeId`, `label`, `operator`, `threshold`, `branches` | `0.1.0` |
+| [`output`](#output) | `id`, `type`, `name`, `sourceNodeId`, `sourcePort`, `resultType` | `0.1.0` |
+
+La columna `Desde la versión del SDK` indica la primera versión de `ayni_sdk`
+que acepta cada tipo. Una versión anterior del SDK rechaza un workflow que lo
+use (ver [Tipos de nodo sin soporte](#tipos-de-nodo-sin-soporte)).
+
+### `input.image`
+
+La imagen que la app entrega al workflow.
+
+| Campo | Valor | Descripción |
+| --- | --- | --- |
+| `id` | Texto | Identificador del nodo. |
+| `type` | `"input.image"` | Tipo del nodo. |
+| `outputs` | `{ "imagen": "image" }` | Su único puerto de salida, `imagen`, entrega la imagen. |
+
+### `model.tflite`
+
+Una versión de un modelo TensorFlow Lite que clasifica la imagen o detecta
+objetos en ella.
+
+| Campo | Valor | Descripción |
+| --- | --- | --- |
+| `id` | Texto | Identificador del nodo. |
+| `type` | `"model.tflite"` | Tipo del nodo. |
+| `modelVersionId` | Texto | La versión del modelo que usa el nodo. Debe estar en los `modelVersionIds` del workflow que devuelve `POST /sdk/sync`. |
+| `modelName` | Texto | Nombre del modelo en el dashboard. |
+| `version` | Texto | Versión del modelo, por ejemplo `2.0.0`. |
+| `inputs` | `{ "image": { … } }` | Su puerto de entrada `image`, con la entrada del contrato del modelo: `type`, `width`, `height`, `channels` y `normalization`. |
+| `outputs` | `{ "result": { … } }` | Su puerto de salida `result`, con la salida del contrato: `type` (`classification` o `detection`) y `labels`, la lista de etiquetas. Una detección añade `scoreThreshold`, un número. |
+
+### `condition`
+
+Compara la confianza de una etiqueta de clasificación con un umbral y sigue la
+rama verdadera o la falsa.
+
+| Campo | Valor | Descripción |
+| --- | --- | --- |
+| `id` | Texto | Identificador del nodo. |
+| `type` | `"condition"` | Tipo del nodo. |
+| `sourceNodeId` | Texto | El nodo `model.tflite` de clasificación cuyo resultado evalúa. |
+| `label` | Texto | La etiqueta de ese modelo cuya confianza compara. Debe estar en sus `labels`. |
+| `operator` | `"gte"`, `"gt"`, `"lte"` o `"lt"` | Mayor o igual, mayor, menor o igual, o menor que el umbral. |
+| `threshold` | Número entre `0` y `1` | El umbral de confianza. |
+| `branches` | `{ "true": "Verdadero", "false": "Falso" }` | Sus puertos de salida, `true` y `false`. |
+
+### `output`
+
+Un resultado con nombre que recibe la app.
+
+| Campo | Valor | Descripción |
+| --- | --- | --- |
+| `id` | Texto | Identificador del nodo. |
+| `type` | `"output"` | Tipo del nodo. |
+| `name` | Texto | Nombre del resultado. |
+| `sourceNodeId` | Texto | El nodo del que lee el resultado: un modelo o una condición. |
+| `sourcePort` | Texto | El puerto que lee: `result` de un modelo, o `true` o `false` de una condición. |
+| `resultType` | `"classification"`, `"detection"` o `"boolean"` | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
+
+## Conexiones
+
+Cada elemento de `connections` une un puerto de salida con un puerto de
+entrada:
+
+| Campo | Descripción |
+| --- | --- |
+| `sourceNodeId` | El nodo de origen. |
+| `sourcePort` | El puerto de salida del nodo de origen. |
+| `targetNodeId` | El nodo de destino. |
+| `targetPort` | El puerto de entrada del nodo de destino. |
+
+Los cuatro campos son obligatorios y ninguno puede estar vacío. En
+`connections` solo va la conexión de una entrada de imagen con un modelo. Una
+condición y una salida guardan su origen en sus propios campos `sourceNodeId`
+y `sourcePort`.
+
+### Puertos compatibles
+
+| Origen | Destino | Dónde se guarda |
+| --- | --- | --- |
+| `input.image`, puerto `imagen` | `model.tflite`, puerto `image` | En `connections`. Cada modelo recibe como mucho una conexión. |
+| `model.tflite` de clasificación, puerto `result` | `condition` cuyo `label` está en las etiquetas del modelo | En el `sourceNodeId` de la condición. |
+| `model.tflite`, puerto `result` | `output` cuyo `resultType` es el tipo de salida del modelo | En el `sourceNodeId` de la salida, con `sourcePort` igual a `result`. |
+| `condition`, puerto `true` o `false` | `output` con `resultType` igual a `boolean` | En el `sourceNodeId` de la salida, con `sourcePort` igual a `true` o `false`. |
+
+### Grafo acíclico
+
+Los nodos y sus orígenes forman un grafo dirigido acíclico (DAG): cada
+conexión de `connections` y cada `sourceNodeId` de una condición o una salida
+es una arista, y ningún camino de aristas vuelve a un nodo por el que ya pasó.
+
+## Reglas de validación
+
+Antes de instalar una versión, el SDK comprueba que su definición cumple cada
+una de estas reglas:
+
+| Regla | Qué comprueba |
+| --- | --- |
+| Esquema exacto | La definición es un JSON válido. La definición, cada nodo, cada conexión y los objetos `outputs`, `inputs`, `result` y `branches` tienen exactamente los campos de esta página, ni uno más ni uno menos. Los campos de texto de los nodos y las conexiones no están vacíos, `operator`, `threshold`, `resultType` y el `type` de `result` tienen un valor permitido, `labels` es una lista de textos y ningún `id` se repite. El SDK no comprueba los campos internos de `inputs.image` ni los textos de `branches`. |
+| Tipos de nodo compatibles | El `type` de cada nodo es uno de los [tipos de nodo](#tipos-de-nodo) de la versión del SDK. |
+| Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
+| Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |
+| Grafo acíclico | El grafo no tiene ciclos (ver [Grafo acíclico](#grafo-acíclico)). |
+| Puertos compatibles | Cada arista une [puertos compatibles](#puertos-compatibles) y cada modelo recibe como mucho una conexión de imagen. |
+
+### Resultado de una definición rechazada
+
+Si la definición incumple una regla, el SDK no la instala y el recurso del
+workflow en `SyncResult.resources` tiene el estado
+`SyncResourceStatus.invalidWorkflow`. Si el dispositivo ya tenía una versión
+válida del workflow, el SDK la conserva y `previousVersionRetained` es `true`.
+La app recibe uno de estos mensajes en `message`:
+
+| Situación | Mensaje |
+| --- | --- |
+| Con una versión anterior | La actualización de `<nombre>` no es compatible. Se mantuvo la última versión válida. |
+| Sin versión anterior | La actualización de `<nombre>` no es compatible. No se instaló ninguna versión. |
+
+Un rechazo de este tipo no convierte `SyncResult.status` en `SyncStatus.error`.
+Los demás estados están en [Estados y errores](/referencia/estados-y-errores/).
+
+### Tipos de nodo sin soporte
+
+Si un workflow publicado usa un tipo de nodo que la versión del SDK de la app
+no acepta, el SDK rechaza la actualización con
+`SyncResourceStatus.invalidWorkflow` y se conserva la versión anterior del
+workflow cuando el dispositivo tenía una. Para instalarlo, actualiza `ayni_sdk`
+a una versión que acepte ese tipo; la columna `Desde la versión del SDK` y
+las [Notas de versión y compatibilidad](/recursos/notas-de-version/) indican
+cuál.
+
+## Ejemplo completo
+
+Este workflow clasifica una foto de una hoja y avisa cuando la confianza de
+`enferma` es de al menos 0,8:
+
+- `imagen` entrega la foto al modelo `modelo` por la única conexión de
+  `connections`.
+- `modelo` clasifica la hoja como `sana` o `enferma`.
+- `diagnostico` devuelve la clasificación completa del modelo.
+- `condicion` compara la confianza de `enferma` con `0.8`.
+- `revisar` lee la rama verdadera de la condición (`true`) y `sin-alerta`, la
+  falsa (`false`); ambas son salidas `boolean`.
+
+<Code code={workflowDefinition} lang="json" title="workflow_definition.json" />
