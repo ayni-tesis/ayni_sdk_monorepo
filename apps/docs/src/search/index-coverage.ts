@@ -5,6 +5,13 @@ import { gunzipSync } from "node:zlib";
 import type { AstroIntegration } from "astro";
 
 /**
+ * The sidebar fragments of the Dart reference (US-143): `dart doc` loads each
+ * one into a page and prefixes its links with that page's `data-base-href`,
+ * the reference root.
+ */
+export const dartSidebarFragment = /^referencia\/api-dart\/.*-sidebar\.html$/;
+
+/**
  * Built pages that search must not return: the 404 of any locale, and the
  * parts of the Dart reference (US-143) that are not content: the sidebar
  * fragments its script loads and its own search results page. A page that
@@ -12,7 +19,7 @@ import type { AstroIntegration } from "astro";
  */
 const unsearchablePages = [
   /(^|\/)404\.html$/,
-  /^referencia\/api-dart\/.*-sidebar\.html$/,
+  dartSidebarFragment,
   /^referencia\/api-dart\/search\.html$/,
 ];
 

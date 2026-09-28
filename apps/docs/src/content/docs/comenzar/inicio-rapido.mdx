@@ -62,7 +62,7 @@ revoques en el dashboard.
 `--dart-define` incorpora el valor en la app compilada, así que una app
 distribuida puede contener la credencial. Si se expone, revócala en el
 dashboard y genera una nueva (ver
-[Credenciales del SDK](/conceptos/credenciales-del-sdk/#revocación)).
+[Credenciales del SDK](/conceptos/credenciales-del-sdk/#reglas)).
 
 **Resultado esperado:** la credencial no aparece en el código fuente ni en
 ningún archivo de tu repositorio.
@@ -101,9 +101,9 @@ Convierte `result.status` en un mensaje para quien usa tu app con un `switch`:
 Si ves `No se completó la sincronización. Revisa los recursos afectados.`,
 revisa la credencial: una credencial revocada o mal copiada hace que `sync()`
 devuelva `SyncStatus.error`. Encontrarás las causas y cómo resolverlas en
-[Solucionar problemas](/guias/solucionar-problemas-de-sincronizacion/#syncstatuserror).
+[Solucionar problemas](/guias/solucionar-problemas-de-sincronizacion/#sync-devuelve-error-en-cada-intento).
 Si un recurso no se actualizó, su propiedad `message` explica por qué (ver
-[Estados y errores](/referencia/estados-y-errores/#estados-de-cada-recurso)).
+[Estados y errores](/referencia/estados-y-errores/#estado-de-cada-recurso)).
 
 El ejemplo completo está en
 [`packages/sdk_flutter/example/quickstart.dart`](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/quickstart.dart).

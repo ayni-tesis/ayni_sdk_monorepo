@@ -7,6 +7,7 @@ import { tableRows } from "../markdown-table";
 import { dartEnumValues } from "../sdk/dart-enum";
 import { syncResourceMessages } from "../sdk/sync-messages";
 import { apiDocumentPath, sdkContract } from "./http-reference";
+import { statusEnumDrift } from "./status-enums";
 
 const docsRoot = join(import.meta.dirname, "..", "content", "docs");
 const page = readFileSync(join(docsRoot, "referencia/estados-y-errores.md"), "utf8").replace(
@@ -55,6 +56,10 @@ describe("Estados y errores (US-146)", () => {
     const version = /^version: (\S+)$/m.exec(pubspec)?.[1];
 
     expect(page).toContain(`Esta página describe \`ayni_sdk\` ${version}.`);
+  });
+
+  it("documents exactly the values of each SDK enum it tabulates (US-150)", () => {
+    expect(statusEnumDrift(page, "referencia/estados-y-errores.md", ayniSdkSource)).toEqual([]);
   });
 
   it("gives the message of every InitializationStatus", () => {
