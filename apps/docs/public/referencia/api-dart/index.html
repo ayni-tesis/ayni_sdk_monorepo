@@ -60,7 +60,7 @@
 <blockquote>
 <p><strong>Nota:</strong> No importes archivos src internos. La interfaz pública se expone a través de <code>package:ayni_sdk/ayni_sdk.dart</code>.</p>
 </blockquote>
-<p>La API pública estable que consume tu aplicación se compone de <code>AyniSdk.initialize</code> para configurar el SDK, <code>sync()</code> para actualizar workflows y modelos, <code>run()</code> para ejecutarlos localmente, y los tipos <code>WorkflowResult</code> y <code>WorkflowError</code> para leer el resultado de la ejecución. Las clases internas de <code>lib/src/</code> no forman parte del contrato de integración y pueden cambiar sin previo aviso.</p>
+<p>La API pública estable que consume tu aplicación se compone de <code>AyniSdk.initialize</code> para configurar el SDK, <code>sync()</code> para actualizar workflows y modelos, <code>run()</code> para ejecutarlos localmente, <code>SyncResult</code> para consultar la sincronización y <code>WorkflowResult</code> y <code>WorkflowError</code> para la ejecución. Las clases internas de <code>lib/src/</code> no forman parte del contrato de integración y pueden cambiar sin previo aviso.</p>
 <h2 id="configuracin-genrica-e-inicializacin">Configuración genérica e inicialización</h2>
 <p>El paquete mantiene una configuración completamente genérica e independiente. No contiene secretos, tokens ni configuración de una aplicación concreta.</p>
 <p>El SDK recibe su configuración dinámicamente en tiempo de ejecución mediante <code>AyniSdk.initialize(AyniConfig(...))</code> (US-049). La aplicación host obtiene la credencial y la configuración desde almacenamiento seguro o su entorno de ejecución en runtime, manteniendo el paquete desacoplado y libre de secretos hardcodeados:</p>
@@ -78,7 +78,19 @@ if (!result.isReady) {
 return AyniSdk.instance;
 </code></pre>
 <p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/initialize.dart</code>.</p>
-<p>Una vez completada la inicialización de forma exitosa (<code>result.isReady</code>), se accede a la instancia compartida a través de <code>AyniSdk.instance</code>. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.</p>
+<p>Una vez completada la inicialización de forma exitosa (<code>result.isReady</code>), se accede a la instancia compartida a través de <code>AyniSdk.instance</code>. Revisa <code>result.status</code> si necesitas distinguir <code>ready</code>, <code>incompleteConfiguration</code>, <code>error</code> o <code>unsupportedPlatform</code>; en cualquier estado distinto de <code>ready</code>, muestra <code>result.message</code> y no uses la instancia. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.</p>
+<h2 id="sincronizacin">Sincronización</h2>
+<p>Después de inicializar, sincroniza para instalar nuevas versiones publicadas. <code>SyncResult.status</code> indica el resultado general: <code>updated</code>, <code>upToDate</code>, <code>offline</code> o <code>error</code>. Ante <code>offline</code>, conserva y usa los workflows ya instalados; ante <code>error</code>, informa el fallo y no asumas que hubo una actualización.</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.sync();
+if (result.status == SyncStatus.offline) {
+  showMessage('Sin conexión. Se usarán los workflows instalados.');
+}
+for (final resource in result.resources) {
+  final message = resource.message;
+  if (message != null) showMessage(message);
+}
+</code></pre>
+<p><code>result.resources</code> contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/sync.dart</code>.</p>
 <h2 id="ejecucin-local-de-workflows">Ejecución local de workflows</h2>
 <p>Con el SDK inicializado y sincronizado, ejecuta un workflow instalado con <code>run()</code>. La ejecución es local: no hace peticiones de red y la aplicación nunca interpreta el JSON del DAG.</p>
 <pre class="language-dart"><code class="language-dart">final sdk = AyniSdk.instance;
