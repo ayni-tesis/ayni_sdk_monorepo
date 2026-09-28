@@ -1,0 +1,69 @@
+{
+  "nodes": [
+    {
+      "id": "imagen",
+      "type": "input.image",
+      "outputs": { "imagen": "image" }
+    },
+    {
+      "id": "modelo",
+      "type": "model.tflite",
+      "modelVersionId": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a",
+      "modelName": "Hojas",
+      "version": "2.0.0",
+      "inputs": {
+        "image": {
+          "type": "image",
+          "width": 224,
+          "height": 224,
+          "channels": 3,
+          "normalization": "zero_to_one"
+        }
+      },
+      "outputs": {
+        "result": { "type": "classification", "labels": ["sana", "enferma"] }
+      }
+    },
+    {
+      "id": "diagnostico",
+      "type": "output",
+      "name": "Diagnóstico",
+      "sourceNodeId": "modelo",
+      "sourcePort": "result",
+      "resultType": "classification"
+    },
+    {
+      "id": "condicion",
+      "type": "condition",
+      "sourceNodeId": "modelo",
+      "label": "enferma",
+      "operator": "gte",
+      "threshold": 0.8,
+      "branches": { "true": "Verdadero", "false": "Falso" }
+    },
+    {
+      "id": "revisar",
+      "type": "output",
+      "name": "Revisar planta",
+      "sourceNodeId": "condicion",
+      "sourcePort": "true",
+      "resultType": "boolean"
+    },
+    {
+      "id": "sin-alerta",
+      "type": "output",
+      "name": "Sin alerta",
+      "sourceNodeId": "condicion",
+      "sourcePort": "false",
+      "resultType": "boolean"
+    }
+  ],
+  "connections": [
+    {
+      "sourceNodeId": "imagen",
+      "sourcePort": "imagen",
+      "targetNodeId": "modelo",
+      "targetPort": "image"
+    }
+  ]
+}
