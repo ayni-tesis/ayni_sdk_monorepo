@@ -24,7 +24,8 @@ export function externalLinks(pages: Record<string, string>): ExternalLink[] {
         if (closes) opener = undefined;
         return [];
       }
-      if (fence) {
+      // A backtick fence's info string cannot contain backticks; a tilde one can.
+      if (fence && !(fence.startsWith("`") && rest.includes("`"))) {
         opener = fence;
         return [];
       }

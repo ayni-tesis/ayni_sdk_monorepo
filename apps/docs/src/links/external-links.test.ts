@@ -46,6 +46,19 @@ describe("externalLinks", () => {
       { url: "https://ok.example", location: "guias/x.md:13" },
     ]);
   });
+
+  it("does not take a backtick line whose info string has a backtick for a fence", () => {
+    const pages = {
+      "guias/x.md": [
+        "```md`x",
+        "[a](https://a.example)",
+        "~~~ `sh`",
+        "[b](https://b.invalid)",
+      ].join("\n"),
+    };
+
+    expect(externalLinks(pages)).toEqual([{ url: "https://a.example", location: "guias/x.md:2" }]);
+  });
 });
 
 describe("unreachableLinks", () => {
