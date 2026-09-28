@@ -1,6 +1,8 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
-import { sidebar } from "./src/navigation.ts";
+import starlightOpenAPI from "starlight-openapi";
+import { httpReferenceSidebarGroup, sidebar } from "./src/navigation.ts";
+import { httpReferenceBase, writeSdkContract } from "./src/reference/http-reference.ts";
 import { searchIndexCoverage } from "./src/search/index-coverage.ts";
 
 const repository = "https://github.com/ayni-tesis/ayni_sdk_monorepo";
@@ -33,6 +35,21 @@ export default defineConfig({
       editLink: { baseUrl: `${repository}/edit/main/apps/docs/` },
       lastUpdated: true,
       sidebar,
+      // `Referencia` → `API HTTP del SDK`: generated from the `/sdk/*` part of
+      // `packages/api/src/openapi.json` (US-144, ADR 0002).
+      plugins: [
+        starlightOpenAPI([
+          {
+            base: httpReferenceBase,
+            schema: writeSdkContract(),
+            sidebar: {
+              label: "API HTTP del SDK",
+              group: httpReferenceSidebarGroup,
+              operations: { labels: "path", badges: true },
+            },
+          },
+        ]),
+      ],
       customCss: [
         "@fontsource-variable/geist",
         "@fontsource-variable/geist-mono",

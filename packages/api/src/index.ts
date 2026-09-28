@@ -1,5 +1,11 @@
-import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
+import {
+  extendZodWithOpenApi,
+  OpenAPIRegistry,
+  OpenApiGeneratorV31,
+} from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
+
+import { registerSdkRoutes, sdkApiDescription } from "./sdk-openapi";
 
 extendZodWithOpenApi(z);
 
@@ -10,11 +16,27 @@ export const HealthResponseSchema = z
   .openapi("HealthResponse");
 
 export function createOpenApiDocument() {
-  return {
+  const registry = new OpenAPIRegistry();
+
+  registry.registerPath({
+    method: "get",
+    path: "/health",
+    tags: ["System"],
+    responses: {
+      "200": {
+        description: "Service health",
+        content: { "application/json": { schema: HealthResponseSchema } },
+      },
+    },
+  });
+  registerSdkRoutes(registry);
+
+  return new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
     info: {
       title: "ayni API",
       version: "0.1.0",
+      description: sdkApiDescription,
     },
     servers: [
       {
@@ -22,45 +44,7 @@ export function createOpenApiDocument() {
         description: "Local development server",
       },
     ],
-    paths: {
-      "/health": {
-        get: {
-          tags: ["System"],
-          responses: {
-            "200": {
-              description: "Service health",
-              content: {
-                "application/json": {
-                  schema: { $ref: "#/components/schemas/HealthResponse" },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        HealthResponse: {
-          type: "object",
-          required: ["status"],
-          properties: {
-            status: {
-              type: "string",
-              enum: ["ok"],
-            },
-          },
-        },
-      },
-      securitySchemes: {
-        bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "JWT",
-        },
-      },
-    },
-  };
+  });
 }
 
 export const openApiDocument = createOpenApiDocument();

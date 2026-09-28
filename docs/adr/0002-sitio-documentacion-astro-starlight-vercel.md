@@ -60,6 +60,8 @@ encajaba mejor con el stack de `apps/web`, pero el equipo eligió Starlight el
   `searchIndexCoverage` hace fallar la compilación si una página de `dist`
   (salvo la 404) no está en el índice, así que las referencias Dart y HTTP
   (US-143, US-144) no pueden quedar fuera de la búsqueda sin que se note.
+- **Referencia de la API HTTP (US-144).** Se genera con `starlight-openapi`
+  desde `openapi.json`; ver "Referencia de la API HTTP (US-144)".
 - `Última actualización` sale del historial de git. Vercel clona el
   repositorio con poca profundidad, así que en un archivo sin cambios recientes
   la fecha puede ser la del commit más antiguo clonado, no la real.
@@ -125,6 +127,48 @@ estáticos sin instalar nada.
 - **pub.dev (US-096).** El paquete aún no se publica (`publish_to: none`);
   cuando se publique, el sitio enlazará también a la referencia de pub.dev de
   la misma versión.
+
+## Referencia de la API HTTP (US-144)
+
+**Decisión (2026-09-27):** `Referencia` → `API HTTP del SDK` se genera al
+compilar con el complemento `starlight-openapi` 0.26.2 (compatible con
+Starlight 0.42 y Astro 7) desde `packages/api/src/openapi.json`. El complemento
+representa bien las tres rutas `/sdk/*` (método y ruta, parámetros, esquemas,
+ejemplos y el ejemplo `curl`), así que no hace falta enlazar la referencia
+Scalar que el servidor publica en `/docs`.
+
+- **Una sola fuente.** `packages/api/src/sdk-openapi.ts` describe las rutas con
+  esquemas Zod (`@asteasolutions/zod-to-openapi`); `bun run openapi:generate`
+  escribe `openapi.json`. De la misma lista de errores de cada ruta salen sus
+  respuestas `401`/`404`, sus ejemplos y la tabla `Errores` de su descripción.
+  Las pruebas de `apps/server` (`sdk-openapi-contract.test.ts`) ejecutan los
+  controladores reales y comparan sus respuestas con esos esquemas y ejemplos.
+- **Verificación en CI.** `openapi:verify` (job `ci`) falla si `openapi.json`
+  no coincide con el generado o si las rutas `/sdk/*` que declara
+  `apps/server/src` (leídas con el compilador de TypeScript) y las de la
+  especificación difieren en cualquiera de los dos sentidos. Solo reconoce
+  rutas declaradas con una cadena literal (`app.get("/sdk/…")`, `app.on`,
+  `app.all`); una subaplicación montada en `/sdk` con `app.route` no se ve.
+- **Solo el contrato del SDK.** `astro.config.mjs` escribe en
+  `apps/docs/.astro/sdk-openapi.json` la especificación sin las rutas que no
+  empiezan por `/sdk/` (`sdkContract`, `src/reference/http-reference.ts`),
+  porque el complemento no filtra rutas: `GET /health` y cualquier ruta del
+  dashboard quedan fuera. `apps/docs/turbo.json` agrega `openapi.json` a las
+  entradas de `build`, para que Turborepo no reutilice un sitio compilado con
+  una especificación anterior.
+- **Credencial.** El esquema de seguridad `sdkCredential` es `http` `bearer`
+  con formato `ayni_sk_…`; ya no se declara un JWT. Los ejemplos `curl` son
+  `x-codeSamples` escritos en la especificación, porque los que genera el
+  complemento usan `Bearer <token>`. El sitio no ofrece un panel para probar
+  solicitudes.
+- **Interfaz en inglés.** El complemento no traduce sus textos (`Overview`,
+  `Authorizations`, `Responses`, `Examples`), como la interfaz de `dart doc`.
+  El contenido de la especificación está en español; la sección
+  `Autenticación` va en `info.description` y el aviso `Nota` lo agrega
+  `PageTitle.astro` en las páginas bajo `/referencia/api-http/`.
+- **zod-to-openapi 8.5.** Pierde `null` en un `$ref` con `.nullable()` y
+  genera `enum: [1]` para `z.literal([1, 3, 4])`; el esquema usa uniones
+  explícitas en esos dos casos.
 
 ## Resultado del spike (2026-09-27, US-137)
 

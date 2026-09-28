@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ayni API",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "description": "Endpoints HTTP que usa el SDK de Ayni para sincronizar workflows y modelos.\n\n## Autenticación\n\nCada solicitud lleva el secreto de una credencial del SDK en el encabezado:\n\n```http\nAuthorization: Bearer ayni_sk_…\n```\n\n- Un administrador genera la credencial en el dashboard, en Credenciales SDK de la aplicación. El secreto se muestra una sola vez.\n- La credencial solo da acceso a los recursos de su aplicación.\n- Cuando un administrador revoca o regenera la credencial, estos endpoints responden `401` con `credentialRevoked`. Revocarla no borra workflows, modelos ni versiones, ni lo que ya está instalado en los dispositivos."
   },
   "servers": [
     {
@@ -10,6 +11,282 @@
       "description": "Local development server"
     }
   ],
+  "components": {
+    "securitySchemes": {
+      "sdkCredential": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "ayni_sk_…",
+        "description": "Secreto de una credencial del SDK: una cadena opaca que empieza por `ayni_sk_`, no un JWT. El servidor no lee nada dentro del secreto; lo compara con el hash de las credenciales activas de la aplicación."
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"]
+          }
+        },
+        "required": ["status"]
+      },
+      "SdkSyncManifest": {
+        "type": "object",
+        "properties": {
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkSyncWorkflow"
+            },
+            "description": "La última versión publicada de cada workflow no archivado cuyas dependencias están disponibles."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkSyncModel"
+            },
+            "description": "Las versiones de modelo que usan los workflows de la lista."
+          }
+        },
+        "required": ["workflows", "models"]
+      },
+      "SdkSyncWorkflow": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "Identificador del workflow."
+          },
+          "workflowVersionId": {
+            "type": "string",
+            "description": "Versión publicada que el SDK descarga con `GET /sdk/workflow-versions/{id}`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Nombre del workflow en el dashboard."
+          },
+          "version": {
+            "type": "string",
+            "description": "Versión publicada, por ejemplo `1.2.0`."
+          },
+          "modelVersionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Versiones de modelo que usa esta versión; todas están en `models`."
+          }
+        },
+        "required": ["workflowId", "workflowVersionId", "name", "version", "modelVersionIds"]
+      },
+      "SdkSyncModel": {
+        "type": "object",
+        "properties": {
+          "modelVersionId": {
+            "type": "string",
+            "description": "Identificador de la versión del modelo."
+          },
+          "version": {
+            "type": "string",
+            "description": "Versión del modelo, por ejemplo `2.0.0`."
+          },
+          "sha256": {
+            "type": "string",
+            "description": "Hash SHA-256 del archivo del modelo, en hexadecimal."
+          }
+        },
+        "required": ["modelVersionId", "version", "sha256"]
+      },
+      "SdkWorkflowVersionDefinition": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkWorkflowNode"
+            }
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SdkWorkflowConnection"
+            }
+          }
+        },
+        "required": ["nodes", "connections"]
+      },
+      "SdkWorkflowNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identificador del nodo dentro del workflow."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["input.image", "model.tflite", "condition", "output"],
+            "description": "Tipo de nodo; los demás campos dependen del tipo."
+          }
+        },
+        "required": ["id", "type"],
+        "additionalProperties": {}
+      },
+      "SdkWorkflowConnection": {
+        "type": "object",
+        "properties": {
+          "sourceNodeId": {
+            "type": "string"
+          },
+          "sourcePort": {
+            "type": "string"
+          },
+          "targetNodeId": {
+            "type": "string"
+          },
+          "targetPort": {
+            "type": "string"
+          }
+        },
+        "required": ["sourceNodeId", "sourcePort", "targetNodeId", "targetPort"]
+      },
+      "SdkModelVersionManifest": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "modelVersionId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "description": "Hash SHA-256 del archivo, en hexadecimal; el SDK lo verifica."
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "description": "Tamaño del archivo en bytes."
+              },
+              "downloadUrl": {
+                "type": "string",
+                "description": "URL firmada para descargar el archivo; vence en `downloadUrlExpiresAt`."
+              },
+              "downloadUrlExpiresAt": {
+                "type": "string",
+                "description": "Vencimiento de `downloadUrl` (ISO 8601), una hora después de la solicitud."
+              },
+              "contract": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SdkModelVersionContract"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Entrada y salida del modelo, o `null` si la versión aún no tiene contrato."
+              }
+            },
+            "required": [
+              "modelVersionId",
+              "version",
+              "sha256",
+              "sizeBytes",
+              "downloadUrl",
+              "downloadUrlExpiresAt",
+              "contract"
+            ]
+          }
+        },
+        "required": ["manifest"]
+      },
+      "SdkModelVersionContract": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["image"]
+              },
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "channels": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "enum": [1]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [3]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [4]
+                  }
+                ]
+              },
+              "normalization": {
+                "type": "string",
+                "enum": ["none", "zero_to_one", "minus_one_to_one"]
+              }
+            },
+            "required": ["type", "width", "height", "channels", "normalization"]
+          },
+          "output": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["classification"]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["type", "labels"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["detection"]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scoreThreshold": {
+                    "type": "number"
+                  }
+                },
+                "required": ["type", "labels", "scoreThreshold"]
+              }
+            ]
+          }
+        },
+        "required": ["input", "output"]
+      }
+    },
+    "parameters": {}
+  },
   "paths": {
     "/health": {
       "get": {
@@ -27,27 +304,410 @@
           }
         }
       }
-    }
-  },
-  "components": {
-    "schemas": {
-      "HealthResponse": {
-        "type": "object",
-        "required": ["status"],
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": ["ok"]
+    },
+    "/sdk/sync": {
+      "post": {
+        "tags": ["Endpoints"],
+        "operationId": "sincronizar",
+        "summary": "Obtener el manifiesto de sincronización",
+        "description": "Devuelve lo que tiene publicado la aplicación de la credencial: la última versión de cada workflow no archivado y las versiones de modelo que usa. Un workflow que usa un modelo que ya no está disponible no aparece. La solicitud no lleva cuerpo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para sincronizar. | Un administrador revocó o regeneró la credencial. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl -X POST https://tu-servidor-ayni.example/sdk/sync \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manifiesto de workflows y modelos publicados de la aplicación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkSyncManifest"
+                },
+                "examples": {
+                  "manifiesto": {
+                    "summary": "Un workflow con un modelo",
+                    "value": {
+                      "workflows": [
+                        {
+                          "workflowId": "0b9f3c8e-2f4d-4c11-9a57-6f1e2d3c4b5a",
+                          "workflowVersionId": "5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d",
+                          "name": "Clasificar hojas",
+                          "version": "1.2.0",
+                          "modelVersionIds": ["c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a"]
+                        }
+                      ],
+                      "models": [
+                        {
+                          "modelVersionId": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a",
+                          "version": "2.0.0",
+                          "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para sincronizar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
+    "/sdk/workflow-versions/{workflowVersionId}": {
+      "get": {
+        "tags": ["Endpoints"],
+        "operationId": "descargar-version-de-workflow",
+        "summary": "Descargar una versión de workflow",
+        "description": "Devuelve la definición de una versión publicada: sus nodos y sus conexiones. Una versión publicada no cambia nunca.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `workflowVersionNotFound` | El workflow ya no está disponible. | La versión no existe, es de otra aplicación o su workflow está archivado. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/workflow-versions/5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Versión publicada, tal como la lista `POST /sdk/sync`.",
+              "example": "5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d"
+            },
+            "required": true,
+            "description": "Versión publicada, tal como la lista `POST /sdk/sync`.",
+            "name": "workflowVersionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Definición inmutable de la versión publicada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkWorkflowVersionDefinition"
+                },
+                "examples": {
+                  "definicion": {
+                    "summary": "Imagen, modelo y salida",
+                    "value": {
+                      "nodes": [
+                        {
+                          "id": "imagen",
+                          "type": "input.image",
+                          "outputs": {
+                            "imagen": "image"
+                          }
+                        },
+                        {
+                          "id": "modelo",
+                          "type": "model.tflite",
+                          "modelVersionId": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a",
+                          "modelName": "Hojas",
+                          "version": "2.0.0",
+                          "inputs": {
+                            "image": {
+                              "type": "image",
+                              "width": 224,
+                              "height": 224,
+                              "channels": 3,
+                              "normalization": "zero_to_one"
+                            }
+                          },
+                          "outputs": {
+                            "result": {
+                              "type": "classification",
+                              "labels": ["sana", "enferma"]
+                            }
+                          }
+                        },
+                        {
+                          "id": "salida",
+                          "type": "output",
+                          "name": "Diagnóstico",
+                          "sourceNodeId": "modelo",
+                          "sourcePort": "result",
+                          "resultType": "classification"
+                        }
+                      ],
+                      "connections": [
+                        {
+                          "sourceNodeId": "imagen",
+                          "sourcePort": "imagen",
+                          "targetNodeId": "modelo",
+                          "targetPort": "image"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["workflowVersionNotFound"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "workflowVersionNotFound": {
+                    "description": "La versión no existe, es de otra aplicación o su workflow está archivado.",
+                    "value": {
+                      "message": "El workflow ya no está disponible.",
+                      "code": "workflowVersionNotFound"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/model-versions/{modelVersionId}/manifest": {
+      "get": {
+        "tags": ["Endpoints"],
+        "operationId": "obtener-manifiesto-de-modelo",
+        "summary": "Obtener el manifiesto de descarga de un modelo",
+        "description": "Devuelve dónde descargar el archivo de una versión de modelo y cómo verificarlo. La URL de descarga vence una hora después de la solicitud; para volver a descargar, pide un manifiesto nuevo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `modelVersionNotFound` | La versión del modelo ya no está disponible. | La versión no existe o su modelo es de otra aplicación. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/model-versions/c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a/manifest \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Versión de modelo, tal como la lista `POST /sdk/sync`.",
+              "example": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a"
+            },
+            "required": true,
+            "description": "Versión de modelo, tal como la lista `POST /sdk/sync`.",
+            "name": "modelVersionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manifiesto de descarga de la versión del modelo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkModelVersionManifest"
+                },
+                "examples": {
+                  "manifiesto": {
+                    "summary": "Modelo de clasificación",
+                    "value": {
+                      "manifest": {
+                        "modelVersionId": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a",
+                        "version": "2.0.0",
+                        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                        "sizeBytes": 4194304,
+                        "downloadUrl": "https://almacenamiento.example/modelos/hojas-2.0.0.tflite?firma=…",
+                        "downloadUrlExpiresAt": "2026-09-27T15:00:00.000Z",
+                        "contract": {
+                          "input": {
+                            "type": "image",
+                            "width": 224,
+                            "height": 224,
+                            "channels": 3,
+                            "normalization": "zero_to_one"
+                          },
+                          "output": {
+                            "type": "classification",
+                            "labels": ["sana", "enferma"]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["modelVersionNotFound"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "modelVersionNotFound": {
+                    "description": "La versión no existe o su modelo es de otra aplicación.",
+                    "value": {
+                      "message": "La versión del modelo ya no está disponible.",
+                      "code": "modelVersionNotFound"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
-  }
+  },
+  "webhooks": {}
 }

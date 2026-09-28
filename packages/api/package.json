@@ -11,6 +11,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "openapi:generate": "bun src/generate-openapi.ts && biome format --write src/openapi.json",
     "openapi:verify": "bun src/verify-openapi.ts",
     "test": "vitest run --passWithNoTests"
   },

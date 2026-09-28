@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { breadcrumbTrail, sidebar, sidebarGroups } from "./navigation";
+import { breadcrumbTrail, httpReferenceSidebarGroup, sidebar, sidebarGroups } from "./navigation";
 
 describe("sidebar", () => {
   it("lists the five groups of the research in order", () => {
@@ -30,6 +30,12 @@ describe("sidebar", () => {
     expect(
       existsSync(join(import.meta.dirname, "../public/referencia/api-dart/ayni_sdk/index.html")),
     ).toBe(true);
+  });
+
+  it("places the HTTP reference that starlight-openapi generates in Referencia, after the Dart one", () => {
+    const reference = sidebar.find((group) => group.label === "Referencia");
+
+    expect(reference?.items.at(-1)).toBe(httpReferenceSidebarGroup);
   });
 
   it("adds links only to Referencia", () => {

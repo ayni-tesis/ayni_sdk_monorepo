@@ -1,3 +1,5 @@
+import { createOpenAPISidebarGroup } from "starlight-openapi";
+
 /**
  * The five sidebar groups from `docs/investigacion/documentacion-sdk.md`
  * (section 4). Each group lists every page in its content directory, so a new
@@ -12,14 +14,26 @@ export const sidebarGroups = [
 ] as const;
 
 /**
+ * Where `starlight-openapi` puts the pages it generates from the OpenAPI
+ * document (US-144): its route middleware swaps this placeholder for them.
+ */
+export const httpReferenceSidebarGroup = createOpenAPISidebarGroup();
+
+/**
  * Pages that are not in a content directory, by group label. The Dart
  * reference is `dart doc` output served from `public/` (US-143), so it is
  * linked by hand to the index of the `ayni_sdk` library.
  */
 const extraLinks: Partial<
-  Record<(typeof sidebarGroups)[number]["label"], { label: string; link: string }[]>
+  Record<
+    (typeof sidebarGroups)[number]["label"],
+    ({ label: string; link: string } | typeof httpReferenceSidebarGroup)[]
+  >
 > = {
-  Referencia: [{ label: "API del SDK (Dart)", link: "/referencia/api-dart/ayni_sdk/" }],
+  Referencia: [
+    { label: "API del SDK (Dart)", link: "/referencia/api-dart/ayni_sdk/" },
+    httpReferenceSidebarGroup,
+  ],
 };
 
 export const sidebar = sidebarGroups.map(({ label, directory }) => ({
