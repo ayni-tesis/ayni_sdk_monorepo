@@ -656,6 +656,16 @@ class AyniSdk {
   /// }
   /// ```
   Future<WorkflowResult> run(String workflowId, Uint8List input) async {
+    if (platform.isUnsupportedAndroid) {
+      throw UnsupportedError(
+        'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+      );
+    }
+    if (!platform.isSupported) {
+      throw UnsupportedError(
+        'Esta plataforma no es compatible con ayni_sdk.',
+      );
+    }
     try {
       final inventoryFile = File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',

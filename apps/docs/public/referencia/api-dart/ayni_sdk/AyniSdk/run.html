@@ -97,6 +97,16 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
   <pre class="language-dart"><code class="language-dart">Future&lt;WorkflowResult&gt; run(String workflowId, Uint8List input) async {
+  if (platform.isUnsupportedAndroid) {
+    throw UnsupportedError(
+      &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
+    );
+  }
+  if (!platform.isSupported) {
+    throw UnsupportedError(
+      &#39;Esta plataforma no es compatible con ayni_sdk.&#39;,
+    );
+  }
   try {
     final inventoryFile = File(
       &#39;${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json&#39;,

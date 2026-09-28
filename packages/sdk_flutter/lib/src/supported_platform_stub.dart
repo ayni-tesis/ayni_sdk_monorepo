@@ -33,7 +33,7 @@ void resetPlatformForTesting() {
 /// Whether the current device is running an unsupported Android version (< 26).
 bool get isUnsupportedAndroid {
   if (_testIsAndroid == true) {
-    if (_testAndroidSdkVersion != null &&
+    if (_testAndroidSdkVersion == null ||
         _testAndroidSdkVersion! < minimumAndroidSdkVersion) {
       return true;
     }
@@ -45,7 +45,7 @@ bool get isUnsupportedAndroid {
 bool get isSupported {
   if (_testIsWeb == true) return false;
   if (_testIsAndroid == true) {
-    if (_testAndroidSdkVersion != null &&
+    if (_testAndroidSdkVersion == null ||
         _testAndroidSdkVersion! < minimumAndroidSdkVersion) {
       return false;
     }

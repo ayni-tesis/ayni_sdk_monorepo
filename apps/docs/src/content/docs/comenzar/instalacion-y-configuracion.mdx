@@ -190,7 +190,7 @@ del workflow.
 
 Requisitos de Android en `android/app/build.gradle`:
 
-- **Versión mínima admitida:** Android 8.0 (API 26) o posterior. Configura `minSdkVersion 26` (o `minSdk = 26`).
+- **Versión mínima admitida:** Android 8.0 (API 26) o posterior. Configurar `minSdkVersion 26` (o `minSdk = 26`) es una decisión de tu aplicación: si tu app no exige `minSdkVersion 26` a nivel global para admitir dispositivos antiguos en otras funciones, la inicialización del SDK se encarga de rechazar la ejecución de modelos en ellos; si decides excluir directamente esos dispositivos con `minSdkVersion 26`, el sistema operativo impedirá su instalación y `unsupportedPlatform` no será alcanzable en instalaciones normales.
 - **Versión de compilación:** Compila con `compileSdkVersion 36` (o `compileSdk = 36`), requerida por `tflite_flutter`.
 
 Al compilar la app para una versión Android compatible, el runtime nativo queda disponible para el SDK: `Runtime Android listo.`.

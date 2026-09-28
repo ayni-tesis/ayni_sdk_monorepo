@@ -2001,6 +2001,81 @@ void main() {
       },
     );
 
+    test(
+      'rejects Android with unreadable or null SDK version as unsupported (US-092)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isAndroid: true,
+          androidSdkVersion: null,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          result.message,
+          equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+        );
+        expect(result.isSuccess, isFalse);
+      },
+    );
+
+    test(
+      'AyniSdk.run rejects unsupported Android versions before model inference (US-092)',
+      () async {
+        final directSdk = sdk();
+
+        AyniSdk.setPlatformForTesting(
+          isAndroid: true,
+          androidSdkVersion: 25,
+        );
+
+        expect(
+          () => directSdk.run('workflow-1', Uint8List(0)),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (e) => e.message,
+              'message',
+              equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'AyniSdk.run rejects non-mobile unsupported platform before execution',
+      () async {
+        final directSdk = sdk();
+
+        AyniSdk.setPlatformForTesting(
+          isAndroid: false,
+          isIos: false,
+          isWeb: true,
+        );
+
+        expect(
+          () => directSdk.run('workflow-1', Uint8List(0)),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (e) => e.message,
+              'message',
+              equals('Esta plataforma no es compatible con ayni_sdk.'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('does not initiate network operations during initialization', () {
       final config = AyniConfig(
         serverUrl: Uri.parse(

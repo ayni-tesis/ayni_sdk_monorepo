@@ -72,12 +72,16 @@ succeeded.</p>
 If initialization fails, no operative SDK instance is retained.
 On an unsupported platform, it returns
 <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a> with
-<code>Esta plataforma no es compatible con ayni_sdk.</code> before checking the
-configuration. On a supported platform, an invalid configuration
-(<a href="../../ayni_sdk/AyniConfig/isValid.html">AyniConfig.isValid</a> is <code>false</code>) returns
-<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a>; an unexpected failure
-returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.error</a>. Both results have a <code>null</code>
-<a href="../../ayni_sdk/AyniInitializationResult/sdk.html">AyniInitializationResult.sdk</a> and leave <a href="../../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a> <code>false</code>.</p>
+<code>Esta plataforma no es compatible con ayni_sdk.</code>. On an Android device
+that does not meet the minimum version requirement (API 26), it returns
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a> with
+<code>Este dispositivo Android no cumple el requisito mínimo del SDK.</code>.
+In either unsupported case, it returns before checking the configuration.
+On a supported platform, an invalid configuration (<a href="../../ayni_sdk/AyniConfig/isValid.html">AyniConfig.isValid</a>
+is <code>false</code>) returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a>; an
+unexpected failure returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.error</a>. In all failure
+cases, <a href="../../ayni_sdk/AyniInitializationResult/sdk.html">AyniInitializationResult.sdk</a> is <code>null</code> and <a href="../../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a>
+remains <code>false</code>.</p>
 <p>It never throws.</p>
 <pre class="language-dart"><code class="language-dart">final result = AyniSdk.initialize(
   AyniConfig(
@@ -100,6 +104,13 @@ return AyniSdk.instance;
   <h2><span>Implementation</span></h2>
   <pre class="language-dart"><code class="language-dart">static AyniInitializationResult initialize(AyniConfig config) {
   try {
+    if (platform.isUnsupportedAndroid) {
+      _instance = null;
+      return const AyniInitializationResult(
+        status: InitializationStatus.unsupportedPlatform,
+        message: &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
+      );
+    }
     if (!platform.isSupported) {
       _instance = null;
       return const AyniInitializationResult(

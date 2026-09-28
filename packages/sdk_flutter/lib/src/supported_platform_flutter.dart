@@ -72,7 +72,7 @@ bool get isUnsupportedAndroid {
   if (_isWeb) return false;
   if (!_isAndroid) return false;
   final sdkInt = _readAndroidSdkVersion();
-  if (sdkInt != null && sdkInt < minimumAndroidSdkVersion) {
+  if (sdkInt == null || sdkInt < minimumAndroidSdkVersion) {
     return true;
   }
   return false;

@@ -208,10 +208,7 @@ abstract final class PackageValidator {
     }
 
     // Verify required runtime dependencies for Android (US-092)
-    final hasTfliteFlutter = RegExp(
-      r'^\s*tflite_flutter\s*:',
-      multiLine: true,
-    ).hasMatch(pubspecContent);
+    final hasTfliteFlutter = _hasDependency(pubspecContent, 'tflite_flutter');
     if (!hasTfliteFlutter) {
       return PackageValidationResult.failure(
         'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
@@ -438,5 +435,34 @@ abstract final class PackageValidator {
     }
 
     return buffer.toString();
+  }
+
+  /// Parses [pubspecContent] and checks whether [dependencyName] is declared
+  /// specifically as a key within the top-level `dependencies:` section.
+  static bool _hasDependency(String pubspecContent, String dependencyName) {
+    final lines = pubspecContent.split('\n');
+    String? currentSection;
+    for (final rawLine in lines) {
+      final commentIndex = rawLine.indexOf('#');
+      final line = (commentIndex >= 0 ? rawLine.substring(0, commentIndex) : rawLine).trimRight();
+      if (line.trim().isEmpty) continue;
+
+      if (!line.startsWith(' ') && !line.startsWith('\t')) {
+        final colonIndex = line.indexOf(':');
+        if (colonIndex != -1) {
+          currentSection = line.substring(0, colonIndex).trim();
+        } else {
+          currentSection = null;
+        }
+        continue;
+      }
+
+      if (currentSection == 'dependencies') {
+        final trimmed = line.trim();
+        final match = RegExp('^${RegExp.escape(dependencyName)}(?:\\s*:|\$)').hasMatch(trimmed);
+        if (match) return true;
+      }
+    }
+    return false;
   }
 }

@@ -251,6 +251,49 @@ version: 0.1.0
         ),
       );
     });
+
+    test('rejects pubspec with tflite_flutter only under dev_dependencies', () {
+      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
+name: ayni_sdk
+description: Test SDK package
+version: 0.1.0
+dependencies:
+  crypto: ^3.0.6
+dev_dependencies:
+  tflite_flutter: ^0.12.1
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(result.message, equals(_appConfigRejectionMessage));
+      expect(
+        result.detail,
+        equals(
+          'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+        ),
+      );
+    });
+
+    test('rejects pubspec with tflite_flutter in comments only', () {
+      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
+name: ayni_sdk
+description: Test SDK package
+version: 0.1.0
+dependencies:
+  crypto: ^3.0.6
+  # tflite_flutter: ^0.12.1
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(result.message, equals(_appConfigRejectionMessage));
+      expect(
+        result.detail,
+        equals(
+          'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+        ),
+      );
+    });
   });
 
   group('PackageValidator forbidden app config files', () {
