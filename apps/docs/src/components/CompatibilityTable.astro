@@ -1,0 +1,53 @@
+---
+/**
+ * The `Compatibilidad` table: for each version in `CHANGELOG.md`, the server
+ * and workflow schema it needs and the node types it accepts (US-148).
+ */
+import { noReleasesMessage } from "../resources/changelog";
+import { compatibilityRows, nodeTypeLink } from "../resources/compatibility";
+import { releases } from "../resources/releases";
+
+const rows = compatibilityRows(await releases());
+---
+
+{
+  rows.length === 0 ? (
+    <p>{noReleasesMessage}</p>
+  ) : (
+    <table>
+      <thead>
+        <tr>
+          <th>Versión del SDK</th>
+          <th>Versión mínima del servidor</th>
+          <th>Versión del esquema de workflow</th>
+          <th>Tipos de nodo admitidos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr>
+            <td>
+              <a href={`#v${row.sdk}`}>
+                <code>{row.sdk}</code>
+              </a>
+            </td>
+            <td>
+              <code>{row.minimumServer}</code>
+            </td>
+            <td>{row.workflowSchema === null ? "Sin versión" : <code>{row.workflowSchema}</code>}</td>
+            <td>
+              {row.nodeTypes.map((type, index) => (
+                <>
+                  {index > 0 && ", "}
+                  <a href={nodeTypeLink(type)}>
+                    <code>{type}</code>
+                  </a>
+                </>
+              ))}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
