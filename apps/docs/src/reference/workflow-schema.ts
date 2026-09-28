@@ -1,6 +1,7 @@
 import ts from "typescript";
 import serverSource from "../../../../apps/server/src/workflow-store.ts?raw";
 import dartSource from "../../../../packages/sdk_flutter/lib/src/workflow_definition_validator.dart?raw";
+import { dartEnumValues } from "../sdk/dart-enum";
 
 // The sources `Referencia → Esquema de workflow` is checked against (US-145).
 // Only tests import this module, so the site's build never bundles the
@@ -60,15 +61,5 @@ export function serverNodeFields(source: string): Record<string, string[]> {
  * `WorkflowValidationStatus` value except `valid`, in declaration order.
  */
 export function validationRejections(source: string): string[] {
-  const match = /enum WorkflowValidationStatus \{([\s\S]*?)\n\}/.exec(source);
-  if (!match?.[1]) throw new Error("The validator has no WorkflowValidationStatus enum.");
-  const values = match[1]
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("//"))
-    .join("")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return values.filter((value) => value !== "valid");
+  return dartEnumValues(source, "WorkflowValidationStatus").filter((value) => value !== "valid");
 }

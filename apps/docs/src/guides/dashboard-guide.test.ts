@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { dashboardTexts, quotedTexts } from "./dashboard-texts";
 
 const docsRoot = join(import.meta.dirname, "..", "content", "docs");
 const page = "guias/preparar-una-aplicacion-en-el-dashboard.mdx";
@@ -22,52 +22,6 @@ function steps(): { heading: string; text: string }[] {
     .split(/\n(?=## )/)
     .filter((part) => /^## \d+\. /.test(part))
     .map((part) => ({ heading: part.slice(3, part.indexOf("\n")), text: part }));
-}
-
-const repositoryRoot = join(import.meta.dirname, "..", "..", "..", "..");
-// The dashboard's own texts, and the server messages it shows as they come.
-const dashboardSources = ["apps/web/src", "apps/server/src", "packages/api/src"];
-
-/** `text` without surrounding whitespace, each inner run of it as one space. */
-function collapse(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-/**
- * Every whole text the dashboard's source can show: each string literal, each
- * JSX text, and each fixed part of a template literal around its `${…}`. A
- * quote must equal one of them, so part of a longer label never passes.
- */
-function dashboardTexts(): Set<string> {
-  const texts = new Set<string>();
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isStringLiteral(node) ||
-      ts.isNoSubstitutionTemplateLiteral(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node) ||
-      ts.isJsxText(node)
-    )
-      texts.add(collapse(node.text));
-    ts.forEachChild(node, visit);
-  };
-  for (const directory of dashboardSources) {
-    const files = readdirSync(join(repositoryRoot, directory), {
-      recursive: true,
-      encoding: "utf8",
-    }).filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file));
-    for (const file of files) {
-      const source = readFileSync(join(repositoryRoot, directory, file), "utf8");
-      visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX));
-    }
-  }
-  return texts;
-}
-
-/** Every text the guide quotes from the dashboard between « and ». */
-function quotedTexts(): string[] {
-  return [...read(page).matchAll(/«([^»]+)»/g)].map(([, text]) => collapse(text));
 }
 
 describe("Preparar una aplicación en el dashboard (US-142)", () => {
@@ -153,7 +107,7 @@ describe("Preparar una aplicación en el dashboard (US-142)", () => {
 
   it("quotes only texts the dashboard shows", () => {
     const texts = dashboardTexts();
-    const quoted = quotedTexts();
+    const quoted = quotedTexts(read(page));
 
     expect(quoted.length).toBeGreaterThan(0);
     expect(quoted.filter((text) => !texts.has(text))).toEqual([]);
