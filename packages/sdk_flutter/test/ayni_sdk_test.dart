@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:ayni_sdk/ayni_sdk.dart';
+import 'package:ayni_sdk/src/model_artifact_installer.dart';
+import 'package:ayni_sdk/src/workflow_version_downloader.dart';
 import 'package:test/test.dart';
 
 import '../lib/src/sdk_internal.dart';
