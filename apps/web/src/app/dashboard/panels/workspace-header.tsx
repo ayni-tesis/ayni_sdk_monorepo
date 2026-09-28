@@ -1,6 +1,7 @@
 "use client";
 
-import { IconChevronDown } from "@tabler/icons-react";
+import { IconBook, IconChevronDown, IconHelpCircle } from "@tabler/icons-react";
+import { DocsLink } from "@/components/docs-link";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -9,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -119,7 +121,27 @@ export function WorkspaceHeader({
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      <span className="shrink-0 truncate text-muted-foreground text-sm">{userName}</span>
+      <div className="flex shrink-0 items-center gap-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="sm">
+                <IconHelpCircle />
+                Ayuda
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <DocsLink page="home">
+                <IconBook />
+                Documentación
+              </DocsLink>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="truncate text-muted-foreground text-sm">{userName}</span>
+      </div>
     </header>
   );
 }

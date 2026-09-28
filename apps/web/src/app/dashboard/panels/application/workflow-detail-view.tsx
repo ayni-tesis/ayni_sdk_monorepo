@@ -13,6 +13,7 @@ import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DocsLink } from "@/components/docs-link";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -1496,24 +1497,27 @@ export function WorkflowDetailView({
           {versions.length === 0 ? (
             <p className="text-muted-foreground text-sm">{NO_VERSIONS_MESSAGE}</p>
           ) : (
-            <table aria-label="Versiones publicadas" className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Versión</th>
-                  <th className="pb-2 font-medium">Publicada</th>
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((version) => (
-                  <tr key={version.id} className="border-b last:border-0">
-                    <td className="py-2.5 font-mono">{version.version}</td>
-                    <td className="py-2.5 text-muted-foreground">
-                      {formatLongDateEs(version.createdAt)}
-                    </td>
+            <div className="space-y-3">
+              <DocsLink page="workflowSchema">Ver el esquema de workflow</DocsLink>
+              <table aria-label="Versiones publicadas" className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 font-medium">Versión</th>
+                    <th className="pb-2 font-medium">Publicada</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {versions.map((version) => (
+                    <tr key={version.id} className="border-b last:border-0">
+                      <td className="py-2.5 font-mono">{version.version}</td>
+                      <td className="py-2.5 text-muted-foreground">
+                        {formatLongDateEs(version.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </TabsContent>
       </Tabs>

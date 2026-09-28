@@ -4332,6 +4332,31 @@ describe("ApplicationDetailPanel", () => {
       ]);
     });
 
+    it("links a published workflow to the workflow schema reference for every role", async () => {
+      mockDetail({ ...workflowDetail, versions: [publishedVersion] });
+      const user = userEvent.setup();
+
+      render(workflowDetailPanel({ canManage: false }));
+      await user.click(await screen.findByRole("tab", { name: "Versiones publicadas" }));
+
+      const link = screen.getByRole("link", {
+        name: "Ver el esquema de workflow (se abre en una pestaña nueva)",
+      });
+      expect(link.getAttribute("href")).toMatch(/\/referencia\/esquema-de-workflow\/$/);
+      expect(link.getAttribute("target")).toBe("_blank");
+    });
+
+    it("does not link to the workflow schema before a version is published", async () => {
+      mockDetail();
+      const user = userEvent.setup();
+
+      render(workflowDetailPanel());
+      await user.click(await screen.findByRole("tab", { name: "Versiones publicadas" }));
+
+      expect(screen.getByText("Aún no hay versiones publicadas.")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: /ver el esquema de workflow/i })).toBeNull();
+    });
+
     it("rejects an unpublishable draft and shows its validation errors", async () => {
       mockDetail();
       client.post.mockRejectedValueOnce(

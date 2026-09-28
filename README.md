@@ -52,6 +52,8 @@ The SDK documentation site (Astro + Starlight) runs on port 3002. Search only wo
 bun run --filter docs dev
 ```
 
+The landing and the dashboard link to it through `NEXT_PUBLIC_DOCS_URL` (default `http://localhost:3002`). Set it to the published site's URL when deploying `apps/web`. The linked pages and anchors live in `apps/web/src/lib/docs-pages.ts`, and the docs build fails when one of them no longer exists.
+
 ### flutter
 
 Run independently from the project root:

@@ -4,6 +4,7 @@ import { IconKey, IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DocsLink } from "@/components/docs-link";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
@@ -32,6 +33,10 @@ export function credentialsErrorMessage(error: unknown) {
 
 export function formatCredentialDate(value: string) {
   return formatLongDateEs(value);
+}
+
+function CredentialQuickStartLink() {
+  return <DocsLink page="quickstartCredential">Cómo usar esta credencial en el SDK</DocsLink>;
 }
 
 export type GenerateCredentialDialogProps = {
@@ -91,6 +96,7 @@ export function GenerateCredentialDialog({
                 title="Copiar credencial"
               />
             </div>
+            <CredentialQuickStartLink />
             <DialogFooter>
               <Button
                 type="button"
@@ -240,6 +246,7 @@ export function RegenerateCredentialDialog({
                 title="Copiar credencial"
               />
             </div>
+            <CredentialQuickStartLink />
             <DialogFooter>
               <Button
                 type="button"

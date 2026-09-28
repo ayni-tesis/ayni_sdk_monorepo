@@ -55,7 +55,8 @@ Scenario: Consulta sin resultados
 
 - El diálogo tiene un nombre accesible y el campo una etiqueta asociada.
 - Ctrl/Cmd+K y el botón abren el diálogo; el foco llega al campo.
-- La consulta filtra únicamente registro, dashboard y sección de workflow.
+- La consulta filtra únicamente registro, dashboard y sección de workflow, más
+  la documentación que añade US-149.
 - Seleccionar un destino navega a la ruta o ancla correcta y cierra el diálogo.
 - Cerrar reinicia la consulta; Escape está disponible mediante el comportamiento modal nativo.
 - Todos los textos visibles y accesibles están en español.

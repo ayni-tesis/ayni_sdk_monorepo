@@ -2,6 +2,7 @@
 
 import { IconCirclePlus, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
+import { DocsLink } from "@/components/docs-link";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -137,6 +138,7 @@ export function ApplicationsPanel({
           <div className="applications-empty">
             <h2>Aún no hay aplicaciones en este workspace.</h2>
             {canManage && <Button onClick={() => setDialogOpen(true)}>Crear aplicación</Button>}
+            <DocsLink page="prepareApplication">Guía: preparar una aplicación</DocsLink>
           </div>
         ) : (
           <ul>
