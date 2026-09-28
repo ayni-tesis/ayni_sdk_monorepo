@@ -2076,6 +2076,113 @@ void main() {
       },
     );
 
+    test(
+      'rejects iOS devices below minimum required version iOS 11 (US-093)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: 10,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          result.message,
+          equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+      },
+    );
+
+    test(
+      'accepts compatible iOS version (iOS 11+) and initializes successfully (US-093)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: 11,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(result.status, equals(InitializationStatus.ready));
+        expect(result.message, equals('SDK listo.'));
+        expect(result.isSuccess, isTrue);
+        expect(result.sdk, isNotNull);
+        expect(AyniSdk.isInitialized, isTrue);
+        expect(AyniSdk.instance, isNotNull);
+      },
+    );
+
+    test(
+      'rejects iOS with unreadable or null version as unsupported (US-093)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: null,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          result.message,
+          equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
+        );
+        expect(result.isSuccess, isFalse);
+      },
+    );
+
+    test(
+      'AyniSdk.run rejects unsupported iOS versions before model inference (US-093)',
+      () async {
+        final directSdk = sdk();
+
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: 10,
+        );
+
+        expect(
+          () => directSdk.run('workflow-1', Uint8List(0)),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (e) => e.message,
+              'message',
+              equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('does not initiate network operations during initialization', () {
       final config = AyniConfig(
         serverUrl: Uri.parse(

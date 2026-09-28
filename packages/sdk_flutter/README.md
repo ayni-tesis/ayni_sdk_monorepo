@@ -103,4 +103,14 @@ El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite
 - Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API < 26), `AyniSdk.initialize` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` antes de intentar cargar cualquier modelo.
 - La configuración no requiere modificar el código del workflow.
 
+### Configuración iOS
+
+El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en iOS a través de `tflite_flutter` y CocoaPods (`TensorFlowLiteSwift`).
+
+- Configura iOS 11.0 o posterior (`platform :ios, '11.0'`) en `ios/Podfile`.
+- La compilación correcta indica `Runtime iOS listo.`.
+- Si la app se ejecuta en un dispositivo iOS con una versión inferior al mínimo admitido (< 11.0), `AyniSdk.initialize` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo iOS no cumple el requisito mínimo del SDK.` antes de intentar cargar cualquier modelo.
+- Si se invoca la ejecución directa (`AyniSdk.run`) en un dispositivo iOS no soportado (< 11.0), se rechaza con `UnsupportedError` con el mensaje `Este dispositivo iOS no cumple el requisito mínimo del SDK.` antes de iniciar la ejecución o inferencia.
+- La configuración no requiere modificar el código del workflow (los workflows no requieren modificaciones).
+
 `AyniSdk.initialize` rechaza otras plataformas con `InitializationStatus.unsupportedPlatform` y el mensaje `Esta plataforma no es compatible con ayni_sdk.`. El SDK no carga un modelo en esa situación.

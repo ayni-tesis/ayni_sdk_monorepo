@@ -19,11 +19,11 @@ resultado de la validación de la configuración. No lanza excepciones.
 | `ready` | La configuración es válida y el SDK está listo para sincronizar y ejecutar workflows. | `SDK listo.` |
 | `incompleteConfiguration` | Falta un dato obligatorio o la configuración no es válida, por ejemplo una `serverUrl` que no usa `https`. | `Revisa la configuración del SDK antes de continuar.` |
 | `error` | Ocurrió un error inesperado al inicializar el SDK. | `Revisa la configuración del SDK antes de continuar.` |
-| `unsupportedPlatform` | La app no se ejecuta en un móvil compatible (Android API 26+ o iOS), o el dispositivo Android tiene una versión inferior a API 26. El SDK no revisa la configuración ni ejecuta modelos. | `Esta plataforma no es compatible con ayni_sdk.` |
+| `unsupportedPlatform` | La app no se ejecuta en un móvil compatible (Android API 26+ o iOS 11+), o el dispositivo Android o iOS tiene una versión inferior a la mínima requerida. El SDK no revisa la configuración ni ejecuta modelos. | `Esta plataforma no es compatible con ayni_sdk.` |
 
 El resultado nunca muestra la credencial en registros, mensajes ni en su método
 `toString()`. Si la inicialización falla, el SDK no queda en un estado
-parcialmente operativo. En un dispositivo Android con una versión inferior a la mínima requerida (API 26), `unsupportedPlatform` devuelve el mensaje específico `Este dispositivo Android no cumple el requisito mínimo del SDK.`, además del mensaje genérico existente (`Esta plataforma no es compatible con ayni_sdk.`) en otras plataformas no admitidas, y no ejecuta inferencias.
+parcialmente operativo. En un dispositivo Android con una versión inferior a la mínima requerida (API 26), `unsupportedPlatform` devuelve el mensaje específico `Este dispositivo Android no cumple el requisito mínimo del SDK.`, y en un dispositivo iOS con una versión inferior a iOS 11.0 devuelve el mensaje específico `Este dispositivo iOS no cumple el requisito mínimo del SDK.`, además del mensaje genérico existente (`Esta plataforma no es compatible con ayni_sdk.`) en otras plataformas no admitidas, y no ejecuta inferencias.
 
 ## Sincronización
 

@@ -443,15 +443,19 @@ class AyniSdk {
     platform.resetPlatformForTesting();
   }
 
+  static const Object _unsetPlatformOverride = Object();
+
   /// Sets platform configuration overrides for testing.
   static void setPlatformForTesting({
     int? androidSdkVersion,
+    Object? iosMajorVersion = _unsetPlatformOverride,
     bool? isAndroid,
     bool? isIos,
     bool? isWeb,
   }) {
     platform.setPlatformOverrideForTesting(
       androidSdkVersion: androidSdkVersion,
+      iosMajorVersion: iosMajorVersion,
       isAndroid: isAndroid,
       isIos: isIos,
       isWeb: isWeb,
@@ -472,7 +476,10 @@ class AyniSdk {
   /// `Esta plataforma no es compatible con ayni_sdk.`. On an Android device
   /// that does not meet the minimum version requirement (API 26), it returns
   /// [InitializationStatus.unsupportedPlatform] with
-  /// `Este dispositivo Android no cumple el requisito mínimo del SDK.`.
+  /// `Este dispositivo Android no cumple el requisito mínimo del SDK.`. On an
+  /// iOS device that does not meet the minimum version requirement (iOS 11.0),
+  /// it returns [InitializationStatus.unsupportedPlatform] with
+  /// `Este dispositivo iOS no cumple el requisito mínimo del SDK.`.
   /// In either unsupported case, it returns before checking the configuration.
   /// On a supported platform, an invalid configuration ([AyniConfig.isValid]
   /// is `false`) returns [InitializationStatus.incompleteConfiguration]; an
@@ -503,6 +510,13 @@ class AyniSdk {
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
           message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+        );
+      }
+      if (platform.isUnsupportedIos) {
+        _instance = null;
+        return const AyniInitializationResult(
+          status: InitializationStatus.unsupportedPlatform,
+          message: 'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
         );
       }
       if (!platform.isSupported) {
@@ -633,7 +647,8 @@ class AyniSdk {
   /// value of each output node the workflow reached.
   ///
   /// It throws an [UnsupportedError] on unsupported platforms, including
-  /// Android devices below API 26, before workflow validation or inference.
+  /// Android devices below API 26 or iOS devices below iOS 11.0, before
+  /// workflow validation or inference.
   ///
   /// It throws a [WorkflowError] whose [WorkflowError.category] says why the
   /// workflow could not run; see [WorkflowErrorCategory] for every case.
@@ -664,6 +679,11 @@ class AyniSdk {
     if (platform.isUnsupportedAndroid) {
       throw UnsupportedError(
         'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+      );
+    }
+    if (platform.isUnsupportedIos) {
+      throw UnsupportedError(
+        'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
       );
     }
     if (!platform.isSupported) {

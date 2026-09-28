@@ -75,7 +75,10 @@ On an unsupported platform, it returns
 <code>Esta plataforma no es compatible con ayni_sdk.</code>. On an Android device
 that does not meet the minimum version requirement (API 26), it returns
 <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a> with
-<code>Este dispositivo Android no cumple el requisito mínimo del SDK.</code>.
+<code>Este dispositivo Android no cumple el requisito mínimo del SDK.</code>. On an
+iOS device that does not meet the minimum version requirement (iOS 11.0),
+it returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a> with
+<code>Este dispositivo iOS no cumple el requisito mínimo del SDK.</code>.
 In either unsupported case, it returns before checking the configuration.
 On a supported platform, an invalid configuration (<a href="../../ayni_sdk/AyniConfig/isValid.html">AyniConfig.isValid</a>
 is <code>false</code>) returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a>; an
@@ -109,6 +112,13 @@ return AyniSdk.instance;
       return const AyniInitializationResult(
         status: InitializationStatus.unsupportedPlatform,
         message: &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
+      );
+    }
+    if (platform.isUnsupportedIos) {
+      _instance = null;
+      return const AyniInitializationResult(
+        status: InitializationStatus.unsupportedPlatform,
+        message: &#39;Este dispositivo iOS no cumple el requisito mínimo del SDK.&#39;,
       );
     }
     if (!platform.isSupported) {
