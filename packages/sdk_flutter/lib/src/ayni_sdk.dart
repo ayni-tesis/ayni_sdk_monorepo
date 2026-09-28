@@ -342,8 +342,12 @@ class AyniInitializationResult {
 
   /// Human-readable message describing the initialization outcome.
   ///
-  /// It is `SDK listo.` when [status] is [InitializationStatus.ready], and
-  /// `Revisa la configuración del SDK antes de continuar.` otherwise.
+  /// It is `SDK listo.` for [InitializationStatus.ready],
+  /// `Revisa la configuración del SDK antes de continuar.` for
+  /// [InitializationStatus.incompleteConfiguration] and
+  /// [InitializationStatus.error], and
+  /// `Esta plataforma no es compatible con ayni_sdk.` for
+  /// [InitializationStatus.unsupportedPlatform].
   final String message;
 
   /// Whether initialization was successful and the SDK is ready for use.
