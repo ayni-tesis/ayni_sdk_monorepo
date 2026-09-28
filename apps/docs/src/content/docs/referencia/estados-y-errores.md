@@ -29,9 +29,10 @@ parcialmente operativo.
 
 Ante fallos de red, del servidor o del almacenamiento, `sync()` no lanza una
 excepción: devuelve un `SyncResult` con un estado general (`status`) y el
-resultado de cada recurso revisado (`resources`). Sea cual sea el estado, las
-versiones que ya estaban instaladas se mantienen y `run()` las sigue usando sin
-conexión.
+resultado de cada recurso revisado (`resources`). Sea cual sea el estado, un
+recurso cuya actualización falla conserva la versión que ya estaba instalada, y
+`run()` la sigue usando sin conexión. Un recurso que se actualizó (`updated`)
+pasa a usar la versión nueva, aunque el estado general sea `error`.
 
 ## Estado general
 

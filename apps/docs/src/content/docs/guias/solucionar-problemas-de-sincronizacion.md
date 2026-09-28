@@ -5,13 +5,14 @@ sidebar:
   order: 2
 ---
 
-`sync()` no lanza excepciones: cada problema llega a la app como un
-`SyncResult`. Busca abajo el síntoma que ve tu app; cada entrada da sus causas
-probables y cómo resolverlo. Los estados y los textos exactos de `message` están
-en [Estados y errores](/referencia/estados-y-errores/).
+Ante fallos de red, del servidor o del almacenamiento, `sync()` no lanza
+excepciones: el problema llega a la app como un `SyncResult`. Busca abajo el
+síntoma que ve tu app; cada entrada da sus causas probables y cómo resolverlo.
+Los estados y los textos exactos de `message` están en
+[Estados y errores](/referencia/estados-y-errores/).
 
-Mientras tanto, la app sigue funcionando: las versiones que ya estaban
-instaladas se mantienen y `run()` las usa sin conexión.
+Mientras tanto, la app sigue funcionando: un workflow cuya actualización falla
+conserva la versión instalada, y `run()` la usa sin conexión.
 
 ## `sync()` devuelve `error` en cada intento
 
@@ -107,6 +108,11 @@ versión anterior.`
 5. Si sigue en `installationFailed`, comprueba que `storageDirectory` sea un
    directorio propio de la app con permisos de escritura y que el dispositivo
    tenga espacio libre.
+6. Si sigue en `invalidRemoteResource`, reintentar no lo resuelve. Si cambiaste
+   el archivo de un modelo, súbelo como una versión nueva del modelo, como en
+   [Preparar una aplicación en el dashboard](/guias/preparar-una-aplicacion-en-el-dashboard/),
+   y publica una versión del workflow que la use. Si no, repórtalo como se
+   explica al final de esta página.
 
 ## `sync()` devuelve `upToDate`, pero no llega la versión nueva
 
