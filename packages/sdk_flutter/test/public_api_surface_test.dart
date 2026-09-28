@@ -40,10 +40,11 @@ String stripComments(String source) {
 
 Map<String, Set<String>> exportedSymbols(String barrelSource) {
   final source = stripComments(barrelSource);
-  // Dart accepts single- or double-quoted URIs; both must be recognized so a
-  // leaking export cannot hide behind the other quote style.
+  // Dart accepts single- or double-quoted URIs, plain or raw (`r'…'`, the
+  // only raw prefix Dart allows); every form must be recognized so a leaking
+  // export cannot hide behind a quote or raw-string style.
   final pattern = RegExp(
-    r'''export\s+(['"])([^'"]+)\1\s*([^;]*);''',
+    r'''export\s+r?(['"])([^'"]+)\1\s*([^;]*);''',
     multiLine: true,
   );
   final exports = <String, Set<String>>{};
@@ -127,25 +128,37 @@ void main() {
       );
     });
 
-    test('an extra export written with double quotes fails the comparison', () {
+    test('an extra export in any legal URI style fails the comparison', () {
       final barrel = File('lib/ayni_sdk.dart').readAsStringSync();
-      final withLeak =
-          "$barrel\n"
-          'export "src/package_validator.dart" show PackageValidator;';
-      final problems = contractProblems(exportedSymbols(withLeak));
+      final leaks = <String, String>{
+        'double-quoted':
+            'export "src/package_validator.dart" show PackageValidator;',
+        'raw single-quoted':
+            "export r'src/package_validator.dart' show PackageValidator;",
+        'raw double-quoted':
+            'export r"src/package_validator.dart" show PackageValidator;',
+      };
 
-      expect(
-        problems,
-        hasLength(1),
-        reason:
-            'a double-quoted export outside the contract must be reported '
-            'exactly once, found:\n${problems.join('\n')}',
-      );
-      expect(
-        problems.single,
-        contains('src/package_validator.dart'),
-        reason: 'the report must name the leaking export',
-      );
+      for (final leak in leaks.entries) {
+        final problems = contractProblems(
+          exportedSymbols('${barrel}\n${leak.value}'),
+        );
+
+        expect(
+          problems,
+          hasLength(1),
+          reason:
+              'a ${leak.key} export outside the contract must be reported '
+              'exactly once, found:\n${problems.join('\n')}',
+        );
+        expect(
+          problems.single,
+          contains('src/package_validator.dart'),
+          reason:
+              'the report must name the leaking ${leak.key} export of '
+              'PackageValidator',
+        );
+      }
     });
 
     test('every contract type is reachable from the public library', () {
