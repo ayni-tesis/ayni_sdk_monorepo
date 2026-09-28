@@ -182,25 +182,56 @@ void main() {
     );
   });
 
-  test('rejects definitions with missing, empty, or non-string schemaVersion', () {
+  test('accepts legacy definitions that omit schemaVersion when shape is valid', () {
+    final legacy = {
+      'nodes': [
+        imageInput(),
+        model(),
+        condition(),
+        output(
+          id: 'output-bool',
+          sourceNodeId: 'condition-1',
+          sourcePort: 'true',
+          resultType: 'boolean',
+        ),
+        output(),
+      ],
+      'connections': [imageConnection()],
+    };
+    expect(validate(legacy), WorkflowValidationStatus.valid);
+  });
+
+  test('rejects definitions with empty, blank, or non-string schemaVersion', () {
     expect(
-      validate({'nodes': const <Object>[], 'connections': const <Object>[]}),
+      validate({
+        'schemaVersion': '',
+        'nodes': const <Object>[],
+        'connections': const <Object>[],
+      }),
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
-      validate(definition(schemaVersion: null)),
+      validate({
+        'schemaVersion': '   ',
+        'nodes': const <Object>[],
+        'connections': const <Object>[],
+      }),
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
-      validate(definition(schemaVersion: '')),
+      validate({
+        'schemaVersion': 1,
+        'nodes': const <Object>[],
+        'connections': const <Object>[],
+      }),
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
-      validate(definition(schemaVersion: '   ')),
-      WorkflowValidationStatus.invalidSchema,
-    );
-    expect(
-      validate(definition(schemaVersion: 1)),
+      validate({
+        'schemaVersion': null,
+        'nodes': const <Object>[],
+        'connections': const <Object>[],
+      }),
       WorkflowValidationStatus.invalidSchema,
     );
   });

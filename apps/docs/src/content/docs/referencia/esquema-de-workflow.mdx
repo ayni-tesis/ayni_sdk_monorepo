@@ -149,11 +149,22 @@ una de estas reglas:
 
 ### Resultado de una definición rechazada
 
-Si la definición incumple una regla, el SDK no la instala y el recurso del
-workflow en `SyncResult.resources` tiene el estado
-`SyncResourceStatus.invalidWorkflow`. Si el dispositivo ya tenía una versión
-válida del workflow, el SDK la conserva y `previousVersionRetained` es `true`.
-La app recibe uno de estos mensajes en `message`:
+Si la definición incumple una regla, el SDK no la instala. Si el dispositivo ya
+tenía una versión válida del workflow, el SDK la conserva y
+`previousVersionRetained` es `true`.
+
+El estado del recurso en `SyncResult.resources` depende de la regla incumplida:
+
+- Si la definición declara una versión de esquema no soportada por el SDK, el
+  recurso tiene el estado `SyncResourceStatus.unsupportedWorkflowVersion`:
+
+| Situación | Mensaje |
+| --- | --- |
+| Con una versión anterior | Este workflow requiere una versión más reciente del SDK. Se conservará la última versión compatible. |
+| Sin versión anterior | Este workflow requiere una versión más reciente del SDK. No se instaló ninguna versión. |
+
+- Para cualquier otra regla incumplida, el recurso tiene el estado
+  `SyncResourceStatus.invalidWorkflow`:
 
 | Situación | Mensaje |
 | --- | --- |

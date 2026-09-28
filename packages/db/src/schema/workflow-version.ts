@@ -17,7 +17,7 @@ export const workflowVersion = pgTable(
       .references(() => workflow.id, { onDelete: "cascade" }),
     version: text("version").notNull(),
     definition: jsonb("definition")
-      .$type<{ schemaVersion: string; nodes: unknown[]; connections: unknown[] }>()
+      .$type<{ schemaVersion?: string; nodes: unknown[]; connections: unknown[] }>()
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     publishedById: text("published_by_id").references(() => user.id, { onDelete: "set null" }),

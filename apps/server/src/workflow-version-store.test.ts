@@ -200,7 +200,7 @@ function makeSdkDefinitionDatabase({
   workflowRow = { id: "workflow-1", applicationId: "app-1", status: "draft" },
 }: {
   applicationRow?: { id: string; status: string } | undefined;
-  versionRow?: { workflowId: string; definition: SdkWorkflowVersionDefinition } | null;
+  versionRow?: { workflowId: string; definition: Partial<SdkWorkflowVersionDefinition> } | null;
   workflowRow?: { id: string; applicationId: string; status: string } | undefined;
 } = {}) {
   const lockedTables: { table: unknown; strength: "update" | "share" }[] = [];
@@ -253,6 +253,41 @@ describe("getSdkWorkflowVersionDefinition", () => {
       { table: workflowVersion, strength: "share" },
       { table: workflow, strength: "share" },
     ]);
+  });
+
+  it("normalizes a legacy definition without schemaVersion to default to '1'", async () => {
+    const legacyDefinition = {
+      nodes: [{ id: "input", type: "input.image" }],
+      connections: [],
+    };
+    const { db } = makeSdkDefinitionDatabase({
+      versionRow: { workflowId: "workflow-1", definition: legacyDefinition },
+    });
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: true,
+      definition: {
+        schemaVersion: "1",
+        nodes: [{ id: "input", type: "input.image" }],
+        connections: [],
+      },
+    });
+  });
+
+  it("preserves declared schemaVersion when present", async () => {
+    const definitionWithSchema = {
+      schemaVersion: "2",
+      nodes: [{ id: "input", type: "input.image" }],
+      connections: [],
+    };
+    const { db } = makeSdkDefinitionDatabase({
+      versionRow: { workflowId: "workflow-1", definition: definitionWithSchema },
+    });
+
+    await expect(getSdkWorkflowVersionDefinition(db, "app-1", "version-1")).resolves.toEqual({
+      ok: true,
+      definition: definitionWithSchema,
+    });
   });
 
   it.each([

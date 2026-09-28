@@ -158,21 +158,32 @@ class WorkflowDefinitionValidator {
     if (definition is! Map) {
       return _ParsedNodes.invalid();
     }
+    final hasSchemaVersion = definition.containsKey('schemaVersion');
     final schemaVersion = definition['schemaVersion'];
     final isNonBlankSchema =
         schemaVersion is String && schemaVersion.trim().isNotEmpty;
-    if (isNonBlankSchema && !supportedSchemaVersions.contains(schemaVersion)) {
-      return _ParsedNodes.rejected(
-        WorkflowValidationStatus.unsupportedSchemaVersion,
-      );
-    }
-    if (!isNonBlankSchema ||
-        !_hasExactFields(
-          definition,
-          const {'schemaVersion', 'nodes', 'connections'},
-          optional: const {'connections'},
-        )) {
-      return _ParsedNodes.invalid();
+    if (hasSchemaVersion) {
+      if (isNonBlankSchema && !supportedSchemaVersions.contains(schemaVersion)) {
+        return _ParsedNodes.rejected(
+          WorkflowValidationStatus.unsupportedSchemaVersion,
+        );
+      }
+      if (!isNonBlankSchema ||
+          !_hasExactFields(
+            definition,
+            const {'schemaVersion', 'nodes', 'connections'},
+            optional: const {'connections'},
+          )) {
+        return _ParsedNodes.invalid();
+      }
+    } else {
+      if (!_hasExactFields(
+        definition,
+        const {'nodes', 'connections'},
+        optional: const {'connections'},
+      )) {
+        return _ParsedNodes.invalid();
+      }
     }
     final rawNodes = definition['nodes'];
     final rawConnections = definition['connections'];

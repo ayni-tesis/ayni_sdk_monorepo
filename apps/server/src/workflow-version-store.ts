@@ -165,6 +165,13 @@ export async function getSdkWorkflowVersionDefinition(
       .for("share");
     if (!workflowRows[0]) return { ok: false, reason: "notFound" } as const;
 
-    return { ok: true, definition: found.definition } as const;
+    const rawDefinition = found.definition as Partial<SdkWorkflowVersionDefinition> | undefined;
+    const normalizedDefinition: SdkWorkflowVersionDefinition = {
+      schemaVersion: rawDefinition?.schemaVersion ?? "1",
+      nodes: rawDefinition?.nodes ?? [],
+      connections: rawDefinition?.connections ?? [],
+    };
+
+    return { ok: true, definition: normalizedDefinition } as const;
   });
 }

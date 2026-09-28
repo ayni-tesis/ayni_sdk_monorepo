@@ -45,9 +45,16 @@ const ruleByRejection: Record<string, string> = {
 /** The `invalidWorkflow` messages of `SyncResourceResult`, with `$name` as `<nombre>`. */
 const invalidWorkflowMessages = [
   ...ayniSdkSource.matchAll(
-    /SyncResourceStatus\.invalidWorkflow(?: when previousVersionRetained)? =>\s*'([^']+)'/g,
+    /SyncResourceStatus\.invalidWorkflow(?:\s+when previousVersionRetained)?\s*=>\s*'([^']+)'/g,
   ),
 ].map(([, message]) => (message ?? "").replace("$name", "`<nombre>`"));
+
+/** The `unsupportedWorkflowVersion` messages of `SyncResourceResult`. */
+const unsupportedWorkflowMessages = [
+  ...ayniSdkSource.matchAll(
+    /SyncResourceStatus\.unsupportedWorkflowVersion(?:\s+when previousVersionRetained)?\s*=>\s*'([^']+)'/g,
+  ),
+].map(([, message]) => message ?? "");
 
 describe("Esquema de workflow (US-145)", () => {
   it("describes the definition as { schemaVersion, nodes, connections } without the canvas layout", () => {
@@ -110,8 +117,13 @@ describe("Esquema de workflow (US-145)", () => {
     const rules = section("## Reglas de validación");
 
     expect(rules).toContain("`SyncResourceStatus.invalidWorkflow`");
+    expect(rules).toContain("`SyncResourceStatus.unsupportedWorkflowVersion`");
     expect(invalidWorkflowMessages).toHaveLength(2);
     for (const message of invalidWorkflowMessages) {
+      expect(rules).toContain(message);
+    }
+    expect(unsupportedWorkflowMessages).toHaveLength(2);
+    for (const message of unsupportedWorkflowMessages) {
       expect(rules).toContain(message);
     }
   });
