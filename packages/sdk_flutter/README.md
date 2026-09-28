@@ -15,7 +15,7 @@ dependencies:
   ayni_sdk: ^0.1.0-beta.1
 ```
 
-`0.1.0-beta.1` es una versión preliminar para pruebas piloto y puede cambiar.
+Esta versión es para pruebas piloto y puede cambiar.
 
 ## API Pública
 
