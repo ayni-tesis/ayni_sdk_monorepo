@@ -37,35 +37,18 @@ Future<int> runPackageCommand(
 }
 
 Directory _resolvePackageDirectory() {
-  // 1. Check if current working directory has a pubspec.yaml with name: ayni_sdk
-  final currentPubspec = File('${Directory.current.path}/pubspec.yaml');
-  if (currentPubspec.existsSync()) {
-    try {
-      final content = currentPubspec.readAsStringSync();
-      if (RegExp(r'^\s*name:\s*ayni_sdk\s*$', multiLine: true).hasMatch(content)) {
-        return Directory.current;
-      }
-    } catch (_) {}
+  final candidateDirectories = <Directory>[
+    Directory.current,
+    if (Platform.script.scheme == 'file')
+      File.fromUri(Platform.script).parent.parent,
+  ];
+
+  for (final candidate in candidateDirectories) {
+    if (PackageValidator.isPackageDirectory(candidate)) {
+      return candidate;
+    }
   }
 
-  // 2. Check if script location resolves to the package directory (e.g. packages/sdk_flutter/bin/package.dart)
-  try {
-    final scriptUri = Platform.script;
-    if (scriptUri.scheme == 'file') {
-      final scriptFile = File.fromUri(scriptUri);
-      final binDir = scriptFile.parent;
-      final candidateDir = binDir.parent;
-      final candidatePubspec = File('${candidateDir.path}/pubspec.yaml');
-      if (candidatePubspec.existsSync()) {
-        final content = candidatePubspec.readAsStringSync();
-        if (RegExp(r'^\s*name:\s*ayni_sdk\s*$', multiLine: true).hasMatch(content)) {
-          return candidateDir;
-        }
-      }
-    }
-  } catch (_) {}
-
-  // 3. Fallback to current directory
   return Directory.current;
 }
 

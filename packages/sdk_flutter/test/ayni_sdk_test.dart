@@ -1491,6 +1491,7 @@ void main() {
         expect(result.status, equals(InitializationStatus.ready));
         expect(result.message, equals('SDK listo.'));
         expect(result.isSuccess, isTrue);
+        expect(result.isReady, isTrue);
         expect(result.sdk, isNotNull);
         expect(result.sdk, same(AyniSdk.instance));
         expect(AyniSdk.isInitialized, isTrue);
@@ -1513,6 +1514,7 @@ void main() {
         expect(result.status, equals(InitializationStatus.ready));
         expect(result.message, equals('SDK listo.'));
         expect(result.isSuccess, isTrue);
+        expect(result.isReady, isTrue);
         expect(result.sdk, isNotNull);
         expect(AyniSdk.isInitialized, isTrue);
       },

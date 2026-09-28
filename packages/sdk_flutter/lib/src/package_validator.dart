@@ -38,14 +38,6 @@ class PackageValidationResult {
         detail: detail,
       );
 
-  /// Creates a failure result specifically for app-specific configuration.
-  static PackageValidationResult appSpecificConfiguration([String? detail]) =>
-      failure(detail);
-
-  /// Creates a failure result for structural deficiencies in the package.
-  static PackageValidationResult invalidStructure([String? detail]) =>
-      failure(detail);
-
   @override
   String toString() =>
       'PackageValidationResult(isValid: $isValid, message: $message, detail: $detail)';
@@ -65,8 +57,8 @@ class PackageValidationResult {
 
 /// Validates that the `ayni_sdk` Flutter/Dart package is self-contained, generic,
 /// and contains no app-specific configuration, secrets, or dashboard dependencies.
-class PackageValidator {
-  const PackageValidator();
+abstract final class PackageValidator {
+  PackageValidator._();
 
   /// Keys in `pubspec.yaml` that represent app-specific configuration and must be rejected.
   static const appSpecificKeys = [
@@ -101,15 +93,25 @@ class PackageValidator {
     RegExp(r'''['"][^'"]*workspace_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
   ];
 
-  /// Instance method convenience delegating to [validate].
-  PackageValidationResult validatePackage(Directory packageDir) =>
-      validate(packageDir);
+  /// Whether [dir] appears to be an `ayni_sdk` package root directory by having
+  /// a `pubspec.yaml` declaring `name: ayni_sdk`.
+  static bool isPackageDirectory(Directory dir) {
+    if (!dir.existsSync()) return false;
+    final pubspec = File('${dir.path.replaceAll(r'\', '/')}/pubspec.yaml');
+    if (!pubspec.existsSync()) return false;
+    try {
+      final content = pubspec.readAsStringSync();
+      return RegExp(r'^\s*name:\s*ayni_sdk\s*$', multiLine: true).hasMatch(content);
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Validates the given [packageDir].
   static PackageValidationResult validate(Directory packageDir) {
     // 1. Verify directory existence
     if (!packageDir.existsSync()) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'El directorio no existe: ${packageDir.path}',
       );
     }
@@ -119,28 +121,28 @@ class PackageValidator {
     // 2. Verify required files and structure
     final pubspecFile = File('$normalizedPackagePath/pubspec.yaml');
     if (!pubspecFile.existsSync()) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'Falta el archivo requerido pubspec.yaml.',
       );
     }
 
     final publicLibFile = File('$normalizedPackagePath/lib/ayni_sdk.dart');
     if (!publicLibFile.existsSync()) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'Falta el archivo requerido lib/ayni_sdk.dart.',
       );
     }
 
     final readmeFile = File('$normalizedPackagePath/README.md');
     if (!readmeFile.existsSync()) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'Falta el archivo requerido README.md.',
       );
     }
 
     final testDir = Directory('$normalizedPackagePath/test');
     if (!testDir.existsSync()) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'Falta el directorio requerido test/.',
       );
     }
@@ -150,7 +152,7 @@ class PackageValidator {
         .whereType<File>()
         .any((f) => f.path.endsWith('.dart'));
     if (!hasTestFiles) {
-      return PackageValidationResult.invalidStructure(
+      return PackageValidationResult.failure(
         'El directorio test/ no contiene archivos de prueba Dart.',
       );
     }
@@ -161,7 +163,7 @@ class PackageValidator {
     // Must declare name: ayni_sdk
     final nameRegex = RegExp(r'^\s*name:\s*ayni_sdk\s*$', multiLine: true);
     if (!nameRegex.hasMatch(pubspecContent)) {
-      return PackageValidationResult.appSpecificConfiguration(
+      return PackageValidationResult.failure(
         'El archivo pubspec.yaml debe declarar name: ayni_sdk.',
       );
     }
@@ -174,7 +176,7 @@ class PackageValidator {
         caseSensitive: false,
       );
       if (keyPattern.hasMatch(pubspecContent)) {
-        return PackageValidationResult.appSpecificConfiguration(
+        return PackageValidationResult.failure(
           'pubspec.yaml contiene la clave específica de aplicación: $key',
         );
       }
@@ -192,7 +194,7 @@ class PackageValidator {
           multiLine: true,
           caseSensitive: false,
         ).hasMatch(pubspecContent)) {
-      return PackageValidationResult.appSpecificConfiguration(
+      return PackageValidationResult.failure(
         'pubspec.yaml depende de una aplicación o dashboard/backend.',
       );
     }
@@ -216,7 +218,7 @@ class PackageValidator {
         if (lowerName == '.env' ||
             lowerName.startsWith('.env.') ||
             forbiddenAppFilePatterns.contains(lowerName)) {
-          return PackageValidationResult.appSpecificConfiguration(
+          return PackageValidationResult.failure(
             'Archivo de configuración de aplicación prohibido: $fileName',
           );
         }
@@ -239,7 +241,7 @@ class PackageValidator {
 
           for (final pattern in _secretPatterns) {
             if (pattern.hasMatch(contentWithoutComments)) {
-              return PackageValidationResult.appSpecificConfiguration(
+              return PackageValidationResult.failure(
                 'Credencial o secreto hardcodeado en ${entity.path}',
               );
             }
@@ -247,7 +249,7 @@ class PackageValidator {
 
           for (final pattern in _appIdPatterns) {
             if (pattern.hasMatch(contentWithoutComments)) {
-              return PackageValidationResult.appSpecificConfiguration(
+              return PackageValidationResult.failure(
                 'Identificador de aplicación o workspace hardcodeado en ${entity.path}',
               );
             }

@@ -182,6 +182,9 @@ class AyniInitializationResult {
   /// Whether initialization was successful and the SDK is ready for use.
   final bool isSuccess;
 
+  /// Whether initialization was successful and the SDK is ready for use.
+  bool get isReady => isSuccess;
+
   /// The initialized [AyniSdk] instance, or `null` if initialization failed.
   final AyniSdk? sdk;
 

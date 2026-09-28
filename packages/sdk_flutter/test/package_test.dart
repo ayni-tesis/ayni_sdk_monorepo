@@ -5,6 +5,41 @@ import 'package:test/test.dart';
 
 import '../bin/package.dart';
 
+void createValidMinimalPackage(
+  Directory dir, {
+  String? pubspecContent,
+  String? libContent,
+  String? readmeContent,
+}) {
+  File('${dir.path}/pubspec.yaml').writeAsStringSync(
+    pubspecContent ??
+        '''
+name: ayni_sdk
+description: Test SDK package
+version: 0.1.0
+''',
+  );
+  Directory('${dir.path}/lib').createSync(recursive: true);
+  File('${dir.path}/lib/ayni_sdk.dart').writeAsStringSync(
+    libContent ??
+        '''
+// Public library entrypoint
+class AyniSdk {}
+''',
+  );
+  File('${dir.path}/README.md').writeAsStringSync(
+    readmeContent ??
+        '''
+# ayni_sdk
+Test SDK documentation.
+''',
+  );
+  Directory('${dir.path}/test').createSync(recursive: true);
+  File('${dir.path}/test/sample_test.dart').writeAsStringSync('''
+void main() {}
+''');
+}
+
 void main() {
   group('PackageValidator on real package', () {
     test('successfully validates packages/sdk_flutter', () {
@@ -16,12 +51,8 @@ void main() {
       expect(result.detail, isNull);
     });
 
-    test('validatePackage instance method behaves like static validate', () {
-      const validator = PackageValidator();
-      final result = validator.validatePackage(Directory.current);
-
-      expect(result.isValid, isTrue);
-      expect(result.message, equals('Paquete ayni_sdk creado.'));
+    test('isPackageDirectory identifies packages/sdk_flutter', () {
+      expect(PackageValidator.isPackageDirectory(Directory.current), isTrue);
     });
   });
 
@@ -30,6 +61,7 @@ void main() {
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('ayni_pkg_test_');
+      createValidMinimalPackage(tempDir);
     });
 
     tearDown(() {
@@ -37,27 +69,6 @@ void main() {
         tempDir.deleteSync(recursive: true);
       }
     });
-
-    void createValidMinimalPackage(Directory dir) {
-      File('${dir.path}/pubspec.yaml').writeAsStringSync('''
-name: ayni_sdk
-description: Test SDK package
-version: 0.1.0
-''');
-      Directory('${dir.path}/lib').createSync(recursive: true);
-      File('${dir.path}/lib/ayni_sdk.dart').writeAsStringSync('''
-// Public library entrypoint
-class AyniSdk {}
-''');
-      File('${dir.path}/README.md').writeAsStringSync('''
-# ayni_sdk
-Test SDK documentation.
-''');
-      Directory('${dir.path}/test').createSync(recursive: true);
-      File('${dir.path}/test/sample_test.dart').writeAsStringSync('''
-void main() {}
-''');
-    }
 
     test('rejects non-existent directory', () {
       final nonExistent = Directory('${tempDir.path}/non_existent_dir');
@@ -68,10 +79,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(result.detail, contains('El directorio no existe'));
     });
 
     test('rejects missing pubspec.yaml', () {
-      createValidMinimalPackage(tempDir);
       File('${tempDir.path}/pubspec.yaml').deleteSync();
 
       final result = PackageValidator.validate(tempDir);
@@ -80,10 +91,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(result.detail, equals('Falta el archivo requerido pubspec.yaml.'));
     });
 
     test('rejects missing lib/ayni_sdk.dart', () {
-      createValidMinimalPackage(tempDir);
       File('${tempDir.path}/lib/ayni_sdk.dart').deleteSync();
 
       final result = PackageValidator.validate(tempDir);
@@ -92,10 +103,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(result.detail, equals('Falta el archivo requerido lib/ayni_sdk.dart.'));
     });
 
     test('rejects missing README.md', () {
-      createValidMinimalPackage(tempDir);
       File('${tempDir.path}/README.md').deleteSync();
 
       final result = PackageValidator.validate(tempDir);
@@ -104,10 +115,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(result.detail, equals('Falta el archivo requerido README.md.'));
     });
 
     test('rejects missing test/ directory', () {
-      createValidMinimalPackage(tempDir);
       Directory('${tempDir.path}/test').deleteSync(recursive: true);
 
       final result = PackageValidator.validate(tempDir);
@@ -116,10 +127,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(result.detail, equals('Falta el directorio requerido test/.'));
     });
 
     test('rejects test/ directory without Dart test files', () {
-      createValidMinimalPackage(tempDir);
       File('${tempDir.path}/test/sample_test.dart').deleteSync();
       File('${tempDir.path}/test/not_a_test.txt').writeAsStringSync('notes');
 
@@ -129,6 +140,10 @@ void main() {}
         result.message,
         equals('El paquete no puede incluir configuración específica de una aplicación.'),
       );
+      expect(
+        result.detail,
+        equals('El directorio test/ no contiene archivos de prueba Dart.'),
+      );
     });
   });
 
@@ -137,16 +152,7 @@ void main() {}
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('ayni_pubspec_test_');
-      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
-name: ayni_sdk
-description: Test SDK package
-version: 0.1.0
-''');
-      Directory('${tempDir.path}/lib').createSync(recursive: true);
-      File('${tempDir.path}/lib/ayni_sdk.dart').writeAsStringSync('class AyniSdk {}');
-      File('${tempDir.path}/README.md').writeAsStringSync('# ayni_sdk');
-      Directory('${tempDir.path}/test').createSync(recursive: true);
-      File('${tempDir.path}/test/dummy_test.dart').writeAsStringSync('void main() {}');
+      createValidMinimalPackage(tempDir);
     });
 
     tearDown(() {
@@ -251,16 +257,7 @@ dependencies:
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('ayni_forbidden_files_test_');
-      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
-name: ayni_sdk
-description: Test SDK package
-version: 0.1.0
-''');
-      Directory('${tempDir.path}/lib').createSync(recursive: true);
-      File('${tempDir.path}/lib/ayni_sdk.dart').writeAsStringSync('class AyniSdk {}');
-      File('${tempDir.path}/README.md').writeAsStringSync('# ayni_sdk');
-      Directory('${tempDir.path}/test').createSync(recursive: true);
-      File('${tempDir.path}/test/dummy_test.dart').writeAsStringSync('void main() {}');
+      createValidMinimalPackage(tempDir);
     });
 
     tearDown(() {
@@ -297,16 +294,7 @@ version: 0.1.0
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('ayni_secrets_test_');
-      File('${tempDir.path}/pubspec.yaml').writeAsStringSync('''
-name: ayni_sdk
-description: Test SDK package
-version: 0.1.0
-''');
-      Directory('${tempDir.path}/lib').createSync(recursive: true);
-      File('${tempDir.path}/lib/ayni_sdk.dart').writeAsStringSync('class AyniSdk {}');
-      File('${tempDir.path}/README.md').writeAsStringSync('# ayni_sdk');
-      Directory('${tempDir.path}/test').createSync(recursive: true);
-      File('${tempDir.path}/test/dummy_test.dart').writeAsStringSync('void main() {}');
+      createValidMinimalPackage(tempDir);
     });
 
     tearDown(() {
