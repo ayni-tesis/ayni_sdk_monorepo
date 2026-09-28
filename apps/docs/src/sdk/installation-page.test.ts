@@ -82,14 +82,12 @@ describe("Instalación y configuración (US-140)", () => {
     expect(requirements).toContain(`\`${pubspecValue("version")}\``);
   });
 
-  it("installs from Git and from a local path, and from pub.dev only once it is published", () => {
+  it("installs the published version from pub.dev and offers Git and local paths", () => {
     const install = section("Instalar");
 
     expect(install).toContain('<TabItem label="Desde Git">');
     expect(install).toContain('<TabItem label="Ruta local">');
-    if (pubspecValue("publish_to") === "none") {
-      expect(install).not.toContain('<TabItem label="pub.dev">');
-    }
+    expect(install).toContain(`ayni_sdk: ^${pubspecValue("version")}`);
   });
 
   it("warns never to allow insecure loopback in production", () => {

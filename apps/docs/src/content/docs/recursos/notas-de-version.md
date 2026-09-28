@@ -5,10 +5,9 @@ sidebar:
   order: 1
 ---
 
-## `ayni_sdk` 0.1.0
+## `ayni_sdk` 0.1.0-beta.1
 
-Primera versión del SDK. Todavía no está publicada en pub.dev; se instala desde
-el repositorio (ver [Instalación y configuración](/comenzar/instalacion-y-configuracion/)).
+Prelanzamiento para aplicaciones piloto. Esta versión es para pruebas piloto y puede cambiar.
 
 ### Incluye
 
@@ -17,11 +16,9 @@ el repositorio (ver [Instalación y configuración](/comenzar/instalacion-y-conf
   definición antes de instalarlos.
 - Descarga de los modelos que usa cada workflow y verificación de su
   integridad con SHA-256.
+- Ejecución local de workflows sincronizados e instalados previamente, sin
+  conexión a internet.
 - Conservación de la última versión válida cuando una actualización falla.
-
-### Todavía no incluye
-
-- Ejecución de workflows en el dispositivo.
 
 ### Compatibilidad
 

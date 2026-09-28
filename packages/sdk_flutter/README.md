@@ -12,9 +12,10 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk:
-    path: ../../packages/sdk_flutter
+  ayni_sdk: ^0.1.0-beta.1
 ```
+
+Esta versión es para pruebas piloto y puede cambiar.
 
 ## API Pública
 
@@ -86,7 +87,7 @@ El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/r
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.1.0-beta.1: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.
