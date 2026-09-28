@@ -35,3 +35,6 @@ Scenario: Espacio insuficiente para encolar
 - La cola conserva evidencia pendiente de forma local.
 - La cola no bloquea la ejecución del workflow.
 - Una evidencia no puede marcarse como enviada antes de confirmarse su carga.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

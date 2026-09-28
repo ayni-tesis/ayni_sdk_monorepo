@@ -1,0 +1,103 @@
+---
+title: Datos y privacidad
+description: Qué datos envía el SDK de Ayni y a dónde, qué guarda en el dispositivo y cómo borrarlo, para declarar la privacidad de tu app.
+sidebar:
+  order: 2
+---
+
+import { Code } from "@astrojs/starlight/components";
+import { privacy } from "../../../examples/privacy";
+
+Esta página reúne lo que el SDK de Ayni envía por la red y lo que guarda en el
+dispositivo, comprobado contra su código, para que puedas completar la
+declaración de privacidad de tu app y responder a tus usuarios.
+
+:::caution[No es asesoría legal]
+Esta página describe el comportamiento técnico del SDK.
+No constituye asesoría legal: lo que debes declarar depende de tu app, de las
+tiendas donde la publicas y de las leyes que le aplican.
+:::
+
+## Datos que el SDK envía
+
+Válido para `ayni_sdk` 0.1.0-beta.1.
+
+El SDK solo usa la red dentro de `sync()`, cuando tu app lo llama.
+`initialize()` y `run()` no envían nada. Ninguna solicitud lleva cuerpo: el SDK
+descarga recursos, pero no sube datos.
+
+| Dato | Cuándo se envía | A dónde | Opcional |
+| --- | --- | --- | --- |
+| La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()`. | `POST /sdk/sync`, en el servidor de Ayni (`serverUrl`). | No |
+| La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de workflow, en la ruta | Durante `sync()`, por cada versión de workflow publicada que aún no está en el dispositivo. | `GET /sdk/workflow-versions/<workflowVersionId>`, en el servidor de Ayni. | No |
+| La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de modelo, en la ruta | Durante `sync()`, por cada modelo que necesita un workflow nuevo y que aún no está en el dispositivo. | `GET /sdk/model-versions/<modelVersionId>/manifest`, en el servidor de Ayni. | No |
+| Solo la solicitud de descarga del archivo del modelo, sin credencial | Justo después de recibir el manifiesto de ese modelo. | `GET <downloadUrl>`: la URL firmada del almacenamiento de objetos que indica el manifiesto, un host distinto del servidor. | No |
+
+La credencial identifica a tu aplicación en Ayni, no al usuario ni al
+dispositivo. El SDK solo la envía a `serverUrl`, por HTTPS o, si activas
+`allowInsecureLoopback` para desarrollo local, por HTTP hacia el propio
+dispositivo. El SDK no sigue redirecciones, así que la credencial nunca llega a
+otro host. Cada vez que recibe una credencial válida, el servidor de Ayni
+actualiza la fecha de su último uso.
+
+Como en cualquier conexión HTTP, el servidor y el almacenamiento de objetos
+reciben la dirección IP del dispositivo y el encabezado `User-Agent`
+predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
+
+## Lo que el SDK no hace
+
+- No sube imágenes ni entradas del modelo durante la sincronización.
+- No envía telemetría.
+- No recolecta datos técnicos del dispositivo, como su modelo, su sistema
+  operativo, su ubicación o identificadores de hardware o de instalación.
+- No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
+  ejecución ocurre por completo en el dispositivo.
+
+Estas afirmaciones valen para `ayni_sdk` 0.1.0-beta.1. En el dashboard, las
+secciones «Privacidad y telemetría» y «Privacidad y recolección» de una
+aplicación guardan su política de telemetría y de captura de imágenes, pero
+esta versión del SDK no las descarga ni las aplica: activar «Permitir
+telemetría técnica» o «Permitir captura de imágenes para datasets» no cambia lo
+que envía. Cuando una versión del SDK empiece a enviar alguno de estos datos,
+esta página describirá qué envía, qué política lo habilita, el consentimiento
+que requiere y cuánto tiempo se conserva.
+
+## Datos que el SDK guarda en el dispositivo
+
+Válido para `ayni_sdk` 0.1.0-beta.1.
+
+Todo lo que guarda el SDK está dentro del `storageDirectory` que le pasa tu
+app. Son los recursos que tu aplicación publicó en Ayni: el SDK no escribe la
+credencial, que solo mantiene en memoria, ni datos del usuario o del
+dispositivo.
+
+| Dato | Ubicación en `storageDirectory` | Cómo eliminarlo |
+| --- | --- | --- |
+| Inventario de sincronización: por cada workflow instalado, su ID, nombre, versión, el ID de la versión y los modelos que usa; por cada modelo, el ID de su versión, la versión y su SHA-256. | `sync-inventory.json` | Borra `storageDirectory` completo. |
+| Definición de cada versión de workflow instalada. | `workflow-definitions/<ID codificado>.json` | Borra `storageDirectory` completo. |
+| Archivo de cada versión de modelo instalada, sus metadatos (ID de la versión y SHA-256) y un archivo vacío que bloquea la instalación mientras ocurre. | `<modelVersionId>/<modelVersionId>.tflite`, `<modelVersionId>/<modelVersionId>.json` y `<modelVersionId>/<modelVersionId>.lock` | Borra `storageDirectory` completo. |
+| Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
+| Archivos temporales de las descargas, verificaciones e instalaciones en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()`, pueden quedar: borra `storageDirectory` completo. |
+
+El SDK no borra las versiones anteriores de un workflow o de un modelo al
+instalar una nueva: siguen en `storageDirectory` hasta que lo borres.
+
+### Borrar los datos del SDK
+
+El SDK no tiene un método para borrar sus datos. Para borrarlos, por ejemplo
+cuando un usuario lo pide, borra el directorio completo mientras no haya un
+`sync()` en curso:
+
+<Code code={privacy.deleteData} lang="dart" />
+
+Después, `run()` lanza un `WorkflowError` con la categoría
+`workflowNotAvailable` hasta que el siguiente `sync()` vuelva a descargar los
+workflows y sus modelos.
+
+No borres archivos sueltos: si borras el archivo de un modelo, el inventario
+sigue indicando que está instalado, `sync()` no lo vuelve a descargar mientras
+no se publique una versión nueva y `run()` falla con `modelNotAvailable`.
+
+Si `storageDirectory` es un directorio propio de la app, como el que devuelve
+`getApplicationSupportDirectory()`, el sistema también lo borra al desinstalar
+la app (ver [Directorio de almacenamiento](/comenzar/instalacion-y-configuracion/#directorio-de-almacenamiento)).

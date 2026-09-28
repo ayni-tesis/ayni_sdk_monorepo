@@ -36,3 +36,6 @@ Scenario: Wi-Fi requerido pero no disponible
 - El SDK consulta la política antes de cada envío.
 - El SDK no usa datos móviles si la política solo permite Wi-Fi.
 - La evidencia pendiente se conserva para un intento posterior.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

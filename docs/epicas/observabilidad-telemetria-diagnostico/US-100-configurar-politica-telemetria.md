@@ -34,3 +34,6 @@ Scenario: Configurar telemetría sin permisos
 - La política pertenece a una aplicación y solo la editan administradores.
 - La política define habilitación y retención de telemetría.
 - La telemetría no autoriza recolección de imágenes.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

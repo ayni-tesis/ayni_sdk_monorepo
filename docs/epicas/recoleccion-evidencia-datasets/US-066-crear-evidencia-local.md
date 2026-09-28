@@ -36,3 +36,6 @@ Scenario: No existe consentimiento vigente
 - La evidencia identifica aplicación, workflow, versión y modelo usados.
 - La captura no bloquea el resultado de la inferencia.
 - Sin consentimiento vigente no se conserva la imagen.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

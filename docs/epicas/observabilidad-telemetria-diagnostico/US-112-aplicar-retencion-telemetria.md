@@ -30,3 +30,6 @@ Scenario: Retención inválida
 - La retención se aplica por aplicación.
 - Solo administradores modifican el periodo de retención.
 - Las trazas vencidas no aparecen en consultas ni métricas posteriores.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

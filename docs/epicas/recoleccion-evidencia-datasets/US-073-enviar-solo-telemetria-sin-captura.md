@@ -34,3 +34,6 @@ Scenario: Intento de adjuntar una imagen a telemetría
 - La telemetría no incluye imágenes, secretos ni datos de entrada crudos.
 - El nodo dataset.capture es el único mecanismo de recolección de imágenes.
 - La ejecución de telemetría no bloquea el resultado del workflow.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

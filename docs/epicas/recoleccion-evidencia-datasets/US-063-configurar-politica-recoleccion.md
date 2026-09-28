@@ -34,3 +34,6 @@ Scenario: Habilitar recolección sin consentimiento
 - Solo administradores pueden configurar la política.
 - La política pertenece a una aplicación.
 - La recolección exige una configuración explícita de consentimiento.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

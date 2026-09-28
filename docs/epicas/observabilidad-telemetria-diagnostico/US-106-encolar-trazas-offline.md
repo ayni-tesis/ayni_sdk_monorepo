@@ -30,3 +30,6 @@ Scenario: Cola local sin espacio
 - La cola de telemetría no bloquea la inferencia.
 - Una traza pendiente no se marca como enviada.
 - Un fallo de cola no afecta workflows ni modelos locales.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

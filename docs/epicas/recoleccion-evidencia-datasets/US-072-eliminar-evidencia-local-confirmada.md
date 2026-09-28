@@ -36,3 +36,6 @@ Scenario: Confirmación no recibida
 - El SDK elimina la evidencia local solo después de una confirmación válida.
 - Una carga incierta conserva la evidencia para evitar pérdida de datos.
 - La eliminación no afecta workflows ni modelos instalados.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

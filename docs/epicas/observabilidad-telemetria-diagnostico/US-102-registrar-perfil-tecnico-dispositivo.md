@@ -30,3 +30,6 @@ Scenario: Campo técnico no disponible
 - El perfil no contiene imágenes, ubicación, contactos ni identificadores de hardware.
 - La RAM se registra en rangos, no como información innecesariamente precisa.
 - Los datos técnicos se asocian al identificador de instalación.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

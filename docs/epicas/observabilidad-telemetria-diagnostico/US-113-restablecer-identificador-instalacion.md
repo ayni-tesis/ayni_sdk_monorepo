@@ -30,3 +30,6 @@ Scenario: Restablecer sin almacenamiento disponible
 - El restablecimiento no usa ni revela identificadores de hardware.
 - Las trazas futuras usan el nuevo identificador.
 - Restablecer no elimina workflows ni modelos locales.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

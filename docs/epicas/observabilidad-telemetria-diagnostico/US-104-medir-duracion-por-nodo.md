@@ -29,3 +29,6 @@ Scenario: Nodo cancelado antes de iniciar
 - La duración total y por nodo usan una misma unidad de tiempo documentada.
 - Solo se registran nodos realmente ejecutados.
 - Las métricas no incluyen entradas ni imágenes.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

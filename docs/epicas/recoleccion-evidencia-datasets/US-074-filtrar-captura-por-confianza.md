@@ -34,3 +34,6 @@ Scenario: Predicción fuera del criterio de captura
 - El filtrado reutiliza los nodos de condición tipados del DAG.
 - El SDK no implementa expresiones arbitrarias para muestreo.
 - Una evidencia solo se crea si la ruta de captura es alcanzable.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.
