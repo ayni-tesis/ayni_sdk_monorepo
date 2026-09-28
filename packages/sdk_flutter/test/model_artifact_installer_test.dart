@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
+
+import 'package:ayni_sdk/src/model_artifact_installer.dart';
+import 'package:ayni_sdk/src/model_artifact_integrity_verifier.dart';
 
 void main() {
   late Directory temporaryDirectory;

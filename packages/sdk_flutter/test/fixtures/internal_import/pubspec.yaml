@@ -1,0 +1,9 @@
+name: internal_import_fixture
+publish_to: none
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+dependencies:
+  ayni_sdk:
+    path: ../../../
+dev_dependencies:
+  lints: ^6.1.0

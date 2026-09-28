@@ -79,10 +79,7 @@ valor por defecto adecuado:
 | `storageDirectory` | `Directory` | Sí | — | Directorio donde el SDK guarda los workflows, los modelos y su inventario (ver [Directorio de almacenamiento](#directorio-de-almacenamiento)). |
 | `syncTimeout` | `Duration` | No | 30 segundos | Tiempo máximo de una sincronización completa, incluidas las descargas. |
 | `allowInsecureLoopback` | `bool` | No | `false` | Permite `http` solo hacia tu propio equipo, para [desarrollo local](#entorno-de-desarrollo-local). |
-| `onBeforeInventoryPersist` | `Future<void> Function()?` | No | Ninguno | Se ejecuta justo antes de guardar el inventario. Existe para las pruebas del SDK; una app no lo necesita. |
 | `onProgress` | `void Function(String message)?` | No | Ninguno | Recibe mensajes de actividad, como `Descargando workflow <nombre>…`. |
-| `onWorkflowDownload` | `void Function(WorkflowVersionDownloadResult result)?` | No | Ninguno | Recibe cada definición de workflow descargada o no disponible durante la sincronización. |
-| `workflowVersionDownloader` | `WorkflowVersionDownloader?` | No | Ninguno | Reemplaza el descargador de definiciones de workflow. Existe para las pruebas del SDK; sin él, el SDK usa su propio descargador. |
 
 Crear el cliente no conecta con el servidor: la conexión empieza al llamar a
 `sync()`.

@@ -6,9 +6,13 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:ayni_sdk/ayni_sdk.dart';
+import 'package:ayni_sdk/src/ayni_sdk.dart';
+import 'package:ayni_sdk/src/model_artifact_installer.dart';
+import 'package:ayni_sdk/src/sdk_internal.dart';
+import 'package:ayni_sdk/src/workflow_version_downloader.dart';
 import 'package:test/test.dart';
 
-import '../lib/src/sdk_internal.dart';
+import 'support/workflow_install.dart';
 
 void main() {
   late Directory storageDirectory;
@@ -131,7 +135,7 @@ void main() {
     Future<void> Function()? onBeforeInventoryPersist,
     void Function(String message)? onProgress,
     void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
-  }) => AyniSdk(
+  }) => createAyniSdkForTesting(
     serverUrl: Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
     ),
@@ -158,14 +162,12 @@ void main() {
     'run preflights every cached model before opening an interpreter',
     () async {
       final client = sdk();
-      final inventory = File('${storageDirectory.path}/sync-inventory.json');
-      await inventory.writeAsString(_manifest(workflowVersion: '1.0.0'));
-      await installedDefinitionFile(
-        'workflow-version-1.0.0',
-      ).create(recursive: true);
-      await installedDefinitionFile(
-        'workflow-version-1.0.0',
-      ).writeAsString(_validWorkflowDefinition());
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: _manifest(workflowVersion: '1.0.0'),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: _validWorkflowDefinition(),
+      );
       await expectLater(
         client.run(
           'workflow-1',
@@ -184,15 +186,12 @@ void main() {
 
   test('attributes TFLite load failures to the model node', () async {
     final client = sdk();
-    await File(
-      '${storageDirectory.path}/sync-inventory.json',
-    ).writeAsString(_manifest(workflowVersion: '1.0.0'));
-    await installedDefinitionFile(
-      'workflow-version-1.0.0',
-    ).create(recursive: true);
-    await installedDefinitionFile(
-      'workflow-version-1.0.0',
-    ).writeAsString(_validWorkflowDefinition());
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _manifest(workflowVersion: '1.0.0'),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: _validWorkflowDefinition(),
+    );
     final modelDirectory = Directory(
       '${storageDirectory.path}/model-version-1',
     );

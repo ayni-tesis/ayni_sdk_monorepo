@@ -60,12 +60,13 @@
 
     
 <section class="desc markdown">
-  <p>Runs Ayni workflows on the device, even without a network connection.</p>
+  <p>The public integration contract of <code>package:ayni_sdk</code> (US-090).</p>
 <p>Create the client with <a href="../ayni_sdk/AyniSdk/initialize.html">AyniSdk.initialize</a>, install the application's
 published workflows and their models with <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a>, and execute one
 with <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>. <a href="../ayni_sdk/SyncStatus.html">SyncStatus</a>, <a href="../ayni_sdk/SyncResourceStatus.html">SyncResourceStatus</a>, and
 <a href="../ayni_sdk/WorkflowErrorCategory.html">WorkflowErrorCategory</a> describe every outcome.</p>
-<p>Import only this library: the files under <code>src/</code> are internal.</p>
+<p>Import this library — never <code>package:ayni_sdk/src/...</code> — everything under
+<code>lib/src/</code> is internal implementation and is deliberately not exported.</p>
 </section>
 
 
@@ -128,40 +129,6 @@ with <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>. <a href="../ayni_sd
   The output of a detection model node.
 </dd>
 
-          <dt id="ModelArtifactInstaller">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactInstaller-class.html">ModelArtifactInstaller</a></span> 
-
-</dt>
-<dd>
-  Installs integrity-verified model artifacts for offline workflow execution.
-</dd>
-
-          <dt id="ModelArtifactInstallResult">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactInstallResult-class.html">ModelArtifactInstallResult</a></span> 
-
-</dt>
-<dd>
-  A state reported by <a href="../ayni_sdk/ModelArtifactInstaller/install.html">ModelArtifactInstaller.install</a>.
-</dd>
-
-          <dt id="ModelArtifactIntegrityResult">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactIntegrityResult-class.html">ModelArtifactIntegrityResult</a></span> 
-
-</dt>
-<dd>
-  The result of checking a downloaded model file against its expected
-SHA-256 hash.
-</dd>
-
-          <dt id="ModelArtifactIntegrityVerifier">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactIntegrityVerifier-class.html">ModelArtifactIntegrityVerifier</a></span> 
-
-</dt>
-<dd>
-  Checks downloaded model files against the SHA-256 hash the server
-published.
-</dd>
-
           <dt id="SyncResourceResult">
   <span class="name "><a href="../ayni_sdk/SyncResourceResult-class.html">SyncResourceResult</a></span> 
 
@@ -195,22 +162,6 @@ published.
 <a href="../ayni_sdk/DetectionResult-class.html">DetectionResult</a>, or a <a href="../ayni_sdk/BooleanResult-class.html">BooleanResult</a>.
 </dd>
 
-          <dt id="WorkflowVersionDownloader">
-  <span class="name "><a href="../ayni_sdk/WorkflowVersionDownloader-class.html">WorkflowVersionDownloader</a></span> 
-
-</dt>
-<dd>
-  Downloads a published workflow definition without changing local storage.
-</dd>
-
-          <dt id="WorkflowVersionDownloadResult">
-  <span class="name "><a href="../ayni_sdk/WorkflowVersionDownloadResult-class.html">WorkflowVersionDownloadResult</a></span> 
-
-</dt>
-<dd>
-  The result of downloading one workflow version's definition.
-</dd>
-
       </dl>
     </section>
 
@@ -223,22 +174,6 @@ published.
 </dt>
 <dd>
   Status indicating the outcome of SDK initialization.
-</dd>
-
-          <dt id="ModelArtifactInstallStatus">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactInstallStatus.html">ModelArtifactInstallStatus</a></span> 
-
-</dt>
-<dd>
-  The state of a model installation by <a href="../ayni_sdk/ModelArtifactInstaller/install.html">ModelArtifactInstaller.install</a>.
-</dd>
-
-          <dt id="ModelArtifactIntegrityStatus">
-  <span class="name "><a href="../ayni_sdk/ModelArtifactIntegrityStatus.html">ModelArtifactIntegrityStatus</a></span> 
-
-</dt>
-<dd>
-  The outcome of <a href="../ayni_sdk/ModelArtifactIntegrityVerifier/verify.html">ModelArtifactIntegrityVerifier.verify</a>.
 </dd>
 
           <dt id="SyncResourceStatus">
@@ -273,14 +208,6 @@ published.
 <dd>
   Why <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a> could not execute a workflow, in
 <a href="../ayni_sdk/WorkflowError/category.html">WorkflowError.category</a>.
-</dd>
-
-          <dt id="WorkflowVersionDownloadStatus">
-  <span class="name "><a href="../ayni_sdk/WorkflowVersionDownloadStatus.html">WorkflowVersionDownloadStatus</a></span> 
-
-</dt>
-<dd>
-  The outcome of <a href="../ayni_sdk/WorkflowVersionDownloader/download.html">WorkflowVersionDownloader.download</a>.
 </dd>
 
       </dl>
