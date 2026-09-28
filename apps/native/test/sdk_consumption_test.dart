@@ -162,6 +162,53 @@ void main() {
         expect(AyniSdk.instance, isNotNull);
       },
     );
+
+    test(
+      'configures iOS TensorFlow Lite runtime and rejects incompatible iOS version (US-093)',
+      () {
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://ayni.example.com'),
+          credential: 'runtime_credential_from_env_or_vault',
+          storageDirectory: tempStorage,
+        );
+
+        // 1. Incompatible iOS version (< 11) reports unsupportedPlatform
+        // with specific message and fails before loading models
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: 10,
+        );
+
+        final incompatibleResult = AyniSdk.initialize(config);
+
+        expect(
+          incompatibleResult.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          incompatibleResult.message,
+          equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
+        );
+        expect(incompatibleResult.isSuccess, isFalse);
+        expect(incompatibleResult.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+
+        // 2. Compatible iOS version (>= 11) compiles and provides ready runtime
+        AyniSdk.setPlatformForTesting(
+          isIos: true,
+          iosMajorVersion: 11,
+        );
+
+        final compatibleResult = AyniSdk.initialize(config);
+
+        expect(compatibleResult.status, equals(InitializationStatus.ready));
+        expect(compatibleResult.message, equals('SDK listo.'));
+        expect(compatibleResult.isSuccess, isTrue);
+        expect(AyniSdk.isInitialized, isTrue);
+        expect(AyniSdk.instance, isNotNull);
+      },
+    );
   });
 }
 

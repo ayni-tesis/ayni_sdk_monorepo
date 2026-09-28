@@ -199,7 +199,19 @@ Si la app se ejecuta en un dispositivo Android con una versión inferior al mín
 
 ### iOS
 
-`ayni_sdk` no añade ajustes propios en iOS y todavía no declara una versión
-mínima de iOS. Su dependencia `tflite_flutter` 0.12.1 agrega TensorFlow Lite
-con CocoaPods (`TensorFlowLiteSwift`) y exige iOS 11.0 o superior como
-destino de tu app.
+#### Configuración iOS
+
+El paquete `ayni_sdk` declara automáticamente las dependencias nativas requeridas
+para ejecutar modelos TensorFlow Lite en iOS a través de `tflite_flutter` y
+CocoaPods (`TensorFlowLiteSwift`). La configuración no requiere modificar el código
+del workflow (los workflows no requieren modificaciones).
+
+Requisitos de iOS en `ios/Podfile`:
+
+- **Versión mínima admitida:** iOS 11.0 o posterior (`platform :ios, '11.0'`). Configurar la versión mínima de despliegue en tu `Podfile` o proyecto Xcode es una decisión de tu aplicación: si tu app no exige iOS 11.0 a nivel global para admitir dispositivos antiguos en otras funciones, la inicialización del SDK se encarga de rechazar la ejecución de modelos en ellos; si decides excluir directamente esos dispositivos configurando `platform :ios, '11.0'`, el sistema operativo impedirá su instalación y `unsupportedPlatform` no será alcanzable en instalaciones normales.
+
+Al compilar la app para una versión iOS compatible, el runtime nativo queda disponible para el SDK: `Runtime iOS listo.`.
+
+Si la app se ejecuta en un dispositivo iOS con una versión inferior al mínimo admitido (< 11.0), la inicialización falla antes de cargar o ejecutar cualquier modelo: `AyniSdk.initialize(config)` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo iOS no cumple el requisito mínimo del SDK.` y no ejecuta ninguna inferencia.
+
+Si se invoca la ejecución directa (`AyniSdk.run`) en un dispositivo iOS no soportado (< 11.0), se rechaza con `UnsupportedError` con el mensaje `Este dispositivo iOS no cumple el requisito mínimo del SDK.` antes de iniciar la ejecución o inferencia.

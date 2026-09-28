@@ -7,7 +7,11 @@ import 'package:flutter/foundation.dart';
 /// Minimum supported Android API level (Android 8.0 Oreo).
 const int minimumAndroidSdkVersion = 26;
 
+/// Minimum supported iOS major version (iOS 11.0).
+const int minimumIosMajorVersion = 11;
+
 int? _testAndroidSdkVersion;
+int? _testIosMajorVersion;
 bool? _testIsAndroid;
 bool? _testIsIos;
 bool? _testIsWeb;
@@ -15,11 +19,13 @@ bool? _testIsWeb;
 /// Sets platform configuration overrides for testing.
 void setPlatformOverrideForTesting({
   int? androidSdkVersion,
+  int? iosMajorVersion,
   bool? isAndroid,
   bool? isIos,
   bool? isWeb,
 }) {
   _testAndroidSdkVersion = androidSdkVersion;
+  _testIosMajorVersion = iosMajorVersion;
   _testIsAndroid = isAndroid;
   _testIsIos = isIos;
   _testIsWeb = isWeb;
@@ -28,6 +34,7 @@ void setPlatformOverrideForTesting({
 /// Resets any platform configuration overrides.
 void resetPlatformForTesting() {
   _testAndroidSdkVersion = null;
+  _testIosMajorVersion = null;
   _testIsAndroid = null;
   _testIsIos = null;
   _testIsWeb = null;
@@ -67,6 +74,48 @@ int? _readAndroidSdkVersion() {
   return null;
 }
 
+int? _readIosMajorVersion() {
+  if (_testIosMajorVersion != null) {
+    return _testIosMajorVersion;
+  }
+  if (!_isIos) {
+    return null;
+  }
+  try {
+    final sysctl = DynamicLibrary.process().lookupFunction<
+        Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<IntPtr>,
+            Pointer<Void>, IntPtr),
+        int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<IntPtr>,
+            Pointer<Void>, int)>('sysctlbyname');
+    final name = 'kern.osproductversion'.toNativeUtf8();
+    final buffer = calloc<Uint8>(64).cast<Utf8>();
+    final sizePtr = calloc<IntPtr>()..value = 64;
+    try {
+      final res = sysctl(name, buffer, sizePtr, nullptr, 0);
+      if (res == 0) {
+        final verStr = buffer.toDartString();
+        final major = int.tryParse(verStr.split('.').first);
+        if (major != null) return major;
+      }
+    } finally {
+      calloc.free(name);
+      calloc.free(buffer);
+      calloc.free(sizePtr);
+    }
+  } catch (_) {
+    // Fallback to Platform.operatingSystemVersion
+  }
+  try {
+    final osVersion = Platform.operatingSystemVersion;
+    final match =
+        RegExp(r'(?:Version\s+)?(\d+)(?:\.(\d+))?').firstMatch(osVersion);
+    if (match != null) {
+      return int.tryParse(match.group(1)!);
+    }
+  } catch (_) {}
+  return null;
+}
+
 /// Whether the current device is running an unsupported Android version (< 26).
 bool get isUnsupportedAndroid {
   if (_isWeb) return false;
@@ -78,12 +127,26 @@ bool get isUnsupportedAndroid {
   return false;
 }
 
+/// Whether the current device is running an unsupported iOS version (< 11.0).
+bool get isUnsupportedIos {
+  if (_isWeb) return false;
+  if (!_isIos) return false;
+  final major = _readIosMajorVersion();
+  if (major == null || major < minimumIosMajorVersion) {
+    return true;
+  }
+  return false;
+}
+
 /// Whether this Flutter runtime targets a supported mobile platform.
 bool get isSupported {
   if (_isWeb) return false;
   if (_isAndroid) {
     return !isUnsupportedAndroid;
   }
-  return _isIos;
+  if (_isIos) {
+    return !isUnsupportedIos;
+  }
+  return false;
 }
 

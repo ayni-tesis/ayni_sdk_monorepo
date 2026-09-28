@@ -4,7 +4,11 @@
 /// Minimum supported Android API level (Android 8.0 Oreo).
 const int minimumAndroidSdkVersion = 26;
 
+/// Minimum supported iOS major version (iOS 11.0).
+const int minimumIosMajorVersion = 11;
+
 int? _testAndroidSdkVersion;
+int? _testIosMajorVersion;
 bool? _testIsAndroid;
 bool? _testIsIos;
 bool? _testIsWeb;
@@ -12,11 +16,13 @@ bool? _testIsWeb;
 /// Sets platform configuration overrides for testing.
 void setPlatformOverrideForTesting({
   int? androidSdkVersion,
+  int? iosMajorVersion,
   bool? isAndroid,
   bool? isIos,
   bool? isWeb,
 }) {
   _testAndroidSdkVersion = androidSdkVersion;
+  _testIosMajorVersion = iosMajorVersion;
   _testIsAndroid = isAndroid;
   _testIsIos = isIos;
   _testIsWeb = isWeb;
@@ -25,6 +31,7 @@ void setPlatformOverrideForTesting({
 /// Resets any platform configuration overrides.
 void resetPlatformForTesting() {
   _testAndroidSdkVersion = null;
+  _testIosMajorVersion = null;
   _testIsAndroid = null;
   _testIsIos = null;
   _testIsWeb = null;
@@ -41,6 +48,17 @@ bool get isUnsupportedAndroid {
   return false;
 }
 
+/// Whether the current device is running an unsupported iOS version (< 11.0).
+bool get isUnsupportedIos {
+  if (_testIsIos == true) {
+    if (_testIosMajorVersion == null ||
+        _testIosMajorVersion! < minimumIosMajorVersion) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Whether this non-Flutter test runtime is treated as supported.
 bool get isSupported {
   if (_testIsWeb == true) return false;
@@ -51,7 +69,13 @@ bool get isSupported {
     }
     return true;
   }
-  if (_testIsIos == true) return true;
+  if (_testIsIos == true) {
+    if (_testIosMajorVersion == null ||
+        _testIosMajorVersion! < minimumIosMajorVersion) {
+      return false;
+    }
+    return true;
+  }
   if (_testIsAndroid == false && _testIsIos == false) return false;
   return true;
 }
