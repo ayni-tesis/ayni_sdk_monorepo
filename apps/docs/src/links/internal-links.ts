@@ -2,13 +2,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AstroIntegration } from "astro";
-import { listHtmlFiles } from "../search/index-coverage";
+import { dartSidebarFragment, listHtmlFiles } from "../search/index-coverage";
 
-/**
- * `dart doc` loads each `*-sidebar.html` fragment into a page and prefixes
- * its links with that page's `data-base-href`, the reference root (US-143).
- */
-const dartSidebarFragment = /^referencia\/api-dart\/.*-sidebar\.html$/;
+/** The directory the links of a Dart reference sidebar fragment are relative to. */
 const dartReferenceRoot = "referencia/api-dart";
 
 /** How many locations a message names before it only counts the rest. */
@@ -33,6 +29,15 @@ export function brokenInternalLinks(dist: string, contentDir: string): string[] 
     }
     return found;
   };
+  const sources = new Map<string, string[]>();
+  const sourceLines = (page: string) => {
+    let lines = sources.get(page);
+    if (!lines) {
+      lines = readFileSync(join(contentDir, page), "utf8").split(/\r?\n/);
+      sources.set(page, lines);
+    }
+    return lines;
+  };
 
   const broken = new Map<string, { href: string; cause: string; locations: string[] }>();
   for (const htmlFile of listHtmlFiles(dist)) {
@@ -43,7 +48,7 @@ export function brokenInternalLinks(dist: string, contentDir: string): string[] 
       if (!cause) continue;
       const key = `${href}\n${cause}`;
       const entry = broken.get(key) ?? { href, cause, locations: [] };
-      entry.locations.push(sourceLocation(contentDir, htmlFile, href) ?? htmlFile);
+      entry.locations.push(sourceLocation(contentDir, htmlFile, href, sourceLines) ?? htmlFile);
       broken.set(key, entry);
     }
   }
@@ -84,7 +89,12 @@ function linkProblem(
 }
 
 /** The `<page>:<line>` of the source page of `htmlFile` that writes `href`. */
-function sourceLocation(contentDir: string, htmlFile: string, href: string): string | undefined {
+function sourceLocation(
+  contentDir: string,
+  htmlFile: string,
+  href: string,
+  sourceLines: (page: string) => string[],
+): string | undefined {
   const route = htmlFile.replace(/(^|\/)index\.html$/, "").replace(/\.html$/, "");
   const stem = route === "" ? "index" : route.replace(/\/$/, "");
   const candidates = [".md", ".mdx"].flatMap((extension) => [
@@ -94,8 +104,7 @@ function sourceLocation(contentDir: string, htmlFile: string, href: string): str
   const page = candidates.find((candidate) => existsSync(join(contentDir, candidate)));
   if (!page) return undefined;
   const wanted = safeDecode(href);
-  const lines = readFileSync(join(contentDir, page), "utf8").split(/\r?\n/);
-  const index = lines.findIndex((line) =>
+  const index = sourceLines(page).findIndex((line) =>
     [...line.matchAll(/\]\(\s*<?([^)\s>]+)|\shref=["']([^"']+)/g)].some(
       ([, markdown, attribute]) => safeDecode(markdown ?? attribute ?? "") === wanted,
     ),
