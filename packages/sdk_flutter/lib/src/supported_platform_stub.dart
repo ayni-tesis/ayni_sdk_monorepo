@@ -7,8 +7,11 @@ const int minimumAndroidSdkVersion = 26;
 /// Minimum supported iOS major version (iOS 11.0).
 const int minimumIosMajorVersion = 11;
 
+const Object _unsetPlatformOverride = Object();
+
 int? _testAndroidSdkVersion;
 int? _testIosMajorVersion;
+bool _hasTestIosMajorVersion = false;
 bool? _testIsAndroid;
 bool? _testIsIos;
 bool? _testIsWeb;
@@ -16,13 +19,16 @@ bool? _testIsWeb;
 /// Sets platform configuration overrides for testing.
 void setPlatformOverrideForTesting({
   int? androidSdkVersion,
-  int? iosMajorVersion,
+  Object? iosMajorVersion = _unsetPlatformOverride,
   bool? isAndroid,
   bool? isIos,
   bool? isWeb,
 }) {
   _testAndroidSdkVersion = androidSdkVersion;
-  _testIosMajorVersion = iosMajorVersion;
+  if (!identical(iosMajorVersion, _unsetPlatformOverride)) {
+    _hasTestIosMajorVersion = true;
+    _testIosMajorVersion = iosMajorVersion as int?;
+  }
   _testIsAndroid = isAndroid;
   _testIsIos = isIos;
   _testIsWeb = isWeb;
@@ -32,9 +38,17 @@ void setPlatformOverrideForTesting({
 void resetPlatformForTesting() {
   _testAndroidSdkVersion = null;
   _testIosMajorVersion = null;
+  _hasTestIosMajorVersion = false;
   _testIsAndroid = null;
   _testIsIos = null;
   _testIsWeb = null;
+}
+
+int? _readIosMajorVersion() {
+  if (_hasTestIosMajorVersion) {
+    return _testIosMajorVersion;
+  }
+  return _testIosMajorVersion;
 }
 
 /// Whether the current device is running an unsupported Android version (< 26).
@@ -51,8 +65,8 @@ bool get isUnsupportedAndroid {
 /// Whether the current device is running an unsupported iOS version (< 11.0).
 bool get isUnsupportedIos {
   if (_testIsIos == true) {
-    if (_testIosMajorVersion == null ||
-        _testIosMajorVersion! < minimumIosMajorVersion) {
+    final major = _readIosMajorVersion();
+    if (major == null || major < minimumIosMajorVersion) {
       return true;
     }
   }
@@ -70,8 +84,8 @@ bool get isSupported {
     return true;
   }
   if (_testIsIos == true) {
-    if (_testIosMajorVersion == null ||
-        _testIosMajorVersion! < minimumIosMajorVersion) {
+    final major = _readIosMajorVersion();
+    if (major == null || major < minimumIosMajorVersion) {
       return false;
     }
     return true;

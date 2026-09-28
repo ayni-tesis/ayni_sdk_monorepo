@@ -443,10 +443,12 @@ class AyniSdk {
     platform.resetPlatformForTesting();
   }
 
+  static const Object _unsetPlatformOverride = Object();
+
   /// Sets platform configuration overrides for testing.
   static void setPlatformForTesting({
     int? androidSdkVersion,
-    int? iosMajorVersion,
+    Object? iosMajorVersion = _unsetPlatformOverride,
     bool? isAndroid,
     bool? isIos,
     bool? isWeb,

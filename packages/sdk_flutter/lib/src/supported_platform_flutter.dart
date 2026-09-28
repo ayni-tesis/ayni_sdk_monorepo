@@ -10,8 +10,11 @@ const int minimumAndroidSdkVersion = 26;
 /// Minimum supported iOS major version (iOS 11.0).
 const int minimumIosMajorVersion = 11;
 
+const Object _unsetPlatformOverride = Object();
+
 int? _testAndroidSdkVersion;
 int? _testIosMajorVersion;
+bool _hasTestIosMajorVersion = false;
 bool? _testIsAndroid;
 bool? _testIsIos;
 bool? _testIsWeb;
@@ -19,13 +22,16 @@ bool? _testIsWeb;
 /// Sets platform configuration overrides for testing.
 void setPlatformOverrideForTesting({
   int? androidSdkVersion,
-  int? iosMajorVersion,
+  Object? iosMajorVersion = _unsetPlatformOverride,
   bool? isAndroid,
   bool? isIos,
   bool? isWeb,
 }) {
   _testAndroidSdkVersion = androidSdkVersion;
-  _testIosMajorVersion = iosMajorVersion;
+  if (!identical(iosMajorVersion, _unsetPlatformOverride)) {
+    _hasTestIosMajorVersion = true;
+    _testIosMajorVersion = iosMajorVersion as int?;
+  }
   _testIsAndroid = isAndroid;
   _testIsIos = isIos;
   _testIsWeb = isWeb;
@@ -35,6 +41,7 @@ void setPlatformOverrideForTesting({
 void resetPlatformForTesting() {
   _testAndroidSdkVersion = null;
   _testIosMajorVersion = null;
+  _hasTestIosMajorVersion = false;
   _testIsAndroid = null;
   _testIsIos = null;
   _testIsWeb = null;
@@ -75,7 +82,7 @@ int? _readAndroidSdkVersion() {
 }
 
 int? _readIosMajorVersion() {
-  if (_testIosMajorVersion != null) {
+  if (_hasTestIosMajorVersion) {
     return _testIosMajorVersion;
   }
   if (!_isIos) {

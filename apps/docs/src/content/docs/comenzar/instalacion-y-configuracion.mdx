@@ -206,9 +206,7 @@ para ejecutar modelos TensorFlow Lite en iOS a través de `tflite_flutter` y
 CocoaPods (`TensorFlowLiteSwift`). La configuración no requiere modificar el código
 del workflow (los workflows no requieren modificaciones).
 
-Requisitos de iOS en `ios/Podfile`:
-
-- **Versión mínima admitida:** iOS 11.0 o posterior (`platform :ios, '11.0'`). Configurar la versión mínima de despliegue en tu `Podfile` o proyecto Xcode es una decisión de tu aplicación: si tu app no exige iOS 11.0 a nivel global para admitir dispositivos antiguos en otras funciones, la inicialización del SDK se encarga de rechazar la ejecución de modelos en ellos; si decides excluir directamente esos dispositivos configurando `platform :ios, '11.0'`, el sistema operativo impedirá su instalación y `unsupportedPlatform` no será alcanzable en instalaciones normales.
+- **Versión mínima admitida:** iOS 11.0 o posterior (`platform :ios, '11.0'`). Tu `ios/Podfile` debe requerir al menos iOS 11.0 para la integración de CocoaPods: las aplicaciones que definen una versión de despliegue anterior no pueden integrar `tflite_flutter` 0.12.1 con `TensorFlowLiteSwift` ni compilar el SDK. Si la app se ejecuta en un dispositivo con una versión de iOS inferior a 11.0, el SDK rechaza la ejecución de modelos antes de iniciar el runtime.
 
 Al compilar la app para una versión iOS compatible, el runtime nativo queda disponible para el SDK: `Runtime iOS listo.`.
 
