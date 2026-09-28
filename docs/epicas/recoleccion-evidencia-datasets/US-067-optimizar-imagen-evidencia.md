@@ -34,3 +34,6 @@ Scenario: La optimización falla
 - La optimización usa los límites configurados por la política.
 - El SDK no modifica la imagen usada por el workflow.
 - Una evidencia fallida no se sube como archivo incompleto.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

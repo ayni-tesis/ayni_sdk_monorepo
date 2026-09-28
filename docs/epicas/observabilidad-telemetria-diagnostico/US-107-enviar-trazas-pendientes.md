@@ -30,3 +30,6 @@ Scenario: Credencial revocada
 - El envío está autenticado y limitado a una aplicación.
 - El SDK espera confirmación del servidor antes de retirar una traza.
 - Las trazas no incluyen imágenes ni datos de entrada crudos.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

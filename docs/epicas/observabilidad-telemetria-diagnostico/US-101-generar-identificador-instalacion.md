@@ -35,3 +35,6 @@ Scenario: Identificador local inválido
 - El servidor lo trata como único dentro de la aplicación al registrar trazas.
 - No usa IMEI, MAC, identificador publicitario ni otro identificador de hardware.
 - Se restablece al desinstalar o borrar los datos de la app.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

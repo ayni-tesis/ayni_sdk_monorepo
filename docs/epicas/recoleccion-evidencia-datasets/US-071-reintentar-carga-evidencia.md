@@ -35,3 +35,6 @@ Scenario: Fallos repetidos
 - Los reintentos no duplican evidencia confirmada por el servidor.
 - Un fallo temporal no elimina la evidencia pendiente.
 - El SDK limita los reintentos para evitar consumo indefinido de red y batería.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

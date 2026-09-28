@@ -36,3 +36,6 @@ Scenario: Credencial revocada al enviar
 - La carga está autenticada y limitada a la aplicación propietaria.
 - El servidor no acepta evidencia de otra aplicación o workspace.
 - El SDK espera confirmación antes de considerar enviada la evidencia.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.

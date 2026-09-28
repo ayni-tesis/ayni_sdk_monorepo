@@ -29,3 +29,6 @@ Scenario: Telemetría deshabilitada
 - La traza no incluye imagen de entrada ni resultado crudo de inferencia.
 - La traza identifica workflow y versiones usadas.
 - La creación de una traza no bloquea la respuesta del workflow.
+- `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
+  datos que esta historia agrega o cambia, la política que los habilita, el
+  consentimiento requerido y su retención.
