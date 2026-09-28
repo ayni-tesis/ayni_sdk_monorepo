@@ -27,6 +27,7 @@
     "dev:server": "turbo -F server dev",
     "setup:part:mobile:dart:flutter": "bash scripts/native/task-1.sh",
     "dev:part:mobile:dart:flutter": "bash scripts/native/task-2.sh",
+    "package:sdk": "cd packages/sdk_flutter && dart run bin/package.dart",
     "db:push": "turbo -F @ayni/db db:push",
     "db:studio": "turbo -F @ayni/db db:studio",
     "db:generate": "turbo -F @ayni/db db:generate",
