@@ -1,14 +1,17 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const docsRoot = join(import.meta.dirname, "..", "content", "docs");
 const page = "guias/preparar-una-aplicacion-en-el-dashboard.mdx";
 
+/** A page under `content/docs`, with `\n` line endings. */
 function read(file: string): string {
   return readFileSync(join(docsRoot, file), "utf8").replace(/\r\n/g, "\n");
 }
 
+/** The value of `key` in the page's frontmatter, such as `order`. */
 function frontmatter(file: string, key: string): string | undefined {
   return new RegExp(`^\\s*${key}:\\s*(.+)$`, "m").exec(read(file).split("\n---\n")[0] ?? "")?.[1];
 }
@@ -25,21 +28,46 @@ const repositoryRoot = join(import.meta.dirname, "..", "..", "..", "..");
 // The dashboard's own texts, and the server messages it shows as they come.
 const dashboardSources = ["apps/web/src", "apps/server/src", "packages/api/src"];
 
-/** The dashboard's source code, with each run of whitespace as one space. */
-function dashboardSource(): string {
-  return dashboardSources
-    .flatMap((directory) =>
-      readdirSync(join(repositoryRoot, directory), { recursive: true, encoding: "utf8" })
-        .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
-        .map((file) => readFileSync(join(repositoryRoot, directory, file), "utf8")),
+/** `text` without surrounding whitespace, each inner run of it as one space. */
+function collapse(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Every whole text the dashboard's source can show: each string literal, each
+ * JSX text, and each fixed part of a template literal around its `${…}`. A
+ * quote must equal one of them, so part of a longer label never passes.
+ */
+function dashboardTexts(): Set<string> {
+  const texts = new Set<string>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node) ||
+      ts.isJsxText(node)
     )
-    .join("\n")
-    .replace(/\s+/g, " ");
+      texts.add(collapse(node.text));
+    ts.forEachChild(node, visit);
+  };
+  for (const directory of dashboardSources) {
+    const files = readdirSync(join(repositoryRoot, directory), {
+      recursive: true,
+      encoding: "utf8",
+    }).filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file));
+    for (const file of files) {
+      const source = readFileSync(join(repositoryRoot, directory, file), "utf8");
+      visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX));
+    }
+  }
+  return texts;
 }
 
 /** Every text the guide quotes from the dashboard between « and ». */
 function quotedTexts(): string[] {
-  return [...read(page).matchAll(/«([^»]+)»/g)].map(([, text]) => text.replace(/\s+/g, " "));
+  return [...read(page).matchAll(/«([^»]+)»/g)].map(([, text]) => collapse(text));
 }
 
 describe("Preparar una aplicación en el dashboard (US-142)", () => {
@@ -124,10 +152,20 @@ describe("Preparar una aplicación en el dashboard (US-142)", () => {
   });
 
   it("quotes only texts the dashboard shows", () => {
-    const source = dashboardSource();
+    const texts = dashboardTexts();
     const quoted = quotedTexts();
 
     expect(quoted.length).toBeGreaterThan(0);
-    expect(quoted.filter((text) => !source.includes(text))).toEqual([]);
+    expect(quoted.filter((text) => !texts.has(text))).toEqual([]);
+  });
+
+  it("accepts a quote only when it is a whole dashboard text, not part of one", () => {
+    const texts = dashboardTexts();
+
+    // A dialog title, a JSX label, and the fixed part of a template literal.
+    expect(texts.has("Generar credencial SDK")).toBe(true);
+    expect(texts.has("Nueva aplicación")).toBe(true);
+    expect(texts.has("Este workflow ya tiene una versión")).toBe(true);
+    expect(texts.has("credencial SDK")).toBe(false);
   });
 });
