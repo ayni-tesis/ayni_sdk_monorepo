@@ -217,12 +217,29 @@ class SyncResourceResult {
 ///
 /// ```dart
 /// final result = await sdk.sync();
-/// if (result.status == SyncStatus.offline) {
-///   showMessage('Sin conexión. Se usarán los workflows instalados.');
+/// switch (result.status) {
+///   case SyncStatus.offline:
+///     showMessage('Sin conexión. Se usarán los workflows instalados.');
+///   case SyncStatus.error:
+///     showMessage('La sincronización terminó con errores. Revisa cada recurso.');
+///   case SyncStatus.updated:
+///   case SyncStatus.upToDate:
+///     break;
 /// }
 /// for (final resource in result.resources) {
-///   final message = resource.message;
-///   if (message != null) showMessage(message);
+///   switch (resource.status) {
+///     case SyncResourceStatus.updated:
+///       showMessage('Recurso actualizado.');
+///     case SyncResourceStatus.upToDate:
+///       showMessage('El recurso ya está actualizado.');
+///     case SyncResourceStatus.invalidRemoteResource:
+///     case SyncResourceStatus.invalidWorkflow:
+///     case SyncResourceStatus.unsupportedWorkflowVersion:
+///     case SyncResourceStatus.installationFailed:
+///     case SyncResourceStatus.dependencyFailed:
+///     case SyncResourceStatus.workflowUnavailable:
+///       showMessage(resource.message ?? 'No se pudo actualizar un recurso.');
+///   }
 /// }
 /// ```
 class SyncResult {
@@ -795,12 +812,29 @@ class AyniSdk {
   ///
   /// ```dart
   /// final result = await sdk.sync();
-  /// if (result.status == SyncStatus.offline) {
-  ///   showMessage('Sin conexión. Se usarán los workflows instalados.');
+  /// switch (result.status) {
+  ///   case SyncStatus.offline:
+  ///     showMessage('Sin conexión. Se usarán los workflows instalados.');
+  ///   case SyncStatus.error:
+  ///     showMessage('La sincronización terminó con errores. Revisa cada recurso.');
+  ///   case SyncStatus.updated:
+  ///   case SyncStatus.upToDate:
+  ///     break;
   /// }
   /// for (final resource in result.resources) {
-  ///   final message = resource.message;
-  ///   if (message != null) showMessage(message);
+  ///   switch (resource.status) {
+  ///     case SyncResourceStatus.updated:
+  ///       showMessage('Recurso actualizado.');
+  ///     case SyncResourceStatus.upToDate:
+  ///       showMessage('El recurso ya está actualizado.');
+  ///     case SyncResourceStatus.invalidRemoteResource:
+  ///     case SyncResourceStatus.invalidWorkflow:
+  ///     case SyncResourceStatus.unsupportedWorkflowVersion:
+  ///     case SyncResourceStatus.installationFailed:
+  ///     case SyncResourceStatus.dependencyFailed:
+  ///     case SyncResourceStatus.workflowUnavailable:
+  ///       showMessage(resource.message ?? 'No se pudo actualizar un recurso.');
+  ///   }
   /// }
   /// ```
   Future<SyncResult> sync() {
