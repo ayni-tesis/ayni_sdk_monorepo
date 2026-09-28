@@ -69,11 +69,16 @@
 Returns an <a href="../../ayni_sdk/AyniInitializationResult-class.html">AyniInitializationResult</a> indicating whether initialization
 succeeded.</p>
 <p>Does not initiate network operations or model inference.
-If initialization fails, no operative SDK instance is retained.</p>
-<p>It never throws. An invalid configuration (<a href="../../ayni_sdk/AyniConfig/isValid.html">AyniConfig.isValid</a> is
-<code>false</code>) returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a>, and an
-unexpected failure returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.error</a>; in both cases
-<a href="../../ayni_sdk/AyniInitializationResult/sdk.html">AyniInitializationResult.sdk</a> is <code>null</code> and <a href="../../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a> is <code>false</code>.</p>
+If initialization fails, no operative SDK instance is retained.
+On an unsupported platform, it returns
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.unsupportedPlatform</a> with
+<code>Esta plataforma no es compatible con ayni_sdk.</code> before checking the
+configuration. On a supported platform, an invalid configuration
+(<a href="../../ayni_sdk/AyniConfig/isValid.html">AyniConfig.isValid</a> is <code>false</code>) returns
+<a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.incompleteConfiguration</a>; an unexpected failure
+returns <a href="../../ayni_sdk/InitializationStatus.html">InitializationStatus.error</a>. Both results have a <code>null</code>
+<a href="../../ayni_sdk/AyniInitializationResult/sdk.html">AyniInitializationResult.sdk</a> and leave <a href="../../ayni_sdk/AyniSdk/isInitialized.html">isInitialized</a> <code>false</code>.</p>
+<p>It never throws.</p>
 <pre class="language-dart"><code class="language-dart">final result = AyniSdk.initialize(
   AyniConfig(
     serverUrl: Uri.parse('https://tu-servidor-ayni.example'),

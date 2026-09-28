@@ -451,11 +451,16 @@ class AyniSdk {
   ///
   /// Does not initiate network operations or model inference.
   /// If initialization fails, no operative SDK instance is retained.
+  /// On an unsupported platform, it returns
+  /// [InitializationStatus.unsupportedPlatform] with
+  /// `Esta plataforma no es compatible con ayni_sdk.` before checking the
+  /// configuration. On a supported platform, an invalid configuration
+  /// ([AyniConfig.isValid] is `false`) returns
+  /// [InitializationStatus.incompleteConfiguration]; an unexpected failure
+  /// returns [InitializationStatus.error]. Both results have a `null`
+  /// [AyniInitializationResult.sdk] and leave [isInitialized] `false`.
   ///
-  /// It never throws. An invalid configuration ([AyniConfig.isValid] is
-  /// `false`) returns [InitializationStatus.incompleteConfiguration], and an
-  /// unexpected failure returns [InitializationStatus.error]; in both cases
-  /// [AyniInitializationResult.sdk] is `null` and [isInitialized] is `false`.
+  /// It never throws.
   ///
   /// ```dart
   /// final result = AyniSdk.initialize(

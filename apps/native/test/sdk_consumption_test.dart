@@ -61,8 +61,15 @@ void main() {
             result.message,
             equals('Esta plataforma no es compatible con ayni_sdk.'),
           );
+          expect(result.sdk, isNull);
           expect(AyniSdk.isInitialized, isFalse);
           expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+          expect(
+            tempStorage.listSync(),
+            isEmpty,
+            reason:
+                'Initialization must not access or install model artifacts.',
+          );
           return;
         }
 
@@ -75,7 +82,10 @@ void main() {
           AyniSdk.instance.serverUrl,
           equals(Uri.parse('https://ayni.example.com')),
         );
-        expect(AyniSdk.instance.storageDirectory.path, equals(tempStorage.path));
+        expect(
+          AyniSdk.instance.storageDirectory.path,
+          equals(tempStorage.path),
+        );
       },
     );
 
