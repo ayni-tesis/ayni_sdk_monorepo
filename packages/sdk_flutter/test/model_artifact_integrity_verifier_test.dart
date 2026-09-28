@@ -1,8 +1,7 @@
 import 'dart:io';
 
+import 'package:ayni_sdk/src/model_artifact_integrity_verifier.dart';
 import 'package:test/test.dart';
-
-import '../lib/src/model_artifact_integrity_verifier.dart';
 
 void main() {
   late Directory temporaryDirectory;

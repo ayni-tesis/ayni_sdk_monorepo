@@ -107,9 +107,7 @@ class AyniConfig {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
-    this.onWorkflowDownload,
     this.onBeforeInventoryPersist,
-    this.workflowVersionDownloader,
   });
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
@@ -131,14 +129,8 @@ class AyniConfig {
   /// Optional callback to receive human-readable progress messages.
   final void Function(String message)? onProgress;
 
-  /// Optional callback to receive downloaded workflow definitions.
-  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
-
   /// Optional callback invoked before writing inventory to disk.
   final Future<void> Function()? onBeforeInventoryPersist;
-
-  /// Optional downloader used for fetching workflow versions.
-  final WorkflowVersionDownloader? workflowVersionDownloader;
 
   /// Whether this configuration is complete and valid for SDK initialization.
   bool get isValid =>
@@ -205,8 +197,8 @@ typedef InitializationResult = AyniInitializationResult;
 class AyniSdk {
   /// Creates a new [AyniSdk] instance directly.
   ///
-  /// [workflowVersionDownloader] replaces the SDK's own workflow definition
-  /// downloader; it exists for the SDK's tests.
+  /// Every parameter is part of the US-090 public contract: it references only
+  /// types exported by `package:ayni_sdk/ayni_sdk.dart`.
   AyniSdk({
     required this.serverUrl,
     required String credential,
@@ -215,11 +207,7 @@ class AyniSdk {
     this.allowInsecureLoopback = false,
     this.onBeforeInventoryPersist,
     this.onProgress,
-    this.onWorkflowDownload,
-    WorkflowVersionDownloader? workflowVersionDownloader,
-  }) : _credential = credential,
-       _workflowVersionDownloader =
-           workflowVersionDownloader ?? WorkflowVersionDownloader();
+  }) : _credential = credential;
 
   static AyniSdk? _instance;
 
@@ -270,9 +258,7 @@ class AyniSdk {
         syncTimeout: config.syncTimeout,
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
-        onWorkflowDownload: config.onWorkflowDownload,
         onBeforeInventoryPersist: config.onBeforeInventoryPersist,
-        workflowVersionDownloader: config.workflowVersionDownloader,
       );
       _instance = sdk;
       return AyniInitializationResult(
@@ -332,10 +318,18 @@ class AyniSdk {
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
   final void Function(String message)? onProgress;
 
-  /// Receives each downloaded or unavailable workflow definition during sync.
-  final void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload;
   final String _credential;
-  final WorkflowVersionDownloader _workflowVersionDownloader;
+
+  /// Receives each downloaded or unavailable workflow definition during sync.
+  ///
+  /// Its type is internal, so it is deliberately not part of the US-090
+  /// contract; tests attach it through [createAyniSdkForTesting].
+  void Function(WorkflowVersionDownloadResult result)? _onWorkflowDownload;
+
+  /// Fetches workflow definitions during sync; tests may replace it through
+  /// [createAyniSdkForTesting].
+  WorkflowVersionDownloader _workflowVersionDownloader =
+      WorkflowVersionDownloader();
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
   Future<void> _syncQueue = Future<void>.value();
@@ -613,7 +607,7 @@ class AyniSdk {
         return abort();
       }
       try {
-        onWorkflowDownload?.call(result);
+        _onWorkflowDownload?.call(result);
       } catch (_) {
         return abort(
           result.temporaryDefinition == null
@@ -1168,6 +1162,41 @@ class AyniSdk {
       if (await temporaryFile.exists()) await temporaryFile.delete();
     }
   }
+}
+
+/// Creates an [AyniSdk] with the test-only hooks that US-090 keeps out of the
+/// public contract.
+///
+/// `onWorkflowDownload` and `workflowVersionDownloader` mention internal
+/// types, so neither the public [AyniSdk] constructor nor [AyniConfig] may
+/// declare them: `package:ayni_sdk/ayni_sdk.dart` exports only nameable
+/// types. This factory stays in `lib/src/` and is deliberately not exported,
+/// so only the SDK's own tests can reach it and integrating apps never see it.
+AyniSdk createAyniSdkForTesting({
+  required Uri serverUrl,
+  required String credential,
+  required Directory storageDirectory,
+  Duration syncTimeout = const Duration(seconds: 30),
+  bool allowInsecureLoopback = false,
+  Future<void> Function()? onBeforeInventoryPersist,
+  void Function(String message)? onProgress,
+  void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
+  WorkflowVersionDownloader? workflowVersionDownloader,
+}) {
+  final sdk = AyniSdk(
+    serverUrl: serverUrl,
+    credential: credential,
+    storageDirectory: storageDirectory,
+    syncTimeout: syncTimeout,
+    allowInsecureLoopback: allowInsecureLoopback,
+    onBeforeInventoryPersist: onBeforeInventoryPersist,
+    onProgress: onProgress,
+  );
+  sdk._onWorkflowDownload = onWorkflowDownload;
+  if (workflowVersionDownloader != null) {
+    sdk._workflowVersionDownloader = workflowVersionDownloader;
+  }
+  return sdk;
 }
 
 class _Inventory {

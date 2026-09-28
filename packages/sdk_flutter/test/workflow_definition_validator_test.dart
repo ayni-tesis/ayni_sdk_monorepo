@@ -1,5 +1,4 @@
-import '../lib/src/workflow_definition_validator.dart';
-
+import 'package:ayni_sdk/src/workflow_definition_validator.dart';
 import 'package:test/test.dart';
 
 void main() {

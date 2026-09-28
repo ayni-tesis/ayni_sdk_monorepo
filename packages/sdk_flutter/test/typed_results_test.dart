@@ -6,6 +6,8 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
 
+import 'support/workflow_install.dart';
+
 void main() {
   late Directory storageDirectory;
 
@@ -27,20 +29,12 @@ void main() {
     storageDirectory: storageDirectory,
   );
 
-  File installedDefinitionFile(String versionId) => File(
-    '${storageDirectory.path}${Platform.pathSeparator}workflow-definitions'
-    '${Platform.pathSeparator}${base64Url.encode(utf8.encode(versionId))}.json',
+  Future<void> installWorkflow() => installWorkflowFiles(
+    storageDirectory: storageDirectory,
+    inventoryJson: _inventory(),
+    workflowVersionId: 'workflow-version-1.0.0',
+    definitionJson: _definition(),
   );
-
-  Future<void> installWorkflow() async {
-    final inventory = File(
-      '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
-    );
-    await inventory.writeAsString(_inventory());
-    final definition = installedDefinitionFile('workflow-version-1.0.0');
-    await definition.create(recursive: true);
-    await definition.writeAsString(_definition());
-  }
 
   Uint8List pngBytes() =>
       Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1)));
@@ -111,19 +105,8 @@ void main() {
 
       await expectLater(
         pending,
-        throwsA(
-          isA<WorkflowError>()
-              .having(
-                (error) => error.category,
-                'category',
-                WorkflowErrorCategory.workflowNotAvailable,
-              )
-              .having((error) => error.nodeId, 'nodeId', isNull)
-              .having(
-                (error) => error.modelVersionId,
-                'modelVersionId',
-                isNull,
-              ),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.workflowNotAvailable,
         ),
       );
     });
@@ -138,20 +121,7 @@ void main() {
 
       await expectLater(
         pending,
-        throwsA(
-          isA<WorkflowError>()
-              .having(
-                (error) => error.category,
-                'category',
-                WorkflowErrorCategory.invalidInput,
-              )
-              .having((error) => error.nodeId, 'nodeId', isNull)
-              .having(
-                (error) => error.modelVersionId,
-                'modelVersionId',
-                isNull,
-              ),
-        ),
+        throwsWorkflowError(category: WorkflowErrorCategory.invalidInput),
       );
     });
 
@@ -165,24 +135,31 @@ void main() {
 
       await expectLater(
         pending,
-        throwsA(
-          isA<WorkflowError>()
-              .having(
-                (error) => error.category,
-                'category',
-                WorkflowErrorCategory.modelNotAvailable,
-              )
-              .having((error) => error.nodeId, 'nodeId', isNull)
-              .having(
-                (error) => error.modelVersionId,
-                'modelVersionId',
-                'model-version-1',
-              ),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.modelNotAvailable,
+          modelVersionId: 'model-version-1',
         ),
       );
     });
   });
 }
+
+/// The single matcher for a [WorkflowError] thrown by `AyniSdk.run`: it checks
+/// the category plus the node and model context the error must report.
+Matcher throwsWorkflowError({
+  required WorkflowErrorCategory category,
+  String? nodeId,
+  String? modelVersionId,
+}) => throwsA(
+  isA<WorkflowError>()
+      .having((error) => error.category, 'category', category)
+      .having((error) => error.nodeId, 'nodeId', nodeId)
+      .having(
+        (error) => error.modelVersionId,
+        'modelVersionId',
+        modelVersionId,
+      ),
+);
 
 String _inventory() => jsonEncode({
   'workflows': [
