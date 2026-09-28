@@ -32,10 +32,10 @@ const Map<String, Set<String>> expectedExports = {
 
 String stripComments(String source) {
   final withoutBlockComments = source.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
-  final lines = withoutBlockComments
-      .split('\n')
-      .where((line) => !line.trimLeft().startsWith('//'));
-  return lines.join('\n');
+  // Strip line comments to end of line, not just whole comment lines, so an
+  // `export // note` with the URI on the next line is still seen by the scan
+  // (barrel URIs are `src/…` or `package:…` and never contain `//`).
+  return withoutBlockComments.replaceAll(RegExp(r'//[^\n]*'), '');
 }
 
 Map<String, Set<String>> exportedSymbols(String barrelSource) {
@@ -137,6 +137,9 @@ void main() {
             "export r'src/package_validator.dart' show PackageValidator;",
         'raw double-quoted':
             'export r"src/package_validator.dart" show PackageValidator;',
+        'line comment after export, raw URI on next line':
+            'export // nota\n'
+            "    r'src/package_validator.dart' show PackageValidator;",
       };
 
       for (final leak in leaks.entries) {
