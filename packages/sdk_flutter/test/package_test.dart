@@ -11,6 +11,9 @@ void createValidMinimalPackage(
   String? libContent,
   String? readmeContent,
 }) {
+  if (!dir.existsSync()) {
+    dir.createSync(recursive: true);
+  }
   File('${dir.path}/pubspec.yaml').writeAsStringSync(
     pubspecContent ??
         '''
@@ -287,6 +290,22 @@ dependencies:
         );
       });
     }
+
+    test('does not skip forbidden file scanning when packageDir path contains build in parent', () {
+      final parentBuildDir = Directory('${tempDir.path}/build/nested');
+      parentBuildDir.createSync(recursive: true);
+      final subPackageDir = Directory('${parentBuildDir.path}/pkg');
+      createValidMinimalPackage(subPackageDir);
+      File('${subPackageDir.path}/.env').writeAsStringSync('KEY=VAL');
+
+      final result = PackageValidator.validate(subPackageDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+      expect(result.detail, contains('.env'));
+    });
   });
 
   group('PackageValidator hardcoded secrets and application IDs', () {
@@ -366,6 +385,92 @@ class SecureSample {}
       expect(result.isValid, isTrue);
       expect(result.message, equals('Paquete ayni_sdk creado.'));
     });
+
+    test('rejects secret in URL string containing comment delimiter //', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+const endpoint = 'https://api.ayni.dev/ayni_sk_live_abcdef123';
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+    });
+
+    test('rejects secret in string containing block comment delimiters /* */', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+const val = "/* pseudo comment */ ayni_sk_live_abcdef123";
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+    });
+
+    test('rejects secret in raw string', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+const rawKey = r'ayni_sk_live_abcdef123';
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+    });
+
+    test('rejects secret in triple-quoted multiline string', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+const multiline = """
+prefix
+ayni_sk_live_abcdef123
+suffix
+""";
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+    });
+
+    test('rejects secret in string containing escaped quotes', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+const escaped = "key: \\" ayni_sk_live_abcdef123 \\"";
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isFalse);
+      expect(
+        result.message,
+        equals('El paquete no puede incluir configuración específica de una aplicación.'),
+      );
+    });
+
+    test('strips nested block comments containing secret without false positive', () {
+      File('${tempDir.path}/lib/api.dart').writeAsStringSync('''
+/*
+  Outer comment
+  /*
+    Nested comment with ayni_sk_live_abcdef123
+  */
+  Back to outer
+*/
+class CleanClass {}
+''');
+
+      final result = PackageValidator.validate(tempDir);
+      expect(result.isValid, isTrue);
+      expect(result.message, equals('Paquete ayni_sdk creado.'));
+    });
   });
 
   group('CLI runPackageCommand', () {
@@ -380,7 +485,7 @@ class SecureSample {}
       expect(err.toString(), isEmpty);
     });
 
-    test('returns 1 and outputs failure message for invalid package directory', () async {
+    test('returns 1 and outputs failure message with detail for invalid package directory', () async {
       final out = StringBuffer();
       final err = StringBuffer();
       final invalidDir = Directory.systemTemp.createTempSync('invalid_pkg_');
@@ -393,9 +498,14 @@ class SecureSample {}
         );
 
         expect(exitCode, equals(1));
+        final errOutput = err.toString();
         expect(
-          err.toString().trim(),
-          equals('El paquete no puede incluir configuración específica de una aplicación.'),
+          errOutput,
+          contains('El paquete no puede incluir configuración específica de una aplicación.'),
+        );
+        expect(
+          errOutput,
+          contains('Falta el archivo requerido pubspec.yaml.'),
         );
         expect(out.toString(), isEmpty);
       } finally {

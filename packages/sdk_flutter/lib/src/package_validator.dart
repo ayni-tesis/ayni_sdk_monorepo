@@ -83,14 +83,14 @@ abstract final class PackageValidator {
   ];
 
   static final _secretPatterns = [
-    RegExp(r'''['"][^'"]*ayni_sk_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
-    RegExp(r'''['"][^'"]*secret_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
-    RegExp(r'''['"][^'"]*sk_live_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
+    RegExp(r'\bayni_sk_[a-zA-Z0-9_\-]{4,}'),
+    RegExp(r'\bsecret_[a-zA-Z0-9_\-]{4,}'),
+    RegExp(r'\bsk_live_[a-zA-Z0-9_\-]{4,}'),
   ];
 
   static final _appIdPatterns = [
-    RegExp(r'''['"][^'"]*app_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
-    RegExp(r'''['"][^'"]*workspace_[a-zA-Z0-9_\-]{4,}[^'"]*['"]'''),
+    RegExp(r'\bapp_[a-zA-Z0-9_\-]{4,}'),
+    RegExp(r'\bworkspace_[a-zA-Z0-9_\-]{4,}'),
   ];
 
   /// Whether [dir] appears to be an `ayni_sdk` package root directory by having
@@ -202,9 +202,13 @@ abstract final class PackageValidator {
     // 4. Reject forbidden application configuration files
     for (final entity in packageDir.listSync(recursive: true, followLinks: false)) {
       final normalizedEntityPath = entity.path.replaceAll(r'\', '/');
-      if (normalizedEntityPath.contains('/.git/') ||
-          normalizedEntityPath.contains('/.dart_tool/') ||
-          normalizedEntityPath.contains('/build/')) {
+      final relativePath = normalizedEntityPath.startsWith(normalizedPackagePath)
+          ? normalizedEntityPath
+              .substring(normalizedPackagePath.length)
+              .replaceFirst(RegExp(r'^/'), '')
+          : normalizedEntityPath;
+      final pathSegments = relativePath.split('/');
+      if (pathSegments.any((seg) => seg == '.git' || seg == '.dart_tool' || seg == 'build')) {
         continue;
       }
 
@@ -262,13 +266,143 @@ abstract final class PackageValidator {
   }
 
   static String _stripComments(String source) {
-    final withoutBlockComments = source.replaceAll(
-      RegExp(r'/\*[\s\S]*?\*/'),
-      '',
-    );
-    return withoutBlockComments.replaceAll(
-      RegExp(r'//.*$', multiLine: true),
-      '',
-    );
+    final buffer = StringBuffer();
+    final length = source.length;
+    var i = 0;
+
+    while (i < length) {
+      // Raw string literal: 'r' or 'R' immediately followed by quote
+      if ((source[i] == 'r' || source[i] == 'R') &&
+          i + 1 < length &&
+          (source[i + 1] == "'" || source[i + 1] == '"')) {
+        final isIdentifier =
+            i > 0 && RegExp(r'[a-zA-Z0-9_$]').hasMatch(source[i - 1]);
+        if (!isIdentifier) {
+          buffer.write(source[i]);
+          i++;
+          final quoteChar = source[i];
+          final isTriple = i + 2 < length &&
+              source[i + 1] == quoteChar &&
+              source[i + 2] == quoteChar;
+          if (isTriple) {
+            buffer.write(quoteChar * 3);
+            i += 3;
+            while (i < length) {
+              if (i + 2 < length &&
+                  source[i] == quoteChar &&
+                  source[i + 1] == quoteChar &&
+                  source[i + 2] == quoteChar) {
+                buffer.write(quoteChar * 3);
+                i += 3;
+                break;
+              }
+              buffer.write(source[i]);
+              i++;
+            }
+          } else {
+            buffer.write(quoteChar);
+            i++;
+            while (i < length) {
+              if (source[i] == quoteChar) {
+                buffer.write(quoteChar);
+                i++;
+                break;
+              }
+              buffer.write(source[i]);
+              i++;
+            }
+          }
+          continue;
+        }
+      }
+
+      // Regular string literal: ' or "
+      if (source[i] == "'" || source[i] == '"') {
+        final quoteChar = source[i];
+        final isTriple = i + 2 < length &&
+            source[i + 1] == quoteChar &&
+            source[i + 2] == quoteChar;
+        if (isTriple) {
+          buffer.write(quoteChar * 3);
+          i += 3;
+          while (i < length) {
+            if (source[i] == r'\' && i + 1 < length) {
+              buffer.write(source[i]);
+              buffer.write(source[i + 1]);
+              i += 2;
+            } else if (i + 2 < length &&
+                source[i] == quoteChar &&
+                source[i + 1] == quoteChar &&
+                source[i + 2] == quoteChar) {
+              buffer.write(quoteChar * 3);
+              i += 3;
+              break;
+            } else {
+              buffer.write(source[i]);
+              i++;
+            }
+          }
+        } else {
+          buffer.write(quoteChar);
+          i++;
+          while (i < length) {
+            if (source[i] == r'\' && i + 1 < length) {
+              buffer.write(source[i]);
+              buffer.write(source[i + 1]);
+              i += 2;
+            } else if (source[i] == quoteChar) {
+              buffer.write(quoteChar);
+              i++;
+              break;
+            } else {
+              buffer.write(source[i]);
+              i++;
+            }
+          }
+        }
+        continue;
+      }
+
+      // Line comment //
+      if (source[i] == '/' && i + 1 < length && source[i + 1] == '/') {
+        i += 2;
+        while (i < length && source[i] != '\n') {
+          i++;
+        }
+        if (i < length && source[i] == '\n') {
+          buffer.write('\n');
+          i++;
+        }
+        continue;
+      }
+
+      // Block comment /* (with nesting support)
+      if (source[i] == '/' && i + 1 < length && source[i + 1] == '*') {
+        i += 2;
+        var depth = 1;
+        while (i < length && depth > 0) {
+          if (source[i] == '/' && i + 1 < length && source[i + 1] == '*') {
+            depth++;
+            i += 2;
+          } else if (source[i] == '*' &&
+              i + 1 < length &&
+              source[i + 1] == '/') {
+            depth--;
+            i += 2;
+          } else {
+            if (source[i] == '\n') {
+              buffer.write('\n');
+            }
+            i++;
+          }
+        }
+        continue;
+      }
+
+      buffer.write(source[i]);
+      i++;
+    }
+
+    return buffer.toString();
   }
 }

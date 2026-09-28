@@ -32,6 +32,9 @@ Future<int> runPackageCommand(
     return 0;
   } else {
     err.writeln(result.message);
+    if (result.detail != null) {
+      err.writeln(result.detail);
+    }
     return 1;
   }
 }
