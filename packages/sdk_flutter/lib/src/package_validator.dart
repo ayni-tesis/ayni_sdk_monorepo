@@ -207,6 +207,17 @@ abstract final class PackageValidator {
       );
     }
 
+    // Verify required runtime dependencies for Android (US-092)
+    final hasTfliteFlutter = RegExp(
+      r'^\s*tflite_flutter\s*:',
+      multiLine: true,
+    ).hasMatch(pubspecContent);
+    if (!hasTfliteFlutter) {
+      return PackageValidationResult.failure(
+        'El archivo pubspec.yaml debe declarar la dependencia tflite_flutter para el runtime Android.',
+      );
+    }
+
     // 4. Reject forbidden application configuration files
     for (final entity in packageDir.listSync(
       recursive: true,

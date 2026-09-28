@@ -19,7 +19,7 @@ todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por e
 | Paquete | `ayni_sdk` `0.1.0-beta.1` (prelanzamiento para pruebas piloto) |
 | Dart | `>=3.8.0 <4.0.0` |
 | Flutter | Una versión que incluya Dart 3.8 o superior. El SDK depende de `tflite_flutter`, un plugin de Flutter. |
-| Dependencias | `crypto`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
+| Dependencias | `crypto`, `ffi`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
 | Plataformas | Android 8.0 (API 26+) e iOS 11+. No funciona en Flutter web. |
 
 ## Instalar
@@ -180,14 +180,22 @@ proxy del sistema.
 
 ### Android
 
-`ayni_sdk` no añade ajustes propios en Android y todavía no declara una
-versión mínima de Android. Los requisitos vienen de su dependencia
-`tflite_flutter` 0.12.1, que ejecuta los modelos:
+#### Configuración Android
 
-- Compila con `compileSdkVersion 36`, y el plugin indica que las apps que lo
-  usan deben compilar con esa versión. Si tu app usa un `compileSdk` menor,
-  súbelo a 36 en `android/app/build.gradle`.
-- Declara `minSdkVersion 19`.
+El paquete `ayni_sdk` declara automáticamente las dependencias nativas requeridas
+para ejecutar modelos TensorFlow Lite en Android a través de `tflite_flutter`,
+incluyendo los binarios C/C++ precompilados para las arquitecturas `armeabi-v7a`,
+`arm64-v8a`, `x86` y `x86_64`. La configuración no requiere modificar el código
+del workflow.
+
+Requisitos de Android en `android/app/build.gradle`:
+
+- **Versión mínima admitida:** Android 8.0 (API 26) o posterior. Configura `minSdkVersion 26` (o `minSdk = 26`).
+- **Versión de compilación:** Compila con `compileSdkVersion 36` (o `compileSdk = 36`), requerida por `tflite_flutter`.
+
+Al compilar la app para una versión Android compatible, el runtime nativo queda disponible para el SDK: `Runtime Android listo.`.
+
+Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API < 26), la inicialización falla antes de cargar o ejecutar cualquier modelo: `AyniSdk.initialize(config)` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` y no ejecuta ninguna inferencia.
 
 ### iOS
 

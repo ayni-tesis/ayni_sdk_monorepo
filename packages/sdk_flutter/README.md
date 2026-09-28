@@ -94,4 +94,13 @@ Plataformas compatibles con ayni_sdk 0.1.0-beta.1: Android e iOS.
 
 Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Consulta también los requisitos de [tflite_flutter](https://pub.dev/packages/tflite_flutter) al actualizar esa dependencia.
 
+### Configuración Android
+
+El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en Android a través de `tflite_flutter`.
+
+- Configura `minSdkVersion 26` (Android 8.0) y `compileSdkVersion 36` en `android/app/build.gradle`.
+- La compilación correcta indica `Runtime Android listo.`.
+- Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API < 26), `AyniSdk.initialize` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` antes de intentar cargar cualquier modelo.
+- La configuración no requiere modificar el código del workflow.
+
 `AyniSdk.initialize` rechaza otras plataformas con `InitializationStatus.unsupportedPlatform` y el mensaje `Esta plataforma no es compatible con ayni_sdk.`. El SDK no carga un modelo en esa situación.

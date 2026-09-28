@@ -1914,6 +1914,93 @@ void main() {
       expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
     });
 
+    test(
+      'rejects Android devices below minimum required version API 26 (US-092)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isAndroid: true,
+          androidSdkVersion: 25,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          result.message,
+          equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(() => AyniSdk.instance, throwsA(isA<StateError>()));
+      },
+    );
+
+    test(
+      'accepts compatible Android version (API 26+) and initializes successfully (US-092)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isAndroid: true,
+          androidSdkVersion: 26,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(result.status, equals(InitializationStatus.ready));
+        expect(result.message, equals('SDK listo.'));
+        expect(result.isSuccess, isTrue);
+        expect(result.sdk, isNotNull);
+        expect(AyniSdk.isInitialized, isTrue);
+        expect(AyniSdk.instance, isNotNull);
+      },
+    );
+
+    test(
+      'rejects unsupported non-mobile platform with generic message (US-091/092)',
+      () {
+        AyniSdk.setPlatformForTesting(
+          isAndroid: false,
+          isIos: false,
+          isWeb: true,
+        );
+
+        final config = AyniConfig(
+          serverUrl: Uri.parse('https://api.ayni.dev'),
+          credential: 'ayni_sk_valid_secret',
+          storageDirectory: storageDirectory,
+        );
+
+        final result = AyniSdk.initialize(config);
+
+        expect(
+          result.status,
+          equals(InitializationStatus.unsupportedPlatform),
+        );
+        expect(
+          result.message,
+          equals('Esta plataforma no es compatible con ayni_sdk.'),
+        );
+        expect(result.isSuccess, isFalse);
+        expect(result.sdk, isNull);
+        expect(AyniSdk.isInitialized, isFalse);
+      },
+    );
+
     test('does not initiate network operations during initialization', () {
       final config = AyniConfig(
         serverUrl: Uri.parse(

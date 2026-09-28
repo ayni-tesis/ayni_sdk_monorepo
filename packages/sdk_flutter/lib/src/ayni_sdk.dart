@@ -440,6 +440,22 @@ class AyniSdk {
   /// next successful [initialize].
   static void resetForTesting() {
     _instance = null;
+    platform.resetPlatformForTesting();
+  }
+
+  /// Sets platform configuration overrides for testing.
+  static void setPlatformForTesting({
+    int? androidSdkVersion,
+    bool? isAndroid,
+    bool? isIos,
+    bool? isWeb,
+  }) {
+    platform.setPlatformOverrideForTesting(
+      androidSdkVersion: androidSdkVersion,
+      isAndroid: isAndroid,
+      isIos: isIos,
+      isWeb: isWeb,
+    );
   }
 
   /// Initializes the shared [AyniSdk] singleton with the provided [config].
@@ -453,12 +469,16 @@ class AyniSdk {
   /// If initialization fails, no operative SDK instance is retained.
   /// On an unsupported platform, it returns
   /// [InitializationStatus.unsupportedPlatform] with
-  /// `Esta plataforma no es compatible con ayni_sdk.` before checking the
-  /// configuration. On a supported platform, an invalid configuration
-  /// ([AyniConfig.isValid] is `false`) returns
-  /// [InitializationStatus.incompleteConfiguration]; an unexpected failure
-  /// returns [InitializationStatus.error]. Both results have a `null`
-  /// [AyniInitializationResult.sdk] and leave [isInitialized] `false`.
+  /// `Esta plataforma no es compatible con ayni_sdk.`. On an Android device
+  /// that does not meet the minimum version requirement (API 26), it returns
+  /// [InitializationStatus.unsupportedPlatform] with
+  /// `Este dispositivo Android no cumple el requisito mínimo del SDK.`.
+  /// In either unsupported case, it returns before checking the configuration.
+  /// On a supported platform, an invalid configuration ([AyniConfig.isValid]
+  /// is `false`) returns [InitializationStatus.incompleteConfiguration]; an
+  /// unexpected failure returns [InitializationStatus.error]. In all failure
+  /// cases, [AyniInitializationResult.sdk] is `null` and [isInitialized]
+  /// remains `false`.
   ///
   /// It never throws.
   ///
@@ -478,6 +498,13 @@ class AyniSdk {
   /// ```
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
+      if (platform.isUnsupportedAndroid) {
+        _instance = null;
+        return const AyniInitializationResult(
+          status: InitializationStatus.unsupportedPlatform,
+          message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+        );
+      }
       if (!platform.isSupported) {
         _instance = null;
         return const AyniInitializationResult(

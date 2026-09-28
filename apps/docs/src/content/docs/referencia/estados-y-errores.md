@@ -23,7 +23,7 @@ resultado de la validación de la configuración. No lanza excepciones.
 
 El resultado nunca muestra la credencial en registros, mensajes ni en su método
 `toString()`. Si la inicialización falla, el SDK no queda en un estado
-parcialmente operativo.
+parcialmente operativo. En un dispositivo Android con una versión inferior a la mínima requerida (API 26), `unsupportedPlatform` devuelve el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` y no ejecuta inferencias.
 
 ## Sincronización
 
