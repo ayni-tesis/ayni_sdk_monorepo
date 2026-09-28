@@ -30,6 +30,17 @@ describe("unindexedPages", () => {
   it("does not expect any 404 page in the index", () => {
     expect(unindexedPages(["404.html", "en/404.html", "index.html"], ["/"])).toEqual([]);
   });
+
+  it("does not expect dart doc's sidebar fragments or search page in the index", () => {
+    const built = [
+      "referencia/api-dart/search.html",
+      "referencia/api-dart/ayni_sdk/ayni_sdk-library-sidebar.html",
+      "referencia/api-dart/ayni_sdk/AyniSdk-class-sidebar.html",
+      "referencia/api-dart/ayni_sdk/AyniSdk-class.html",
+    ];
+
+    expect(unindexedPages(built, [])).toEqual(["/referencia/api-dart/ayni_sdk/AyniSdk-class.html"]);
+  });
 });
 
 describe("reading the built site", () => {

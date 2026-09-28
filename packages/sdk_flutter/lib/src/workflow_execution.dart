@@ -8,57 +8,139 @@ import 'workflow_tflite_stub.dart'
     if (dart.library.ui) 'workflow_tflite_flutter.dart'
     as tflite;
 
+/// Why [AyniSdk.run] could not execute a workflow, in
+/// [WorkflowError.category].
 enum WorkflowErrorCategory {
+  /// The workflow is not installed on the device: it was never synced, its
+  /// definition file is missing, or the storage could not be read.
+  ///
+  /// Run [AyniSdk.sync] and try again.
   workflowNotAvailable,
+
+  /// A model the workflow needs is not installed or its file no longer
+  /// matches its SHA-256 hash; [WorkflowError.modelVersionId] names it.
   modelNotAvailable,
+
+  /// The input is empty or is not an image the SDK can decode.
   invalidInput,
+
+  /// A model node declares an image input the SDK does not support (size,
+  /// channels, or normalization); [WorkflowError.nodeId] names the node.
   unsupportedInputContract,
+
+  /// The installed workflow definition is not valid or cannot be executed,
+  /// for example because a condition branch never reaches an output.
   invalidWorkflow,
+
+  /// A model returned tensors that do not match the output its node
+  /// declares, such as a score outside `0`–`1` or a wrong number of labels.
   modelOutputInvalid,
+
+  /// A condition node did not receive a classification with the label it
+  /// compares.
   conditionInputMissing,
+
+  /// An output node did not receive a value from its source node.
   outputInputMissing,
+
+  /// The execution finished without reaching any output node.
   outputNotReached,
+
+  /// An unexpected failure happened while running the workflow, such as a
+  /// model that fails during inference.
   runtimeError,
 }
 
+/// The error [AyniSdk.run] throws when a workflow cannot be executed.
+///
+/// No partial result is returned: the workflow either completes with a
+/// [WorkflowResult] or throws this error.
 class WorkflowError implements Exception {
+  /// Creates an error of [category], optionally naming the node and the model
+  /// version involved.
+  ///
+  /// The SDK throws these errors; apps only catch and read them.
   const WorkflowError(this.category, {this.nodeId, this.modelVersionId});
+
+  /// Why the workflow could not be executed.
   final WorkflowErrorCategory category;
+
+  /// The ID of the workflow node that failed, or `null` when the error does
+  /// not come from a single node.
   final String? nodeId;
+
+  /// The model version involved in the failure, or `null` when no model is
+  /// involved.
   final String? modelVersionId;
 }
 
+/// The outputs of a successful [AyniSdk.run].
 class WorkflowResult {
+  /// Creates the result of running version [workflowVersion] of
+  /// [workflowId].
+  ///
+  /// [usingOfflineCache] defaults to `true`. The SDK creates these results;
+  /// apps only read them.
   const WorkflowResult({
     required this.workflowId,
     required this.workflowVersion,
     required this.outputs,
     this.usingOfflineCache = true,
   });
+
+  /// The ID of the workflow that ran.
   final String workflowId;
+
+  /// The installed version of the workflow that ran, such as `1.2.0`.
   final String workflowVersion;
+
+  /// The value of each output node the execution reached, keyed by the
+  /// output's name.
+  ///
+  /// It is never empty: an execution that reaches no output throws
+  /// [WorkflowErrorCategory.outputNotReached] instead.
   final Map<String, WorkflowValue> outputs;
+
+  /// Whether the workflow ran from the resources stored on the device, which
+  /// [AyniSdk.run] always does.
   final bool usingOfflineCache;
 }
 
+/// A value a workflow node produced: a [ClassificationResult], a
+/// [DetectionResult], or a [BooleanResult].
+///
+/// The class is sealed, so a `switch` over its subtypes is exhaustive.
 sealed class WorkflowValue {
+  /// Creates the value produced by node [nodeId].
   const WorkflowValue(this.nodeId);
+
+  /// The ID of the workflow node that produced this value.
   final String nodeId;
 }
 
+/// The output of a classification model node.
 class ClassificationResult extends WorkflowValue {
+  /// Creates a classification whose best [label] scored [confidence].
   const ClassificationResult(
     super.nodeId,
     this.label,
     this.confidence,
     this.confidences,
   );
+
+  /// The label with the highest score.
   final String label;
+
+  /// The score of [label], from `0` to `1`.
   final double confidence;
+
+  /// The score of every label the model declares, from `0` to `1`.
   final Map<String, double> confidences;
 }
 
+/// One object found by a detection model node.
 class Detection {
+  /// Creates a detection of [label] inside the given box.
   const Detection(
     this.label,
     this.confidence,
@@ -67,21 +149,52 @@ class Detection {
     this.xMax,
     this.yMax,
   );
+
+  /// The label of the detected object.
   final String label;
+
+  /// The detection score, from `0` to `1`.
   final double confidence;
-  final double xMin, yMin, xMax, yMax;
+
+  /// The box's left edge, relative to the image width (`0` to `1`).
+  final double xMin;
+
+  /// The box's top edge, relative to the image height (`0` to `1`).
+  final double yMin;
+
+  /// The box's right edge, relative to the image width (`0` to `1`).
+  final double xMax;
+
+  /// The box's bottom edge, relative to the image height (`0` to `1`).
+  final double yMax;
 }
 
+/// The output of a detection model node.
 class DetectionResult extends WorkflowValue {
+  /// Creates the result of node [nodeId] with its [detections].
   const DetectionResult(super.nodeId, this.detections);
+
+  /// The objects whose score reached the node's score threshold; it can be
+  /// empty.
   final List<Detection> detections;
 }
 
+/// The output of a condition node.
 class BooleanResult extends WorkflowValue {
+  /// Creates the result of condition node [nodeId].
   const BooleanResult(super.nodeId, this.value);
+
+  /// Whether the condition held for the classification it evaluated.
   final bool value;
 }
 
+/// Whether the [branchPort] branch of condition node [conditionId] leads to
+/// an output node.
+///
+/// [nodes] maps each node ID to its JSON definition, [outgoing] maps a node ID
+/// to the nodes it feeds, and [connections] is the definition's connection
+/// list. The SDK uses it to reject a workflow whose taken branch reaches no
+/// output.
 bool workflowBranchReachesOutput({
   required String conditionId,
   required String branchPort,
@@ -116,10 +229,19 @@ bool workflowBranchReachesOutput({
   return false;
 }
 
+/// Runs a validated workflow definition on the device.
 class WorkflowExecutor {
+  /// Creates an executor that loads models from [storageDirectory].
   WorkflowExecutor(this.storageDirectory);
+
+  /// The directory where the installed models live.
   final Directory storageDirectory;
 
+  /// Checks that [bytes] is a decodable image and that every model node of
+  /// [definition] declares a supported image input.
+  ///
+  /// Throws a [WorkflowError] with [WorkflowErrorCategory.invalidInput] or
+  /// [WorkflowErrorCategory.unsupportedInputContract] otherwise.
   Future<void> validateInputAndContracts(
     Map<String, dynamic> definition,
     Uint8List bytes,
@@ -136,6 +258,10 @@ class WorkflowExecutor {
     }
   }
 
+  /// Runs [definition] on [imageBytes] and returns the value of each output
+  /// node it reaches.
+  ///
+  /// Throws a [WorkflowError] when the workflow cannot complete.
   Future<WorkflowResult> execute({
     required String workflowId,
     required String workflowVersion,

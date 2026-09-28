@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:math';
 
+/// Where and how to download one model version, as the server describes it.
 class ModelDownloadManifest {
+  /// Creates a manifest for [modelVersionId].
   const ModelDownloadManifest({
     required this.modelVersionId,
     required this.version,
@@ -11,6 +13,10 @@ class ModelDownloadManifest {
     required this.downloadUrlExpiresAt,
   });
 
+  /// Reads a manifest from the server's JSON fields.
+  ///
+  /// Throws when a field is missing or has the wrong type, or when a URL or
+  /// date cannot be parsed.
   factory ModelDownloadManifest.fromJson(Map<String, dynamic> json) =>
       ModelDownloadManifest(
         modelVersionId: json['modelVersionId'] as String,
@@ -23,17 +29,42 @@ class ModelDownloadManifest {
         ),
       );
 
+  /// The ID of the model version to download.
   final String modelVersionId;
+
+  /// The model's published version, such as `1.0.0`.
   final String version;
+
+  /// The expected SHA-256 hash of the model file, in hexadecimal.
   final String sha256;
+
+  /// The exact size of the model file, in bytes.
   final int sizeBytes;
+
+  /// The signed URL the model file is downloaded from.
   final Uri downloadUrl;
+
+  /// When [downloadUrl] stops working.
   final DateTime downloadUrlExpiresAt;
 }
 
-enum ModelArtifactDownloadStatus { downloaded, pending, downloadFailed }
+/// The outcome of [ModelArtifactDownloader.download].
+enum ModelArtifactDownloadStatus {
+  /// The whole file was saved to
+  /// [ModelArtifactDownloadResult.temporaryArtifact].
+  downloaded,
 
+  /// The connection failed before the URL expired; a later sync retries.
+  pending,
+
+  /// The download cannot succeed with this manifest: the URL expired or is
+  /// not allowed, the server refused it, or the file size did not match.
+  downloadFailed,
+}
+
+/// The result of downloading one model file.
 class ModelArtifactDownloadResult {
+  /// Creates a download result for [modelVersionId].
   const ModelArtifactDownloadResult({
     required this.modelVersionId,
     required this.status,
@@ -41,8 +72,13 @@ class ModelArtifactDownloadResult {
     this.temporaryArtifact,
   });
 
+  /// The ID of the model version that was requested.
   final String modelVersionId;
+
+  /// Whether the file was downloaded, can be retried, or failed.
   final ModelArtifactDownloadStatus status;
+
+  /// A Spanish message about the outcome.
   final String message;
 
   /// The attempt-owned artifact to pass to integrity verification after a
@@ -50,7 +86,14 @@ class ModelArtifactDownloadResult {
   final String? temporaryArtifact;
 }
 
+/// Downloads model files described by a [ModelDownloadManifest].
 class ModelArtifactDownloader {
+  /// Downloads the file of [manifest] into a new attempt file next to
+  /// [temporaryArtifact], whose path the result returns.
+  ///
+  /// [onProgress] receives the bytes received so far and the expected total.
+  /// [httpClient] is reused when given, and closed after the download
+  /// otherwise. Network failures return a result instead of throwing.
   Future<ModelArtifactDownloadResult> download({
     required ModelDownloadManifest manifest,
     required File temporaryArtifact,

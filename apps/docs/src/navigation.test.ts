@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { breadcrumbTrail, sidebar, sidebarGroups } from "./navigation";
 
@@ -13,9 +15,27 @@ describe("sidebar", () => {
   });
 
   it("autogenerates each group from its own content directory", () => {
-    expect(sidebar.map((group) => group.items)).toEqual(
-      sidebarGroups.map(({ directory }) => [{ autogenerate: { directory } }]),
+    expect(sidebar.map((group) => group.items[0])).toEqual(
+      sidebarGroups.map(({ directory }) => ({ autogenerate: { directory } })),
     );
+  });
+
+  it("links Referencia to the dart doc index of the ayni_sdk library", () => {
+    const reference = sidebar.find((group) => group.label === "Referencia");
+
+    expect(reference?.items).toContainEqual({
+      label: "API del SDK (Dart)",
+      link: "/referencia/api-dart/ayni_sdk/",
+    });
+    expect(
+      existsSync(join(import.meta.dirname, "../public/referencia/api-dart/ayni_sdk/index.html")),
+    ).toBe(true);
+  });
+
+  it("adds links only to Referencia", () => {
+    expect(sidebar.filter((group) => group.items.length > 1).map((group) => group.label)).toEqual([
+      "Referencia",
+    ]);
   });
 });
 

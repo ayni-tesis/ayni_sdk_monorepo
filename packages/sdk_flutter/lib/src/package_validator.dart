@@ -11,6 +11,7 @@ class PackageValidationResult {
   /// Detailed explanation of why validation failed, if any.
   final String? detail;
 
+  /// Creates a validation result.
   const PackageValidationResult({
     required this.isValid,
     required this.message,

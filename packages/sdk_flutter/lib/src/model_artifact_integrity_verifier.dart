@@ -2,8 +2,22 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
-enum ModelArtifactIntegrityStatus { verified, integrityFailed }
+/// The outcome of [ModelArtifactIntegrityVerifier.verify].
+enum ModelArtifactIntegrityStatus {
+  /// The downloaded model matches its expected SHA-256 hash and was moved to
+  /// the verified path.
+  verified,
 
+  /// The download was incomplete, missing, unreadable, or its hash did not
+  /// match; the downloaded file was deleted.
+  integrityFailed,
+}
+
+/// The result of checking a downloaded model file against its expected
+/// SHA-256 hash.
+///
+/// Only [ModelArtifactIntegrityVerifier.verify] creates it, and
+/// [ModelArtifactInstaller.install] accepts only a verified result.
 class ModelArtifactIntegrityResult {
   const ModelArtifactIntegrityResult._({
     required this.modelVersionId,
@@ -11,19 +25,40 @@ class ModelArtifactIntegrityResult {
     required this.sha256,
   });
 
+  /// The ID of the model version that was checked.
   final String modelVersionId;
+
+  /// Whether the model file passed the check.
   final ModelArtifactIntegrityStatus status;
+
+  /// The SHA-256 hash of the verified file, in lowercase hexadecimal, or
+  /// `null` when the check failed.
   final String? sha256;
 
+  /// The name of [status]: `verified` or `integrityFailed`.
   String get message => switch (status) {
     ModelArtifactIntegrityStatus.verified => 'verified',
     ModelArtifactIntegrityStatus.integrityFailed => 'integrityFailed',
   };
 
+  /// Whether [status] is [ModelArtifactIntegrityStatus.verified].
   bool get isVerified => status == ModelArtifactIntegrityStatus.verified;
 }
 
+/// Checks downloaded model files against the SHA-256 hash the server
+/// published.
+///
+/// [AyniSdk.sync] uses it internally; apps do not need to call it.
 class ModelArtifactIntegrityVerifier {
+  /// Checks [temporaryArtifact] against [expectedSha256] (hexadecimal, case
+  /// insensitive) for model version [modelVersionId].
+  ///
+  /// When the download is complete ([isDownloadComplete]) and the hash
+  /// matches, the file is moved to [verifiedArtifact], replacing any previous
+  /// file there, and the result is [ModelArtifactIntegrityStatus.verified].
+  /// Otherwise [temporaryArtifact] is deleted and the result is
+  /// [ModelArtifactIntegrityStatus.integrityFailed]; file errors are reported
+  /// the same way.
   Future<ModelArtifactIntegrityResult> verify({
     required String modelVersionId,
     required File temporaryArtifact,

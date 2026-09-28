@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the install method from the ModelArtifactInstaller class, for the Dart programming language.">
+  <title>install method - ModelArtifactInstaller class - ayni_sdk library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../../static-assets/styles.css?v1">
+  <link rel="icon" href="../../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="/">Ayni Docs</a></li><li><a href="../../index.html">ayni_sdk 0.1.0</a></li>
+    <li><a href="../../ayni_sdk/">ayni_sdk.dart</a></li>
+    <li><a href="../../ayni_sdk/ModelArtifactInstaller-class.html">ModelArtifactInstaller</a></li>
+    <li class="self-crumb">install method</li>
+  </ol>
+  <div class="self-name">install</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content" lang="en" data-pagefind-body
+    class="main-content"
+    data-above-sidebar="ayni_sdk&#47;ModelArtifactInstaller-class-sidebar.html"
+    data-below-sidebar="">
+    <div>
+<h1><span class="kind-method">install</span> method 
+</h1></div>
+
+    <section class="multi-line-signature">
+      
+<span class="returntype"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../../ayni_sdk/ModelArtifactInstallResult-class.html">ModelArtifactInstallResult</a></span>&gt;</span></span>
+<span class="name ">install</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="install-param-modelId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">modelId</span>, </span></li>
+<li><span class="parameter" id="install-param-version"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">version</span>, </span></li>
+<li><span class="parameter" id="install-param-verifiedArtifact"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-io/File-class.html">File</a></span> <span class="parameter-name">verifiedArtifact</span>, </span></li>
+<li><span class="parameter" id="install-param-integrity"><span>required</span> <span class="type-annotation"><a href="../../ayni_sdk/ModelArtifactIntegrityResult-class.html">ModelArtifactIntegrityResult</a></span> <span class="parameter-name">integrity</span>, </span></li>
+<li><span class="parameter" id="install-param-onStateChanged"><span class="type-annotation">void</span> <span class="parameter-name">onStateChanged</span>(<ol class="parameter-list single-line"> <li><span class="parameter" id="param-result"><span class="type-annotation"><a href="../../ayni_sdk/ModelArtifactInstallResult-class.html">ModelArtifactInstallResult</a></span> <span class="parameter-name">result</span></span></li>
+</ol>)?, </span></li>
+</ol>})
+
+      
+
+    </section>
+    
+<section class="desc markdown">
+  <p>Installs <code>verifiedArtifact</code> when its verification result and hash match.</p>
+<p>A model version gets its own immutable path, so a failed installation of
+another version cannot replace an already available offline version.</p>
+<p><code>integrity</code> must be a verified <a href="../../ayni_sdk/ModelArtifactIntegrityResult-class.html">ModelArtifactIntegrityResult</a> for the
+same file, and <code>modelId</code> and the model version ID may contain only
+letters, digits, <code>_</code>, and <code>-</code>. <code>onStateChanged</code> receives
+<a href="../../ayni_sdk/ModelArtifactInstallStatus.html">ModelArtifactInstallStatus.installing</a> before the files are copied.
+The result is <a href="../../ayni_sdk/ModelArtifactInstallStatus.html">ModelArtifactInstallStatus.availableOffline</a> when the
+version is installed, including when it already was, and
+<a href="../../ayni_sdk/ModelArtifactInstallStatus.html">ModelArtifactInstallStatus.notAvailable</a> otherwise; file errors do not
+throw.</p>
+</section>
+
+
+    
+<section class="summary source-code" id="source">
+  <h2><span>Implementation</span></h2>
+  <pre class="language-dart"><code class="language-dart">Future&lt;ModelArtifactInstallResult&gt; install({
+  required String modelId,
+  required String version,
+  required File verifiedArtifact,
+  required ModelArtifactIntegrityResult integrity,
+  void Function(ModelArtifactInstallResult result)? onStateChanged,
+}) async {
+  final versionId = integrity.modelVersionId;
+  if (!integrity.isVerified ||
+      !_isSafeId(modelId) ||
+      !_isSafeId(versionId) ||
+      !await verifiedArtifact.exists()) {
+    return _notAvailable(
+      &#39;El modelo no superó la verificación de integridad.&#39;,
+    );
+  }
+
+  final expectedHash = integrity.sha256;
+  if (expectedHash == null) {
+    return _notAvailable(
+      &#39;El modelo no superó la verificación de integridad.&#39;,
+    );
+  }
+  late final String artifactHash;
+  try {
+    artifactHash =
+        (await crypto.sha256.bind(verifiedArtifact.openRead()).first)
+            .toString();
+  } on FileSystemException {
+    return _notAvailable(
+      &#39;El modelo no superó la verificación de integridad.&#39;,
+    );
+  }
+  if (artifactHash != expectedHash) {
+    return _notAvailable(
+      &#39;El modelo no superó la verificación de integridad.&#39;,
+    );
+  }
+
+  final modelDirectory = Directory(&#39;${storageDirectory.path}&#47;$modelId&#39;);
+  final artifact = File(&#39;${modelDirectory.path}&#47;$versionId.tflite&#39;);
+  final metadata = File(&#39;${modelDirectory.path}&#47;$versionId.json&#39;);
+  await modelDirectory.create(recursive: true);
+  final lockPath = &#39;${modelDirectory.path}&#47;$versionId.lock&#39;;
+  final releaseQueue = await _acquireInstallQueue(lockPath);
+  RandomAccessFile? lock;
+  try {
+    lock = await File(lockPath).open(mode: FileMode.append);
+    await lock.lock(FileLock.exclusive);
+    if (await artifact.exists() || await metadata.exists()) {
+      final available = await _isVersionAvailable(
+        modelId: modelId,
+        modelVersionId: versionId,
+      );
+      if (available) {
+        final existing = jsonDecode(await metadata.readAsString()) as Map;
+        return existing[&#39;sha256&#39;] == expectedHash
+            ? _available(version)
+            : _notAvailable(&#39;No disponible&#39;);
+      }
+
+      &#47;&#47; Incomplete&#47;corrupt pairs are not available offline. Remove them so
+      &#47;&#47; a verified download can repair the version; valid conflicting
+      &#47;&#47; versions are preserved by the branch above.
+      if (await artifact.exists()) await artifact.delete();
+      if (await metadata.exists()) await metadata.delete();
+    }
+
+    onStateChanged?.call(
+      const ModelArtifactInstallResult(
+        status: ModelArtifactInstallStatus.installing,
+        message: &#39;Instalando&#39;,
+      ),
+    );
+    final nonce =
+        &#39;${pid}_${DateTime.now().microsecondsSinceEpoch}_&#39;
+        &#39;${identityHashCode(this)}&#39;;
+    final artifactTemporary = File(&#39;${artifact.path}.$nonce.part&#39;);
+    final metadataTemporary = File(&#39;${metadata.path}.$nonce.part&#39;);
+    var createdArtifact = false;
+    try {
+      await verifiedArtifact.copy(artifactTemporary.path);
+      final copiedHash =
+          (await crypto.sha256.bind(artifactTemporary.openRead()).first)
+              .toString();
+      if (copiedHash != artifactHash) return _notAvailable(&#39;No disponible&#39;);
+
+      await metadataTemporary.writeAsString(
+        _metadata(modelId, versionId, copiedHash),
+        flush: true,
+      );
+      await artifactTemporary.rename(artifact.path);
+      createdArtifact = true;
+      await metadataTemporary.rename(metadata.path);
+      return _available(version);
+    } on FileSystemException catch (error) {
+      if (createdArtifact &amp;&amp; await artifact.exists()) await artifact.delete();
+      return _notAvailable(
+        _isNoSpace(error)
+            ? &#39;No hay espacio suficiente para instalar el modelo.&#39;
+            : &#39;No disponible&#39;,
+      );
+    } finally {
+      if (await artifactTemporary.exists()) await artifactTemporary.delete();
+      if (await metadataTemporary.exists()) await metadataTemporary.delete();
+    }
+  } on FileSystemException {
+    return _notAvailable(&#39;No disponible&#39;);
+  } finally {
+    &#47;&#47; Closing the handle releases its exclusive file lock on every platform.
+    await lock?.close();
+    releaseQueue();
+  }
+}</code></pre>
+</section>
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../../index.html">ayni_sdk</a></li>
+    <li><a href="../../ayni_sdk/">ayni_sdk</a></li>
+    <li><a href="../../ayni_sdk/ModelArtifactInstaller-class.html">ModelArtifactInstaller</a></li>
+    <li class="self-crumb">install method</li>
+</ol>
+
+    <h5>ModelArtifactInstaller class</h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div><!--/.sidebar-offcanvas-->
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+</div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    ayni_sdk
+      0.1.0
+  </span>
+  
+</footer>
+
+
+<script src="../../static-assets/highlight.pack.js?v1"></script>
+<script src="../../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+
