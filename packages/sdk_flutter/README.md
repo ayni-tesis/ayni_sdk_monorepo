@@ -27,7 +27,7 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 
 > **Nota:** No importes archivos src internos. La interfaz pública se expone a través de `package:ayni_sdk/ayni_sdk.dart`.
 
-La API pública estable que consume tu aplicación se compone de `AyniSdk.initialize` para configurar el SDK, `sync()` para actualizar workflows y modelos, `run()` para ejecutarlos localmente, y los tipos `WorkflowResult` y `WorkflowError` para leer el resultado de la ejecución. Las clases internas de `lib/src/` no forman parte del contrato de integración y pueden cambiar sin previo aviso.
+La API pública estable que consume tu aplicación se compone de `AyniSdk.initialize` para configurar el SDK, `sync()` para actualizar workflows y modelos, `run()` para ejecutarlos localmente, `SyncResult` para consultar la sincronización y `WorkflowResult` y `WorkflowError` para la ejecución. Las clases internas de `lib/src/` no forman parte del contrato de integración y pueden cambiar sin previo aviso.
 
 ## Configuración genérica e inicialización
 
@@ -52,7 +52,24 @@ return AyniSdk.instance;
 
 El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/initialize.dart`.
 
-Una vez completada la inicialización de forma exitosa (`result.isReady`), se accede a la instancia compartida a través de `AyniSdk.instance`. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.
+Una vez completada la inicialización de forma exitosa (`result.isReady`), se accede a la instancia compartida a través de `AyniSdk.instance`. Revisa `result.status` si necesitas distinguir `ready`, `incompleteConfiguration`, `error` o `unsupportedPlatform`; en cualquier estado distinto de `ready`, muestra `result.message` y no uses la instancia. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.
+
+## Sincronización
+
+Después de inicializar, sincroniza para instalar nuevas versiones publicadas. `SyncResult.status` indica el resultado general: `updated`, `upToDate`, `offline` o `error`. Ante `offline`, conserva y usa los workflows ya instalados; ante `error`, informa el fallo y no asumas que hubo una actualización.
+
+```dart
+final result = await sdk.sync();
+if (result.status == SyncStatus.offline) {
+  showMessage('Sin conexión. Se usarán los workflows instalados.');
+}
+for (final resource in result.resources) {
+  final message = resource.message;
+  if (message != null) showMessage(message);
+}
+```
+
+`result.resources` contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/sync.dart`.
 
 ## Ejecución local de workflows
 
