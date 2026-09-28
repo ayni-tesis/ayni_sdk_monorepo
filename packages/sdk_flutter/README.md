@@ -6,6 +6,8 @@ El paquete `ayni_sdk` permite integrar modelos de IA en aplicaciones Flutter con
 
 ## Instalación
 
+Android 8.0 (API 26) o posterior es obligatorio; configura `minSdkVersion 26` en la app Flutter.
+
 Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
