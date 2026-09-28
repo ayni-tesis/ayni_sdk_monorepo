@@ -1,0 +1,207 @@
+---
+title: Preparar una aplicación en el dashboard
+description: Crea una aplicación, su credencial del SDK, un modelo y un workflow publicado para que el SDK los sincronice.
+sidebar:
+  order: 1
+---
+
+import Screenshot from "../../../components/Screenshot.astro";
+
+En esta guía preparas desde el dashboard todo lo que el SDK necesita para
+sincronizar: una aplicación, una credencial del SDK, un modelo con una versión
+`.tflite` y un workflow publicado. Los textos entre « » son los que muestra el
+dashboard, tal cual.
+
+:::note
+Necesitas ser administrador del workspace para completar esta guía. Con el rol
+«Miembro», el dashboard no muestra los botones de estos pasos: pide a un
+administrador del workspace que te asigne el rol «Administrador» desde
+«Miembros», con «Cambiar rol».
+:::
+
+## Antes de empezar
+
+- Una cuenta en el dashboard y un workspace donde tengas el rol «Administrador»
+  o «Propietario».
+- Un modelo TensorFlow Lite en un archivo `.tflite` sin comprimir.
+- La entrada del modelo (ancho, alto, canales y normalización) y sus
+  etiquetas, para definir su contrato.
+
+Si usas una aplicación que ya existe, debe estar «Activa»: en una aplicación
+«Archivada», el dashboard oculta los botones de los pasos 2 a 5. Los mensajes
+de aplicación archivada de esta guía solo aparecen si alguien la archiva
+mientras la tienes abierta.
+
+## 1. Crea una aplicación
+
+**Rol necesario:** «Administrador». **Concepto:**
+[Workspaces y aplicaciones](/conceptos/workspaces-y-aplicaciones/).
+
+1. En «Aplicaciones», pulsa «Nueva aplicación». Si el workspace aún no tiene
+   aplicaciones, pulsa «Crear aplicación».
+2. Escribe el «Nombre de la aplicación», por ejemplo `App de ejemplo`, y pulsa
+   «Crear aplicación».
+
+**Resultado esperado:** el dashboard muestra «Aplicación creada.» y abre el
+«Resumen» de la aplicación.
+
+<Screenshot alt="Diálogo «Crear aplicación» con el campo «Nombre de la aplicación» y el nombre App de ejemplo." />
+
+### Errores frecuentes
+
+| Mensaje | Qué hacer |
+| --- | --- |
+| «No tienes permiso para crear aplicaciones en este workspace.» | Pide el rol «Administrador» a un administrador del workspace. |
+| «No pudimos crear la aplicación. Inténtalo nuevamente.» | Revisa tu conexión y vuelve a pulsar «Crear aplicación». |
+
+## 2. Genera una credencial del SDK
+
+**Rol necesario:** «Administrador». **Concepto:**
+[Credenciales del SDK](/conceptos/credenciales-del-sdk/).
+
+1. En el menú de la aplicación, abre «Credenciales SDK».
+2. Pulsa «Generar credencial». En el diálogo «Generar credencial SDK», pulsa
+   «Generar credencial».
+3. Pulsa «Copiar credencial» y guarda el secreto, que empieza por `ayni_sk_`,
+   en un lugar seguro, como el gestor de secretos de tu equipo.
+4. Pulsa «Cerrar».
+
+:::caution[Advertencia]
+La credencial se muestra una sola vez. Después de cerrar el diálogo, el
+dashboard no puede volver a mostrarla.
+:::
+
+**Resultado esperado:** la tabla muestra la credencial con su «Prefijo» y el
+estado «Activa».
+
+<Screenshot alt="Diálogo «Generar credencial SDK» con el secreto de ejemplo ayni_sk_… y los botones «Cerrar» y «Copiar credencial»." />
+
+### Errores frecuentes
+
+| Mensaje | Qué hacer |
+| --- | --- |
+| «No puedes generar credenciales para una aplicación archivada.» | Una aplicación archivada no acepta credenciales nuevas ni se puede reactivar: crea una aplicación nueva (paso 1). |
+| «No tienes permiso para administrar credenciales.» | Pide el rol «Administrador» a un administrador del workspace. |
+| «No pudimos generar la credencial. Inténtalo nuevamente.» | Revisa tu conexión y vuelve a pulsar «Generar credencial». |
+
+Si perdiste el secreto, no se puede recuperar. Pulsa «Regenerar» en la fila de
+la credencial y luego «Regenerar credencial»: la credencial anterior se revoca
+al instante y la nueva se muestra una sola vez.
+
+## 3. Registra un modelo y sube una versión
+
+**Rol necesario:** «Administrador». **Concepto:**
+[Modelos y versiones](/conceptos/modelos-y-versiones/).
+
+1. Abre «Modelos» y pulsa «Registrar modelo».
+2. Escribe el «Nombre del modelo», por ejemplo `Clasificador de ejemplo`. El
+   «Runtime» es siempre «TensorFlow Lite». Pulsa «Registrar modelo».
+3. En la fila del modelo, pulsa «Subir versión».
+4. Escribe la «Versión» en formato SemVer, por ejemplo `1.0.0`, elige el
+   archivo en «Archivo TensorFlow Lite (.tflite)» y pulsa «Subir versión». Al
+   terminar, el dashboard confirma que subió y verificó la versión.
+5. En la fila del modelo, pulsa «Versiones» y, en la versión subida, «Definir
+   contrato». Completa el «Tipo de tarea» («Clasificación» o «Detección»), la
+   «Entrada de imagen» («Ancho», «Alto», «Canales» y «Normalización») y las
+   «Etiquetas, una por línea». Para una detección, completa también el «Umbral
+   de confianza». Pulsa «Guardar contrato».
+
+**Resultado esperado:** en «Versiones» la versión muestra su tipo de tarea en
+la columna «Contrato».
+
+:::note
+El workflow solo ofrece versiones con contrato. Una versión subida es
+inmutable: para cambiar el archivo, sube una versión nueva.
+:::
+
+<Screenshot alt="Diálogo «Subir versión de modelo» con la versión 1.0.0 y un archivo .tflite de ejemplo elegido." />
+
+### Errores frecuentes
+
+| Mensaje | Qué hacer |
+| --- | --- |
+| «No puedes registrar modelos en una aplicación archivada.» | Crea una aplicación nueva (paso 1): una aplicación archivada no se puede reactivar. |
+| «No puedes subir versiones a una aplicación archivada.» | Igual que el anterior: usa una aplicación activa. |
+| «Ingresa una versión con formato SemVer, por ejemplo 1.0.0.» | Usa tres números separados por puntos, como `1.0.0`. |
+| «Ya existe una versión con este identificador.» | Las versiones son inmutables: usa un identificador nuevo, como `1.0.1`. |
+| «Selecciona un archivo .tflite.» | Elige el archivo del modelo antes de pulsar «Subir versión». |
+| «No se pudo validar la versión del modelo.» | El archivo no es un modelo TensorFlow Lite válido o está comprimido: sube el `.tflite` sin comprimir, tal como lo exporta TensorFlow Lite. |
+| «El archivo supera el tamaño máximo permitido.» | El límite es de 128 MB: reduce el modelo, por ejemplo cuantizándolo. |
+| «El contrato no es compatible con TensorFlow Lite.» | El «Ancho», el «Alto» y los «Canales» deben coincidir con la entrada del modelo. En una clasificación, el número de etiquetas debe coincidir con su salida. |
+
+## 4. Crea un workflow
+
+**Rol necesario:** «Administrador». **Concepto:**
+[Workflows DAG](/conceptos/workflows-dag/).
+
+1. Abre «Workflows» y pulsa «Crear workflow».
+2. Escribe el «Nombre del workflow», por ejemplo `Workflow de ejemplo`, y
+   pulsa «Crear borrador».
+3. Abre el workflow desde la tabla. La pestaña «Borrador» muestra el lienzo.
+4. Pulsa «Agregar nodo» y elige «Entrada de imagen».
+5. En el nodo «Imagen de entrada», pulsa **+** junto al puerto «imagen» y
+   elige tu modelo y su versión. El modelo se agrega ya conectado a la imagen.
+6. En el nodo del modelo, pulsa **+** junto al puerto «Resultado» y elige
+   «Salida». Escribe el «Nombre de salida», por ejemplo `resultado`, y pulsa
+   «Agregar salida».
+
+También puedes conectar dos nodos arrastrando desde un puerto de salida hasta
+una entrada compatible, o pulsando la salida y después la entrada. Si tu
+modelo es de clasificación, puedes dividir el flujo según el puntaje de una
+etiqueta con una «Condición» entre el modelo y la salida. El resultado de un
+modelo de detección solo se conecta a una salida.
+
+**Resultado esperado:** el lienzo muestra la imagen, el modelo y la salida
+conectados de izquierda a derecha.
+
+<Screenshot alt="Lienzo del workflow con los nodos Imagen de entrada, Clasificador de ejemplo y la salida resultado conectados de izquierda a derecha." />
+
+### Errores frecuentes
+
+| Mensaje | Qué hacer |
+| --- | --- |
+| «No puedes crear workflows en una aplicación archivada.» | Crea una aplicación nueva (paso 1): una aplicación archivada no se puede reactivar. |
+| «No hay versiones con contrato» | Define el contrato de la versión del modelo (paso 3). |
+| «Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.» | Conecta los nodos solo hacia adelante, desde la imagen hacia la salida. |
+| «Estos puertos no son compatibles.» | Conecta la imagen con un modelo, y el resultado de un modelo con una salida o, si es de clasificación, con una condición. |
+| «Otra persona modificó este borrador. Recarga para ver los cambios.» | Pulsa «Recargar borrador» y repite tu cambio. |
+
+## 5. Valida el workflow y publica una versión
+
+**Rol necesario:** «Administrador». **Concepto:**
+[Del borrador a la versión publicada](/conceptos/workflows-dag/#del-borrador-a-la-versión-publicada).
+
+1. En la pestaña «Borrador», pulsa «Validar workflow».
+2. Si el dashboard muestra «El workflow está listo para publicarse.», continúa.
+   Si muestra «Errores de validación», corrige cada fila de la tabla y vuelve
+   a validar.
+3. Pulsa «Publicar versión». En el diálogo, escribe la «Versión», por ejemplo
+   `1.0.0`, y pulsa «Publicar versión».
+
+**Resultado esperado:** la versión aparece en la pestaña «Versiones
+publicadas», y la tabla de «Workflows» la muestra en «Última versión».
+
+:::note
+Una versión publicada es inmutable. Para cambiar el workflow, edita el
+borrador y publica una versión nueva.
+:::
+
+<Screenshot alt="Pestaña «Borrador» con el mensaje «El workflow está listo para publicarse.» y el diálogo «Publicar versión» con la versión 1.0.0." />
+
+### Errores frecuentes
+
+| Mensaje | Qué hacer |
+| --- | --- |
+| «El workflow necesita un nodo de entrada de imagen.» | Agrega una «Entrada de imagen» (paso 4). |
+| «El workflow necesita al menos un nodo de salida.» | Agrega una «Salida» conectada al resultado del modelo (paso 4). |
+| «Corrige los errores de validación antes de publicar.» | Revisa la tabla «Errores de validación»: sus columnas «Nodo», «Puerto» y «Descripción» dicen qué corregir. |
+| «Ingresa una versión con formato SemVer, por ejemplo 1.0.0.» | Usa tres números separados por puntos, como `1.0.0`. |
+| «Este workflow ya tiene una versión» seguido del número | Las versiones publicadas son inmutables: usa un número nuevo, como `1.0.1`. |
+| «No puedes publicar versiones en una aplicación archivada.» | Crea una aplicación nueva (paso 1): una aplicación archivada no se puede reactivar. |
+
+## Siguiente paso
+
+Ahora tienes una aplicación con una credencial activa y un workflow publicado.
+
+Tu aplicación está lista. Continúa con el
+[Inicio rápido del SDK](/comenzar/inicio-rapido/).

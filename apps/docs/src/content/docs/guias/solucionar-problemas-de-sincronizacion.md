@@ -2,7 +2,7 @@
 title: Solucionar problemas de sincronización
 description: Causas de los resultados offline y error de sync() y cómo resolverlas.
 sidebar:
-  order: 1
+  order: 2
 ---
 
 Ante fallos de red, de tiempo de espera o de archivos, `sync()` no lanza una
