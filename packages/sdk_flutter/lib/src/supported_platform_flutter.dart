@@ -1,3 +1,5 @@
 import 'dart:io';
 
-final isSupported = Platform.isAndroid || Platform.isIOS;
+import 'package:flutter/foundation.dart';
+
+final isSupported = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
