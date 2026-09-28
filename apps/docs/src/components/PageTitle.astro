@@ -1,8 +1,12 @@
 ---
+import { Aside } from "@astrojs/starlight/components";
 import Default from "@astrojs/starlight/components/PageTitle.astro";
 import { breadcrumbTrail } from "../navigation";
+import { httpReferenceBase } from "../reference/http-reference";
 
 const trail = breadcrumbTrail(Astro.locals.starlightRoute.sidebar);
+// starlight-openapi renders these pages from the OpenAPI document, which has no place for an aside.
+const isHttpReference = Astro.url.pathname.startsWith(`/${httpReferenceBase}/`);
 ---
 
 {
@@ -28,6 +32,14 @@ const trail = breadcrumbTrail(Astro.locals.starlightRoute.sidebar);
   )
 }
 <Default />
+{
+  isHttpReference && (
+    <Aside type="note" title="Nota">
+      El SDK llama a estos endpoints por ti. Úsalos directamente solo para depurar o para
+      integraciones sin Flutter.
+    </Aside>
+  )
+}
 
 <style>
   .breadcrumbs ol {
