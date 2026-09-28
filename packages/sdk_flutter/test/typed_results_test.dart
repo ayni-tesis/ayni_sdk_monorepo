@@ -141,6 +141,111 @@ void main() {
         ),
       );
     });
+
+    test(
+      'rejects an installed workflow with unsupported schemaVersion before checking models',
+      () async {
+        final unsupportedDef = jsonEncode({
+          'schemaVersion': '2',
+          'nodes': [
+            {
+              'id': 'input-1',
+              'type': 'input.image',
+              'outputs': {'imagen': 'image'},
+            },
+          ],
+          'connections': [],
+        });
+        await installWorkflowFiles(
+          storageDirectory: storageDirectory,
+          inventoryJson: _inventory(),
+          workflowVersionId: 'workflow-version-1.0.0',
+          definitionJson: unsupportedDef,
+        );
+        final client = sdk();
+        final Future<WorkflowResult> pending = client.run(
+          'workflow-1',
+          pngBytes(),
+        );
+
+        await expectLater(
+          pending,
+          throwsWorkflowError(category: WorkflowErrorCategory.invalidWorkflow),
+        );
+      },
+    );
+
+    test(
+      'accepts an installed legacy workflow definition that omits schemaVersion',
+      () async {
+        final legacyDef = jsonEncode({
+          'nodes': [
+            {
+              'id': 'input-1',
+              'type': 'input.image',
+              'outputs': {'imagen': 'image'},
+            },
+            {
+              'id': 'model-1',
+              'type': 'model.tflite',
+              'modelVersionId': 'model-version-1',
+              'modelName': 'Clasificador',
+              'version': '1.0.0',
+              'inputs': {
+                'image': {
+                  'type': 'image',
+                  'width': 224,
+                  'height': 224,
+                  'channels': 3,
+                  'normalization': 'zero_to_one',
+                },
+              },
+              'outputs': {
+                'result': {
+                  'type': 'classification',
+                  'labels': ['perro', 'gato'],
+                },
+              },
+            },
+            {
+              'id': 'output-1',
+              'type': 'output',
+              'name': 'Resultado',
+              'sourceNodeId': 'model-1',
+              'sourcePort': 'result',
+              'resultType': 'classification',
+            },
+          ],
+          'connections': [
+            {
+              'sourceNodeId': 'input-1',
+              'sourcePort': 'imagen',
+              'targetNodeId': 'model-1',
+              'targetPort': 'image',
+            },
+          ],
+        });
+        await installWorkflowFiles(
+          storageDirectory: storageDirectory,
+          inventoryJson: _inventory(),
+          workflowVersionId: 'workflow-version-1.0.0',
+          definitionJson: legacyDef,
+        );
+        final client = sdk();
+        final Future<WorkflowResult> pending = client.run(
+          'workflow-1',
+          pngBytes(),
+        );
+
+        await expectLater(
+          pending,
+          throwsWorkflowError(
+            category: WorkflowErrorCategory.modelNotAvailable,
+            modelVersionId: 'model-version-1',
+          ),
+        );
+      },
+    );
   });
 }
 
@@ -181,6 +286,7 @@ String _inventory() => jsonEncode({
 });
 
 String _definition() => jsonEncode({
+  'schemaVersion': '1',
   'nodes': [
     {
       'id': 'input-1',

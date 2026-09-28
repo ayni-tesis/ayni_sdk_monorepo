@@ -40,6 +40,7 @@ const syncManifest: SdkSyncManifest = {
   models: [{ modelVersionId: "model-version-1", version: "2.0.0", sha256: "a".repeat(64) }],
 };
 const workflowDefinition = {
+  schemaVersion: "1",
   nodes: [
     { id: "imagen", type: "input.image", outputs: { imagen: "image" } },
     {

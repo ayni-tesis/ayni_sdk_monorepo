@@ -34,6 +34,7 @@ const nodeFields = validatorNodeFields(validatorSource);
  */
 const ruleByRejection: Record<string, string> = {
   invalidSchema: "Esquema exacto",
+  unsupportedSchemaVersion: "Versión de esquema compatible",
   unknownNodeType: "Tipos de nodo compatibles",
   undeclaredModelVersion: "Modelos declarados",
   missingNode: "Nodos existentes",
@@ -44,15 +45,22 @@ const ruleByRejection: Record<string, string> = {
 /** The `invalidWorkflow` messages of `SyncResourceResult`, with `$name` as `<nombre>`. */
 const invalidWorkflowMessages = [
   ...ayniSdkSource.matchAll(
-    /SyncResourceStatus\.invalidWorkflow(?: when previousVersionRetained)? =>\s*'([^']+)'/g,
+    /SyncResourceStatus\.invalidWorkflow(?:\s+when previousVersionRetained)?\s*=>\s*'([^']+)'/g,
   ),
 ].map(([, message]) => (message ?? "").replace("$name", "`<nombre>`"));
 
+/** The `unsupportedWorkflowVersion` messages of `SyncResourceResult`. */
+const unsupportedWorkflowMessages = [
+  ...ayniSdkSource.matchAll(
+    /SyncResourceStatus\.unsupportedWorkflowVersion(?:\s+when previousVersionRetained)?\s*=>\s*'([^']+)'/g,
+  ),
+].map(([, message]) => message ?? "");
+
 describe("Esquema de workflow (US-145)", () => {
-  it("describes the definition as { nodes, connections } without the canvas layout", () => {
+  it("describes the definition as { schemaVersion, nodes, connections } without the canvas layout", () => {
     const structure = section("## Estructura general");
 
-    expect(structure).toContain("`{ nodes, connections }`");
+    expect(structure).toContain("`{ schemaVersion, nodes, connections }`");
     expect(structure).toContain(
       ":::note\nLa disposición del lienzo no forma parte de la versión publicada.\n:::",
     );
@@ -109,8 +117,13 @@ describe("Esquema de workflow (US-145)", () => {
     const rules = section("## Reglas de validación");
 
     expect(rules).toContain("`SyncResourceStatus.invalidWorkflow`");
+    expect(rules).toContain("`SyncResourceStatus.unsupportedWorkflowVersion`");
     expect(invalidWorkflowMessages).toHaveLength(2);
     for (const message of invalidWorkflowMessages) {
+      expect(rules).toContain(message);
+    }
+    expect(unsupportedWorkflowMessages).toHaveLength(2);
+    for (const message of unsupportedWorkflowMessages) {
       expect(rules).toContain(message);
     }
   });

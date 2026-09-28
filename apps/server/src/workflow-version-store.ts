@@ -72,7 +72,11 @@ export async function publishWorkflowVersion(
           workflowId,
           version,
           // The layout only positions nodes on the dashboard canvas; the SDK gets the DAG.
-          definition: { nodes: draft.nodes, connections: draft.connections ?? [] },
+          definition: {
+            schemaVersion: "1",
+            nodes: draft.nodes,
+            connections: draft.connections ?? [],
+          },
           publishedById: userId,
         })
         .returning()) as WorkflowVersionRow[];
@@ -90,6 +94,7 @@ export async function publishWorkflowVersion(
 }
 
 export type SdkWorkflowVersionDefinition = {
+  schemaVersion: string;
   nodes: unknown[];
   connections: unknown[];
 };
@@ -160,6 +165,13 @@ export async function getSdkWorkflowVersionDefinition(
       .for("share");
     if (!workflowRows[0]) return { ok: false, reason: "notFound" } as const;
 
-    return { ok: true, definition: found.definition } as const;
+    const rawDefinition = found.definition as Partial<SdkWorkflowVersionDefinition> | undefined;
+    const normalizedDefinition: SdkWorkflowVersionDefinition = {
+      schemaVersion: rawDefinition?.schemaVersion ?? "1",
+      nodes: rawDefinition?.nodes ?? [],
+      connections: rawDefinition?.connections ?? [],
+    };
+
+    return { ok: true, definition: normalizedDefinition } as const;
   });
 }

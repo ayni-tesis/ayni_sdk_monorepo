@@ -31,7 +31,8 @@ enum SyncStatus {
   /// The device already had every published version, the server acknowledged
   /// the credential without listing resources, or the only rejections were
   /// incompatible workflow definitions
-  /// ([SyncResourceStatus.invalidWorkflow]).
+  /// ([SyncResourceStatus.invalidWorkflow] or
+  /// [SyncResourceStatus.unsupportedWorkflowVersion]).
   upToDate,
 
   /// The server could not be reached, for example because the device has no
@@ -82,6 +83,14 @@ enum SyncResourceStatus {
   /// [SyncResourceResult.previousVersionRetained] tells whether the last
   /// valid version is still installed.
   invalidWorkflow,
+
+  /// The workflow definition declares a schema version that this SDK release
+  /// does not support (US-098), so it was not installed.
+  ///
+  /// It does not turn [SyncResult.status] into [SyncStatus.error].
+  /// [SyncResourceResult.previousVersionRetained] tells whether the last
+  /// compatible version is still installed.
+  unsupportedWorkflowVersion,
 
   /// The workflow definition was valid but could not be saved on the device.
   installationFailed,
@@ -146,9 +155,10 @@ class SyncResourceResult {
   final String? name;
 
   /// Whether a valid local version of this workflow was kept when the update
-  /// was rejected (US-042).
+  /// was rejected (US-042, US-098).
   ///
   /// It applies to [SyncResourceStatus.invalidWorkflow],
+  /// [SyncResourceStatus.unsupportedWorkflowVersion],
   /// [SyncResourceStatus.installationFailed],
   /// [SyncResourceStatus.dependencyFailed], and
   /// [SyncResourceStatus.workflowUnavailable], and selects their [message].
@@ -182,6 +192,11 @@ class SyncResourceResult {
             'La actualización de $name no es compatible. Se mantuvo la última versión válida.',
           SyncResourceStatus.invalidWorkflow =>
             'La actualización de $name no es compatible. No se instaló ninguna versión.',
+          SyncResourceStatus.unsupportedWorkflowVersion
+              when previousVersionRetained =>
+            'Este workflow requiere una versión más reciente del SDK. Se conservará la última versión compatible.',
+          SyncResourceStatus.unsupportedWorkflowVersion =>
+            'Este workflow requiere una versión más reciente del SDK. No se instaló ninguna versión.',
           SyncResourceStatus.installationFailed when previousVersionRetained =>
             'No se pudo guardar la actualización. Se mantuvo la versión anterior.',
           SyncResourceStatus.installationFailed =>
@@ -415,6 +430,13 @@ class AyniSdk {
     this.allowInsecureLoopback = false,
     this.onProgress,
   }) : _credential = credential;
+
+  /// The workflow schema versions supported by this SDK release (US-098).
+  ///
+  /// A workflow declaring a schema version outside this set will not be
+  /// installed or executed.
+  static const supportedWorkflowSchemaVersions =
+      WorkflowDefinitionValidator.supportedSchemaVersions;
 
   static AyniSdk? _instance;
 
@@ -1085,6 +1107,8 @@ class AyniSdk {
           local,
           workflows,
           rejections,
+          unsupportedVersion:
+              validation == WorkflowValidationStatus.unsupportedSchemaVersion,
         );
       }
     }
@@ -1115,6 +1139,7 @@ class AyniSdk {
     bool dependencyFailed = false,
     String? dependencyName,
     bool unavailable = false,
+    bool unsupportedVersion = false,
   }) async {
     if (downloadedFile != null)
       await _deleteDownloadedDefinition(downloadedFile);
@@ -1132,6 +1157,7 @@ class AyniSdk {
         dependencyFailed: dependencyFailed,
         dependencyName: dependencyName,
         unavailable: unavailable,
+        unsupportedVersion: unsupportedVersion,
       ),
     );
   }
@@ -1725,6 +1751,7 @@ class _WorkflowRejection {
     this.dependencyFailed = false,
     this.dependencyName,
     this.unavailable = false,
+    this.unsupportedVersion = false,
   });
 
   final _Workflow workflow;
@@ -1733,6 +1760,7 @@ class _WorkflowRejection {
   final bool dependencyFailed;
   final String? dependencyName;
   final bool unavailable;
+  final bool unsupportedVersion;
 
   SyncResourceResult toResult() => SyncResourceResult(
     type: SyncResourceType.workflow,
@@ -1742,6 +1770,8 @@ class _WorkflowRejection {
         ? SyncResourceStatus.dependencyFailed
         : installationFailed
         ? SyncResourceStatus.installationFailed
+        : unsupportedVersion
+        ? SyncResourceStatus.unsupportedWorkflowVersion
         : SyncResourceStatus.invalidWorkflow,
     resourceVersionId: workflow.workflowVersionId,
     version: workflow.version,

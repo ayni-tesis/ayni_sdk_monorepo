@@ -63,6 +63,7 @@ export const SdkWorkflowConnectionSchema = z
 
 export const SdkWorkflowVersionDefinitionSchema = z
   .object({
+    schemaVersion: z.string(),
     nodes: z.array(SdkWorkflowNodeSchema),
     connections: z.array(SdkWorkflowConnectionSchema),
   })
@@ -131,6 +132,7 @@ const syncManifestExample = {
 } satisfies z.infer<typeof SdkSyncManifestSchema>;
 
 const workflowDefinitionExample = {
+  schemaVersion: "1",
   nodes: [
     { id: "imagen", type: "input.image", outputs: { imagen: "image" } },
     {

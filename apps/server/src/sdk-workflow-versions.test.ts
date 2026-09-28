@@ -14,6 +14,7 @@ import type {
 
 const SECRET = "ayni_sk_abcd1234rest-of-secret";
 const definition: SdkWorkflowVersionDefinition = {
+  schemaVersion: "1",
   nodes: [{ id: "input", type: "input.image" }],
   connections: [],
 };

@@ -15,10 +15,11 @@ comprueba el SDK.
 
 ## Estructura general
 
-Una definición publicada es un objeto `{ nodes, connections }`:
+Una definición publicada es un objeto `{ schemaVersion, nodes, connections }`:
 
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
+| `schemaVersion` | `"1"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
 | `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
 | `connections` | Lista de conexiones | Las conexiones entre la entrada de imagen y los modelos. El servidor la publica vacía si no hay ninguna. |
 
@@ -139,6 +140,7 @@ una de estas reglas:
 | Regla | Qué comprueba |
 | --- | --- |
 | Esquema exacto | La definición es un JSON válido. La definición, cada nodo, cada conexión y los objetos `outputs`, `inputs`, `result` y `branches` tienen exactamente los campos de esta página, ni uno más ni uno menos. Los campos de texto de los nodos y las conexiones no están vacíos, `operator`, `threshold`, `resultType` y el `type` de `result` tienen un valor permitido, `labels` es una lista de textos y ningún `id` se repite. El SDK no comprueba los campos internos de `inputs.image` ni los textos de `branches`. |
+| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"`). Si el workflow declara una versión más nueva o no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
 | Tipos de nodo compatibles | El `type` de cada nodo es uno de los [tipos de nodo](#tipos-de-nodo) de la versión del SDK. |
 | Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
 | Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |
@@ -147,11 +149,22 @@ una de estas reglas:
 
 ### Resultado de una definición rechazada
 
-Si la definición incumple una regla, el SDK no la instala y el recurso del
-workflow en `SyncResult.resources` tiene el estado
-`SyncResourceStatus.invalidWorkflow`. Si el dispositivo ya tenía una versión
-válida del workflow, el SDK la conserva y `previousVersionRetained` es `true`.
-La app recibe uno de estos mensajes en `message`:
+Si la definición incumple una regla, el SDK no la instala. Si el dispositivo ya
+tenía una versión válida del workflow, el SDK la conserva y
+`previousVersionRetained` es `true`.
+
+El estado del recurso en `SyncResult.resources` depende de la regla incumplida:
+
+- Si la definición declara una versión de esquema no soportada por el SDK, el
+  recurso tiene el estado `SyncResourceStatus.unsupportedWorkflowVersion`:
+
+| Situación | Mensaje |
+| --- | --- |
+| Con una versión anterior | Este workflow requiere una versión más reciente del SDK. Se conservará la última versión compatible. |
+| Sin versión anterior | Este workflow requiere una versión más reciente del SDK. No se instaló ninguna versión. |
+
+- Para cualquier otra regla incumplida, el recurso tiene el estado
+  `SyncResourceStatus.invalidWorkflow`:
 
 | Situación | Mensaje |
 | --- | --- |

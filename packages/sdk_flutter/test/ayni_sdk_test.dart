@@ -184,6 +184,34 @@ void main() {
     },
   );
 
+  test(
+    'run rejects installed workflow with unsupported schema version before model inference (US-098)',
+    () async {
+      final client = sdk();
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: _manifest(workflowVersion: '1.0.0'),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: _unsupportedSchemaWorkflowDefinition(
+          schemaVersion: '2',
+        ),
+      );
+      await expectLater(
+        client.run(
+          'workflow-1',
+          Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1))),
+        ),
+        throwsA(
+          isA<WorkflowError>().having(
+            (e) => e.category,
+            'category',
+            WorkflowErrorCategory.invalidWorkflow,
+          ),
+        ),
+      );
+    },
+  );
+
   test('attributes TFLite load failures to the model node', () async {
     final client = sdk();
     await installWorkflowFiles(
@@ -574,6 +602,103 @@ void main() {
       expect(
         result.resources.last.message,
         'La actualización de Clasificar hoja no es compatible. '
+        'No se instaló ninguna versión.',
+      );
+      final inventory = await File(
+        '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
+      ).readAsString();
+      expect(jsonDecode(inventory), {
+        'workflows': [],
+        'models': [
+          {
+            'modelVersionId': 'model-version-1',
+            'version': '1.0.0',
+            'sha256': 'a' * 64,
+          },
+        ],
+      });
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isFalse,
+      );
+      final leftovers = await storageDirectory
+          .list(recursive: true)
+          .where((entry) => entry is File && entry.path.endsWith('.part'))
+          .toList();
+      expect(leftovers, isEmpty);
+    },
+  );
+
+  test(
+    'returns unsupportedWorkflowVersion and keeps previous version when remote workflow has unsupported schema version (US-098)',
+    () async {
+      final client = sdk();
+      final inventory = await seedInventory(client);
+      responseBody = _manifest(workflowVersion: '2.0.0');
+      workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
+        schemaVersion: '2',
+      );
+      final downloads = <WorkflowVersionDownloadResult>[];
+      final rejectingClient = sdk(onWorkflowDownload: downloads.add);
+
+      final result = await rejectingClient.sync();
+
+      // Only the workflow 2.0.0 was a candidate change, validation rejected
+      // it, and nothing was installed: the sync reports `upToDate`.
+      expect(result.status, SyncStatus.upToDate);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.upToDate,
+        SyncResourceStatus.unsupportedWorkflowVersion,
+      ]);
+      final rejected = result.resources.last;
+      expect(rejected.resourceVersionId, 'workflow-version-2.0.0');
+      expect(rejected.version, '2.0.0');
+      expect(
+        rejected.message,
+        'Este workflow requiere una versión más reciente del SDK. '
+        'Se conservará la última versión compatible.',
+      );
+      expect(jsonDecode(await inventory.readAsString())['workflows'], [
+        {
+          'workflowId': 'workflow-1',
+          'workflowVersionId': 'workflow-version-1.0.0',
+          'name': 'Clasificar hoja',
+          'version': '1.0.0',
+          'modelVersionIds': ['model-version-1'],
+        },
+      ]);
+      expect(
+        await File(downloads.single.temporaryDefinition!).exists(),
+        isFalse,
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-1.0.0').exists(),
+        isTrue,
+      );
+      expect(
+        await installedDefinitionFile('workflow-version-2.0.0').exists(),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'commits other resources when a never-installed workflow has unsupported schema version (US-098)',
+    () async {
+      workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
+        schemaVersion: '2',
+      );
+
+      final result = await sdk().sync();
+
+      expect(result.status, SyncStatus.updated);
+      expect(result.resources.map((resource) => resource.status), [
+        SyncResourceStatus.updated,
+        SyncResourceStatus.unsupportedWorkflowVersion,
+      ]);
+      expect(
+        result.resources.last.message,
+        'Este workflow requiere una versión más reciente del SDK. '
         'No se instaló ninguna versión.',
       );
       final inventory = await File(
@@ -2219,6 +2344,7 @@ void main() {
     );
 
     test('supports typedef aliases AyniSdkConfig and InitializationResult', () {
+      AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
       final AyniSdkConfig config = AyniConfig(
         serverUrl: Uri.parse('https://api.ayni.dev'),
         credential: 'ayni_sk_valid_secret',
@@ -2226,6 +2352,10 @@ void main() {
       );
       final InitializationResult result = AyniSdk.initialize(config);
       expect(result.isSuccess, isTrue);
+    });
+
+    test('AyniSdk declares supported workflow schema versions (US-098)', () {
+      expect(AyniSdk.supportedWorkflowSchemaVersions, equals({'1'}));
     });
   });
 }
@@ -2250,6 +2380,7 @@ String _manifest({required String workflowVersion}) => jsonEncode({
 });
 
 String _validWorkflowDefinition() => jsonEncode({
+  'schemaVersion': '1',
   'nodes': [
     {
       'id': 'input-1',
@@ -2298,6 +2429,7 @@ String _validWorkflowDefinition() => jsonEncode({
 });
 
 String _cyclicWorkflowDefinition() => jsonEncode({
+  'schemaVersion': '1',
   'nodes': [
     {
       'id': 'condition-1',
@@ -2313,11 +2445,25 @@ String _cyclicWorkflowDefinition() => jsonEncode({
 });
 
 String _unknownNodeTypeWorkflowDefinition() => jsonEncode({
+  'schemaVersion': '1',
   'nodes': [
     {'id': 'capture-1', 'type': 'dataset.capture'},
   ],
   'connections': [],
 });
+
+String _unsupportedSchemaWorkflowDefinition({String schemaVersion = '2'}) =>
+    jsonEncode({
+      'schemaVersion': schemaVersion,
+      'nodes': [
+        {
+          'id': 'input-1',
+          'type': 'input.image',
+          'outputs': {'imagen': 'image'},
+        },
+      ],
+      'connections': [],
+    });
 
 class _RecordingHttpClient implements HttpClient {
   _RecordingHttpClient(this._delegate);

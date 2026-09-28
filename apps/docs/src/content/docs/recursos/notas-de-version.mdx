@@ -31,9 +31,8 @@ de `Cómo migrar`.
 - **Versión mínima del servidor**: la versión más antigua de la API HTTP de
   Ayni con la que funciona el SDK. El servidor la publica en `info.version` de
   `/openapi.json`.
-- **Versión del esquema de workflow**: los workflows aún no declaran una
-  versión de esquema, así que cada versión del SDK acepta los workflows cuyos
-  tipos de nodo están en su fila.
+- **Versión del esquema de workflow**: la versión del esquema declarada en el
+  campo `schemaVersion` de las definiciones publicadas que acepta el SDK.
 - **Tipos de nodo admitidos**: los tipos de nodo que esa versión del SDK puede
   instalar y ejecutar.
 
