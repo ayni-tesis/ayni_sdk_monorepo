@@ -12,10 +12,22 @@ const timeoutMs = 15_000;
  */
 export function externalLinks(pages: Record<string, string>): ExternalLink[] {
   return Object.entries(pages).flatMap(([page, source]) => {
-    let inCode = false;
+    // The fence that opened the current code block, if any.
+    let opener: string | undefined;
     return source.split(/\r?\n/).flatMap((line, index) => {
-      if (/^\s*(`{3,}|~{3,})/.test(line)) inCode = !inCode;
-      if (inCode || /^\s*(`{3,}|~{3,})/.test(line)) return [];
+      const [, fence, rest = ""] = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line) ?? [];
+      if (opener) {
+        // Only a fence of the same character, at least as long, with no
+        // info string closes the block.
+        const closes =
+          fence?.[0] === opener[0] && fence.length >= opener.length && rest.trim() === "";
+        if (closes) opener = undefined;
+        return [];
+      }
+      if (fence) {
+        opener = fence;
+        return [];
+      }
       return [
         ...line.matchAll(/\]\(\s*<?(https?:\/\/[^)\s>]+)|\shref=["'](https?:\/\/[^"']+)/g),
       ].map(([, markdown, attribute]) => ({

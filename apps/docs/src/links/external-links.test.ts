@@ -22,6 +22,30 @@ describe("externalLinks", () => {
       },
     ]);
   });
+
+  it("closes a code block only with a fence of its character, as long or longer, and no info string", () => {
+    const pages = {
+      "guias/x.md": [
+        "````md",
+        "```sh",
+        "[a](https://a.invalid)",
+        "```",
+        "[b](https://b.invalid)",
+        "````",
+        "~~~",
+        "``` ",
+        "[c](https://c.invalid)",
+        "~~~~ sh",
+        "[d](https://d.invalid)",
+        "  ~~~~  ",
+        "[ok](https://ok.example)",
+      ].join("\n"),
+    };
+
+    expect(externalLinks(pages)).toEqual([
+      { url: "https://ok.example", location: "guias/x.md:13" },
+    ]);
+  });
 });
 
 describe("unreachableLinks", () => {
