@@ -10,6 +10,9 @@ import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'supported_platform_stub.dart'
+    if (dart.library.ui) 'supported_platform_flutter.dart'
+    as platform;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -236,6 +239,9 @@ enum InitializationStatus {
 
   /// An unexpected error occurred during initialization.
   error,
+
+  /// The SDK is running on a platform other than Android or iOS.
+  unsupportedPlatform,
 }
 
 /// Configuration required to initialize the Ayni SDK.
@@ -463,6 +469,13 @@ class AyniSdk {
   /// ```
   static AyniInitializationResult initialize(AyniConfig config) {
     try {
+      if (!platform.isSupported) {
+        _instance = null;
+        return const AyniInitializationResult(
+          status: InitializationStatus.unsupportedPlatform,
+          message: 'Esta plataforma no es compatible con ayni_sdk.',
+        );
+      }
       if (!config.isValid) {
         _instance = null;
         return AyniInitializationResult(

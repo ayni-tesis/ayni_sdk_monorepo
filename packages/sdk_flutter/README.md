@@ -84,5 +84,11 @@ El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/r
 
 ## Plataformas compatibles
 
-- Android
-- iOS
+Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.
+
+- Android 8.0 (API 26) o posterior.
+- iOS 11.0 o posterior.
+
+Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Consulta también los requisitos de [tflite_flutter](https://pub.dev/packages/tflite_flutter) al actualizar esa dependencia.
+
+`AyniSdk.initialize` rechaza otras plataformas con `InitializationStatus.unsupportedPlatform` y el mensaje `Esta plataforma no es compatible con ayni_sdk.`. El SDK no carga un modelo en esa situación.
