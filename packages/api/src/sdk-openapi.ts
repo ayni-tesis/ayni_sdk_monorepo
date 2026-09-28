@@ -178,7 +178,7 @@ function credentialErrors(revokedMessage: string): SdkError[] {
       code: "invalidCredential",
       message: "La credencial no es válida.",
       cause:
-        "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial.",
+        "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
     },
     {
       status: "401",
@@ -302,8 +302,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     description: describeWithErrors(
       "Devuelve lo que tiene publicado la aplicación de la credencial: la última versión de " +
         "cada workflow no archivado y las versiones de modelo que usa. Un workflow que usa un " +
-        "modelo que ya no está disponible no aparece. Si la aplicación está archivada, las dos " +
-        "listas vienen vacías. La solicitud no lleva cuerpo.",
+        "modelo que ya no está disponible no aparece. La solicitud no lleva cuerpo.",
       syncErrors,
     ),
     security,
@@ -330,8 +329,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
       status: "404",
       code: "workflowVersionNotFound",
       message: "El workflow ya no está disponible.",
-      cause:
-        "La versión no existe, es de otra aplicación, su workflow está archivado o la aplicación está archivada.",
+      cause: "La versión no existe, es de otra aplicación o su workflow está archivado.",
     },
   ];
   registry.registerPath({
@@ -380,8 +378,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
       status: "404",
       code: "modelVersionNotFound",
       message: "La versión del modelo ya no está disponible.",
-      cause:
-        "La versión no existe, su modelo es de otra aplicación o la aplicación está archivada.",
+      cause: "La versión no existe o su modelo es de otra aplicación.",
     },
   ];
   registry.registerPath({

@@ -310,7 +310,7 @@
         "tags": ["Endpoints"],
         "operationId": "sincronizar",
         "summary": "Obtener el manifiesto de sincronización",
-        "description": "Devuelve lo que tiene publicado la aplicación de la credencial: la última versión de cada workflow no archivado y las versiones de modelo que usa. Un workflow que usa un modelo que ya no está disponible no aparece. Si la aplicación está archivada, las dos listas vienen vacías. La solicitud no lleva cuerpo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para sincronizar. | Un administrador revocó o regeneró la credencial. |",
+        "description": "Devuelve lo que tiene publicado la aplicación de la credencial: la última versión de cada workflow no archivado y las versiones de modelo que usa. Un workflow que usa un modelo que ya no está disponible no aparece. La solicitud no lleva cuerpo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para sincronizar. | Un administrador revocó o regeneró la credencial. |",
         "security": [
           {
             "sdkCredential": []
@@ -378,7 +378,7 @@
                 },
                 "examples": {
                   "invalidCredential": {
-                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial.",
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
                     "value": {
                       "message": "La credencial no es válida.",
                       "code": "invalidCredential"
@@ -403,7 +403,7 @@
         "tags": ["Endpoints"],
         "operationId": "descargar-version-de-workflow",
         "summary": "Descargar una versión de workflow",
-        "description": "Devuelve la definición de una versión publicada: sus nodos y sus conexiones. Una versión publicada no cambia nunca.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `workflowVersionNotFound` | El workflow ya no está disponible. | La versión no existe, es de otra aplicación, su workflow está archivado o la aplicación está archivada. |",
+        "description": "Devuelve la definición de una versión publicada: sus nodos y sus conexiones. Una versión publicada no cambia nunca.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `workflowVersionNotFound` | El workflow ya no está disponible. | La versión no existe, es de otra aplicación o su workflow está archivado. |",
         "security": [
           {
             "sdkCredential": []
@@ -515,7 +515,7 @@
                 },
                 "examples": {
                   "invalidCredential": {
-                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial.",
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
                     "value": {
                       "message": "La credencial no es válida.",
                       "code": "invalidCredential"
@@ -553,7 +553,7 @@
                 },
                 "examples": {
                   "workflowVersionNotFound": {
-                    "description": "La versión no existe, es de otra aplicación, su workflow está archivado o la aplicación está archivada.",
+                    "description": "La versión no existe, es de otra aplicación o su workflow está archivado.",
                     "value": {
                       "message": "El workflow ya no está disponible.",
                       "code": "workflowVersionNotFound"
@@ -571,7 +571,7 @@
         "tags": ["Endpoints"],
         "operationId": "obtener-manifiesto-de-modelo",
         "summary": "Obtener el manifiesto de descarga de un modelo",
-        "description": "Devuelve dónde descargar el archivo de una versión de modelo y cómo verificarlo. La URL de descarga vence una hora después de la solicitud; para volver a descargar, pide un manifiesto nuevo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `modelVersionNotFound` | La versión del modelo ya no está disponible. | La versión no existe, su modelo es de otra aplicación o la aplicación está archivada. |",
+        "description": "Devuelve dónde descargar el archivo de una versión de modelo y cómo verificarlo. La URL de descarga vence una hora después de la solicitud; para volver a descargar, pide un manifiesto nuevo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `modelVersionNotFound` | La versión del modelo ya no está disponible. | La versión no existe o su modelo es de otra aplicación. |",
         "security": [
           {
             "sdkCredential": []
@@ -657,7 +657,7 @@
                 },
                 "examples": {
                   "invalidCredential": {
-                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…` o no corresponde a ninguna credencial.",
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
                     "value": {
                       "message": "La credencial no es válida.",
                       "code": "invalidCredential"
@@ -695,7 +695,7 @@
                 },
                 "examples": {
                   "modelVersionNotFound": {
-                    "description": "La versión no existe, su modelo es de otra aplicación o la aplicación está archivada.",
+                    "description": "La versión no existe o su modelo es de otra aplicación.",
                     "value": {
                       "message": "La versión del modelo ya no está disponible.",
                       "code": "modelVersionNotFound"
