@@ -101,6 +101,9 @@
       "SdkWorkflowVersionDefinition": {
         "type": "object",
         "properties": {
+          "schemaVersion": {
+            "type": "string"
+          },
           "nodes": {
             "type": "array",
             "items": {
@@ -114,7 +117,7 @@
             }
           }
         },
-        "required": ["nodes", "connections"]
+        "required": ["schemaVersion", "nodes", "connections"]
       },
       "SdkWorkflowNode": {
         "type": "object",
@@ -441,6 +444,7 @@
                   "definicion": {
                     "summary": "Imagen, modelo y salida",
                     "value": {
+                      "schemaVersion": "1",
                       "nodes": [
                         {
                           "id": "imagen",

@@ -34,6 +34,7 @@ const nodeFields = validatorNodeFields(validatorSource);
  */
 const ruleByRejection: Record<string, string> = {
   invalidSchema: "Esquema exacto",
+  unsupportedSchemaVersion: "Versión de esquema compatible",
   unknownNodeType: "Tipos de nodo compatibles",
   undeclaredModelVersion: "Modelos declarados",
   missingNode: "Nodos existentes",
@@ -49,10 +50,10 @@ const invalidWorkflowMessages = [
 ].map(([, message]) => (message ?? "").replace("$name", "`<nombre>`"));
 
 describe("Esquema de workflow (US-145)", () => {
-  it("describes the definition as { nodes, connections } without the canvas layout", () => {
+  it("describes the definition as { schemaVersion, nodes, connections } without the canvas layout", () => {
     const structure = section("## Estructura general");
 
-    expect(structure).toContain("`{ nodes, connections }`");
+    expect(structure).toContain("`{ schemaVersion, nodes, connections }`");
     expect(structure).toContain(
       ":::note\nLa disposición del lienzo no forma parte de la versión publicada.\n:::",
     );

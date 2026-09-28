@@ -126,7 +126,11 @@ describe("publishWorkflowVersion", () => {
         id: expect.any(String),
         workflowId: "workflow-1",
         version: "1.0.0",
-        definition: { nodes: publishableDraft.nodes, connections: publishableDraft.connections },
+        definition: {
+          schemaVersion: "1",
+          nodes: publishableDraft.nodes,
+          connections: publishableDraft.connections,
+        },
         publishedById: "admin",
         createdAt: expect.any(Date),
       },
@@ -185,6 +189,7 @@ describe("publishWorkflowVersion", () => {
 });
 
 const publishedDefinition: SdkWorkflowVersionDefinition = {
+  schemaVersion: "1",
   nodes: [{ id: "input", type: "input.image" }],
   connections: [],
 };

@@ -4,14 +4,13 @@ import { compareVersions, type Release } from "./changelog";
  * What a version of `ayni_sdk` needs from the rest of Ayni (US-148).
  * `minimumServer` is the lowest version of the server's HTTP API (the
  * `info.version` of `packages/api/src/openapi.json`) the SDK works with.
- * `workflowSchema` is the workflow schema version the SDK accepts, `null`
- * while workflows do not declare one (US-098).
+ * `workflowSchema` is the workflow schema version the SDK accepts (US-098).
  */
 export type SdkCompatibility = { minimumServer: string; workflowSchema: string | null };
 
 /** The compatibility of each version in `CHANGELOG.md`. A new version adds its entry. */
 export const sdkCompatibility: Record<string, SdkCompatibility> = {
-  "0.1.0-beta.1": { minimumServer: "0.1.0", workflowSchema: null },
+  "0.1.0-beta.1": { minimumServer: "0.1.0", workflowSchema: "1" },
 };
 
 /**

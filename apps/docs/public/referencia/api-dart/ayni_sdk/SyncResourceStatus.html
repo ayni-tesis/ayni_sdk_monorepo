@@ -156,6 +156,22 @@ valid version is still installed.</p>
 
 </dd>
 
+            <dt id="unsupportedWorkflowVersion" class="constant">
+    <span class="name ">unsupportedWorkflowVersion</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/SyncResourceStatus.html">SyncResourceStatus</a></span>
+  
+
+</dt>
+<dd>
+  <p>The workflow definition declares a schema version that this SDK release
+does not support (US-098), so it was not installed.</p>
+<p>It does not turn <a href="../ayni_sdk/SyncResult/status.html">SyncResult.status</a> into <a href="../ayni_sdk/SyncStatus.html">SyncStatus.error</a>.
+<a href="../ayni_sdk/SyncResourceResult/previousVersionRetained.html">SyncResourceResult.previousVersionRetained</a> tells whether the last
+compatible version is still installed.</p>
+  
+
+</dd>
+
             <dt id="installationFailed" class="constant">
     <span class="name ">installationFailed</span>
   <span class="signature">&#8594; const <a href="../ayni_sdk/SyncResourceStatus.html">SyncResourceStatus</a></span>

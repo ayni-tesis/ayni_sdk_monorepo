@@ -20,7 +20,10 @@ function collapse(text: string): string {
  * JSX text, and each fixed part of a template literal around its `${…}`. A
  * quote must equal one of them, so part of a longer label never passes.
  */
+let cachedDashboardTexts: Set<string> | null = null;
+
 export function dashboardTexts(): Set<string> {
+  if (cachedDashboardTexts) return cachedDashboardTexts;
   const texts = new Set<string>();
   const visit = (node: ts.Node) => {
     if (
@@ -44,6 +47,7 @@ export function dashboardTexts(): Set<string> {
       visit(ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX));
     }
   }
+  cachedDashboardTexts = texts;
   return texts;
 }
 

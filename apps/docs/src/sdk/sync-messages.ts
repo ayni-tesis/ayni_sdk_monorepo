@@ -35,7 +35,9 @@ export function syncResourceMessages(source: string): SyncResourceMessage[] {
   }));
 
   const arms = [
-    ...getter.matchAll(/SyncResourceStatus\.(\w+)( when previousVersionRetained)? =>\s*'([^']+)'/g),
+    ...getter.matchAll(
+      /SyncResourceStatus\.(\w+)(?:\s+(when previousVersionRetained))?\s*=>\s*'([^']+)'/g,
+    ),
   ];
   const statusesByPreviousVersion = new Set(
     arms.filter(([, , when]) => when).map(([, status]) => status),

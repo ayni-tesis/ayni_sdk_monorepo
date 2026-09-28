@@ -13,9 +13,14 @@ void main() {
   );
 
   Map<String, Object> definition({
+    Object? schemaVersion = '1',
     List<Object> nodes = const [],
     List<Object> connections = const [],
-  }) => {'nodes': nodes, 'connections': connections};
+  }) => {
+    if (schemaVersion != null) 'schemaVersion': schemaVersion,
+    'nodes': nodes,
+    'connections': connections,
+  };
 
   Map<String, Object> imageInput({String id = 'input-1'}) => {
     'id': id,
@@ -138,11 +143,11 @@ void main() {
     expect(validate('{}'), WorkflowValidationStatus.invalidSchema);
     expect(validate([]), WorkflowValidationStatus.invalidSchema);
     expect(
-      validate({'nodes': 'input'}),
+      validate({'schemaVersion': '1', 'nodes': 'input'}),
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
-      validate({'nodes': [], 'connections': 'x'}),
+      validate({'schemaVersion': '1', 'nodes': [], 'connections': 'x'}),
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
@@ -155,9 +160,10 @@ void main() {
     );
   });
 
-  test('rejects unknown top-level fields beyond nodes and connections', () {
+  test('rejects unknown top-level fields beyond schemaVersion, nodes and connections', () {
     expect(
       validate({
+        'schemaVersion': '1',
         'nodes': const <Object>[],
         'connections': const <Object>[],
         'layout': {
@@ -167,10 +173,64 @@ void main() {
       WorkflowValidationStatus.invalidSchema,
     );
     expect(
-      validate({'nodes': const <Object>[], 'draftRevision': 1}),
+      validate({
+        'schemaVersion': '1',
+        'nodes': const <Object>[],
+        'draftRevision': 1,
+      }),
       WorkflowValidationStatus.invalidSchema,
     );
   });
+
+  test('rejects definitions with missing, empty, or non-string schemaVersion', () {
+    expect(
+      validate({'nodes': const <Object>[], 'connections': const <Object>[]}),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(definition(schemaVersion: null)),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(definition(schemaVersion: '')),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(definition(schemaVersion: '   ')),
+      WorkflowValidationStatus.invalidSchema,
+    );
+    expect(
+      validate(definition(schemaVersion: 1)),
+      WorkflowValidationStatus.invalidSchema,
+    );
+  });
+
+  test(
+    'rejects unsupported schema versions as unsupportedSchemaVersion (US-098)',
+    () {
+      expect(
+        validate(definition(schemaVersion: '2')),
+        WorkflowValidationStatus.unsupportedSchemaVersion,
+      );
+      expect(
+        validate(definition(schemaVersion: '0')),
+        WorkflowValidationStatus.unsupportedSchemaVersion,
+      );
+      expect(
+        validate(definition(schemaVersion: 'v1')),
+        WorkflowValidationStatus.unsupportedSchemaVersion,
+      );
+      expect(
+        validate({
+          'schemaVersion': '2',
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+          'futureField': true,
+        }),
+        WorkflowValidationStatus.unsupportedSchemaVersion,
+      );
+    },
+  );
 
   test('rejects nodes with unknown or missing published fields', () {
     expect(

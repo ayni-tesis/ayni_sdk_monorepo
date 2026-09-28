@@ -54,6 +54,8 @@ describe("syncResourceMessages", () => {
       "invalidRemoteResource",
       "invalidWorkflow",
       "invalidWorkflow",
+      "unsupportedWorkflowVersion",
+      "unsupportedWorkflowVersion",
       "installationFailed",
       "installationFailed",
       "dependencyFailed",

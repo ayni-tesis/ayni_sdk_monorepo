@@ -13,6 +13,10 @@ enum WorkflowValidationStatus {
   /// ill-typed fields.
   invalidSchema,
 
+  /// The definition declares a schema version that this SDK release does not
+  /// support (US-098).
+  unsupportedSchemaVersion,
+
   /// A node has a type the SDK cannot run.
   unknownNodeType,
 
@@ -29,13 +33,13 @@ enum WorkflowValidationStatus {
   incompatiblePort,
 }
 
-/// Checks a published workflow definition (`{ nodes, connections }`) before the
-/// SDK installs it: the exact schema the server publishes (no unknown or
-/// missing fields on the definition, its nodes, or its connections), only the
-/// supported node types, edges that join compatible ports (a model image input
-/// taking a single connection), an acyclic graph counting each condition's and
-/// output's stored source as an edge, and model versions declared in the
-/// manifest.
+/// Checks a published workflow definition (`{ schemaVersion, nodes, connections }`)
+/// before the SDK installs it: the exact schema the server publishes (no
+/// unknown or missing fields on the definition, its nodes, or its connections),
+/// only the supported node types, edges that join compatible ports (a model
+/// image input taking a single connection), an acyclic graph counting each
+/// condition's and output's stored source as an edge, and model versions
+/// declared in the manifest.
 ///
 /// The graph rules are a faithful Dart mirror of the server's source of truth,
 /// `packages/api/src/workflow-graph.ts` (`workflowEdges`,
@@ -46,9 +50,12 @@ enum WorkflowValidationStatus {
 /// first, then port them here. The published shape — which this validator
 /// treats as required and complete — comes from
 /// `apps/server/src/workflow-version-store.ts`
-/// (`definition = { nodes, connections }`, never `layout`) and the node types
-/// in `apps/server/src/workflow-store.ts` (`WorkflowNode`).
+/// (`definition = { schemaVersion, nodes, connections }`, never `layout`) and
+/// the node types in `apps/server/src/workflow-store.ts` (`WorkflowNode`).
 class WorkflowDefinitionValidator {
+  /// The workflow schema versions supported by this validator (US-098).
+  static const supportedSchemaVersions = {'1'};
+
   static const _nodeTypes = {
     'input.image',
     'model.tflite',
@@ -148,10 +155,21 @@ class WorkflowDefinitionValidator {
     Object? definition,
     Set<String> declaredModelVersionIds,
   ) {
-    if (definition is! Map ||
+    if (definition is! Map) {
+      return _ParsedNodes.invalid();
+    }
+    final schemaVersion = definition['schemaVersion'];
+    final isNonBlankSchema =
+        schemaVersion is String && schemaVersion.trim().isNotEmpty;
+    if (isNonBlankSchema && !supportedSchemaVersions.contains(schemaVersion)) {
+      return _ParsedNodes.rejected(
+        WorkflowValidationStatus.unsupportedSchemaVersion,
+      );
+    }
+    if (!isNonBlankSchema ||
         !_hasExactFields(
           definition,
-          const {'nodes', 'connections'},
+          const {'schemaVersion', 'nodes', 'connections'},
           optional: const {'connections'},
         )) {
       return _ParsedNodes.invalid();

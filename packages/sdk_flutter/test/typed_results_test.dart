@@ -181,6 +181,7 @@ String _inventory() => jsonEncode({
 });
 
 String _definition() => jsonEncode({
+  'schemaVersion': '1',
   'nodes': [
     {
       'id': 'input-1',

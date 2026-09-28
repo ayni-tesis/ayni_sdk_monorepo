@@ -86,6 +86,11 @@ version was kept returns <code>La actualización de &lt;name&gt; no es compatibl
           &#39;La actualización de $name no es compatible. Se mantuvo la última versión válida.&#39;,
         SyncResourceStatus.invalidWorkflow =&gt;
           &#39;La actualización de $name no es compatible. No se instaló ninguna versión.&#39;,
+        SyncResourceStatus.unsupportedWorkflowVersion
+            when previousVersionRetained =&gt;
+          &#39;Este workflow requiere una versión más reciente del SDK. Se conservará la última versión compatible.&#39;,
+        SyncResourceStatus.unsupportedWorkflowVersion =&gt;
+          &#39;Este workflow requiere una versión más reciente del SDK. No se instaló ninguna versión.&#39;,
         SyncResourceStatus.installationFailed when previousVersionRetained =&gt;
           &#39;No se pudo guardar la actualización. Se mantuvo la versión anterior.&#39;,
         SyncResourceStatus.installationFailed =&gt;
