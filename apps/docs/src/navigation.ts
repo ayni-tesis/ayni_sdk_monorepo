@@ -1,17 +1,7 @@
 import { createOpenAPISidebarGroup } from "starlight-openapi";
+import { sidebarGroups } from "./sidebar-groups";
 
-/**
- * The five sidebar groups from `docs/investigacion/documentacion-sdk.md`
- * (section 4). Each group lists every page in its content directory, so a new
- * page cannot be left out of the sidebar.
- */
-export const sidebarGroups = [
-  { label: "Comenzar", directory: "comenzar" },
-  { label: "Guías", directory: "guias" },
-  { label: "Conceptos", directory: "conceptos" },
-  { label: "Referencia", directory: "referencia" },
-  { label: "Recursos", directory: "recursos" },
-] as const;
+export { sidebarGroups };
 
 /**
  * Where `starlight-openapi` puts the pages it generates from the OpenAPI

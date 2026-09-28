@@ -1,4 +1,4 @@
-import { sidebarGroups } from "../navigation";
+import { sidebarGroups } from "../sidebar-groups";
 
 /** Visible text of the search dialog (US-138). */
 export const searchText = {
