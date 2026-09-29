@@ -552,14 +552,16 @@ class AyniSdk {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo Android no cumple el requisito mínimo del SDK.',
         );
       }
       if (platform.isUnsupportedIos) {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
         );
       }
       if (!platform.isSupported) {
@@ -731,9 +733,7 @@ class AyniSdk {
       );
     }
     if (!platform.isSupported) {
-      throw UnsupportedError(
-        'Esta plataforma no es compatible con ayni_sdk.',
-      );
+      throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
     try {
       final inventoryFile = File(
@@ -764,22 +764,9 @@ class AyniSdk {
         decoded as Map<String, dynamic>,
         input,
       );
-      // Preflight every dependency before opening an interpreter, so a missing
-      // later model can never leave a partially executed workflow.
-      final installer = ModelArtifactInstaller(
-        storageDirectory: storageDirectory,
-      );
-      for (final modelVersionId in workflow.modelVersionIds) {
-        if (!await installer.isVersionAvailable(
-          modelId: modelVersionId,
-          modelVersionId: modelVersionId,
-        )) {
-          throw WorkflowError(
-            WorkflowErrorCategory.modelNotAvailable,
-            modelVersionId: modelVersionId,
-          );
-        }
-      }
+      // Artifacts are checked as their selected branch reaches each model.
+      // Preflighting every dependency here would let an unrelated branch stop
+      // an execution before its condition chooses the route.
       onProgress?.call('Usando recursos guardados en este dispositivo.');
       return await executor.execute(
         workflowId: workflowId,

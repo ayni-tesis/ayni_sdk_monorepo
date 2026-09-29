@@ -695,27 +695,6 @@ void main() {
     'rejects a missing selected route before unrelated model inference',
     () async {
       await installModelArtifact();
-      const unrelatedBytes = 'unrelated model';
-      final unrelatedHash = crypto.sha256
-          .convert(utf8.encode(unrelatedBytes))
-          .toString();
-      final unrelatedDirectory = Directory(
-        '${storageDirectory.path}/model-version-2',
-      );
-      await unrelatedDirectory.create(recursive: true);
-      await File(
-        '${unrelatedDirectory.path}/model-version-2.tflite',
-      ).writeAsString(unrelatedBytes);
-      await File(
-        '${unrelatedDirectory.path}/model-version-2.json',
-      ).writeAsString(
-        jsonEncode({
-          'modelId': 'model-version-2',
-          'modelVersionId': 'model-version-2',
-          'sha256': unrelatedHash,
-        }),
-      );
-
       final inventory = jsonDecode(_inventory()) as Map<String, dynamic>;
       (inventory['workflows'] as List).first['modelVersionIds'].add(
         'model-version-2',
@@ -723,7 +702,7 @@ void main() {
       (inventory['models'] as List).add({
         'modelVersionId': 'model-version-2',
         'version': '1.0.0',
-        'sha256': unrelatedHash,
+        'sha256': 'a' * 64,
       });
       final definition = jsonDecode(_definition()) as Map<String, dynamic>;
       final nodes = (definition['nodes'] as List).cast<Map>();
