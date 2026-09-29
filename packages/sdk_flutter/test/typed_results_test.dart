@@ -287,6 +287,37 @@ void main() {
   });
 
   group('WorkflowError from AyniSdk.run', () {
+    test(
+      'reports outputNotReached instead of returning an empty success',
+      () async {
+        final inventory = jsonDecode(_inventory()) as Map<String, dynamic>;
+        (inventory['workflows'] as List).first['modelVersionIds'] = <String>[];
+        (inventory['models'] as List).clear();
+        final definition = {
+          'schemaVersion': '1',
+          'nodes': [
+            {
+              'id': 'input-1',
+              'type': 'input.image',
+              'outputs': {'imagen': 'image'},
+            },
+          ],
+          'connections': <Object>[],
+        };
+        await installWorkflowFiles(
+          storageDirectory: storageDirectory,
+          inventoryJson: jsonEncode(inventory),
+          workflowVersionId: 'workflow-version-1.0.0',
+          definitionJson: jsonEncode(definition),
+        );
+
+        await expectLater(
+          sdk().run('workflow-1', pngBytes()),
+          throwsWorkflowError(category: WorkflowErrorCategory.outputNotReached),
+        );
+      },
+    );
+
     test('reports a workflow that was never installed on the device', () async {
       final client = sdk();
       final Future<WorkflowResult> pending = client.run(
@@ -669,6 +700,7 @@ void main() {
           Uint8List.fromList(img.encodePng(source)),
         );
 
+        expect(result.workflowId, 'workflow-1');
         expect(result.workflowVersion, '1.0.0');
         final classification =
             result.outputs['Resultado']! as ClassificationResult;
