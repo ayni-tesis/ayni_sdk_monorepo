@@ -141,7 +141,7 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
         WorkflowValidationStatus.valid) {
       throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
     }
-    final executor = WorkflowExecutor(storageDirectory);
+    final executor = _createWorkflowExecutorForRun();
     await executor.validateInputAndContracts(
       decoded as Map&lt;String, dynamic&gt;,
       input,

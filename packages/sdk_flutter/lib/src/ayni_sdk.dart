@@ -678,6 +678,7 @@ class AyniSdk {
   /// [createAyniSdkForTesting].
   WorkflowVersionDownloader _workflowVersionDownloader =
       WorkflowVersionDownloader();
+  WorkflowInferenceRunner? _workflowInferenceRunner;
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
   Future<void> _syncQueue = Future<void>.value();
@@ -758,7 +759,7 @@ class AyniSdk {
           WorkflowValidationStatus.valid) {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       }
-      final executor = WorkflowExecutor(storageDirectory);
+      final executor = _createWorkflowExecutorForRun();
       await executor.validateInputAndContracts(
         decoded as Map<String, dynamic>,
         input,
@@ -796,6 +797,11 @@ class AyniSdk {
       throw const WorkflowError(WorkflowErrorCategory.runtimeError);
     }
   }
+
+  WorkflowExecutor _createWorkflowExecutorForRun() => WorkflowExecutor(
+    storageDirectory,
+    inferenceRunner: _workflowInferenceRunner,
+  );
 
   /// Downloads and installs the workflow versions published for the
   /// credential's application, with the models they need.
@@ -1633,6 +1639,7 @@ AyniSdk createAyniSdkForTesting({
   void Function(String message)? onProgress,
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
+  WorkflowInferenceRunner? workflowInferenceRunner,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -1647,6 +1654,7 @@ AyniSdk createAyniSdkForTesting({
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;
   }
+  sdk._workflowInferenceRunner = workflowInferenceRunner;
   return sdk;
 }
 

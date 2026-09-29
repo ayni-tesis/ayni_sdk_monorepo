@@ -8,6 +8,14 @@ import 'workflow_tflite_stub.dart'
     if (dart.library.ui) 'workflow_tflite_flutter.dart'
     as tflite;
 
+/// Internal model runner seam used to test execution without loading TFLite.
+typedef WorkflowInferenceRunner =
+    Future<tflite.WorkflowInferenceResult> Function({
+      required String modelPath,
+      required Uint8List inputBytes,
+      required List<List<int>> acceptedInputShapes,
+    });
+
 /// Why [AyniSdk.run] could not execute a workflow, in
 /// [WorkflowError.category].
 enum WorkflowErrorCategory {
@@ -232,10 +240,14 @@ bool workflowBranchReachesOutput({
 /// Runs a validated workflow definition on the device.
 class WorkflowExecutor {
   /// Creates an executor that loads models from [storageDirectory].
-  WorkflowExecutor(this.storageDirectory);
+  WorkflowExecutor(
+    this.storageDirectory, {
+    WorkflowInferenceRunner? inferenceRunner,
+  }) : _inferenceRunner = inferenceRunner ?? tflite.runModel;
 
   /// The directory where the installed models live.
   final Directory storageDirectory;
+  final WorkflowInferenceRunner _inferenceRunner;
 
   /// Checks that [bytes] is a decodable image and that every model node of
   /// [definition] declares a supported image input.
@@ -470,7 +482,7 @@ class WorkflowExecutor {
       '${storageDirectory.path}/$versionId/$versionId.tflite',
     );
     try {
-      final inference = await tflite.runModel(
+      final inference = await _inferenceRunner(
         modelPath: modelFile.path,
         inputBytes: input.buffer.asUint8List(
           input.offsetInBytes,
