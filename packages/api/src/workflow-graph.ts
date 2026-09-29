@@ -54,12 +54,12 @@ export function workflowEdges(draft: WorkflowGraphDraft): WorkflowEdge[] {
                 targetNodeId: node.id,
                 targetPort: "source",
               },
-            ...(node.sources ?? []).map((source) => ({
-              sourceNodeId: source.sourceNodeId,
-              sourcePort: source.sourcePort,
-              targetNodeId: node.id,
-              targetPort: "source",
-            })),
+              ...(node.sources ?? []).map((source) => ({
+                sourceNodeId: source.sourceNodeId,
+                sourcePort: source.sourcePort,
+                targetNodeId: node.id,
+                targetPort: "source",
+              })),
             ]
           : [],
     ),

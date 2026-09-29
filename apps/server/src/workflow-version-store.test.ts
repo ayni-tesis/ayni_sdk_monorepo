@@ -157,7 +157,7 @@ describe("publishWorkflowVersion", () => {
       outputs: { result: { type: "detection", labels: ["hoja"], scoreThreshold: 0.5 } },
     };
     const output = publishableDraft.nodes.find((node) => node.type === "output");
-    if (!output || output.type !== "output") throw new Error("Missing fixture output");
+    if (output?.type !== "output") throw new Error("Missing fixture output");
     const draft: WorkflowDraft = {
       ...publishableDraft,
       nodes: [
@@ -165,14 +165,17 @@ describe("publishWorkflowVersion", () => {
         detector,
         {
           ...output,
-          sources: [
-            { sourceNodeId: "detector", sourcePort: "result", resultType: "detection" },
-          ],
+          sources: [{ sourceNodeId: "detector", sourcePort: "result", resultType: "detection" }],
         },
       ],
       connections: [
-        ...publishableDraft.connections!,
-        { sourceNodeId: "input", sourcePort: "imagen", targetNodeId: "detector", targetPort: "image" },
+        ...(publishableDraft.connections ?? []),
+        {
+          sourceNodeId: "input",
+          sourcePort: "imagen",
+          targetNodeId: "detector",
+          targetPort: "image",
+        },
       ],
     };
     const store = makePublishDb({ draft });

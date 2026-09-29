@@ -90,10 +90,7 @@ describe("Esquema de workflow (US-145)", () => {
         .map((row) => row[0])
         .filter((field) => type !== "output" || field !== "`sources`");
 
-      expect(
-        documentedFields,
-        type,
-      ).toEqual(fields.map((field) => `\`${field}\``));
+      expect(documentedFields, type).toEqual(fields.map((field) => `\`${field}\``));
       if (type === "output") {
         expect(rows.find((row) => row[0] === "`sources`")?.[2]).toContain("esquema 2");
       }

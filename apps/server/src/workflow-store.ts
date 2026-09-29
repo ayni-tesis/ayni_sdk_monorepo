@@ -648,10 +648,7 @@ export async function addOutputNode(
   { name, sourceNodeId, sourcePort, resultType, sources, position, ...input }: AddOutputNodeInput,
 ): Promise<AddOutputNodeResult> {
   return changeWorkflowDraft<IncompatibleSource>(database, input, async (draft) => {
-    const allSources = [
-      { sourceNodeId, sourcePort, resultType },
-      ...(sources ?? []),
-    ];
+    const allSources = [{ sourceNodeId, sourcePort, resultType }, ...(sources ?? [])];
     if (
       !allSources.every((item) =>
         isOutputSourceCompatible(

@@ -142,7 +142,12 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
     if (node.type === "condition") {
       const source = nodesById.get(node.sourceNodeId);
       if (!source) {
-        addError("missingSource", node, "source", `El nodo "${name}" necesita un resultado de origen.`);
+        addError(
+          "missingSource",
+          node,
+          "source",
+          `El nodo "${name}" necesita un resultado de origen.`,
+        );
       } else if (!isConditionSourceCompatible(source, node.label)) {
         addError(
           "incompatibleType",
@@ -165,7 +170,12 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
     for (const outputSource of sources) {
       const source = nodesById.get(outputSource.sourceNodeId);
       if (!source) {
-        addError("missingSource", node, "source", `El nodo "${name}" necesita un resultado de origen.`);
+        addError(
+          "missingSource",
+          node,
+          "source",
+          `El nodo "${name}" necesita un resultado de origen.`,
+        );
       } else if (
         !isOutputSourceCompatible(source, outputSource.sourcePort, outputSource.resultType)
       ) {
