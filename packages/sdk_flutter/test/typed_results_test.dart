@@ -546,6 +546,40 @@ void main() {
     });
 
     test(
+      'redacts unexpected runtime details from the typed model error',
+      () async {
+        await installWorkflow();
+        await installModelArtifact();
+        const privateDetail = 'C:\\private\\secret-token';
+        final client = createAyniSdkForTesting(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: storageDirectory,
+          workflowInferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async => throw StateError(privateDetail),
+        );
+
+        final error = await client
+            .run('workflow-1', pngBytes())
+            .then<WorkflowError?>(
+              (_) => null,
+              onError: (Object exception) =>
+                  exception is WorkflowError ? exception : null,
+            );
+
+        expect(error, isNotNull);
+        expect(error!.category, WorkflowErrorCategory.runtimeError);
+        expect(error.nodeId, 'model-1');
+        expect(error.modelVersionId, 'model-version-1');
+        expect(error.toString(), isNot(contains(privateDetail)));
+      },
+    );
+
+    test(
       'rejects an installed workflow with unsupported schemaVersion before checking models',
       () async {
         final unsupportedDef = jsonEncode({
