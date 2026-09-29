@@ -299,6 +299,22 @@ class WorkflowExecutor {
         if (n['type'] == 'condition' || n['type'] == 'output')
           edge(n['sourceNodeId'], n['id']);
       }
+      final outputSources = {
+        for (final node in nodes)
+          if (node['type'] == 'output') node['sourceNodeId'] as String,
+      };
+      final requiredConditionIds = {
+        for (final id in outputSources)
+          if (byId[id]?['type'] == 'condition') id,
+      };
+      final requiredModelIds = {
+        for (final id in outputSources)
+          if (byId[id]?['type'] == 'model.tflite') id,
+        for (final node in nodes)
+          if (node['type'] == 'condition' &&
+              requiredConditionIds.contains(node['id']))
+            node['sourceNodeId'] as String,
+      };
       final degree = {
         for (final n in nodes)
           n['id'] as String: incoming[n['id']]?.length ?? 0,
@@ -397,7 +413,8 @@ class WorkflowExecutor {
             final n = byId[to]!;
             if (n['sourceNodeId'] == id &&
                 n['type'] == 'condition' &&
-                values[id] is ClassificationResult)
+                values[id] is ClassificationResult &&
+                requiredConditionIds.contains(to))
               active.add(to);
             if (n['sourceNodeId'] == id &&
                 n['type'] == 'output' &&
@@ -408,6 +425,13 @@ class WorkflowExecutor {
               active.add(to);
           } else if (active.contains(id)) {
             final source = byId[id]!;
+            if (source['type'] == 'input.image' &&
+                byId[to]!['type'] == 'model.tflite' &&
+                !requiredModelIds.contains(to)) {
+              degree[to] = degree[to]! - 1;
+              if (degree[to] == 0) ready.add(to);
+              continue;
+            }
             final connection = connections.firstWhere(
               (c) => c['sourceNodeId'] == id && c['targetNodeId'] == to,
             );

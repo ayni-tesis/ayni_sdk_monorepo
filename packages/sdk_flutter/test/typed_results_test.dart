@@ -725,7 +725,19 @@ void main() {
         'threshold': 0.5,
         'branches': {'true': 'Verdadero', 'false': 'Falso'},
       };
-      definition['nodes'] = [input, unrelatedModel, output, condition, model];
+      final unrelatedCondition = {
+        ...condition,
+        'id': 'condition-2',
+        'sourceNodeId': 'model-2',
+      };
+      definition['nodes'] = [
+        input,
+        unrelatedModel,
+        output,
+        condition,
+        model,
+        unrelatedCondition,
+      ];
       final connections = (definition['connections'] as List).cast<Map>();
       definition['connections'] = [
         {
