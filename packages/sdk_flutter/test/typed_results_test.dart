@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -62,12 +63,14 @@ void main() {
   group('WorkflowResult', () {
     test('reports the executed workflow context', () {
       const result = WorkflowResult(
+        executionId: 'execution-1',
         workflowId: 'workflow-1',
         workflowVersion: '1.0.0',
         outputs: {},
       );
 
       expect(result.workflowId, 'workflow-1');
+      expect(result.executionId, 'execution-1');
       expect(result.workflowVersion, '1.0.0');
       expect(result.usingOfflineCache, isTrue);
       expect(result.outputs, isEmpty);
@@ -75,6 +78,7 @@ void main() {
 
     test('carries classification, detection and boolean values', () {
       const result = WorkflowResult(
+        executionId: 'execution-1',
         workflowId: 'workflow-1',
         workflowVersion: '1.0.0',
         outputs: {
@@ -284,6 +288,74 @@ void main() {
         );
       },
     );
+  });
+
+  group('Workflow execution cancellation', () {
+    test('reports executionNotFound for an unknown identifier', () {
+      expect(
+        () => sdk().cancelExecution('missing-execution'),
+        throwsWorkflowError(category: WorkflowErrorCategory.executionNotFound),
+      );
+    });
+
+    test('cancels one active run without affecting another run', () async {
+      await installWorkflow();
+      await installModelArtifact();
+      final started = [Completer<void>(), Completer<void>()];
+      final releaseInference = [Completer<void>(), Completer<void>()];
+      var inferenceCount = 0;
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              final index = inferenceCount++;
+              started[index].complete();
+              await releaseInference[index].future;
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+      final ids = <String>[];
+      final cancelledRun = client.run(
+        'workflow-1',
+        pngBytes(),
+        onExecutionStarted: ids.add,
+      );
+      await started[0].future;
+      client.cancelExecution(ids.single);
+
+      final unaffectedRun = client.run(
+        'workflow-1',
+        pngBytes(),
+        onExecutionStarted: ids.add,
+      );
+      await started[1].future;
+      releaseInference[0].complete();
+      await expectLater(
+        cancelledRun,
+        throwsWorkflowError(category: WorkflowErrorCategory.cancelled),
+      );
+      releaseInference[1].complete();
+      final result = await unaffectedRun;
+
+      expect(result.executionId, ids.last);
+      expect(result.outputs, contains('Resultado'));
+      expect(ids.toSet(), hasLength(2));
+      expect(
+        () => client.cancelExecution(ids.first),
+        throwsWorkflowError(category: WorkflowErrorCategory.executionNotFound),
+      );
+    });
   });
 
   group('WorkflowError from AyniSdk.run', () {
@@ -911,6 +983,7 @@ void main() {
 
     await expectLater(
       executor.execute(
+        executionId: 'execution-1',
         workflowId: 'workflow-1',
         workflowVersion: '1.0.0',
         definition: {

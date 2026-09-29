@@ -53,3 +53,26 @@ Future<void> printOutputs(String workflowId, Uint8List imageBytes) async {
   }
   // #endregion ejecutar-readme
 }
+
+/// Cancels a running workflow execution.
+Future<void> cancelWorkflow(
+  AyniSdk sdk,
+  String workflowId,
+  Uint8List imageBytes,
+) async {
+  // #region cancelar-ejecucion
+  late String executionId;
+  final pending = sdk.run(
+    workflowId,
+    imageBytes,
+    onExecutionStarted: (id) => executionId = id,
+  );
+  // Mientras `pending` sigue en curso:
+  sdk.cancelExecution(executionId);
+  // #endregion cancelar-ejecucion
+  try {
+    await pending;
+  } on WorkflowError {
+    // La cancelación se reporta como WorkflowErrorCategory.cancelled.
+  }
+}

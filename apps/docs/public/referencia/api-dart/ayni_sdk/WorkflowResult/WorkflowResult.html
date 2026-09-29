@@ -54,7 +54,8 @@
 
     <section class="multi-line-signature">
       const
-      <span class="name ">WorkflowResult</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="param-workflowId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">workflowId</span>, </span></li>
+      <span class="name ">WorkflowResult</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="param-executionId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">executionId</span>, </span></li>
+<li><span class="parameter" id="param-workflowId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">workflowId</span>, </span></li>
 <li><span class="parameter" id="param-workflowVersion"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">workflowVersion</span>, </span></li>
 <li><span class="parameter" id="param-outputs"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>, <span class="type-parameter"><a href="../../ayni_sdk/WorkflowValue-class.html">WorkflowValue</a></span>&gt;</span></span> <span class="parameter-name">outputs</span>, </span></li>
 <li><span class="parameter" id="param-usingOfflineCache"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">usingOfflineCache</span> = <span class="default-value">true</span>, </span></li>
@@ -73,6 +74,7 @@ apps only read them.</p>
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
   <pre class="language-dart"><code class="language-dart">const WorkflowResult({
+  required this.executionId,
   required this.workflowId,
   required this.workflowVersion,
   required this.outputs,
