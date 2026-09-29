@@ -178,6 +178,16 @@ void main() {
               'sourcePort': 'false',
               'resultType': 'boolean',
             },
+            {
+              'sourceNodeId': 'condition-2',
+              'sourcePort': 'true',
+              'resultType': 'boolean',
+            },
+            {
+              'sourceNodeId': 'condition-2',
+              'sourcePort': 'false',
+              'resultType': 'boolean',
+            },
           ];
         nodes.add({
           'id': 'condition-1',
@@ -185,6 +195,15 @@ void main() {
           'sourceNodeId': 'model-1',
           'label': 'gato',
           'operator': 'gte',
+          'threshold': 0.5,
+          'branches': {'true': 'Verdadero', 'false': 'Falso'},
+        });
+        nodes.add({
+          'id': 'condition-2',
+          'type': 'condition',
+          'sourceNodeId': 'model-1',
+          'label': 'gato',
+          'operator': 'lte',
           'threshold': 0.5,
           'branches': {'true': 'Verdadero', 'false': 'Falso'},
         });
@@ -235,7 +254,7 @@ void main() {
 
         final combined = result.outputs['Resultado']! as CombinedWorkflowResult;
         expect(combined.nodeId, 'output-1');
-        expect(combined.values, hasLength(3));
+        expect(combined.values, hasLength(4));
         expect(combined.values[0], isA<ClassificationResult>());
         expect(combined.values[0].nodeId, 'model-1');
         expect(combined.values[1], isA<DetectionResult>());
@@ -243,6 +262,9 @@ void main() {
         expect(combined.values[2], isA<BooleanResult>());
         expect(combined.values[2].nodeId, 'condition-1');
         expect((combined.values[2] as BooleanResult).value, isTrue);
+        expect(combined.values[3], isA<BooleanResult>());
+        expect(combined.values[3].nodeId, 'condition-2');
+        expect((combined.values[3] as BooleanResult).value, isFalse);
 
         (definition['connections'] as List).removeWhere(
           (connection) => connection['targetNodeId'] == 'model-2',
