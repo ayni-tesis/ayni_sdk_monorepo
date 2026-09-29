@@ -54,7 +54,7 @@ export type WorkflowNewNode =
   // A model added after the image output is saved together with its connection.
   | (Extract<WorkflowPaletteNode, { type: "model.tflite" }> & WorkflowNodeOrigin)
   | Pick<ConditionNode, "type" | "sourceNodeId" | "label" | "operator" | "threshold">
-  | Pick<OutputNode, "type" | "name" | "sourceNodeId" | "sourcePort" | "resultType">;
+  | Pick<OutputNode, "type" | "name" | "sourceNodeId" | "sourcePort" | "resultType" | "sources">;
 
 /** A result an output can take: a model's result or one branch of a condition. */
 export type WorkflowOutputSource = {

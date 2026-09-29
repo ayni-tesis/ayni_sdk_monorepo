@@ -65,6 +65,26 @@ export async function publishWorkflowVersion(
         .for("update");
       if (existing.length > 0) return { kind: "versionExists" as const };
 
+      const hasCombinedOutput = draft.nodes.some(
+        (node) => node.type === "output" && (node.sources?.length ?? 0) > 0,
+      );
+      const nodes = draft.nodes.map((node) =>
+        node.type === "output" && (node.sources?.length ?? 0) > 0
+          ? {
+              id: node.id,
+              type: node.type,
+              name: node.name,
+              sources: [
+                {
+                  sourceNodeId: node.sourceNodeId,
+                  sourcePort: node.sourcePort,
+                  resultType: node.resultType,
+                },
+                ...(node.sources ?? []),
+              ],
+            }
+          : node,
+      );
       const insertedRows = (await tx
         .insert(workflowVersion)
         .values({
@@ -73,8 +93,8 @@ export async function publishWorkflowVersion(
           version,
           // The layout only positions nodes on the dashboard canvas; the SDK gets the DAG.
           definition: {
-            schemaVersion: "1",
-            nodes: draft.nodes,
+            schemaVersion: hasCombinedOutput ? "2" : "1",
+            nodes,
             connections: draft.connections ?? [],
           },
           publishedById: userId,

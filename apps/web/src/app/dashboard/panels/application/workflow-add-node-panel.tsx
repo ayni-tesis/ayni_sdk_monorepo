@@ -483,6 +483,7 @@ function OutputForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
   const [sourceKey, setSourceKey] = useState(
     origin ? `${origin.sourceNodeId}:${origin.sourcePort}` : "",
   );
+  const [additionalSourceKeys, setAdditionalSourceKeys] = useState<string[]>([]);
   const [sourceError, setSourceError] = useState("");
   const source = sources.find((option) => `${option.id}:${option.port}` === sourceKey);
 
@@ -497,12 +498,25 @@ function OutputForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
           setSourceError(OUTPUT_SOURCE_REQUIRED_MESSAGE);
           return;
         }
+        const selectedSources = additionalSourceKeys.flatMap((key) => {
+          const additional = sources.find((item) => `${item.id}:${item.port}` === key);
+          return additional
+            ? [
+                {
+                  sourceNodeId: additional.id,
+                  sourcePort: additional.port,
+                  resultType: additional.type,
+                },
+              ]
+            : [];
+        });
         onAdd({
           type: "output",
           name: name.trim(),
           sourceNodeId: source.id,
           sourcePort: source.port,
           resultType: source.type,
+          ...(selectedSources.length ? { sources: selectedSources } : {}),
         });
       }}
     >
@@ -542,6 +556,33 @@ function OutputForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
         <p id={`${fieldId}-source-error`} className="text-destructive text-sm" role="alert">
           {sourceError}
         </p>
+      )}
+      {sources.length > 1 && (
+        <fieldset className="space-y-1">
+          <legend className="text-sm">Resultados adicionales (opcional)</legend>
+          {sources
+            .filter((option) => `${option.id}:${option.port}` !== sourceKey)
+            .map((option) => {
+              const key = `${option.id}:${option.port}`;
+              return (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={additionalSourceKeys.includes(key)}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setAdditionalSourceKeys((selected) =>
+                        event.target.checked
+                          ? [...selected, key]
+                          : selected.filter((item) => item !== key),
+                      )
+                    }
+                  />
+                  {option.label}
+                </label>
+              );
+            })}
+        </fieldset>
       )}
       <Button type="submit" size="sm" className="w-full" disabled={busy || !name.trim()}>
         Agregar salida

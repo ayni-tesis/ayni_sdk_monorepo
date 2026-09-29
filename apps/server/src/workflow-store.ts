@@ -97,6 +97,11 @@ export type WorkflowNode =
       sourceNodeId: string;
       sourcePort: string;
       resultType: "classification" | "detection" | "boolean";
+      sources?: {
+        sourceNodeId: string;
+        sourcePort: string;
+        resultType: "classification" | "detection" | "boolean";
+      }[];
     };
 export type WorkflowConnection = {
   sourceNodeId: string;
@@ -629,17 +634,32 @@ export type AddOutputNodeInput = WorkflowDraftChangeInput & {
   sourceNodeId: string;
   sourcePort: string;
   resultType: "classification" | "detection" | "boolean";
+  sources?: {
+    sourceNodeId: string;
+    sourcePort: string;
+    resultType: "classification" | "detection" | "boolean";
+  }[];
   position?: WorkflowNodePosition;
 };
 export type AddOutputNodeResult = WorkflowDraftChangeResult<IncompatibleSource>;
 
 export async function addOutputNode(
   database: WorkflowDatabase,
-  { name, sourceNodeId, sourcePort, resultType, position, ...input }: AddOutputNodeInput,
+  { name, sourceNodeId, sourcePort, resultType, sources, position, ...input }: AddOutputNodeInput,
 ): Promise<AddOutputNodeResult> {
   return changeWorkflowDraft<IncompatibleSource>(database, input, async (draft) => {
-    const source = draft.nodes.find((node) => node.id === sourceNodeId);
-    if (!isOutputSourceCompatible(source, sourcePort, resultType))
+    const allSources = [{ sourceNodeId, sourcePort, resultType }, ...(sources ?? [])];
+    if (
+      !allSources.every((item) =>
+        isOutputSourceCompatible(
+          draft.nodes.find((node) => node.id === item.sourceNodeId),
+          item.sourcePort,
+          item.resultType,
+        ),
+      ) ||
+      new Set(allSources.map((item) => `${item.sourceNodeId}:${item.sourcePort}`)).size !==
+        allSources.length
+    )
       return { reason: "incompatibleSource" as const };
     const node: WorkflowNode = {
       id: crypto.randomUUID(),
@@ -648,6 +668,7 @@ export async function addOutputNode(
       sourceNodeId,
       sourcePort,
       resultType,
+      ...(sources?.length ? { sources } : {}),
     };
     return { draft: appendWorkflowNode(draft, node, position) };
   });

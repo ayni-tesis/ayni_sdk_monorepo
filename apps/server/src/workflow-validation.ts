@@ -139,28 +139,54 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
         );
       continue;
     }
-    if (node.type !== "condition" && node.type !== "output") continue;
-    const source = nodesById.get(node.sourceNodeId);
-    if (!source) {
-      addError(
-        "missingSource",
-        node,
-        "source",
-        `El nodo "${name}" necesita un resultado de origen.`,
-      );
+    if (node.type === "condition") {
+      const source = nodesById.get(node.sourceNodeId);
+      if (!source) {
+        addError(
+          "missingSource",
+          node,
+          "source",
+          `El nodo "${name}" necesita un resultado de origen.`,
+        );
+      } else if (!isConditionSourceCompatible(source, node.label)) {
+        addError(
+          "incompatibleType",
+          node,
+          "source",
+          `El nodo "${name}" recibe un tipo incompatible en este puerto.`,
+        );
+      }
       continue;
     }
-    const compatible =
-      node.type === "condition"
-        ? isConditionSourceCompatible(source, node.label)
-        : isOutputSourceCompatible(source, node.sourcePort, node.resultType);
-    if (!compatible)
-      addError(
-        "incompatibleType",
-        node,
-        "source",
-        `El nodo "${name}" recibe un tipo incompatible en este puerto.`,
-      );
+    if (node.type !== "output") continue;
+    const sources = [
+      {
+        sourceNodeId: node.sourceNodeId,
+        sourcePort: node.sourcePort,
+        resultType: node.resultType,
+      },
+      ...(node.sources ?? []),
+    ];
+    for (const outputSource of sources) {
+      const source = nodesById.get(outputSource.sourceNodeId);
+      if (!source) {
+        addError(
+          "missingSource",
+          node,
+          "source",
+          `El nodo "${name}" necesita un resultado de origen.`,
+        );
+      } else if (
+        !isOutputSourceCompatible(source, outputSource.sourcePort, outputSource.resultType)
+      ) {
+        addError(
+          "incompatibleType",
+          node,
+          "source",
+          `El nodo "${name}" recibe un tipo incompatible en este puerto.`,
+        );
+      }
+    }
   }
 
   const edges = workflowEdges(draft).filter(

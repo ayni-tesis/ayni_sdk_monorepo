@@ -695,6 +695,44 @@ describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => 
     });
   });
 
+  it("accepts a declared additional compatible output source", async () => {
+    const addOutputNode = vi.fn(async () => ({
+      ok: true as const,
+      draft: { nodes: [] },
+      draftRevision: NEXT_REVISION,
+    }));
+    const { request } = makeApp({ addOutputNode });
+    const sources = [
+      {
+        sourceNodeId: "model-node",
+        sourcePort: "result",
+        resultType: "detection",
+      },
+    ];
+
+    const response = await postWorkflowNode(request, {
+      type: "output",
+      name: "Análisis",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "boolean",
+      sources,
+    });
+
+    expect(response.status).toBe(200);
+    expect(addOutputNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      draftRevision: BASE_REVISION,
+      userId: "admin",
+      name: "Análisis",
+      sourceNodeId: "condition-node",
+      sourcePort: "true",
+      resultType: "boolean",
+      sources,
+    });
+  });
+
   it("preserves the workflow not-found response", async () => {
     const { request } = makeApp({
       addConditionNode: async () => ({ ok: false, reason: "workflowNotFound" }),
@@ -3576,6 +3614,13 @@ describe("draft revisions (US-130)", () => {
           sourceNodeId: "condition",
           sourcePort: "true",
           resultType: "boolean",
+          sources: [
+            {
+              sourceNodeId: "model-a",
+              sourcePort: "result",
+              resultType: "classification",
+            },
+          ],
         }),
     ],
     [

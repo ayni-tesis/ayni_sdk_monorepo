@@ -86,11 +86,14 @@ describe("Esquema de workflow (US-145)", () => {
   it("describes each field of each node type", () => {
     for (const [type, fields] of Object.entries(nodeFields)) {
       const rows = tableRows(section(`### \`${type}\``));
+      const documentedFields = rows
+        .map((row) => row[0])
+        .filter((field) => type !== "output" || field !== "`sources`");
 
-      expect(
-        rows.map((row) => row[0]),
-        type,
-      ).toEqual(fields.map((field) => `\`${field}\``));
+      expect(documentedFields, type).toEqual(fields.map((field) => `\`${field}\``));
+      if (type === "output") {
+        expect(rows.find((row) => row[0] === "`sources`")?.[2]).toContain("esquema 2");
+      }
       expect(rows.filter((row) => (row[2] ?? "").length === 0).map((row) => row[0])).toEqual([]);
     }
   });

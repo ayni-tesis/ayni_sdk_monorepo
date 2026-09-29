@@ -138,6 +138,72 @@ describe("publishWorkflowVersion", () => {
     expect(store.lockedTables).toContain(workflow);
   });
 
+  it("publishes combined outputs with schema version 2 and declared sources", async () => {
+    const detector: WorkflowDraft["nodes"][number] = {
+      id: "detector",
+      type: "model.tflite",
+      modelVersionId: "version-2",
+      modelName: "Detector",
+      version: "2.0.0",
+      inputs: {
+        image: {
+          type: "image",
+          width: 320,
+          height: 320,
+          channels: 3,
+          normalization: "none",
+        },
+      },
+      outputs: { result: { type: "detection", labels: ["hoja"], scoreThreshold: 0.5 } },
+    };
+    const output = publishableDraft.nodes.find((node) => node.type === "output");
+    if (output?.type !== "output") throw new Error("Missing fixture output");
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [
+        ...publishableDraft.nodes.filter((node) => node.id !== output.id),
+        detector,
+        {
+          ...output,
+          sources: [{ sourceNodeId: "detector", sourcePort: "result", resultType: "detection" }],
+        },
+      ],
+      connections: [
+        ...(publishableDraft.connections ?? []),
+        {
+          sourceNodeId: "input",
+          sourcePort: "imagen",
+          targetNodeId: "detector",
+          targetPort: "image",
+        },
+      ],
+    };
+    const store = makePublishDb({ draft });
+
+    await publishWorkflowVersion(store.db, input);
+
+    expect(store.inserted[0]?.definition).toEqual({
+      schemaVersion: "2",
+      nodes: [
+        ...draft.nodes.filter((node) => node.type !== "output"),
+        {
+          id: output.id,
+          type: "output",
+          name: output.name,
+          sources: [
+            {
+              sourceNodeId: output.sourceNodeId,
+              sourcePort: output.sourcePort,
+              resultType: output.resultType,
+            },
+            { sourceNodeId: "detector", sourcePort: "result", resultType: "detection" },
+          ],
+        },
+      ],
+      connections: draft.connections,
+    });
+  });
+
   it("rejects a draft that is not publishable with its validation errors, without creating a version", async () => {
     const store = makePublishDb({ draft: { ...publishableDraft, connections: [] } });
 
