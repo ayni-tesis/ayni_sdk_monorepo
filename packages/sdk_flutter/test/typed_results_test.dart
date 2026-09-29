@@ -691,6 +691,114 @@ void main() {
     );
   });
 
+  test(
+    'rejects a missing selected route before unrelated model inference',
+    () async {
+      await installModelArtifact();
+      const unrelatedBytes = 'unrelated model';
+      final unrelatedHash = crypto.sha256
+          .convert(utf8.encode(unrelatedBytes))
+          .toString();
+      final unrelatedDirectory = Directory(
+        '${storageDirectory.path}/model-version-2',
+      );
+      await unrelatedDirectory.create(recursive: true);
+      await File(
+        '${unrelatedDirectory.path}/model-version-2.tflite',
+      ).writeAsString(unrelatedBytes);
+      await File(
+        '${unrelatedDirectory.path}/model-version-2.json',
+      ).writeAsString(
+        jsonEncode({
+          'modelId': 'model-version-2',
+          'modelVersionId': 'model-version-2',
+          'sha256': unrelatedHash,
+        }),
+      );
+
+      final inventory = jsonDecode(_inventory()) as Map<String, dynamic>;
+      (inventory['workflows'] as List).first['modelVersionIds'].add(
+        'model-version-2',
+      );
+      (inventory['models'] as List).add({
+        'modelVersionId': 'model-version-2',
+        'version': '1.0.0',
+        'sha256': unrelatedHash,
+      });
+      final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+      final nodes = (definition['nodes'] as List).cast<Map>();
+      final input = nodes.firstWhere((node) => node['type'] == 'input.image');
+      final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
+      final unrelatedModel = Map<String, Object>.from(model)
+        ..['id'] = 'model-2'
+        ..['modelVersionId'] = 'model-version-2'
+        ..['modelName'] = 'Modelo independiente';
+      final output = nodes.firstWhere((node) => node['type'] == 'output')
+        ..['sourceNodeId'] = 'condition-1'
+        ..['sourcePort'] = 'false'
+        ..['resultType'] = 'boolean';
+      final condition = {
+        'id': 'condition-1',
+        'type': 'condition',
+        'sourceNodeId': 'model-1',
+        'label': 'gato',
+        'operator': 'gte',
+        'threshold': 0.5,
+        'branches': {'true': 'Verdadero', 'false': 'Falso'},
+      };
+      definition['nodes'] = [input, unrelatedModel, output, condition, model];
+      final connections = (definition['connections'] as List).cast<Map>();
+      definition['connections'] = [
+        {
+          'sourceNodeId': 'input-1',
+          'sourcePort': 'imagen',
+          'targetNodeId': 'model-2',
+          'targetPort': 'image',
+        },
+        ...connections,
+      ];
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: jsonEncode(inventory),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: jsonEncode(definition),
+      );
+      final inferredModels = <String>[];
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              inferredModels.add(
+                modelPath.contains('model-version-1.tflite')
+                    ? 'model-version-1'
+                    : 'model-version-2',
+              );
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+
+      await expectLater(
+        client.run('workflow-1', pngBytes()),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.invalidWorkflow,
+          nodeId: 'condition-1',
+        ),
+      );
+      expect(inferredModels, ['model-version-1']);
+    },
+  );
+
   test('rejects a cyclic installed workflow before inference', () async {
     await installModelArtifact();
     final definition = jsonDecode(_definition()) as Map<String, dynamic>;

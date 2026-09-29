@@ -303,6 +303,10 @@ class WorkflowExecutor {
         for (final n in nodes)
           n['id'] as String: incoming[n['id']]?.length ?? 0,
       };
+      final conditionSources = {
+        for (final node in nodes)
+          if (node['type'] == 'condition') node['sourceNodeId'] as String,
+      };
       final ready = degree.entries
           .where((e) => e.value == 0)
           .map((e) => e.key)
@@ -315,6 +319,14 @@ class WorkflowExecutor {
       final outputs = <String, WorkflowValue>{};
       var completed = 0;
       while (ready.isNotEmpty) {
+        ready.sort((left, right) {
+          int priority(String id) => byId[id]!['type'] == 'condition'
+              ? 0
+              : conditionSources.contains(id)
+              ? 1
+              : 2;
+          return priority(left).compareTo(priority(right));
+        });
         final id = ready.removeAt(0), node = byId[id]!;
         completed++;
         if (active.contains(id))
