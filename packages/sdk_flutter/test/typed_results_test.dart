@@ -566,6 +566,58 @@ void main() {
     expect(branchResult.value, isTrue);
   });
 
+  test('rejects a cyclic installed workflow before inference', () async {
+    await installModelArtifact();
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final nodes = (definition['nodes'] as List).cast<Map>();
+    final output = nodes.firstWhere((node) => node['type'] == 'output');
+    output
+      ..['sourceNodeId'] = 'condition-1'
+      ..['sourcePort'] = 'true'
+      ..['resultType'] = 'boolean';
+    nodes.add({
+      'id': 'condition-1',
+      'type': 'condition',
+      'sourceNodeId': 'condition-1',
+      'label': 'gato',
+      'operator': 'gte',
+      'threshold': 0.5,
+      'branches': {'true': 'Verdadero', 'false': 'Falso'},
+    });
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    var inferenceStarted = false;
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async {
+            inferenceStarted = true;
+            return (
+              error: null,
+              outputs: [
+                (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+              ],
+            );
+          },
+    );
+
+    await expectLater(
+      client.run('workflow-1', pngBytes()),
+      throwsWorkflowError(category: WorkflowErrorCategory.invalidWorkflow),
+    );
+    expect(inferenceStarted, isFalse);
+  });
+
   test('rejects a classification contract without labels', () async {
     final definition = jsonDecode(_definition()) as Map<String, dynamic>;
     final model = (definition['nodes'] as List).cast<Map>().firstWhere(
