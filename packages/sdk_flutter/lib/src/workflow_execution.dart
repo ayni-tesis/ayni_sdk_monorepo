@@ -595,6 +595,7 @@ class WorkflowExecutor {
       );
       final threshold = (result['scoreThreshold'] as num).toDouble();
       final detections = <Detection>[];
+      var invalidAboveThreshold = false;
       for (var i = 0; i < scores.length; i++) {
         final score = scores[i],
             labelIndex = classes[i].toInt(),
@@ -607,8 +608,10 @@ class WorkflowExecutor {
             labelIndex >= labels.length ||
             [x0, y0, x1, y1].any((v) => !v.isFinite || v < 0 || v > 1) ||
             x0 >= x1 ||
-            y0 >= y1)
+            y0 >= y1) {
+          invalidAboveThreshold = true;
           continue;
+        }
         detections.add(
           Detection(
             labels[labelIndex],
@@ -620,7 +623,7 @@ class WorkflowExecutor {
           ),
         );
       }
-      if (detections.isEmpty && labels.isEmpty)
+      if (detections.isEmpty && invalidAboveThreshold)
         throw WorkflowError(
           WorkflowErrorCategory.modelOutputInvalid,
           nodeId: nodeId,

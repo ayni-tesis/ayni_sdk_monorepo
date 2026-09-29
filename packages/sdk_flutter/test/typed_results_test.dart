@@ -657,6 +657,120 @@ void main() {
       ),
     );
   });
+
+  test('returns only valid normalized detection boxes', () async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'model.tflite',
+    );
+    ((model['outputs'] as Map)['result'] as Map)
+      ..['type'] = 'detection'
+      ..['labels'] = ['mancha']
+      ..['scoreThreshold'] = 0.5;
+    (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'output',
+    )['resultType'] = 'detection';
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    await installModelArtifact();
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (
+                shape: [1, 2, 4],
+                values: Float32List.fromList([
+                  0.1,
+                  0.2,
+                  0.4,
+                  0.5,
+                  0.1,
+                  -0.1,
+                  0.4,
+                  0.5,
+                ]),
+              ),
+              (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+              (shape: [1, 2], values: Float32List.fromList([0, 0])),
+              (shape: [1], values: Float32List.fromList([2])),
+            ],
+          ),
+    );
+
+    final result = await client.run('workflow-1', pngBytes());
+    final detection = result.outputs['Resultado']! as DetectionResult;
+    expect(detection.detections, hasLength(1));
+    expect(detection.detections.single.label, 'mancha');
+    expect(detection.detections.single.confidence, closeTo(0.95, 1e-6));
+    expect(detection.detections.single.xMin, closeTo(0.2, 1e-6));
+    expect(detection.detections.single.yMin, closeTo(0.1, 1e-6));
+    expect(detection.detections.single.xMax, closeTo(0.5, 1e-6));
+    expect(detection.detections.single.yMax, closeTo(0.4, 1e-6));
+  });
+
+  test('reports invalid detections when no valid box remains', () async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'model.tflite',
+    );
+    ((model['outputs'] as Map)['result'] as Map)
+      ..['type'] = 'detection'
+      ..['labels'] = ['mancha']
+      ..['scoreThreshold'] = 0.5;
+    (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'output',
+    )['resultType'] = 'detection';
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    await installModelArtifact();
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (
+                shape: [1, 1, 4],
+                values: Float32List.fromList([0.1, -0.1, 0.4, 0.5]),
+              ),
+              (shape: [1, 1], values: Float32List.fromList([0.95])),
+              (shape: [1, 1], values: Float32List.fromList([0])),
+              (shape: [1], values: Float32List.fromList([1])),
+            ],
+          ),
+    );
+
+    await expectLater(
+      client.run('workflow-1', pngBytes()),
+      throwsWorkflowError(
+        category: WorkflowErrorCategory.modelOutputInvalid,
+        nodeId: 'model-1',
+        modelVersionId: 'model-version-1',
+      ),
+    );
+  });
 }
 
 /// The single matcher for a [WorkflowError] thrown by `AyniSdk.run`: it checks
