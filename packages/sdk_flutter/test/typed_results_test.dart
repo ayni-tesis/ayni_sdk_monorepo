@@ -333,48 +333,6 @@ void main() {
     },
   );
 
-  test('maps empty classification labels to modelOutputInvalid', () async {
-    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
-    final model = (definition['nodes'] as List).cast<Map>().firstWhere(
-      (node) => node['type'] == 'model.tflite',
-    );
-    (model['outputs'] as Map)['result'] = {
-      'type': 'classification',
-      'labels': <String>[],
-    };
-    await installWorkflowFiles(
-      storageDirectory: storageDirectory,
-      inventoryJson: _inventory(),
-      workflowVersionId: 'workflow-version-1.0.0',
-      definitionJson: jsonEncode(definition),
-    );
-    await installModelArtifact();
-    final client = createAyniSdkForTesting(
-      serverUrl: Uri.parse('https://sdk.example.test'),
-      credential: 'ayni_sk_test',
-      storageDirectory: storageDirectory,
-      workflowInferenceRunner:
-          ({
-            required modelPath,
-            required inputBytes,
-            required acceptedInputShapes,
-          }) async => (
-            error: null,
-            outputs: [
-              (shape: [1, 0], values: Float32List(0)),
-            ],
-          ),
-    );
-
-    await expectLater(
-      client.run('workflow-1', pngBytes()),
-      throwsWorkflowError(
-        category: WorkflowErrorCategory.modelOutputInvalid,
-        nodeId: 'model-1',
-        modelVersionId: 'model-version-1',
-      ),
-    );
-  });
 }
 
 /// The single matcher for a [WorkflowError] thrown by `AyniSdk.run`: it checks

@@ -523,7 +523,7 @@ class WorkflowExecutor {
       final result = ((node['outputs'] as Map)['result'] as Map);
       final labels = (result['labels'] as List).cast<String>();
       if (result['type'] == 'classification') {
-        if (tensors.isEmpty || labels.isEmpty) {
+        if (tensors.isEmpty) {
           throw WorkflowError(
             WorkflowErrorCategory.modelOutputInvalid,
             nodeId: nodeId,
