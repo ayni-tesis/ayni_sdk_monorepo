@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
+import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
 
@@ -38,6 +40,25 @@ void main() {
 
   Uint8List pngBytes() =>
       Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1)));
+
+  Future<void> installModelArtifact() async {
+    const bytes = 'deterministic test model';
+    final hash = crypto.sha256.convert(utf8.encode(bytes)).toString();
+    final modelDirectory = Directory(
+      '${storageDirectory.path}/model-version-1',
+    );
+    await modelDirectory.create(recursive: true);
+    await File(
+      '${modelDirectory.path}/model-version-1.tflite',
+    ).writeAsString(bytes);
+    await File('${modelDirectory.path}/model-version-1.json').writeAsString(
+      jsonEncode({
+        'modelId': 'model-version-1',
+        'modelVersionId': 'model-version-1',
+        'sha256': hash,
+      }),
+    );
+  }
 
   group('WorkflowResult', () {
     test('reports the executed workflow context', () {
@@ -245,6 +266,113 @@ void main() {
           ),
         );
       },
+    );
+  });
+
+  test(
+    'runs a reverse-listed DAG, preprocesses pixels, and maps classification',
+    () async {
+      await installModelArtifact();
+
+      final source = img.Image(width: 1, height: 1)
+        ..setPixelRgb(0, 0, 255, 0, 0);
+      final seen = <List<double>>[];
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              expect(acceptedInputShapes, [
+                [1, 224, 224, 3],
+                [224, 224, 3],
+              ]);
+              seen.add(Float32List.view(inputBytes.buffer).take(3).toList());
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+
+      for (final normalization in ['none', 'zero_to_one', 'minus_one_to_one']) {
+        final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+        final nodes = (definition['nodes'] as List).cast<Map>();
+        definition['nodes'] = [nodes[1], nodes[0], nodes[2]];
+        ((nodes[1]['inputs'] as Map)['image'] as Map)['normalization'] =
+            normalization;
+        await installWorkflowFiles(
+          storageDirectory: storageDirectory,
+          inventoryJson: _inventory(),
+          workflowVersionId: 'workflow-version-1.0.0',
+          definitionJson: jsonEncode(definition),
+        );
+        final result = await client.run(
+          'workflow-1',
+          Uint8List.fromList(img.encodePng(source)),
+        );
+
+        expect(result.workflowVersion, '1.0.0');
+        final classification =
+            result.outputs['Resultado']! as ClassificationResult;
+        expect(classification.nodeId, 'model-1');
+        expect(classification.label, 'gato');
+        expect(classification.confidence, closeTo(0.9, 0.000001));
+        expect(classification.confidences['perro'], closeTo(0.1, 0.000001));
+        expect(classification.confidences['gato'], closeTo(0.9, 0.000001));
+      }
+      expect(seen[0], [255, 0, 0]);
+      expect(seen[1], [1, 0, 0]);
+      expect(seen[2], [1, -1, -1]);
+    },
+  );
+
+  test('maps empty classification labels to modelOutputInvalid', () async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'model.tflite',
+    );
+    (model['outputs'] as Map)['result'] = {
+      'type': 'classification',
+      'labels': <String>[],
+    };
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    await installModelArtifact();
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (shape: [1, 0], values: Float32List(0)),
+            ],
+          ),
+    );
+
+    await expectLater(
+      client.run('workflow-1', pngBytes()),
+      throwsWorkflowError(
+        category: WorkflowErrorCategory.modelOutputInvalid,
+        nodeId: 'model-1',
+        modelVersionId: 'model-version-1',
+      ),
     );
   });
 }

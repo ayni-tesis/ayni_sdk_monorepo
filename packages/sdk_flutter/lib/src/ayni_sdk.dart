@@ -552,14 +552,16 @@ class AyniSdk {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo Android no cumple el requisito mínimo del SDK.',
         );
       }
       if (platform.isUnsupportedIos) {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
         );
       }
       if (!platform.isSupported) {
@@ -678,6 +680,7 @@ class AyniSdk {
   /// [createAyniSdkForTesting].
   WorkflowVersionDownloader _workflowVersionDownloader =
       WorkflowVersionDownloader();
+  WorkflowInferenceRunner? _workflowInferenceRunner;
   final WorkflowDefinitionValidator _workflowDefinitionValidator =
       WorkflowDefinitionValidator();
   Future<void> _syncQueue = Future<void>.value();
@@ -730,9 +733,7 @@ class AyniSdk {
       );
     }
     if (!platform.isSupported) {
-      throw UnsupportedError(
-        'Esta plataforma no es compatible con ayni_sdk.',
-      );
+      throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
     try {
       final inventoryFile = File(
@@ -758,7 +759,10 @@ class AyniSdk {
           WorkflowValidationStatus.valid) {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       }
-      final executor = WorkflowExecutor(storageDirectory);
+      final executor = WorkflowExecutor(
+        storageDirectory,
+        inferenceRunner: _workflowInferenceRunner,
+      );
       await executor.validateInputAndContracts(
         decoded as Map<String, dynamic>,
         input,
@@ -1633,6 +1637,7 @@ AyniSdk createAyniSdkForTesting({
   void Function(String message)? onProgress,
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
+  WorkflowInferenceRunner? workflowInferenceRunner,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -1647,6 +1652,7 @@ AyniSdk createAyniSdkForTesting({
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;
   }
+  sdk._workflowInferenceRunner = workflowInferenceRunner;
   return sdk;
 }
 
