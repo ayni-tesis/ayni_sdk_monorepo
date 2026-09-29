@@ -552,14 +552,16 @@ class AyniSdk {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo Android no cumple el requisito mínimo del SDK.',
         );
       }
       if (platform.isUnsupportedIos) {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message: 'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
+          message:
+              'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
         );
       }
       if (!platform.isSupported) {
@@ -710,6 +712,8 @@ class AyniSdk {
   ///           '$name: $label ($confidence)',
   ///         DetectionResult(:final detections) =>
   ///           '$name: ${detections.length} objetos',
+  ///         CombinedWorkflowResult(:final values) =>
+  ///           '$name: ${values.length} resultados',
   ///         BooleanResult(value: final passed) => '$name: $passed',
   ///       },
   ///   ];
@@ -731,9 +735,7 @@ class AyniSdk {
       );
     }
     if (!platform.isSupported) {
-      throw UnsupportedError(
-        'Esta plataforma no es compatible con ayni_sdk.',
-      );
+      throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
     try {
       final inventoryFile = File(
@@ -764,16 +766,18 @@ class AyniSdk {
         decoded as Map<String, dynamic>,
         input,
       );
-      // Preflight every dependency before opening an interpreter, so a missing
-      // later model can never leave a partially executed workflow.
+      final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
+        decoded,
+      );
       final installer = ModelArtifactInstaller(
         storageDirectory: storageDirectory,
       );
       for (final modelVersionId in workflow.modelVersionIds) {
-        if (!await installer.isVersionAvailable(
-          modelId: modelVersionId,
-          modelVersionId: modelVersionId,
-        )) {
+        if (requiredModelVersionIds.contains(modelVersionId) &&
+            !await installer.isVersionAvailable(
+              modelId: modelVersionId,
+              modelVersionId: modelVersionId,
+            )) {
           throw WorkflowError(
             WorkflowErrorCategory.modelNotAvailable,
             modelVersionId: modelVersionId,

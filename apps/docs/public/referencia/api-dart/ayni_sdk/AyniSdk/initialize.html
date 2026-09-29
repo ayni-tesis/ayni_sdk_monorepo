@@ -111,14 +111,16 @@ return AyniSdk.instance;
       _instance = null;
       return const AyniInitializationResult(
         status: InitializationStatus.unsupportedPlatform,
-        message: &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
+        message:
+            &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
       );
     }
     if (platform.isUnsupportedIos) {
       _instance = null;
       return const AyniInitializationResult(
         status: InitializationStatus.unsupportedPlatform,
-        message: &#39;Este dispositivo iOS no cumple el requisito mínimo del SDK.&#39;,
+        message:
+            &#39;Este dispositivo iOS no cumple el requisito mínimo del SDK.&#39;,
       );
     }
     if (!platform.isSupported) {

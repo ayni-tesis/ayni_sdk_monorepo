@@ -54,7 +54,7 @@ enum WorkflowValidationStatus {
 /// the node types in `apps/server/src/workflow-store.ts` (`WorkflowNode`).
 class WorkflowDefinitionValidator {
   /// The workflow schema versions supported by this validator (US-098).
-  static const supportedSchemaVersions = {'1'};
+  static const supportedSchemaVersions = {'1', '2'};
 
   static const _nodeTypes = {
     'input.image',
@@ -94,6 +94,12 @@ class WorkflowDefinitionValidator {
       'resultType',
     },
   };
+  static const _multiSourceOutputFields = {'id', 'type', 'name', 'sources'};
+  static const _outputSourceFields = {
+    'sourceNodeId',
+    'sourcePort',
+    'resultType',
+  };
   static const _connectionFields = {
     'sourceNodeId',
     'sourcePort',
@@ -117,11 +123,18 @@ class WorkflowDefinitionValidator {
     final nodes = shape.nodes;
     final edges = <(String, String)>[];
     for (final node in nodes.values) {
-      if (node.type == 'condition' || node.type == 'output') {
+      if (node.type == 'condition') {
         if (!nodes.containsKey(node.sourceNodeId)) {
           return WorkflowValidationStatus.missingNode;
         }
         edges.add((node.sourceNodeId!, node.id));
+      } else if (node.type == 'output') {
+        for (final source in node.outputSources) {
+          if (!nodes.containsKey(source.sourceNodeId)) {
+            return WorkflowValidationStatus.missingNode;
+          }
+          edges.add((source.sourceNodeId, node.id));
+        }
       }
     }
 
@@ -163,7 +176,8 @@ class WorkflowDefinitionValidator {
     final isNonBlankSchema =
         schemaVersion is String && schemaVersion.trim().isNotEmpty;
     if (hasSchemaVersion) {
-      if (isNonBlankSchema && !supportedSchemaVersions.contains(schemaVersion)) {
+      if (isNonBlankSchema &&
+          !supportedSchemaVersions.contains(schemaVersion)) {
         return _ParsedNodes.rejected(
           WorkflowValidationStatus.unsupportedSchemaVersion,
         );
@@ -202,6 +216,9 @@ class WorkflowDefinitionValidator {
       if (nodes.containsKey(node.id)) {
         return _ParsedNodes.invalid();
       }
+      if (node.outputSources.length > 1 && schemaVersion != '2') {
+        return _ParsedNodes.invalid();
+      }
       nodes[node.id] = node;
     }
     return _ParsedNodes.accepted(nodes, rawConnections ?? const []);
@@ -223,7 +240,10 @@ class WorkflowDefinitionValidator {
     if (!_nodeTypes.contains(nodeType)) {
       return (failure: WorkflowValidationStatus.unknownNodeType, node: null);
     }
-    if (!_hasExactFields(item, _nodeFields[nodeType]!)) {
+    final fields = nodeType == 'output' && item.containsKey('sources')
+        ? _multiSourceOutputFields
+        : _nodeFields[nodeType]!;
+    if (!_hasExactFields(item, fields)) {
       return (failure: WorkflowValidationStatus.invalidSchema, node: null);
     }
     final node = _Node(id: id as String, type: nodeType);
@@ -319,6 +339,40 @@ class WorkflowDefinitionValidator {
   }
 
   WorkflowValidationStatus? _readOutput(_Node node, Map item) {
+    if (item.containsKey('sources')) {
+      final sources = item['sources'];
+      if (!isNonEmptyString(item['name']) ||
+          sources is! List ||
+          sources.isEmpty) {
+        return WorkflowValidationStatus.invalidSchema;
+      }
+      final parsed = <_OutputSource>[];
+      for (final value in sources) {
+        if (value is! Map ||
+            !_hasExactFields(value, _outputSourceFields) ||
+            !isNonEmptyString(value['sourceNodeId']) ||
+            !isNonEmptyString(value['sourcePort']) ||
+            !_resultTypes.contains(value['resultType'])) {
+          return WorkflowValidationStatus.invalidSchema;
+        }
+        parsed.add(
+          _OutputSource(
+            sourceNodeId: value['sourceNodeId'] as String,
+            sourcePort: value['sourcePort'] as String,
+            resultType: value['resultType'] as String,
+          ),
+        );
+      }
+      final uniqueSources = <String>{};
+      if (parsed.any(
+        (source) =>
+            !uniqueSources.add('${source.sourceNodeId}:${source.sourcePort}'),
+      )) {
+        return WorkflowValidationStatus.invalidSchema;
+      }
+      node.outputSources = parsed;
+      return null;
+    }
     final resultType = item['resultType'];
     if (!isNonEmptyString(item['name']) ||
         !isNonEmptyString(item['sourceNodeId']) ||
@@ -329,6 +383,13 @@ class WorkflowDefinitionValidator {
     node.sourceNodeId = item['sourceNodeId'] as String;
     node.sourcePort = item['sourcePort'] as String;
     node.resultType = resultType as String;
+    node.outputSources = [
+      _OutputSource(
+        sourceNodeId: node.sourceNodeId!,
+        sourcePort: node.sourcePort!,
+        resultType: node.resultType!,
+      ),
+    ];
     return null;
   }
 
@@ -370,22 +431,26 @@ class WorkflowDefinitionValidator {
     }
 
     for (final node in nodes.values) {
-      final source = switch (node.type) {
-        'condition' || 'output' => nodes[node.sourceNodeId!]!,
-        _ => null,
-      };
-      if (source == null) continue;
-      final compatible = node.type == 'condition'
-          ? source.type == 'model.tflite' &&
-                source.modelResultType == 'classification' &&
-                source.modelLabels!.contains(node.label)
-          : node.resultType == 'boolean'
-          ? source.type == 'condition' &&
-                (node.sourcePort == 'true' || node.sourcePort == 'false')
-          : source.type == 'model.tflite' &&
-                node.sourcePort == 'result' &&
-                source.modelResultType == node.resultType;
-      if (!compatible) return WorkflowValidationStatus.incompatiblePort;
+      if (node.type == 'condition') {
+        final source = nodes[node.sourceNodeId!]!;
+        if (source.type != 'model.tflite' ||
+            source.modelResultType != 'classification' ||
+            !source.modelLabels!.contains(node.label)) {
+          return WorkflowValidationStatus.incompatiblePort;
+        }
+      } else if (node.type == 'output') {
+        for (final outputSource in node.outputSources) {
+          final source = nodes[outputSource.sourceNodeId]!;
+          final compatible = outputSource.resultType == 'boolean'
+              ? source.type == 'condition' &&
+                    (outputSource.sourcePort == 'true' ||
+                        outputSource.sourcePort == 'false')
+              : source.type == 'model.tflite' &&
+                    outputSource.sourcePort == 'result' &&
+                    source.modelResultType == outputSource.resultType;
+          if (!compatible) return WorkflowValidationStatus.incompatiblePort;
+        }
+      }
     }
     return null;
   }
@@ -470,6 +535,19 @@ class _Node {
   /// output: the source port it reads and the declared result type.
   String? sourcePort;
   String? resultType;
+  List<_OutputSource> outputSources = [];
+}
+
+class _OutputSource {
+  const _OutputSource({
+    required this.sourceNodeId,
+    required this.sourcePort,
+    required this.resultType,
+  });
+
+  final String sourceNodeId;
+  final String sourcePort;
+  final String resultType;
 }
 
 class _Connection {

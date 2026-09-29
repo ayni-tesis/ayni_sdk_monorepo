@@ -89,6 +89,12 @@ void main() {
     'resultType': resultType,
   };
 
+  Map<String, Object> combinedOutput({
+    String id = 'output-1',
+    String name = 'Resultado',
+    required List<Map<String, String>> sources,
+  }) => {'id': id, 'type': 'output', 'name': name, 'sources': sources};
+
   Map<String, String> imageConnection({
     String sourceNodeId = 'input-1',
     String sourcePort = 'imagen',
@@ -119,6 +125,81 @@ void main() {
     );
 
     expect(validate(valid), WorkflowValidationStatus.valid);
+  });
+
+  test('accepts a schema 2 output with compatible model sources', () {
+    final result = validate(
+      definition(
+        schemaVersion: '2',
+        nodes: [
+          imageInput(),
+          model(),
+          model(
+            id: 'model-2',
+            modelVersionId: 'model-version-2',
+            resultType: 'detection',
+            scoreThreshold: 0.5,
+          ),
+          combinedOutput(
+            sources: [
+              {
+                'sourceNodeId': 'model-1',
+                'sourcePort': 'result',
+                'resultType': 'classification',
+              },
+              {
+                'sourceNodeId': 'model-2',
+                'sourcePort': 'result',
+                'resultType': 'detection',
+              },
+            ],
+          ),
+        ],
+        connections: [
+          imageConnection(),
+          imageConnection(targetNodeId: 'model-2'),
+        ],
+      ),
+    );
+
+    expect(result, WorkflowValidationStatus.valid);
+  });
+
+  test('requires schema 2 for a multi-source output', () {
+    final result = validate(
+      definition(
+        nodes: [
+          imageInput(),
+          model(),
+          model(
+            id: 'model-2',
+            modelVersionId: 'model-version-2',
+            resultType: 'detection',
+            scoreThreshold: 0.5,
+          ),
+          combinedOutput(
+            sources: [
+              {
+                'sourceNodeId': 'model-1',
+                'sourcePort': 'result',
+                'resultType': 'classification',
+              },
+              {
+                'sourceNodeId': 'model-2',
+                'sourcePort': 'result',
+                'resultType': 'detection',
+              },
+            ],
+          ),
+        ],
+        connections: [
+          imageConnection(),
+          imageConnection(targetNodeId: 'model-2'),
+        ],
+      ),
+    );
+
+    expect(result, WorkflowValidationStatus.invalidSchema);
   });
 
   test('accepts detection models feeding detection outputs', () {
@@ -160,87 +241,96 @@ void main() {
     );
   });
 
-  test('rejects unknown top-level fields beyond schemaVersion, nodes and connections', () {
-    expect(
-      validate({
-        'schemaVersion': '1',
-        'nodes': const <Object>[],
-        'connections': const <Object>[],
-        'layout': {
-          'input-1': {'x': 0, 'y': 0},
-        },
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-    expect(
-      validate({
-        'schemaVersion': '1',
-        'nodes': const <Object>[],
-        'draftRevision': 1,
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-  });
+  test(
+    'rejects unknown top-level fields beyond schemaVersion, nodes and connections',
+    () {
+      expect(
+        validate({
+          'schemaVersion': '1',
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+          'layout': {
+            'input-1': {'x': 0, 'y': 0},
+          },
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+      expect(
+        validate({
+          'schemaVersion': '1',
+          'nodes': const <Object>[],
+          'draftRevision': 1,
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+    },
+  );
 
-  test('accepts legacy definitions that omit schemaVersion when shape is valid', () {
-    final legacy = {
-      'nodes': [
-        imageInput(),
-        model(),
-        condition(),
-        output(
-          id: 'output-bool',
-          sourceNodeId: 'condition-1',
-          sourcePort: 'true',
-          resultType: 'boolean',
-        ),
-        output(),
-      ],
-      'connections': [imageConnection()],
-    };
-    expect(validate(legacy), WorkflowValidationStatus.valid);
-  });
+  test(
+    'accepts legacy definitions that omit schemaVersion when shape is valid',
+    () {
+      final legacy = {
+        'nodes': [
+          imageInput(),
+          model(),
+          condition(),
+          output(
+            id: 'output-bool',
+            sourceNodeId: 'condition-1',
+            sourcePort: 'true',
+            resultType: 'boolean',
+          ),
+          output(),
+        ],
+        'connections': [imageConnection()],
+      };
+      expect(validate(legacy), WorkflowValidationStatus.valid);
+    },
+  );
 
-  test('rejects definitions with empty, blank, or non-string schemaVersion', () {
-    expect(
-      validate({
-        'schemaVersion': '',
-        'nodes': const <Object>[],
-        'connections': const <Object>[],
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-    expect(
-      validate({
-        'schemaVersion': '   ',
-        'nodes': const <Object>[],
-        'connections': const <Object>[],
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-    expect(
-      validate({
-        'schemaVersion': 1,
-        'nodes': const <Object>[],
-        'connections': const <Object>[],
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-    expect(
-      validate({
-        'schemaVersion': null,
-        'nodes': const <Object>[],
-        'connections': const <Object>[],
-      }),
-      WorkflowValidationStatus.invalidSchema,
-    );
-  });
+  test(
+    'rejects definitions with empty, blank, or non-string schemaVersion',
+    () {
+      expect(
+        validate({
+          'schemaVersion': '',
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+      expect(
+        validate({
+          'schemaVersion': '   ',
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+      expect(
+        validate({
+          'schemaVersion': 1,
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+      expect(
+        validate({
+          'schemaVersion': null,
+          'nodes': const <Object>[],
+          'connections': const <Object>[],
+        }),
+        WorkflowValidationStatus.invalidSchema,
+      );
+    },
+  );
 
   test(
     'rejects unsupported schema versions as unsupportedSchemaVersion (US-098)',
     () {
       expect(
-        validate(definition(schemaVersion: '2')),
+        validate(definition(schemaVersion: '3')),
         WorkflowValidationStatus.unsupportedSchemaVersion,
       );
       expect(
@@ -253,7 +343,7 @@ void main() {
       );
       expect(
         validate({
-          'schemaVersion': '2',
+          'schemaVersion': '3',
           'nodes': const <Object>[],
           'connections': const <Object>[],
           'futureField': true,

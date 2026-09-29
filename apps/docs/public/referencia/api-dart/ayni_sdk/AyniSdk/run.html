@@ -86,6 +86,8 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
           '$name: $label ($confidence)',
         DetectionResult(:final detections) =&gt;
           '$name: ${detections.length} objetos',
+        CombinedWorkflowResult(:final values) =&gt;
+          '$name: ${values.length} resultados',
         BooleanResult(value: final passed) =&gt; '$name: $passed',
       },
   ];
@@ -113,9 +115,7 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
     );
   }
   if (!platform.isSupported) {
-    throw UnsupportedError(
-      &#39;Esta plataforma no es compatible con ayni_sdk.&#39;,
-    );
+    throw UnsupportedError(&#39;Esta plataforma no es compatible con ayni_sdk.&#39;);
   }
   try {
     final inventoryFile = File(
@@ -146,16 +146,18 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
       decoded as Map&lt;String, dynamic&gt;,
       input,
     );
-    &#47;&#47; Preflight every dependency before opening an interpreter, so a missing
-    &#47;&#47; later model can never leave a partially executed workflow.
+    final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
+      decoded,
+    );
     final installer = ModelArtifactInstaller(
       storageDirectory: storageDirectory,
     );
     for (final modelVersionId in workflow.modelVersionIds) {
-      if (!await installer.isVersionAvailable(
-        modelId: modelVersionId,
-        modelVersionId: modelVersionId,
-      )) {
+      if (requiredModelVersionIds.contains(modelVersionId) &amp;&amp;
+          !await installer.isVersionAvailable(
+            modelId: modelVersionId,
+            modelVersionId: modelVersionId,
+          )) {
         throw WorkflowError(
           WorkflowErrorCategory.modelNotAvailable,
           modelVersionId: modelVersionId,

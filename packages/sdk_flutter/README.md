@@ -113,7 +113,7 @@ try {
 
 El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/run_workflow.dart`.
 
-`WorkflowResult` expone `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult` o `BooleanResult`) bajo el nombre de salida publicado. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
+`WorkflowResult` expone `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
 
 ## Estructura del paquete
 

@@ -23,6 +23,8 @@ Future<List<String>> describeOutputs(
             '$name: $label ($confidence)',
           DetectionResult(:final detections) =>
             '$name: ${detections.length} objetos',
+          CombinedWorkflowResult(:final values) =>
+            '$name: ${values.length} resultados',
           BooleanResult(value: final passed) => '$name: $passed',
         },
     ];

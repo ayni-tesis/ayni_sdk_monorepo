@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
-  <meta name="description" content="API docs for the WorkflowValue class from the ayni_sdk library, for the Dart programming language.">
-  <title>WorkflowValue class - ayni_sdk library - Dart API</title>
+  <meta name="description" content="API docs for the CombinedWorkflowResult class from the ayni_sdk library, for the Dart programming language.">
+  <title>CombinedWorkflowResult class - ayni_sdk library - Dart API</title>
 
 
   
@@ -26,9 +26,9 @@
   <ol class="breadcrumbs gt-separated dark hidden-xs">
     <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.1.0-beta.1</a></li>
     <li><a href="../ayni_sdk/">ayni_sdk.dart</a></li>
-    <li class="self-crumb">WorkflowValue class</li>
+    <li class="self-crumb">CombinedWorkflowResult class</li>
   </ol>
-  <div class="self-name">WorkflowValue</div>
+  <div class="self-name">CombinedWorkflowResult</div>
   <form class="search navbar-right" role="search">
     <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
   </form>
@@ -46,35 +46,33 @@
     id="dartdoc-main-content" lang="en" data-pagefind-body
     class="main-content"
     data-above-sidebar="ayni_sdk&#47;ayni_sdk-library-sidebar.html"
-    data-below-sidebar="ayni_sdk&#47;WorkflowValue-class-sidebar.html">
+    data-below-sidebar="ayni_sdk&#47;CombinedWorkflowResult-class-sidebar.html">
     <div>
-<h1><span class="kind-class">WorkflowValue</span> class 
-    <a href="https://dart.dev/language/class-modifiers#sealed" class="feature feature-sealed" title="The direct subtypes of this class will be checked for exhaustiveness in switches.">sealed</a>
+<h1><span class="kind-class">CombinedWorkflowResult</span> class 
  
 </h1></div>
 
     
 <section class="desc markdown">
-  <p>A value a workflow node produced: a <a href="../ayni_sdk/ClassificationResult-class.html">ClassificationResult</a>, a
-<a href="../ayni_sdk/DetectionResult-class.html">DetectionResult</a>, or a <a href="../ayni_sdk/BooleanResult-class.html">BooleanResult</a>.</p>
-<p>The class is sealed, so a <code>switch</code> over its subtypes is exhaustive.</p>
+  <p>Results declared by one output node that combines multiple sources.</p>
 </section>
 
 
     <section>
       <dl class="dl-horizontal">
         
+  <dt>Inheritance</dt>
+  <dd>
+    <ul class="gt-separated dark clazz-relationships">
+      <li><a href="https://api.flutter.dev/flutter/dart-core/Object-class.html">Object</a></li>
+        <li><a href="../ayni_sdk/WorkflowValue-class.html">WorkflowValue</a></li>
+      <li>CombinedWorkflowResult</li>
+    </ul>
+  </dd>
 
         
         
 
-          <dt>Implementers</dt>
-          <dd><ul class="comma-separated clazz-relationships">
-              <li><a href="../ayni_sdk/BooleanResult-class.html">BooleanResult</a></li>
-              <li><a href="../ayni_sdk/ClassificationResult-class.html">ClassificationResult</a></li>
-              <li><a href="../ayni_sdk/CombinedWorkflowResult-class.html">CombinedWorkflowResult</a></li>
-              <li><a href="../ayni_sdk/DetectionResult-class.html">DetectionResult</a></li>
-          </ul></dd>
 
         
         
@@ -84,6 +82,18 @@
     </section>
 
     
+  <section class="summary offset-anchor" id="constructors">
+    <h2>Constructors</h2>
+    <dl class="constructor-summary-list">
+        <dt id="CombinedWorkflowResult.new" class="callable">
+          <span class="name"><a href="../ayni_sdk/CombinedWorkflowResult/CombinedWorkflowResult.html">CombinedWorkflowResult</a></span><span class="signature">(<span class="parameter" id="param-nodeId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">nodeId</span>, </span><span class="parameter" id="param-values"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/WorkflowValue-class.html">WorkflowValue</a></span>&gt;</span></span> <span class="parameter-name">values</span></span>)</span>
+        </dt>
+        <dd>
+          Creates a combined output from each available declared source.
+            <div class="constructor-modifier features">const</div>
+        </dd>
+    </dl>
+  </section>
     
   <section
       class="summary offset-anchor"
@@ -102,15 +112,15 @@
 
 </dd>
 
-        <dt id="nodeId" class="property">
+        <dt id="nodeId" class="property inherited">
   <span class="name"><a href="../ayni_sdk/WorkflowValue/nodeId.html">nodeId</a></span>
   <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>
   
 
 </dt>
-<dd>
+<dd class="inherited">
   The ID of the workflow node that produced this value.
-  <div class="features"><span class="feature">final</span></div>
+  <div class="features"><span class="feature">final</span><span class="feature">inherited</span></div>
 
 </dd>
 
@@ -123,6 +133,18 @@
 <dd class="inherited">
   A representation of the runtime type of the object.
   <div class="features"><span class="feature">no setter</span><span class="feature">inherited</span></div>
+
+</dd>
+
+        <dt id="values" class="property">
+  <span class="name"><a href="../ayni_sdk/CombinedWorkflowResult/values.html">values</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/WorkflowValue-class.html">WorkflowValue</a></span>&gt;</span></span>
+  
+
+</dt>
+<dd>
+  Typed values in the same order as the output's declared sources.
+  <div class="features"><span class="feature">final</span></div>
 
 </dd>
 
@@ -199,7 +221,7 @@
 <ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
     <li><a href="../index.html">ayni_sdk</a></li>
     <li><a href="../ayni_sdk/">ayni_sdk</a></li>
-    <li class="self-crumb">WorkflowValue class</li>
+    <li class="self-crumb">CombinedWorkflowResult class</li>
 </ol>
 
     <h5>ayni_sdk library</h5>

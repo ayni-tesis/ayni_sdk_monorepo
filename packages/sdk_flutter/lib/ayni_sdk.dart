@@ -25,6 +25,7 @@ export 'src/ayni_sdk.dart'
 export 'src/workflow_execution.dart'
     show
         BooleanResult,
+        CombinedWorkflowResult,
         ClassificationResult,
         Detection,
         DetectionResult,
