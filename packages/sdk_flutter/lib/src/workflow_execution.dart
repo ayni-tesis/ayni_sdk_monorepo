@@ -668,6 +668,12 @@ class WorkflowExecutor {
           },
         );
       }
+      if (labels.isEmpty) {
+        throw WorkflowError(
+          WorkflowErrorCategory.modelOutputInvalid,
+          nodeId: nodeId,
+        );
+      }
       final boxIndex = tensors.indexWhere(
         (t) => t.shape.length == 3 && t.shape.first == 1 && t.shape.last == 4,
       );
