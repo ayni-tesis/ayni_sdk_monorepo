@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
+import 'package:ayni_sdk/src/workflow_execution.dart' show WorkflowExecutor;
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
@@ -521,6 +522,9 @@ void main() {
     final input = nodes.firstWhere((node) => node['type'] == 'input.image');
     final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
     final output = nodes.firstWhere((node) => node['type'] == 'output');
+    final alternateOutput = Map<String, Object>.from(output)
+      ..['id'] = 'output-false'
+      ..['name'] = 'No apto';
     output
       ..['sourceNodeId'] = 'condition-1'
       ..['sourcePort'] = 'true'
@@ -535,7 +539,7 @@ void main() {
       'threshold': 0.5,
       'branches': {'true': 'Verdadero', 'false': 'Falso'},
     };
-    definition['nodes'] = [output, condition, model, input];
+    definition['nodes'] = [alternateOutput, output, condition, model, input];
     await installWorkflowFiles(
       storageDirectory: storageDirectory,
       inventoryJson: _inventory(),
@@ -564,6 +568,127 @@ void main() {
     final branchResult = result.outputs['Apto']! as BooleanResult;
     expect(branchResult.nodeId, 'condition-1');
     expect(branchResult.value, isTrue);
+  });
+
+  test('evaluates every declared condition operator', () async {
+    await installModelArtifact();
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final nodes = (definition['nodes'] as List).cast<Map>();
+    final input = nodes.firstWhere((node) => node['type'] == 'input.image');
+    final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
+    final output = nodes.firstWhere((node) => node['type'] == 'output');
+    final alternateOutput = Map<String, Object>.from(output)
+      ..['id'] = 'output-false'
+      ..['name'] = 'No apto';
+    final condition = {
+      'id': 'condition-1',
+      'type': 'condition',
+      'sourceNodeId': 'model-1',
+      'label': 'gato',
+      'threshold': 1.0,
+      'branches': {'true': 'Verdadero', 'false': 'Falso'},
+    };
+    definition['nodes'] = [alternateOutput, output, condition, model, input];
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (shape: [1, 2], values: Float32List.fromList([0, 1])),
+            ],
+          ),
+    );
+
+    for (final (operator, expected) in [
+      ('gte', true),
+      ('gt', false),
+      ('lte', true),
+      ('lt', false),
+    ]) {
+      condition['operator'] = operator;
+      output
+        ..['sourceNodeId'] = 'condition-1'
+        ..['sourcePort'] = 'true'
+        ..['resultType'] = 'boolean';
+      alternateOutput
+        ..['sourceNodeId'] = 'condition-1'
+        ..['sourcePort'] = 'false'
+        ..['resultType'] = 'boolean';
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: _inventory(),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: jsonEncode(definition),
+      );
+
+      final result = await client.run('workflow-1', pngBytes());
+      final selectedName = expected ? 'Resultado' : 'No apto';
+      expect(result.outputs.keys, {selectedName});
+      expect((result.outputs[selectedName]! as BooleanResult).value, expected);
+    }
+  });
+
+  test('reports a missing condition value with its node', () async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final nodes = (definition['nodes'] as List).cast<Map>();
+    final input = nodes.firstWhere((node) => node['type'] == 'input.image');
+    final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
+    final output = nodes.firstWhere((node) => node['type'] == 'output')
+      ..['sourceNodeId'] = 'condition-1'
+      ..['sourcePort'] = 'true'
+      ..['resultType'] = 'boolean';
+    final condition = {
+      'id': 'condition-1',
+      'type': 'condition',
+      'sourceNodeId': 'model-1',
+      'label': 'no-declarada',
+      'operator': 'gte',
+      'threshold': 0.5,
+      'branches': {'true': 'Verdadero', 'false': 'Falso'},
+    };
+    final executor = WorkflowExecutor(
+      storageDirectory,
+      inferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+            ],
+          ),
+    );
+
+    await expectLater(
+      executor.execute(
+        workflowId: 'workflow-1',
+        workflowVersion: '1.0.0',
+        definition: {
+          ...definition,
+          'nodes': [output, condition, model, input],
+        },
+        imageBytes: pngBytes(),
+      ),
+      throwsWorkflowError(
+        category: WorkflowErrorCategory.conditionInputMissing,
+        nodeId: 'condition-1',
+      ),
+    );
   });
 
   test('rejects a cyclic installed workflow before inference', () async {
