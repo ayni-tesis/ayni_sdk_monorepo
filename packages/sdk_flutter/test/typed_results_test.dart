@@ -522,6 +522,9 @@ void main() {
     final input = nodes.firstWhere((node) => node['type'] == 'input.image');
     final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
     final output = nodes.firstWhere((node) => node['type'] == 'output');
+    final alternateOutput = Map<String, Object>.from(output)
+      ..['id'] = 'output-false'
+      ..['name'] = 'No apto';
     output
       ..['sourceNodeId'] = 'condition-1'
       ..['sourcePort'] = 'true'
@@ -536,7 +539,7 @@ void main() {
       'threshold': 0.5,
       'branches': {'true': 'Verdadero', 'false': 'Falso'},
     };
-    definition['nodes'] = [output, condition, model, input];
+    definition['nodes'] = [alternateOutput, output, condition, model, input];
     await installWorkflowFiles(
       storageDirectory: storageDirectory,
       inventoryJson: _inventory(),
@@ -574,6 +577,9 @@ void main() {
     final input = nodes.firstWhere((node) => node['type'] == 'input.image');
     final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
     final output = nodes.firstWhere((node) => node['type'] == 'output');
+    final alternateOutput = Map<String, Object>.from(output)
+      ..['id'] = 'output-false'
+      ..['name'] = 'No apto';
     final condition = {
       'id': 'condition-1',
       'type': 'condition',
@@ -582,7 +588,7 @@ void main() {
       'threshold': 1.0,
       'branches': {'true': 'Verdadero', 'false': 'Falso'},
     };
-    definition['nodes'] = [output, condition, model, input];
+    definition['nodes'] = [alternateOutput, output, condition, model, input];
     await installWorkflowFiles(
       storageDirectory: storageDirectory,
       inventoryJson: _inventory(),
@@ -615,7 +621,11 @@ void main() {
       condition['operator'] = operator;
       output
         ..['sourceNodeId'] = 'condition-1'
-        ..['sourcePort'] = expected ? 'true' : 'false'
+        ..['sourcePort'] = 'true'
+        ..['resultType'] = 'boolean';
+      alternateOutput
+        ..['sourceNodeId'] = 'condition-1'
+        ..['sourcePort'] = 'false'
         ..['resultType'] = 'boolean';
       await installWorkflowFiles(
         storageDirectory: storageDirectory,
@@ -625,7 +635,9 @@ void main() {
       );
 
       final result = await client.run('workflow-1', pngBytes());
-      expect((result.outputs['Resultado']! as BooleanResult).value, expected);
+      final selectedName = expected ? 'Resultado' : 'No apto';
+      expect(result.outputs.keys, {selectedName});
+      expect((result.outputs[selectedName]! as BooleanResult).value, expected);
     }
   });
 
