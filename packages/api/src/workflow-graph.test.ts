@@ -52,6 +52,35 @@ describe("workflowEdges", () => {
   it("gives a draft without connections only its source edges", () => {
     expect(workflowEdges({ nodes: [{ id: "image", type: "input.image" }] })).toEqual([]);
   });
+
+  it("includes every source of a combined output", () => {
+    expect(
+      workflowEdges({
+        nodes: [
+          {
+            id: "output",
+            type: "output",
+            sourceNodeId: "classifier",
+            sourcePort: "result",
+            sources: [{ sourceNodeId: "detector", sourcePort: "result" }],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        sourceNodeId: "classifier",
+        sourcePort: "result",
+        targetNodeId: "output",
+        targetPort: "source",
+      },
+      {
+        sourceNodeId: "detector",
+        sourcePort: "result",
+        targetNodeId: "output",
+        targetPort: "source",
+      },
+    ]);
+  });
 });
 
 describe("findWorkflowCycle", () => {
@@ -310,5 +339,21 @@ describe("workflowNodesToDelete", () => {
       "condition",
       "branch-output",
     ]);
+  });
+
+  it("deletes a combined output when any declared source is deleted", () => {
+    const combined = {
+      ...draft,
+      nodes: draft.nodes.map((node) =>
+        node.id === "c-output" && node.type === "output"
+          ? {
+              ...node,
+              sources: [{ sourceNodeId: "model-b", sourcePort: "result" }],
+            }
+          : node,
+      ),
+    } satisfies WorkflowGraphDraft;
+
+    expect(workflowNodesToDelete(combined, ["model-b"])).toContain("c-output");
   });
 });

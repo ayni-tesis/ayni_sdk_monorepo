@@ -85,12 +85,18 @@ const conditionNodeSchema = z.object({
   threshold: z.number().finite().min(0).max(1),
   position: workflowPositionSchema.optional(),
 });
+const outputSourceSchema = z.object({
+  sourceNodeId: z.string().min(1),
+  sourcePort: z.enum(["result", "true", "false"]),
+  resultType: z.enum(["classification", "detection", "boolean"]),
+});
 const outputNodeSchema = z.object({
   type: z.literal("output"),
   name: z.string().trim().min(1),
   sourceNodeId: z.string().min(1),
   sourcePort: z.enum(["result", "true", "false"]),
   resultType: z.enum(["classification", "detection", "boolean"]),
+  sources: z.array(outputSourceSchema).optional(),
   position: workflowPositionSchema.optional(),
 });
 // A node keeps its source when edited, so only its own settings may change.

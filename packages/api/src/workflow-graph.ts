@@ -14,7 +14,13 @@ export type WorkflowEdge = {
 type WorkflowGraphNode =
   | { id: string; type: "input.image" | "model.tflite" }
   | { id: string; type: "condition"; sourceNodeId: string }
-  | { id: string; type: "output"; sourceNodeId: string; sourcePort: string };
+  | {
+      id: string;
+      type: "output";
+      sourceNodeId: string;
+      sourcePort: string;
+      sources?: readonly { sourceNodeId: string; sourcePort: string }[];
+    };
 
 /** The parts of a draft its edges come from; server and dashboard drafts both fit it. */
 export type WorkflowGraphDraft = {
@@ -48,6 +54,12 @@ export function workflowEdges(draft: WorkflowGraphDraft): WorkflowEdge[] {
                 targetNodeId: node.id,
                 targetPort: "source",
               },
+            ...(node.sources ?? []).map((source) => ({
+              sourceNodeId: source.sourceNodeId,
+              sourcePort: source.sourcePort,
+              targetNodeId: node.id,
+              targetPort: "source",
+            })),
             ]
           : [],
     ),
@@ -68,11 +80,12 @@ export function workflowNodesToDelete(
   while (addedDependent) {
     addedDependent = false;
     for (const node of draft.nodes) {
-      if (
-        (node.type === "condition" || node.type === "output") &&
-        removed.has(node.sourceNodeId) &&
-        !removed.has(node.id)
-      ) {
+      const dependsOnRemovedSource =
+        (node.type === "condition" && removed.has(node.sourceNodeId)) ||
+        (node.type === "output" &&
+          (removed.has(node.sourceNodeId) ||
+            (node.sources ?? []).some((source) => removed.has(source.sourceNodeId))));
+      if (dependsOnRemovedSource && !removed.has(node.id)) {
         removed.add(node.id);
         addedDependent = true;
       }
@@ -98,6 +111,11 @@ export type WorkflowPortNode =
       sourceNodeId: string;
       sourcePort: string;
       resultType: "classification" | "detection" | "boolean";
+      sources?: readonly {
+        sourceNodeId: string;
+        sourcePort: string;
+        resultType: "classification" | "detection" | "boolean";
+      }[];
     };
 
 /** The parts of a draft the port rules read; server and dashboard drafts both fit it. */

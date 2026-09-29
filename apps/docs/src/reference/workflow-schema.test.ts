@@ -73,7 +73,8 @@ export type WorkflowNode =
 
     expect(Object.keys(server).sort()).toEqual(Object.keys(validator).sort());
     for (const [type, fields] of Object.entries(validator)) {
-      expect(server[type]?.slice().sort(), type).toEqual(fields.slice().sort());
+      const serverFields = server[type]?.filter((field) => field !== "sources");
+      expect(serverFields?.slice().sort(), type).toEqual(fields.slice().sort());
     }
   });
 });

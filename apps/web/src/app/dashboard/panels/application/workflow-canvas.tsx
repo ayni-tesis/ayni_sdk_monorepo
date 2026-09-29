@@ -133,6 +133,11 @@ export type WorkflowCanvasNode =
       sourceNodeId: string;
       sourcePort: string;
       resultType: "classification" | "detection" | "boolean";
+      sources?: {
+        sourceNodeId: string;
+        sourcePort: string;
+        resultType: "classification" | "detection" | "boolean";
+      }[];
     };
 export type WorkflowCanvasDraft = {
   nodes: WorkflowCanvasNode[];

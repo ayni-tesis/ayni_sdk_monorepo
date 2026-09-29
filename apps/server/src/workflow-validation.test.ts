@@ -68,6 +68,33 @@ describe("validateWorkflowDraft", () => {
     expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
   });
 
+  it("validates every source declared by a combined output", () => {
+    const combined: WorkflowNode = {
+      ...diagnosis,
+      sources: [
+        {
+          sourceNodeId: "detector",
+          sourcePort: "result",
+          resultType: "detection",
+        },
+      ],
+    };
+    const draft: WorkflowDraft = {
+      nodes: [input, classifier, detector, combined],
+      connections: [
+        inputToClassifier,
+        {
+          sourceNodeId: "input",
+          sourcePort: "imagen",
+          targetNodeId: "detector",
+          targetPort: "image",
+        },
+      ],
+    };
+
+    expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
+  });
+
   it("reports the node and port of a required input left unconnected and marks the draft unpublishable", () => {
     const draft: WorkflowDraft = {
       nodes: [input, classifier, diagnosis],

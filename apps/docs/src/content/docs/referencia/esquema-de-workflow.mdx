@@ -19,7 +19,7 @@ Una definición publicada es un objeto `{ schemaVersion, nodes, connections }`:
 
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
-| `schemaVersion` | `"1"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
+| `schemaVersion` | `"1"` o `"2"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
 | `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
 | `connections` | Lista de conexiones | Las conexiones entre la entrada de imagen y los modelos. El servidor la publica vacía si no hay ninguna. |
 
@@ -91,14 +91,19 @@ rama verdadera o la falsa.
 
 Un resultado con nombre que recibe la app.
 
+En el esquema 1, la salida declara un origen con `sourceNodeId`, `sourcePort` y
+`resultType`. En el esquema 2, declara en su lugar `sources`: una lista no vacía
+de esos mismos tres campos para combinar varios resultados compatibles.
+
 | Campo | Valor | Descripción |
 | --- | --- | --- |
 | `id` | Texto | Identificador del nodo. |
 | `type` | `"output"` | Tipo del nodo. |
 | `name` | Texto | Nombre del resultado. |
-| `sourceNodeId` | Texto | El nodo del que lee el resultado: un modelo o una condición. |
-| `sourcePort` | Texto | El puerto que lee: `result` de un modelo, o `true` o `false` de una condición. |
-| `resultType` | `"classification"`, `"detection"` o `"boolean"` | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
+| `sourceNodeId` | Texto (esquema 1) | El nodo del que lee el resultado: un modelo o una condición. |
+| `sourcePort` | Texto (esquema 1) | El puerto que lee: `result` de un modelo, o `true` o `false` de una condición. |
+| `resultType` | `"classification"`, `"detection"` o `"boolean"` (esquema 1) | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
+| `sources` | Lista no vacía | En el esquema 2, orígenes que se combinan en un único resultado nombrado. Cada origen contiene `sourceNodeId`, `sourcePort` y `resultType`. |
 
 ## Conexiones
 
@@ -140,7 +145,7 @@ una de estas reglas:
 | Regla | Qué comprueba |
 | --- | --- |
 | Esquema exacto | La definición es un JSON válido. La definición, cada nodo, cada conexión y los objetos `outputs`, `inputs`, `result` y `branches` tienen exactamente los campos de esta página, ni uno más ni uno menos. Los campos de texto de los nodos y las conexiones no están vacíos, `operator`, `threshold`, `resultType` y el `type` de `result` tienen un valor permitido, `labels` es una lista de textos y ningún `id` se repite. El SDK no comprueba los campos internos de `inputs.image` ni los textos de `branches`. |
-| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"`). Si el workflow declara una versión más nueva o no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
+| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"` o `"2"`). El esquema 1 admite un origen por salida; el esquema 2 admite `sources`. Si el workflow declara una versión no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
 | Tipos de nodo compatibles | El `type` de cada nodo es uno de los [tipos de nodo](#tipos-de-nodo) de la versión del SDK. |
 | Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
 | Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |
