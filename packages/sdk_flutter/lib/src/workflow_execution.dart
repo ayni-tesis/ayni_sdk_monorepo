@@ -196,6 +196,15 @@ class BooleanResult extends WorkflowValue {
   final bool value;
 }
 
+/// Results declared by one output node that combines multiple sources.
+class CombinedWorkflowResult extends WorkflowValue {
+  /// Creates a combined output from each available declared source.
+  const CombinedWorkflowResult(super.nodeId, this.values);
+
+  /// Typed values in the same order as the output's declared sources.
+  final List<WorkflowValue> values;
+}
+
 /// Whether the [branchPort] branch of condition node [conditionId] leads to
 /// an output node.
 ///
@@ -222,8 +231,15 @@ bool workflowBranchReachesOutput({
         .where(
           (entry) =>
               entry.value['type'] == 'output' &&
-              entry.value['sourceNodeId'] == conditionId &&
-              entry.value['sourcePort'] == branchPort,
+              (entry.value['sources'] is List
+                  ? (entry.value['sources'] as List).any(
+                      (source) =>
+                          source is Map &&
+                          source['sourceNodeId'] == conditionId &&
+                          source['sourcePort'] == branchPort,
+                    )
+                  : entry.value['sourceNodeId'] == conditionId &&
+                        entry.value['sourcePort'] == branchPort),
         )
         .map((entry) => entry.key),
   ];
@@ -237,6 +253,9 @@ bool workflowBranchReachesOutput({
   return false;
 }
 
+List<Map> _outputSourceDefinitions(Map node) =>
+    node['sources'] is List ? (node['sources'] as List).cast<Map>() : [node];
+
 /// Runs a validated workflow definition on the device.
 class WorkflowExecutor {
   /// Creates an executor that loads models from [storageDirectory].
@@ -248,6 +267,32 @@ class WorkflowExecutor {
   /// The directory where the installed models live.
   final Directory storageDirectory;
   final WorkflowInferenceRunner _inferenceRunner;
+
+  /// Models that can contribute to a declared output, excluding orphan nodes
+  /// and conditions that no output reads.
+  static Set<String> requiredModelVersionIds(Map definition) {
+    final nodes = (definition['nodes'] as List).cast<Map>();
+    final byId = {for (final node in nodes) node['id'] as String: node};
+    final outputSources = {
+      for (final node in nodes)
+        if (node['type'] == 'output')
+          for (final source in _outputSourceDefinitions(node))
+            source['sourceNodeId'] as String,
+    };
+    final requiredConditionIds = {
+      for (final id in outputSources)
+        if (byId[id]?['type'] == 'condition') id,
+    };
+    return {
+      for (final id in outputSources)
+        if (byId[id]?['type'] == 'model.tflite')
+          byId[id]!['modelVersionId'] as String,
+      for (final node in nodes)
+        if (node['type'] == 'condition' &&
+            requiredConditionIds.contains(node['id']))
+          byId[node['sourceNodeId']]!['modelVersionId'] as String,
+    };
+  }
 
   /// Checks that [bytes] is a decodable image and that every model node of
   /// [definition] declares a supported image input.
@@ -296,24 +341,32 @@ class WorkflowExecutor {
         edge(c['sourceNodeId'], c['targetNodeId']);
       }
       for (final n in nodes) {
-        if (n['type'] == 'condition' || n['type'] == 'output')
+        if (n['type'] == 'condition') {
           edge(n['sourceNodeId'], n['id']);
+        } else if (n['type'] == 'output') {
+          for (final source in _outputSourceDefinitions(n)) {
+            edge(source['sourceNodeId'], n['id']);
+          }
+        }
       }
+      final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
+        definition,
+      );
+      final requiredModelIds = {
+        for (final node in nodes)
+          if (node['type'] == 'model.tflite' &&
+              requiredModelVersionIds.contains(node['modelVersionId']))
+            node['id'] as String,
+      };
       final outputSources = {
         for (final node in nodes)
-          if (node['type'] == 'output') node['sourceNodeId'] as String,
+          if (node['type'] == 'output')
+            for (final source in _outputSourceDefinitions(node))
+              source['sourceNodeId'] as String,
       };
       final requiredConditionIds = {
         for (final id in outputSources)
           if (byId[id]?['type'] == 'condition') id,
-      };
-      final requiredModelIds = {
-        for (final id in outputSources)
-          if (byId[id]?['type'] == 'model.tflite') id,
-        for (final node in nodes)
-          if (node['type'] == 'condition' &&
-              requiredConditionIds.contains(node['id']))
-            node['sourceNodeId'] as String,
       };
       final degree = {
         for (final n in nodes)
@@ -395,19 +448,35 @@ class WorkflowExecutor {
                     .map((c) => c['targetNodeId'] as String),
               );
             case 'output':
-              final source = values[node['sourceNodeId']];
-              if (source is! WorkflowValue)
-                throw WorkflowError(
-                  WorkflowErrorCategory.outputInputMissing,
-                  nodeId: id,
-                );
-              final port = node['sourcePort'];
-              if (source is BooleanResult && ((port == 'true') != source.value))
-                break;
-              outputs[node['name'] as String] = source;
+              final resultValues = <WorkflowValue>[];
+              for (final source in _outputSourceDefinitions(node)) {
+                final value = values[source['sourceNodeId']];
+                if (value is BooleanResult) {
+                  if ((source['sourcePort'] == 'true') == value.value) {
+                    resultValues.add(value);
+                  }
+                } else if (value is WorkflowValue) {
+                  resultValues.add(value);
+                } else {
+                  throw WorkflowError(
+                    WorkflowErrorCategory.outputInputMissing,
+                    nodeId: id,
+                  );
+                }
+              }
+              if (resultValues.isNotEmpty) {
+                outputs[node['name'] as String] = resultValues.length == 1
+                    ? resultValues.single
+                    : CombinedWorkflowResult(id, resultValues);
+              }
           }
         for (final to in outgoing[id] ?? const <String>[]) {
+          final unneededModel =
+              byId[id]!['type'] == 'input.image' &&
+              byId[to]!['type'] == 'model.tflite' &&
+              !requiredModelIds.contains(to);
           if (active.contains(id) &&
+              !unneededModel &&
               (byId[to]!['type'] == 'condition' ||
                   byId[to]!['type'] == 'output')) {
             final n = byId[to]!;
@@ -416,22 +485,19 @@ class WorkflowExecutor {
                 values[id] is ClassificationResult &&
                 requiredConditionIds.contains(to))
               active.add(to);
-            if (n['sourceNodeId'] == id &&
-                n['type'] == 'output' &&
-                (n['sourcePort'] == 'result' ||
-                    values[id] is BooleanResult &&
-                        ((n['sourcePort'] == 'true') ==
-                            (values[id] as BooleanResult).value)))
+            if (n['type'] == 'output' &&
+                _outputSourceDefinitions(n).any(
+                  (source) =>
+                      source['sourceNodeId'] == id &&
+                      (source['sourcePort'] == 'result' ||
+                          values[id] is BooleanResult &&
+                              ((source['sourcePort'] == 'true') ==
+                                  (values[id] as BooleanResult).value)),
+                )) {
               active.add(to);
-          } else if (active.contains(id)) {
-            final source = byId[id]!;
-            if (source['type'] == 'input.image' &&
-                byId[to]!['type'] == 'model.tflite' &&
-                !requiredModelIds.contains(to)) {
-              degree[to] = degree[to]! - 1;
-              if (degree[to] == 0) ready.add(to);
-              continue;
             }
+          } else if (active.contains(id) && !unneededModel) {
+            final source = byId[id]!;
             final connection = connections.firstWhere(
               (c) => c['sourceNodeId'] == id && c['targetNodeId'] == to,
             );

@@ -193,7 +193,7 @@ void main() {
         inventoryJson: _manifest(workflowVersion: '1.0.0'),
         workflowVersionId: 'workflow-version-1.0.0',
         definitionJson: _unsupportedSchemaWorkflowDefinition(
-          schemaVersion: '2',
+          schemaVersion: '3',
         ),
       );
       await expectLater(
@@ -636,7 +636,7 @@ void main() {
       final inventory = await seedInventory(client);
       responseBody = _manifest(workflowVersion: '2.0.0');
       workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
-        schemaVersion: '2',
+        schemaVersion: '3',
       );
       final downloads = <WorkflowVersionDownloadResult>[];
       final rejectingClient = sdk(onWorkflowDownload: downloads.add);
@@ -686,7 +686,7 @@ void main() {
     'commits other resources when a never-installed workflow has unsupported schema version (US-098)',
     () async {
       workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
-        schemaVersion: '2',
+        schemaVersion: '3',
       );
 
       final result = await sdk().sync();
@@ -2042,10 +2042,7 @@ void main() {
     test(
       'rejects Android devices below minimum required version API 26 (US-092)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isAndroid: true,
-          androidSdkVersion: 25,
-        );
+        AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 25);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2055,13 +2052,12 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
-        expect(
-          result.status,
-          equals(InitializationStatus.unsupportedPlatform),
-        );
+        expect(result.status, equals(InitializationStatus.unsupportedPlatform));
         expect(
           result.message,
-          equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+          equals(
+            'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          ),
         );
         expect(result.isSuccess, isFalse);
         expect(result.sdk, isNull);
@@ -2073,10 +2069,7 @@ void main() {
     test(
       'accepts compatible Android version (API 26+) and initializes successfully (US-092)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isAndroid: true,
-          androidSdkVersion: 26,
-        );
+        AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2112,10 +2105,7 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
-        expect(
-          result.status,
-          equals(InitializationStatus.unsupportedPlatform),
-        );
+        expect(result.status, equals(InitializationStatus.unsupportedPlatform));
         expect(
           result.message,
           equals('Esta plataforma no es compatible con ayni_sdk.'),
@@ -2129,10 +2119,7 @@ void main() {
     test(
       'rejects Android with unreadable or null SDK version as unsupported (US-092)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isAndroid: true,
-          androidSdkVersion: null,
-        );
+        AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: null);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2142,13 +2129,12 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
-        expect(
-          result.status,
-          equals(InitializationStatus.unsupportedPlatform),
-        );
+        expect(result.status, equals(InitializationStatus.unsupportedPlatform));
         expect(
           result.message,
-          equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+          equals(
+            'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          ),
         );
         expect(result.isSuccess, isFalse);
       },
@@ -2159,10 +2145,7 @@ void main() {
       () async {
         final directSdk = sdk();
 
-        AyniSdk.setPlatformForTesting(
-          isAndroid: true,
-          androidSdkVersion: 25,
-        );
+        AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 25);
 
         expect(
           () => directSdk.run('workflow-1', Uint8List(0)),
@@ -2170,7 +2153,9 @@ void main() {
             isA<UnsupportedError>().having(
               (e) => e.message,
               'message',
-              equals('Este dispositivo Android no cumple el requisito mínimo del SDK.'),
+              equals(
+                'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+              ),
             ),
           ),
         );
@@ -2204,10 +2189,7 @@ void main() {
     test(
       'rejects iOS devices below minimum required version iOS 11 (US-093)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isIos: true,
-          iosMajorVersion: 10,
-        );
+        AyniSdk.setPlatformForTesting(isIos: true, iosMajorVersion: 10);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2217,10 +2199,7 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
-        expect(
-          result.status,
-          equals(InitializationStatus.unsupportedPlatform),
-        );
+        expect(result.status, equals(InitializationStatus.unsupportedPlatform));
         expect(
           result.message,
           equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
@@ -2235,10 +2214,7 @@ void main() {
     test(
       'accepts compatible iOS version (iOS 11+) and initializes successfully (US-093)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isIos: true,
-          iosMajorVersion: 11,
-        );
+        AyniSdk.setPlatformForTesting(isIos: true, iosMajorVersion: 11);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2260,10 +2236,7 @@ void main() {
     test(
       'rejects iOS with unreadable or null version as unsupported (US-093)',
       () {
-        AyniSdk.setPlatformForTesting(
-          isIos: true,
-          iosMajorVersion: null,
-        );
+        AyniSdk.setPlatformForTesting(isIos: true, iosMajorVersion: null);
 
         final config = AyniConfig(
           serverUrl: Uri.parse('https://api.ayni.dev'),
@@ -2273,10 +2246,7 @@ void main() {
 
         final result = AyniSdk.initialize(config);
 
-        expect(
-          result.status,
-          equals(InitializationStatus.unsupportedPlatform),
-        );
+        expect(result.status, equals(InitializationStatus.unsupportedPlatform));
         expect(
           result.message,
           equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
@@ -2290,10 +2260,7 @@ void main() {
       () async {
         final directSdk = sdk();
 
-        AyniSdk.setPlatformForTesting(
-          isIos: true,
-          iosMajorVersion: 10,
-        );
+        AyniSdk.setPlatformForTesting(isIos: true, iosMajorVersion: 10);
 
         expect(
           () => directSdk.run('workflow-1', Uint8List(0)),
@@ -2301,7 +2268,9 @@ void main() {
             isA<UnsupportedError>().having(
               (e) => e.message,
               'message',
-              equals('Este dispositivo iOS no cumple el requisito mínimo del SDK.'),
+              equals(
+                'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
+              ),
             ),
           ),
         );
@@ -2355,7 +2324,7 @@ void main() {
     });
 
     test('AyniSdk declares supported workflow schema versions (US-098)', () {
-      expect(AyniSdk.supportedWorkflowSchemaVersions, equals({'1'}));
+      expect(AyniSdk.supportedWorkflowSchemaVersions, equals({'1', '2'}));
     });
   });
 }

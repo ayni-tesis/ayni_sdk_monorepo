@@ -712,6 +712,8 @@ class AyniSdk {
   ///           '$name: $label ($confidence)',
   ///         DetectionResult(:final detections) =>
   ///           '$name: ${detections.length} objetos',
+  ///         CombinedWorkflowResult(:final values) =>
+  ///           '$name: ${values.length} resultados',
   ///         BooleanResult(value: final passed) => '$name: $passed',
   ///       },
   ///   ];
@@ -764,9 +766,24 @@ class AyniSdk {
         decoded as Map<String, dynamic>,
         input,
       );
-      // Artifacts are checked as their selected branch reaches each model.
-      // Preflighting every dependency here would let an unrelated branch stop
-      // an execution before its condition chooses the route.
+      final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
+        decoded,
+      );
+      final installer = ModelArtifactInstaller(
+        storageDirectory: storageDirectory,
+      );
+      for (final modelVersionId in workflow.modelVersionIds) {
+        if (requiredModelVersionIds.contains(modelVersionId) &&
+            !await installer.isVersionAvailable(
+              modelId: modelVersionId,
+              modelVersionId: modelVersionId,
+            )) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelNotAvailable,
+            modelVersionId: modelVersionId,
+          );
+        }
+      }
       onProgress?.call('Usando recursos guardados en este dispositivo.');
       return await executor.execute(
         workflowId: workflowId,

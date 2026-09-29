@@ -20,6 +20,7 @@ const Map<String, Set<String>> expectedExports = {
   },
   'src/workflow_execution.dart': {
     'BooleanResult',
+    'CombinedWorkflowResult',
     'ClassificationResult',
     'Detection',
     'DetectionResult',
@@ -182,6 +183,7 @@ void main() {
         'SyncResourceType': SyncResourceType,
         'SyncStatus': SyncStatus,
         'BooleanResult': BooleanResult,
+        'CombinedWorkflowResult': CombinedWorkflowResult,
         'ClassificationResult': ClassificationResult,
         'Detection': Detection,
         'DetectionResult': DetectionResult,
