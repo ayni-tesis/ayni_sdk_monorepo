@@ -552,16 +552,14 @@ class AyniSdk {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message:
-              'Este dispositivo Android no cumple el requisito mínimo del SDK.',
+          message: 'Este dispositivo Android no cumple el requisito mínimo del SDK.',
         );
       }
       if (platform.isUnsupportedIos) {
         _instance = null;
         return const AyniInitializationResult(
           status: InitializationStatus.unsupportedPlatform,
-          message:
-              'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
+          message: 'Este dispositivo iOS no cumple el requisito mínimo del SDK.',
         );
       }
       if (!platform.isSupported) {
@@ -733,7 +731,9 @@ class AyniSdk {
       );
     }
     if (!platform.isSupported) {
-      throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
+      throw UnsupportedError(
+        'Esta plataforma no es compatible con ayni_sdk.',
+      );
     }
     try {
       final inventoryFile = File(
@@ -759,10 +759,7 @@ class AyniSdk {
           WorkflowValidationStatus.valid) {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       }
-      final executor = WorkflowExecutor(
-        storageDirectory,
-        inferenceRunner: _workflowInferenceRunner,
-      );
+      final executor = _createWorkflowExecutorForRun();
       await executor.validateInputAndContracts(
         decoded as Map<String, dynamic>,
         input,
@@ -800,6 +797,11 @@ class AyniSdk {
       throw const WorkflowError(WorkflowErrorCategory.runtimeError);
     }
   }
+
+  WorkflowExecutor _createWorkflowExecutorForRun() => WorkflowExecutor(
+    storageDirectory,
+    inferenceRunner: _workflowInferenceRunner,
+  );
 
   /// Downloads and installs the workflow versions published for the
   /// credential's application, with the models they need.
