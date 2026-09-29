@@ -180,6 +180,77 @@ void main() {
       },
     );
 
+    test('rejects an unsupported image contract before inference', () async {
+      final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+      final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+        (node) => node['type'] == 'model.tflite',
+      );
+      ((model['inputs'] as Map)['image'] as Map)['channels'] = 2;
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: _inventory(),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: jsonEncode(definition),
+      );
+      await installModelArtifact();
+      var inferenceStarted = false;
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              inferenceStarted = true;
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+
+      await expectLater(
+        client.run('workflow-1', pngBytes()),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.unsupportedInputContract,
+          nodeId: 'model-1',
+        ),
+      );
+      expect(inferenceStarted, isFalse);
+    });
+
+    test('keeps the app image bytes unchanged after preprocessing', () async {
+      await installWorkflow();
+      await installModelArtifact();
+      final input = pngBytes();
+      final original = Uint8List.fromList(input);
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async => (
+              error: null,
+              outputs: [
+                (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+              ],
+            ),
+      );
+
+      await client.run('workflow-1', input);
+
+      expect(input, equals(original));
+    });
+
     test('reports a missing model artifact with its version', () async {
       await installWorkflow();
       final client = sdk();
