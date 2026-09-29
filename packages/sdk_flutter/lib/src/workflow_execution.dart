@@ -54,6 +54,12 @@ enum WorkflowErrorCategory {
   /// The execution finished without reaching any output node.
   outputNotReached,
 
+  /// The execution was cancelled before it completed.
+  cancelled,
+
+  /// No active execution has this identifier.
+  executionNotFound,
+
   /// An unexpected failure happened while running the workflow, such as a
   /// model that fails during inference.
   runtimeError,
@@ -90,11 +96,15 @@ class WorkflowResult {
   /// [usingOfflineCache] defaults to `true`. The SDK creates these results;
   /// apps only read them.
   const WorkflowResult({
+    required this.executionId,
     required this.workflowId,
     required this.workflowVersion,
     required this.outputs,
     this.usingOfflineCache = true,
   });
+
+  /// The identifier assigned to this execution.
+  final String executionId;
 
   /// The ID of the workflow that ran.
   final String workflowId;
@@ -320,10 +330,12 @@ class WorkflowExecutor {
   ///
   /// Throws a [WorkflowError] when the workflow cannot complete.
   Future<WorkflowResult> execute({
+    required String executionId,
     required String workflowId,
     required String workflowVersion,
     required Map<String, dynamic> definition,
     required Uint8List imageBytes,
+    bool Function()? isCancelled,
   }) async {
     try {
       final nodes = (definition['nodes'] as List).cast<Map>();
@@ -388,6 +400,9 @@ class WorkflowExecutor {
       final outputs = <String, WorkflowValue>{};
       var completed = 0;
       while (ready.isNotEmpty) {
+        if (isCancelled?.call() ?? false) {
+          throw const WorkflowError(WorkflowErrorCategory.cancelled);
+        }
         ready.sort((left, right) {
           int priority(String id) => byId[id]!['type'] == 'condition'
               ? 0
@@ -519,6 +534,7 @@ class WorkflowExecutor {
       if (outputs.isEmpty)
         throw const WorkflowError(WorkflowErrorCategory.outputNotReached);
       return WorkflowResult(
+        executionId: executionId,
         workflowId: workflowId,
         workflowVersion: workflowVersion,
         outputs: outputs,

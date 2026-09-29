@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'model_artifact_downloader.dart';
@@ -669,6 +670,22 @@ class AyniSdk {
   final void Function(String message)? onProgress;
 
   final String _credential;
+  final Map<String, _ActiveExecution> _activeExecutions = {};
+
+  /// Requests cancellation of an active execution.
+  ///
+  /// The identifier is provided to [run]'s `onExecutionStarted` callback.
+  /// Cancellation takes effect before the next node begins; an in-progress
+  /// model inference is allowed to finish. Throws
+  /// [WorkflowErrorCategory.executionNotFound] when the execution has ended
+  /// or the identifier is unknown.
+  void cancelExecution(String executionId) {
+    final execution = _activeExecutions[executionId];
+    if (execution == null) {
+      throw const WorkflowError(WorkflowErrorCategory.executionNotFound);
+    }
+    execution.cancelled = true;
+  }
 
   /// Receives each downloaded or unavailable workflow definition during sync.
   ///
@@ -702,6 +719,10 @@ class AyniSdk {
   /// [WorkflowErrorCategory.workflowNotAvailable], and an [input] that is not
   /// an image throws [WorkflowErrorCategory.invalidInput].
   ///
+  /// [onExecutionStarted] receives an identifier that can be passed to
+  /// [cancelExecution] while this call is active. Cancellation stops pending
+  /// nodes after any currently running inference finishes.
+  ///
   /// ```dart
   /// try {
   ///   final result = await sdk.run(workflowId, image);
@@ -723,7 +744,11 @@ class AyniSdk {
   ///   return ['No se pudo ejecutar el workflow: ${error.category.name}'];
   /// }
   /// ```
-  Future<WorkflowResult> run(String workflowId, Uint8List input) async {
+  Future<WorkflowResult> run(
+    String workflowId,
+    Uint8List input, {
+    void Function(String executionId)? onExecutionStarted,
+  }) async {
     if (platform.isUnsupportedAndroid) {
       throw UnsupportedError(
         'Este dispositivo Android no cumple el requisito mínimo del SDK.',
@@ -737,7 +762,12 @@ class AyniSdk {
     if (!platform.isSupported) {
       throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
+    final executionId = _newExecutionId();
+    final execution = _ActiveExecution();
+    _activeExecutions[executionId] = execution;
     try {
+      onExecutionStarted?.call(executionId);
+      _throwIfCancelled(execution);
       final inventoryFile = File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       );
@@ -766,6 +796,7 @@ class AyniSdk {
         decoded as Map<String, dynamic>,
         input,
       );
+      _throwIfCancelled(execution);
       final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
         decoded,
       );
@@ -773,6 +804,7 @@ class AyniSdk {
         storageDirectory: storageDirectory,
       );
       for (final modelVersionId in workflow.modelVersionIds) {
+        _throwIfCancelled(execution);
         if (requiredModelVersionIds.contains(modelVersionId) &&
             !await installer.isVersionAvailable(
               modelId: modelVersionId,
@@ -785,13 +817,19 @@ class AyniSdk {
         }
       }
       onProgress?.call('Usando recursos guardados en este dispositivo.');
-      return await executor.execute(
+      final result = await executor.execute(
+        executionId: executionId,
         workflowId: workflowId,
         workflowVersion: workflow.version,
         definition: decoded,
         imageBytes: input,
+        isCancelled: () => execution.cancelled,
       );
+      _throwIfCancelled(execution);
+      return result;
     } on WorkflowError {
+      rethrow;
+    } on UnsupportedError {
       rethrow;
     } on FormatException {
       throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
@@ -799,6 +837,22 @@ class AyniSdk {
       throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
     } catch (_) {
       throw const WorkflowError(WorkflowErrorCategory.runtimeError);
+    } finally {
+      _activeExecutions.remove(executionId);
+    }
+  }
+
+  static String _newExecutionId() {
+    final random = Random.secure();
+    return List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
+  }
+
+  static void _throwIfCancelled(_ActiveExecution execution) {
+    if (execution.cancelled) {
+      throw const WorkflowError(WorkflowErrorCategory.cancelled);
     }
   }
 
@@ -1839,6 +1893,10 @@ class _SyncDeadline {
   var expired = false;
 
   void expire() => expired = true;
+}
+
+class _ActiveExecution {
+  var cancelled = false;
 }
 
 class _WorkflowManifestEntry {

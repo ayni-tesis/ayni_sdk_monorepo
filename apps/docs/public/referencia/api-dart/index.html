@@ -128,7 +128,18 @@ try {
 }
 </code></pre>
 <p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/run_workflow.dart</code>.</p>
-<p><code>WorkflowResult</code> expone <code>workflowId</code>, <code>workflowVersion</code>, <code>outputs</code> y <code>usingOfflineCache</code>. Cada valor de <code>outputs</code> es un <code>WorkflowValue</code> (<code>ClassificationResult</code>, <code>DetectionResult</code>, <code>BooleanResult</code> o <code>CombinedWorkflowResult</code>) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, <code>run()</code> lanza <code>WorkflowError</code> con su <code>category</code>, <code>nodeId</code> y <code>modelVersionId</code>; no devuelve el error como valor.</p>
+<p><code>WorkflowResult</code> expone <code>executionId</code>, <code>workflowId</code>, <code>workflowVersion</code>, <code>outputs</code> y <code>usingOfflineCache</code>. Cada valor de <code>outputs</code> es un <code>WorkflowValue</code> (<code>ClassificationResult</code>, <code>DetectionResult</code>, <code>BooleanResult</code> o <code>CombinedWorkflowResult</code>) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, <code>run()</code> lanza <code>WorkflowError</code> con su <code>category</code>, <code>nodeId</code> y <code>modelVersionId</code>; no devuelve el error como valor.</p>
+<p><code>run()</code> llama a <code>onExecutionStarted</code> con un ID antes de comenzar. Guárdalo para cancelar el análisis en curso:</p>
+<pre class="language-dart"><code class="language-dart">late String executionId;
+final pending = sdk.run(
+  workflowId,
+  imageBytes,
+  onExecutionStarted: (id) =&gt; executionId = id,
+);
+// Mientras `pending` sigue en curso:
+sdk.cancelExecution(executionId);
+</code></pre>
+<p>La cancelación detiene los nodos pendientes después de que termine una inferencia que ya estaba en curso. <code>run()</code> completa con <code>WorkflowErrorCategory.cancelled</code>; un ID que ya no está activo produce <code>executionNotFound</code>.</p>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>

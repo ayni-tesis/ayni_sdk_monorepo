@@ -113,7 +113,22 @@ try {
 
 El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/run_workflow.dart`.
 
-`WorkflowResult` expone `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
+`WorkflowResult` expone `executionId`, `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
+
+`run()` llama a `onExecutionStarted` con un ID antes de comenzar. Guárdalo para cancelar el análisis en curso:
+
+```dart
+late String executionId;
+final pending = sdk.run(
+  workflowId,
+  imageBytes,
+  onExecutionStarted: (id) => executionId = id,
+);
+// Mientras `pending` sigue en curso:
+sdk.cancelExecution(executionId);
+```
+
+La cancelación detiene los nodos pendientes después de que termine una inferencia que ya estaba en curso. `run()` completa con `WorkflowErrorCategory.cancelled`; un ID que ya no está activo produce `executionNotFound`.
 
 ## Estructura del paquete
 
