@@ -146,6 +146,40 @@ void main() {
       );
     });
 
+    test(
+      'does not run inference for an image that cannot be decoded',
+      () async {
+        await installWorkflow();
+        await installModelArtifact();
+        var inferenceStarted = false;
+        final client = createAyniSdkForTesting(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: storageDirectory,
+          workflowInferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async {
+                inferenceStarted = true;
+                return (
+                  error: null,
+                  outputs: [
+                    (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                  ],
+                );
+              },
+        );
+
+        await expectLater(
+          client.run('workflow-1', Uint8List.fromList(utf8.encode('no image'))),
+          throwsWorkflowError(category: WorkflowErrorCategory.invalidInput),
+        );
+        expect(inferenceStarted, isFalse);
+      },
+    );
+
     test('reports a missing model artifact with its version', () async {
       await installWorkflow();
       final client = sdk();
@@ -332,7 +366,6 @@ void main() {
       expect(seen[2], [1, -1, -1]);
     },
   );
-
 }
 
 /// The single matcher for a [WorkflowError] thrown by `AyniSdk.run`: it checks
