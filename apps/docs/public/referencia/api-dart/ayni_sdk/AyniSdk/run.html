@@ -113,27 +113,25 @@ nodes after any currently running inference finishes.</p>
   Uint8List input, {
   void Function(String executionId)? onExecutionStarted,
 }) async {
+  if (platform.isUnsupportedAndroid) {
+    throw UnsupportedError(
+      &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
+    );
+  }
+  if (platform.isUnsupportedIos) {
+    throw UnsupportedError(
+      &#39;Este dispositivo iOS no cumple el requisito mínimo del SDK.&#39;,
+    );
+  }
+  if (!platform.isSupported) {
+    throw UnsupportedError(&#39;Esta plataforma no es compatible con ayni_sdk.&#39;);
+  }
   final executionId = _newExecutionId();
   final execution = _ActiveExecution();
   _activeExecutions[executionId] = execution;
   try {
     onExecutionStarted?.call(executionId);
     _throwIfCancelled(execution);
-    if (platform.isUnsupportedAndroid) {
-      throw UnsupportedError(
-        &#39;Este dispositivo Android no cumple el requisito mínimo del SDK.&#39;,
-      );
-    }
-    if (platform.isUnsupportedIos) {
-      throw UnsupportedError(
-        &#39;Este dispositivo iOS no cumple el requisito mínimo del SDK.&#39;,
-      );
-    }
-    if (!platform.isSupported) {
-      throw UnsupportedError(
-        &#39;Esta plataforma no es compatible con ayni_sdk.&#39;,
-      );
-    }
     final inventoryFile = File(
       &#39;${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json&#39;,
     );
@@ -194,6 +192,8 @@ nodes after any currently running inference finishes.</p>
     _throwIfCancelled(execution);
     return result;
   } on WorkflowError {
+    rethrow;
+  } on UnsupportedError {
     rethrow;
   } on FormatException {
     throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
