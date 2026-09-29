@@ -269,6 +269,82 @@ void main() {
     });
 
     test(
+      'does not load a model artifact whose installed hash changed',
+      () async {
+        await installWorkflow();
+        await installModelArtifact();
+        await File(
+          '${storageDirectory.path}/model-version-1/model-version-1.tflite',
+        ).writeAsString('tampered model');
+        var inferenceStarted = false;
+        final client = createAyniSdkForTesting(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: storageDirectory,
+          workflowInferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async {
+                inferenceStarted = true;
+                return (
+                  error: null,
+                  outputs: [
+                    (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                  ],
+                );
+              },
+        );
+
+        await expectLater(
+          client.run('workflow-1', pngBytes()),
+          throwsWorkflowError(
+            category: WorkflowErrorCategory.modelNotAvailable,
+            modelVersionId: 'model-version-1',
+          ),
+        );
+        expect(inferenceStarted, isFalse);
+      },
+    );
+
+    test('uses the verified model artifact from local storage', () async {
+      await installWorkflow();
+      await installModelArtifact();
+      String? loadedModelPath;
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              loadedModelPath = modelPath;
+              expect(
+                await File(modelPath).readAsString(),
+                'deterministic test model',
+              );
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+
+      await client.run('workflow-1', pngBytes());
+
+      expect(
+        loadedModelPath,
+        '${storageDirectory.path}/model-version-1/model-version-1.tflite',
+      );
+    });
+
+    test(
       'rejects an installed workflow with unsupported schemaVersion before checking models',
       () async {
         final unsupportedDef = jsonEncode({
