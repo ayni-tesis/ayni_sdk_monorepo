@@ -100,6 +100,7 @@ before calling this method. Ayni does not provide the host app's switch.</p>
       &#39;Debe identificar el aviso mostrado.&#39;,
     );
   }
+  Future&lt;void&gt;? receiptWork;
   return _serializeConsentWork(() async {
     final receipt = ConsentReceipt(
       receiptId: _newConsentReceiptId(),
@@ -126,7 +127,18 @@ before calling this method. Ayni does not provide the host app's switch.</p>
         return const ConsentResult(ConsentStatus.pending);
       }
       if (serverUrl.scheme == &#39;http&#39;) client.findProxy = (_) =&gt; &#39;DIRECT&#39;;
-      final synced = await _syncConsentReceipts(client).timeout(syncTimeout);
+      final pendingWork = _syncConsentReceipts(client);
+      receiptWork = pendingWork.then&lt;void&gt;(
+        (_) {},
+        onError: (Object _, StackTrace __) {},
+      );
+      final synced = await pendingWork.timeout(
+        syncTimeout,
+        onTimeout: () {
+          client.close(force: true);
+          return false;
+        },
+      );
       return synced
           ? const ConsentResult(ConsentStatus.synced)
           : const ConsentResult(ConsentStatus.pending);
@@ -141,7 +153,7 @@ before calling this method. Ayni does not provide the host app's switch.</p>
     } finally {
       client.close(force: true);
     }
-  });
+  }, waitUntilComplete: () =&gt; receiptWork ?? Future&lt;void&gt;.value());
 }</code></pre>
 </section>
 
