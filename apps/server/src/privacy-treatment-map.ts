@@ -1,8 +1,10 @@
 import { updatePrivacyMapSchema } from "@ayni/api/privacy-treatment";
 import { Hono } from "hono";
-import type { Application } from "./applications";
+import { type Application, getApplicationForMember } from "./applications";
 import type {
   PrivacyTreatmentMap,
+  PublishedPrivacyNotice,
+  PublishPrivacyNoticeResult,
   UpdatePrivacyTreatmentMapInput,
   UpdatePrivacyTreatmentMapResult,
 } from "./privacy-treatment-map-store";
@@ -19,7 +21,12 @@ type Dependencies = {
   };
   privacyMaps: {
     get: (applicationId: string) => Promise<PrivacyTreatmentMap>;
+    getPublished: (applicationId: string) => Promise<PublishedPrivacyNotice | undefined>;
     update: (input: UpdatePrivacyTreatmentMapInput) => Promise<UpdatePrivacyTreatmentMapResult>;
+    publish: (input: {
+      applicationId: string;
+      userId: string;
+    }) => Promise<PublishPrivacyNoticeResult>;
   };
 };
 
@@ -30,15 +37,24 @@ export function createPrivacyTreatmentMapApp({
 }: Dependencies) {
   const app = new Hono();
 
+  app.get("/applications/:applicationId/privacy-notice", async (c) => {
+    const notice = await privacyMaps.getPublished(c.req.param("applicationId"));
+    if (!notice) {
+      return c.json({ message: "La aplicación aún no publicó su aviso de privacidad." }, 404);
+    }
+    return c.json({ notice });
+  });
+
   app.get("/applications/:applicationId/privacy-treatment-map", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
       return c.json({ message: NOT_FOUND_MESSAGE }, 404);
     }
 
@@ -49,11 +65,12 @@ export function createPrivacyTreatmentMapApp({
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: NOT_FOUND_MESSAGE }, 404);
-    if (!(await applications.getMembership(session.user.id, application.organizationId))) {
-      return c.json({ message: NOT_FOUND_MESSAGE }, 404);
-    }
 
     let rawBody: unknown;
     try {
@@ -85,6 +102,43 @@ export function createPrivacyTreatmentMapApp({
         { message: "No puedes editar los tratamientos de una aplicación archivada." },
         409,
       );
+    }
+
+    return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+  });
+
+  app.post("/applications/:applicationId/privacy-notice/publish", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
+      return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+    }
+
+    const result = await privacyMaps.publish({
+      applicationId: application.id,
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ version: result.version }, 201);
+    if (result.reason === "incomplete") {
+      return c.json(
+        {
+          message: "Confirma los tratamientos pendientes antes de publicar el aviso.",
+          pendingTreatments: result.pendingTreatments,
+        },
+        409,
+      );
+    }
+    if (result.reason === "forbidden") {
+      return c.json({ message: "No tienes permiso para publicar el aviso de privacidad." }, 403);
+    }
+    if (result.reason === "archived") {
+      return c.json({ message: "No puedes publicar el aviso de una aplicación archivada." }, 409);
     }
 
     return c.json({ message: NOT_FOUND_MESSAGE }, 404);

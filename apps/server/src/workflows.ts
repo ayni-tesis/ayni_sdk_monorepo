@@ -1,7 +1,7 @@
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
-import type { Application } from "./applications";
+import { type Application, getApplicationForMember } from "./applications";
 import type {
   AddConditionNodeInput,
   AddConditionNodeResult,
@@ -168,13 +168,8 @@ type Dependencies = {
 
 export function createWorkflowsApp({ getSession, applications, workflows }: Dependencies) {
   const app = new Hono();
-  const getMemberApplication = async (applicationId: string, userId: string) => {
-    const application = await applications.get(applicationId);
-    const role =
-      application && (await applications.getMembership(userId, application.organizationId));
-    if (!application || !role) return undefined;
-    return { ...application, role };
-  };
+  const getMemberApplication = (applicationId: string, userId: string) =>
+    getApplicationForMember(applications, applicationId, userId);
   // Every draft change names the revision it was based on; a stale one changes nothing.
   const draftRevisionRequired = (c: Context) =>
     c.json({ message: DRAFT_REVISION_REQUIRED_MESSAGE }, 400);

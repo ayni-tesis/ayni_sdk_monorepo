@@ -47,7 +47,7 @@ This file provides context about the project for AI assistants.
 - Caching: upstash-redis
 - Logging: pino
 - Application management: workspace-scoped applications with administrator- and owner-only create, rename, and archive actions
-- Privacy treatment maps: workspace members can read each application's inventory; only its administrators and owners can edit the per-purpose data categories, source, requirement, legal basis, responsible/processor role, recipients, transfers, retention, rights channel, and Ayni/client-data context. Incomplete or unconfirmed maps are not ready to publish as privacy notices.
+- Privacy treatment maps: workspace members can read each application's inventory; only its administrators and owners can edit it or publish an immutable privacy-notice snapshot, which is retrievable from `GET /applications/:applicationId/privacy-notice`. Server publication requires every treatment field, role, and legal basis to be confirmed; it reports pending treatments and never asserts legal compliance. The field scope references [Ley N.° 29733](https://www.leyes.congreso.gob.pe/documentos/leyes/29733.pdf) and [D.S. N.° 016-2024-JUS](https://busquedas.elperuano.pe/dispositivo/SE/2349653-1); counsel must review it before launch.
 - Workspace member management: workspace-scoped member listing and role updating (admin and member) restricted to workspace administrators and owners
 - Workspace invitation links: administrator- and owner-only creation of single-use, expiring links bound to one workspace and role (`admin` or `member`). The server stores only the SHA-256 hash of the token, the system never sends e-mail, and accepting a link grants membership only to the invited workspace.
 - SDK credentials: administrator- and owner-only generation, listing, revocation, and regeneration of credentials scoped to one application. The server stores only the SHA-256 hash of the secret and its display prefix, reveals the secret once at creation or regeneration, and rejects non-active credentials or archived applications. Listing exposes operational metadata only (prefix, status, creation date, last use) and never the secret; status reflects revocation ("active" or "revoked"). Revoking a credential marks it `revoked`: it can no longer authenticate or synchronize new resources (rejected with `credentialRevoked`), and revocation never deletes existing workflows, models, or versions nor removes resources already stored offline on devices. Regenerating an active credential immediately revokes the prior credential and issues a replacement without modifying the application or its resources.
@@ -186,16 +186,15 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
   updated first is preferred, change the `orderBy` and the
   `returns the oldest workflows first` test in `apps/server/src/workflows.test.ts`.
 - **Duplicated list plumbing (technical debt)**: `WorkflowsView`,
-  `WorkflowDetailView` (`loadDetail`), `TelemetryPolicyView`, and `CollectionPolicyView` (`loadPolicy`) copy the load/abort/error/retry logic of
+  `WorkflowDetailView` (`loadDetail`), `TelemetryPolicyView`, `CollectionPolicyView` (`loadPolicy`), and `PrivacyTreatmentMapView` (`loadMap`) copy the load/abort/error/retry logic of
   `ModelsView` (`loadModels`), and the server repeats
   `ListWorkflowsExecutor`/`GetWorkflowExecutor`/`ListModelsExecutor`, the
-  six-column workflow projection in `getWorkflow` and `listWorkflows`, and the
-  session → application → membership → uniform 404 guard across `workflows.ts`
-  (twice), `models.ts`, and `model-versions.ts`. Extract a shared hook and a shared type/helper, keeping the guard
-  in one place because it carries the guarantee that non-members never learn
-  whether an application or its resources exist.
-  `collection-policy-store.ts` likewise copies the get/upsert executors and row mapping
-  of `telemetry-policy-store.ts`; extract them before a third policy of that shape.
+  six-column workflow projection in `getWorkflow` and `listWorkflows`. The
+  session → application → membership → uniform 404 guard is shared by
+  `getApplicationForMember` in `applications.ts`, because non-members must
+  never learn whether an application or its resources exist. The get/upsert
+  query plumbing for telemetry, collection, and privacy application settings
+  is shared by `application-setting-store.ts`.
 - **Stale reload after switching application (technical debt; read from the code,
   not tested)**: `WorkflowsView` is keyed by application id. If the user switches
   application while `POST /applications/:applicationId/workflows` is in flight,

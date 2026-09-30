@@ -5,7 +5,7 @@ import type { Application } from "../../types";
 import { PrivacyTreatmentMapView } from "./privacy-treatment-map-view";
 
 const { client, toastMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), put: vi.fn() },
+  client: { get: vi.fn(), put: vi.fn(), post: vi.fn() },
   toastMock: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -23,6 +23,7 @@ const emptyMap = {
   applicationId: "app-1",
   treatments: [],
   readyToPublish: false,
+  latestPublishedVersion: 0,
   updatedAt: null,
 };
 
@@ -59,6 +60,7 @@ describe("US-151: Privacy treatment map", () => {
         },
       ],
       readyToPublish: true,
+      latestPublishedVersion: 0,
       updatedAt: "2026-09-30T12:00:00.000Z",
     };
     client.put.mockResolvedValueOnce({ data: { map: savedMap } });
@@ -112,7 +114,7 @@ describe("US-151: Privacy treatment map", () => {
       });
       expect(toastMock.success).toHaveBeenCalledWith("Mapa de tratamientos guardado.");
       expect(
-        screen.getByText("El mapa está completo para preparar un aviso de privacidad."),
+        screen.getByText("El mapa está completo para publicar un aviso de privacidad."),
       ).toBeTruthy();
     });
   });
@@ -132,5 +134,84 @@ describe("US-151: Privacy treatment map", () => {
     expect(
       screen.getByRole("button", { name: "Agregar tratamiento" }).hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it("shows the required confirmation warning and names pending treatment details", async () => {
+    client.get.mockResolvedValueOnce({
+      data: {
+        map: {
+          ...emptyMap,
+          treatments: [
+            {
+              id: "550e8400-e29b-41d4-a716-446655440000",
+              purpose: "Analítica",
+              dataCategories: [],
+              dataContext: "undetermined",
+              source: "",
+              requirement: "undetermined",
+              legalBasis: "",
+              legalBasisConfirmed: false,
+              role: "undetermined",
+              recipients: [],
+              transfers: "",
+              retention: "",
+              rightsChannel: "",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PrivacyTreatmentMapView application={activeApp} canManage />);
+    expect(
+      await screen.findByText(
+        /Confirma estos datos con la persona responsable de privacidad antes de publicar el aviso\./,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Pendiente: categorías de datos, titular de los datos, fuente, obligatoriedad, base aplicable confirmada, rol, destinatarios, transferencias, conservación, canal de derechos.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("publishes an immutable notice version only from the saved map", async () => {
+    client.get.mockResolvedValueOnce({
+      data: {
+        map: {
+          ...emptyMap,
+          readyToPublish: true,
+          treatments: [
+            {
+              id: "550e8400-e29b-41d4-a716-446655440000",
+              purpose: "Telemetría técnica",
+              dataCategories: ["Versión del SDK"],
+              dataContext: "ayniPlatform",
+              source: "Dispositivo",
+              requirement: "optional",
+              legalBasis: "Base revisada",
+              legalBasisConfirmed: true,
+              role: "processor",
+              recipients: ["Ninguno"],
+              transfers: "No aplica",
+              retention: "30 días",
+              rightsChannel: "privacidad@example.test",
+            },
+          ],
+        },
+      },
+    });
+    client.post.mockResolvedValueOnce({
+      data: { version: { version: 1, publishedAt: "2026-09-30T12:00:00.000Z" } },
+    });
+
+    render(<PrivacyTreatmentMapView application={activeApp} canManage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Publicar aviso de privacidad" }));
+
+    await waitFor(() => {
+      expect(client.post).toHaveBeenCalledWith("/applications/app-1/privacy-notice/publish");
+      expect(toastMock.success).toHaveBeenCalledWith("Aviso de privacidad versión 1 publicado.");
+      expect(screen.getByText(/Versión publicada: 1/)).toBeTruthy();
+    });
   });
 });

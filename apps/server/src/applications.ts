@@ -8,6 +8,17 @@ export type Application = {
   status: "active" | "archived";
 };
 
+export async function getApplicationForMember(
+  applications: Pick<Dependencies["applications"], "get" | "getMembership">,
+  applicationId: string,
+  userId: string,
+): Promise<(Application & { role: string }) | undefined> {
+  const found = await applications.get(applicationId);
+  const role = found && (await applications.getMembership(userId, found.organizationId));
+  if (!found || !role) return;
+  return { ...found, role };
+}
+
 export function toApplication(row: {
   id: string;
   organizationId: string;

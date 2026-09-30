@@ -33,21 +33,24 @@ export type PrivacyTreatment = z.infer<typeof privacyTreatmentSchema>;
 export type PrivacyTreatmentRole = (typeof PRIVACY_TREATMENT_ROLES)[number];
 export type PrivacyTreatmentRequirement = (typeof PRIVACY_TREATMENT_REQUIREMENTS)[number];
 
+export function missingPrivacyTreatmentFields(treatment: PrivacyTreatment): string[] {
+  return [
+    !treatment.purpose && "purpose",
+    !treatment.dataCategories.length && "dataCategories",
+    treatment.dataContext === "undetermined" && "dataContext",
+    !treatment.source && "source",
+    treatment.requirement === "undetermined" && "requirement",
+    (!treatment.legalBasis || !treatment.legalBasisConfirmed) && "legalBasis",
+    treatment.role === "undetermined" && "role",
+    !treatment.recipients.length && "recipients",
+    !treatment.transfers && "transfers",
+    !treatment.retention && "retention",
+    !treatment.rightsChannel && "rightsChannel",
+  ].filter((field): field is string => !!field);
+}
+
 export function isPrivacyTreatmentComplete(treatment: PrivacyTreatment): boolean {
-  return (
-    treatment.purpose.length > 0 &&
-    treatment.dataCategories.length > 0 &&
-    treatment.dataContext !== "undetermined" &&
-    treatment.source.length > 0 &&
-    treatment.requirement !== "undetermined" &&
-    treatment.legalBasis.length > 0 &&
-    treatment.legalBasisConfirmed &&
-    treatment.role !== "undetermined" &&
-    treatment.recipients.length > 0 &&
-    treatment.transfers.length > 0 &&
-    treatment.retention.length > 0 &&
-    treatment.rightsChannel.length > 0
-  );
+  return missingPrivacyTreatmentFields(treatment).length === 0;
 }
 
 export function isPrivacyMapComplete(treatments: PrivacyTreatment[]): boolean {

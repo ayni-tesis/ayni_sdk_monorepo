@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isPrivacyMapComplete,
+  missingPrivacyTreatmentFields,
   type PrivacyTreatment,
   updatePrivacyMapSchema,
 } from "./privacy-treatment";
@@ -29,6 +30,16 @@ describe("privacy treatment map", () => {
       false,
     );
     expect(isPrivacyMapComplete([])).toBe(false);
+  });
+
+  it("returns the specific details that still need confirmation", () => {
+    expect(
+      missingPrivacyTreatmentFields({
+        ...completeTreatment,
+        role: "undetermined",
+        legalBasisConfirmed: false,
+      }),
+    ).toEqual(["legalBasis", "role"]);
   });
 
   it("rejects duplicate identifiers and undeclared fields", () => {

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
-import type { Application } from "./applications";
+import { type Application, getApplicationForMember } from "./applications";
 import type {
   CreateModelVersionResult,
   DeleteModelVersionResult,
@@ -101,10 +101,13 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
   app.post("/applications/:applicationId/models/:modelId/versions/upload-url", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
-    const role = await applications.getMembership(session.user.id, application.organizationId);
-    if (!role) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    const role = application.role;
     if (role !== "admin" && role !== "owner") {
       return c.json(
         { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
@@ -147,10 +150,13 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
   app.post("/applications/:applicationId/models/:modelId/versions/complete", async (c) => {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
-    const role = await applications.getMembership(session.user.id, application.organizationId);
-    if (!role) return c.json({ message: "No encontramos esta aplicación." }, 404);
+    const role = application.role;
     if (role !== "admin" && role !== "owner") {
       return c.json(
         { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
@@ -252,11 +258,12 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
       return c.json({ message: "No encontramos esta aplicación." }, 404);
     }
 
@@ -282,10 +289,14 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
       const session = await getSession(c.req.raw.headers);
       if (!session) return c.json({ message: "Authentication required" }, 401);
 
-      const application = await applications.get(c.req.param("applicationId"));
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
       if (!application)
         return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
-      const role = await applications.getMembership(session.user.id, application.organizationId);
+      const role = application.role;
       if (role !== "admin" && role !== "owner") {
         return c.json(
           {
@@ -362,12 +373,16 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) {
       return c.json({ message: "No encontramos esta aplicación.", code: "notFound" }, 404);
     }
 
-    const role = await applications.getMembership(session.user.id, application.organizationId);
+    const role = application.role;
     if (role !== "admin" && role !== "owner") {
       return c.json(
         { message: "No tienes permiso para eliminar versiones de modelo.", code: "forbidden" },

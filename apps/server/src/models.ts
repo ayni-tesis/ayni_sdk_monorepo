@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import type { Application } from "./applications";
+import { type Application, getApplicationForMember } from "./applications";
 import type { CreateModelResult, Model } from "./model-store";
 
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes registrar modelos en una aplicación archivada.";
@@ -42,11 +42,12 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
       return c.json({ message: "No encontramos esta aplicación." }, 404);
     }
 

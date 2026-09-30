@@ -6,6 +6,7 @@ import {
 import { applicationTelemetryPolicy } from "@ayni/db/schema/index";
 import { eq } from "drizzle-orm";
 import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
+import { getApplicationSetting, upsertApplicationSetting } from "./application-setting-store";
 
 export type TelemetryPolicyDatabase = ApplicationDatabase;
 
@@ -36,32 +37,19 @@ function toTelemetryPolicy(row: TelemetryPolicyRow): TelemetryPolicy {
   };
 }
 
-type GetTelemetryPolicyExecutor = {
-  select: () => {
-    from: (table: unknown) => {
-      where: (condition: unknown) => {
-        limit: (count: number) => Promise<Record<string, unknown>[]>;
-      };
-    };
-  };
-};
-
 /** The application's telemetry policy, or the disabled default when none was saved. */
 export async function getTelemetryPolicy(
   database: TelemetryPolicyDatabase,
   applicationId: string,
 ): Promise<TelemetryPolicy> {
-  return database.transaction(async (transaction) => {
-    const tx = transaction as GetTelemetryPolicyExecutor;
-    const [row] = (await tx
-      .select()
-      .from(applicationTelemetryPolicy)
-      .where(eq(applicationTelemetryPolicy.applicationId, applicationId))
-      .limit(1)) as TelemetryPolicyRow[];
-
-    if (!row) return { applicationId, ...DEFAULT_TELEMETRY_POLICY, updatedAt: null };
-    return toTelemetryPolicy(row);
-  });
+  const row = (await getApplicationSetting(
+    database,
+    applicationTelemetryPolicy,
+    eq(applicationTelemetryPolicy.applicationId, applicationId),
+  )) as TelemetryPolicyRow | undefined;
+  return row
+    ? toTelemetryPolicy(row)
+    : { applicationId, ...DEFAULT_TELEMETRY_POLICY, updatedAt: null };
 }
 
 export type UpdateTelemetryPolicyInput = {
@@ -74,16 +62,6 @@ export type UpdateTelemetryPolicyInput = {
 export type UpdateTelemetryPolicyResult =
   | { ok: true; policy: TelemetryPolicy }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" };
-
-type UpsertTelemetryPolicyExecutor = {
-  insert: (table: unknown) => {
-    values: (value: Record<string, unknown>) => {
-      onConflictDoUpdate: (config: { target: unknown; set: Record<string, unknown> }) => {
-        returning: () => Promise<Record<string, unknown>[]>;
-      };
-    };
-  };
-};
 
 /**
  * Saves the telemetry policy of an active application. Only workspace
@@ -98,15 +76,13 @@ export async function updateTelemetryPolicy(
     database,
     { applicationId, userId },
     async (tx, application) => {
-      const upsert = tx as unknown as UpsertTelemetryPolicyExecutor;
-      const [saved] = (await upsert
-        .insert(applicationTelemetryPolicy)
-        .values({ applicationId: application.id, enabled, retentionDays, updatedById: userId })
-        .onConflictDoUpdate({
-          target: applicationTelemetryPolicy.applicationId,
-          set: { enabled, retentionDays, updatedById: userId, updatedAt: new Date() },
-        })
-        .returning()) as TelemetryPolicyRow[];
+      const saved = (await upsertApplicationSetting(
+        tx,
+        applicationTelemetryPolicy,
+        { applicationId: application.id, enabled, retentionDays, updatedById: userId },
+        applicationTelemetryPolicy.applicationId,
+        { enabled, retentionDays, updatedById: userId, updatedAt: new Date() },
+      )) as TelemetryPolicyRow | undefined;
 
       if (!saved) throw new Error("Telemetry policy update returned no record");
       return toTelemetryPolicy(saved);

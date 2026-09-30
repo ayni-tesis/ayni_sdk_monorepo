@@ -6,6 +6,7 @@ import {
 import { applicationCollectionPolicy } from "@ayni/db/schema/index";
 import { eq } from "drizzle-orm";
 import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
+import { getApplicationSetting, upsertApplicationSetting } from "./application-setting-store";
 
 export type CollectionPolicyDatabase = ApplicationDatabase;
 
@@ -40,32 +41,19 @@ function toCollectionPolicy(row: CollectionPolicyRow): CollectionPolicy {
   };
 }
 
-type GetCollectionPolicyExecutor = {
-  select: () => {
-    from: (table: unknown) => {
-      where: (condition: unknown) => {
-        limit: (count: number) => Promise<Record<string, unknown>[]>;
-      };
-    };
-  };
-};
-
 /** The application's collection policy, or the disabled default when none was saved. */
 export async function getCollectionPolicy(
   database: CollectionPolicyDatabase,
   applicationId: string,
 ): Promise<CollectionPolicy> {
-  return database.transaction(async (transaction) => {
-    const tx = transaction as GetCollectionPolicyExecutor;
-    const [row] = (await tx
-      .select()
-      .from(applicationCollectionPolicy)
-      .where(eq(applicationCollectionPolicy.applicationId, applicationId))
-      .limit(1)) as CollectionPolicyRow[];
-
-    if (!row) return { applicationId, ...DEFAULT_COLLECTION_POLICY, updatedAt: null };
-    return toCollectionPolicy(row);
-  });
+  const row = (await getApplicationSetting(
+    database,
+    applicationCollectionPolicy,
+    eq(applicationCollectionPolicy.applicationId, applicationId),
+  )) as CollectionPolicyRow | undefined;
+  return row
+    ? toCollectionPolicy(row)
+    : { applicationId, ...DEFAULT_COLLECTION_POLICY, updatedAt: null };
 }
 
 export type UpdateCollectionPolicyInput = CollectionPolicySettings & {
@@ -76,16 +64,6 @@ export type UpdateCollectionPolicyInput = CollectionPolicySettings & {
 export type UpdateCollectionPolicyResult =
   | { ok: true; policy: CollectionPolicy }
   | { ok: false; reason: "forbidden" | "notFound" | "archived" };
-
-type UpsertCollectionPolicyExecutor = {
-  insert: (table: unknown) => {
-    values: (value: Record<string, unknown>) => {
-      onConflictDoUpdate: (config: { target: unknown; set: Record<string, unknown> }) => {
-        returning: () => Promise<Record<string, unknown>[]>;
-      };
-    };
-  };
-};
 
 /**
  * Saves the collection policy of an active application. Only workspace
@@ -100,15 +78,13 @@ export async function updateCollectionPolicy(
     database,
     { applicationId, userId },
     async (tx, application) => {
-      const upsert = tx as unknown as UpsertCollectionPolicyExecutor;
-      const [saved] = (await upsert
-        .insert(applicationCollectionPolicy)
-        .values({ applicationId: application.id, ...settings, updatedById: userId })
-        .onConflictDoUpdate({
-          target: applicationCollectionPolicy.applicationId,
-          set: { ...settings, updatedById: userId, updatedAt: new Date() },
-        })
-        .returning()) as CollectionPolicyRow[];
+      const saved = (await upsertApplicationSetting(
+        tx,
+        applicationCollectionPolicy,
+        { applicationId: application.id, ...settings, updatedById: userId },
+        applicationCollectionPolicy.applicationId,
+        { ...settings, updatedById: userId, updatedAt: new Date() },
+      )) as CollectionPolicyRow | undefined;
 
       if (!saved) throw new Error("Collection policy update returned no record");
       return toCollectionPolicy(saved);

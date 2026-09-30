@@ -1,6 +1,12 @@
 import type { PrivacyTreatment } from "@ayni/api/privacy-treatment";
+import { applicationPrivacyTreatmentMap } from "@ayni/db/schema/index";
 import { describe, expect, it, vi } from "vitest";
-import { getPrivacyTreatmentMap, updatePrivacyTreatmentMap } from "./privacy-treatment-map-store";
+import {
+  getPrivacyTreatmentMap,
+  getPublishedPrivacyNotice,
+  publishPrivacyNotice,
+  updatePrivacyTreatmentMap,
+} from "./privacy-treatment-map-store";
 
 type Row = Record<string, unknown>;
 
@@ -44,7 +50,7 @@ function makeDatabase({
           where: () => ({
             limit: () =>
               Object.assign(Promise.resolve(map ? [map] : []), {
-                for: () => Promise.resolve(guardRows[index] ?? []),
+                for: () => Promise.resolve(index < 2 ? (guardRows[index] ?? []) : map ? [map] : []),
               }),
           }),
         }),
@@ -58,9 +64,11 @@ function makeDatabase({
             onConflictDoUpdate(config.set);
             return { returning: () => Promise.resolve(saved ? [saved] : []) };
           },
+          returning: () => Promise.resolve(saved ? [saved] : []),
         };
       },
     }),
+    update: () => ({ set: () => ({ where: async () => undefined }) }),
   };
 
   return {
@@ -83,6 +91,7 @@ describe("getPrivacyTreatmentMap", () => {
       applicationId: "app-1",
       treatments: [],
       readyToPublish: false,
+      latestPublishedVersion: 0,
       updatedAt: null,
     });
   });
@@ -92,6 +101,7 @@ describe("getPrivacyTreatmentMap", () => {
       map: {
         applicationId: "app-1",
         treatments: [treatment],
+        latestPublishedVersion: 0,
         updatedAt: new Date("2026-09-30T12:00:00.000Z"),
       },
     });
@@ -100,6 +110,7 @@ describe("getPrivacyTreatmentMap", () => {
       applicationId: "app-1",
       treatments: [treatment],
       readyToPublish: true,
+      latestPublishedVersion: 0,
       updatedAt: "2026-09-30T12:00:00.000Z",
     });
   });
@@ -110,6 +121,7 @@ describe("updatePrivacyTreatmentMap", () => {
     const saved = {
       applicationId: "app-1",
       treatments: [treatment],
+      latestPublishedVersion: 0,
       updatedAt: new Date("2026-09-30T12:00:00.000Z"),
     };
     const { db, values, onConflictDoUpdate } = makeDatabase({ saved });
@@ -126,6 +138,7 @@ describe("updatePrivacyTreatmentMap", () => {
         applicationId: "app-1",
         treatments: [treatment],
         readyToPublish: true,
+        latestPublishedVersion: 0,
         updatedAt: "2026-09-30T12:00:00.000Z",
       },
     });
@@ -158,5 +171,76 @@ describe("updatePrivacyTreatmentMap", () => {
       }),
     ).resolves.toEqual({ ok: false, reason });
     expect(values).not.toHaveBeenCalled();
+  });
+});
+
+describe("publishPrivacyNotice", () => {
+  it("saves a confirmed immutable notice version", async () => {
+    const publishedAt = new Date("2026-09-30T12:00:00.000Z");
+    const { db, values } = makeDatabase({
+      saved: { publishedAt },
+      map: { treatments: [treatment], latestPublishedVersion: 0 },
+    });
+
+    await expect(
+      publishPrivacyNotice(db, { applicationId: "app-1", userId: "admin" }),
+    ).resolves.toEqual({
+      ok: true,
+      version: { applicationId: "app-1", version: 1, publishedAt: publishedAt.toISOString() },
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "app-1",
+        version: 1,
+        treatments: [treatment],
+        publishedById: "admin",
+      }),
+    );
+  });
+
+  it("blocks an unconfirmed treatment and reports its pending field", async () => {
+    const { db, values } = makeDatabase({
+      map: {
+        treatments: [{ ...treatment, role: "undetermined" }],
+        latestPublishedVersion: 0,
+      },
+    });
+
+    await expect(
+      publishPrivacyNotice(db, { applicationId: "app-1", userId: "admin" }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: "incomplete",
+      pendingTreatments: [{ id: treatment.id, purpose: treatment.purpose, fields: ["role"] }],
+    });
+    expect(values).not.toHaveBeenCalled();
+  });
+});
+
+describe("getPublishedPrivacyNotice", () => {
+  it("returns only the current immutable snapshot", async () => {
+    const publishedAt = new Date("2026-09-30T12:00:00.000Z");
+    const database = {
+      transaction: <T>(callback: (transaction: unknown) => Promise<T>) =>
+        callback({
+          select: () => ({
+            from: (table: unknown) => ({
+              where: () => ({
+                limit: async () =>
+                  table === applicationPrivacyTreatmentMap
+                    ? [{ latestPublishedVersion: 2 }]
+                    : [{ publishedAt, treatments: [treatment] }],
+              }),
+            }),
+          }),
+        }),
+    };
+
+    await expect(getPublishedPrivacyNotice(database, "app-1")).resolves.toEqual({
+      applicationId: "app-1",
+      version: 2,
+      publishedAt: publishedAt.toISOString(),
+      treatments: [treatment],
+    });
   });
 });

@@ -3,6 +3,8 @@ import type { Application } from "./applications";
 import { createPrivacyTreatmentMapApp } from "./privacy-treatment-map";
 import type {
   PrivacyTreatmentMap,
+  PublishedPrivacyNotice,
+  PublishPrivacyNoticeResult,
   UpdatePrivacyTreatmentMapInput,
   UpdatePrivacyTreatmentMapResult,
 } from "./privacy-treatment-map-store";
@@ -18,6 +20,7 @@ const savedMap: PrivacyTreatmentMap = {
   applicationId: "app-1",
   treatments: [],
   readyToPublish: false,
+  latestPublishedVersion: 0,
   updatedAt: null,
 };
 
@@ -41,6 +44,8 @@ function makeApp({
   session = { user: { id: "admin" } },
   application = activeApplication,
   membershipRole = "admin",
+  getPublished = async () => undefined,
+  publish,
   update = async ({ applicationId, treatments }: UpdatePrivacyTreatmentMapInput) =>
     ({
       ok: true,
@@ -48,6 +53,7 @@ function makeApp({
         applicationId,
         treatments,
         readyToPublish: true,
+        latestPublishedVersion: 0,
         updatedAt: "2026-09-30T12:00:00.000Z",
       },
     }) as UpdatePrivacyTreatmentMapResult,
@@ -55,20 +61,37 @@ function makeApp({
   session?: { user: { id: string } } | null;
   application?: Application | null;
   membershipRole?: string | null;
+  getPublished?: () => Promise<PublishedPrivacyNotice | undefined>;
   update?: (input: UpdatePrivacyTreatmentMapInput) => Promise<UpdatePrivacyTreatmentMapResult>;
+  publish?: () => Promise<PublishPrivacyNoticeResult>;
 } = {}) {
   const get = vi.fn(async () => savedMap);
+  const getPublishedMock = vi.fn(getPublished);
   const updateMock = vi.fn(update);
+  const publishMock = vi.fn(
+    publish ??
+      (async () => ({
+        ok: true as const,
+        version: { applicationId: "app-1", version: 1, publishedAt: "2026-09-30T12:00:00.000Z" },
+      })),
+  );
   return {
     get,
+    getPublished: getPublishedMock,
     update: updateMock,
+    publish: publishMock,
     request: createPrivacyTreatmentMapApp({
       getSession: async () => session,
       applications: {
         get: async () => application ?? undefined,
         getMembership: async () => membershipRole ?? undefined,
       },
-      privacyMaps: { get, update: updateMock },
+      privacyMaps: {
+        get,
+        getPublished: getPublishedMock,
+        update: updateMock,
+        publish: publishMock,
+      },
     }),
   };
 }
@@ -80,6 +103,33 @@ function putMap(request: ReturnType<typeof makeApp>["request"], body: unknown) {
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
+
+describe("GET /applications/:applicationId/privacy-notice", () => {
+  it("serves the published snapshot without a dashboard session", async () => {
+    const notice: PublishedPrivacyNotice = {
+      applicationId: "app-1",
+      version: 1,
+      publishedAt: "2026-09-30T12:00:00.000Z",
+      treatments: [],
+    };
+    const { request, getPublished } = makeApp({ getPublished: async () => notice });
+    const response = await request.request("/applications/app-1/privacy-notice");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ notice });
+    expect(getPublished).toHaveBeenCalledWith("app-1");
+  });
+
+  it("returns the not-published state when no snapshot is available", async () => {
+    const { request } = makeApp();
+    const response = await request.request("/applications/app-1/privacy-notice");
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      message: "La aplicación aún no publicó su aviso de privacidad.",
+    });
+  });
+});
 
 describe("GET /applications/:applicationId/privacy-treatment-map", () => {
   it("returns the map to workspace members", async () => {
@@ -119,6 +169,7 @@ describe("PUT /applications/:applicationId/privacy-treatment-map", () => {
         applicationId: "app-1",
         treatments: [validTreatment],
         readyToPublish: true,
+        latestPublishedVersion: 0,
         updatedAt: "2026-09-30T12:00:00.000Z",
       },
     });
@@ -166,5 +217,40 @@ describe("PUT /applications/:applicationId/privacy-treatment-map", () => {
 
     expect((await putMap(memberApp.request, { treatments: [] })).status).toBe(403);
     expect((await putMap(archivedApp.request, { treatments: [] })).status).toBe(409);
+  });
+});
+
+describe("POST /applications/:applicationId/privacy-notice/publish", () => {
+  it("publishes through the guarded service", async () => {
+    const { request, publish } = makeApp();
+    const response = await request.request("/applications/app-1/privacy-notice/publish", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      version: { applicationId: "app-1", version: 1, publishedAt: "2026-09-30T12:00:00.000Z" },
+    });
+    expect(publish).toHaveBeenCalledWith({ applicationId: "app-1", userId: "admin" });
+  });
+
+  it("returns the specific pending treatments when publication is blocked", async () => {
+    const { request } = makeApp({
+      publish: async () => ({
+        ok: false,
+        reason: "incomplete",
+        pendingTreatments: [
+          { id: validTreatment.id, purpose: "Telemetría técnica", fields: ["role"] },
+        ],
+      }),
+    });
+    const response = await request.request("/applications/app-1/privacy-notice/publish", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      pendingTreatments: [{ purpose: "Telemetría técnica", fields: ["role"] }],
+    });
   });
 });

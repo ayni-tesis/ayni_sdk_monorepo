@@ -1,6 +1,11 @@
 "use client";
 
-import { MAX_PRIVACY_TREATMENTS, type PrivacyTreatment } from "@ayni/api/privacy-treatment";
+import {
+  MAX_PRIVACY_TREATMENTS,
+  missingPrivacyTreatmentFields,
+  type PrivacyTreatment,
+} from "@ayni/api/privacy-treatment";
+import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,6 +16,19 @@ import type { Application } from "../../types";
 
 const LOAD_ERROR = "No pudimos cargar el mapa de tratamientos.";
 const SAVE_ERROR = "No pudimos guardar el mapa de tratamientos.";
+const pendingFieldLabels: Record<string, string> = {
+  purpose: "finalidad",
+  dataCategories: "categorías de datos",
+  dataContext: "titular de los datos",
+  source: "fuente",
+  requirement: "obligatoriedad",
+  legalBasis: "base aplicable confirmada",
+  role: "rol",
+  recipients: "destinatarios",
+  transfers: "transferencias",
+  retention: "conservación",
+  rightsChannel: "canal de derechos",
+};
 const fieldClassName =
   "min-h-9 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm";
 const selectClassName =
@@ -20,10 +38,13 @@ type PrivacyTreatmentMap = {
   applicationId: string;
   treatments: PrivacyTreatment[];
   readyToPublish: boolean;
+  latestPublishedVersion: number;
   updatedAt: string | null;
 };
 
 type MapResponse = { map: PrivacyTreatmentMap };
+type PublishResponse = { version: { version: number; publishedAt: string } };
+type PublishError = { message?: string; pendingTreatments?: Array<{ id: string }> };
 
 function emptyTreatment(): PrivacyTreatment {
   return {
@@ -69,11 +90,14 @@ export function PrivacyTreatmentMapView({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const editable = canManage && application.status === "active";
   const dirty = !!saved && JSON.stringify(saved.treatments) !== JSON.stringify(treatments);
 
+  // ponytail: keep this loader local until the shared policy-view request hook is extracted.
   const loadMap = useCallback(async (applicationId: string) => {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -127,6 +151,34 @@ export function PrivacyTreatmentMapView({
     }
   }
 
+  async function handlePublish() {
+    if (!editable || dirty || publishing || !treatments.length) return;
+    setPublishing(true);
+    setPublishError("");
+    try {
+      const { data } = await httpClient.post<PublishResponse>(
+        `/applications/${application.id}/privacy-notice/publish`,
+      );
+      setSaved((current) =>
+        current ? { ...current, latestPublishedVersion: data.version.version } : current,
+      );
+      toast.success(`Aviso de privacidad versión ${data.version.version} publicado.`);
+    } catch (error) {
+      const details = axios.isAxiosError<PublishError>(error) ? error.response?.data : undefined;
+      const pending = details?.pendingTreatments?.flatMap(({ id }) => {
+        const treatment = treatments.find((item) => item.id === id);
+        return treatment ? [treatment.purpose || "Finalidad sin nombre"] : [];
+      });
+      setPublishError(
+        pending?.length
+          ? `${details?.message ?? "No pudimos publicar el aviso."} Pendiente: ${pending.join(", ")}.`
+          : (details?.message ?? "No pudimos publicar el aviso de privacidad."),
+      );
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   return (
     <section aria-labelledby="privacy-treatment-map-heading" className="space-y-5">
       <div>
@@ -134,8 +186,8 @@ export function PrivacyTreatmentMapView({
           Mapa de tratamientos
         </h2>
         <p className="mt-1 max-w-3xl text-muted-foreground text-sm">
-          Registra los datos y finalidades de esta aplicación. Confirma el rol y la base aplicable
-          con la persona responsable de privacidad; Ayni no los determina por ti.
+          Registra los datos y finalidades de esta aplicación. Confirma estos datos con la persona
+          responsable de privacidad antes de publicar el aviso.
         </p>
       </div>
 
@@ -152,9 +204,20 @@ export function PrivacyTreatmentMapView({
         <form onSubmit={handleSubmit} className="max-w-4xl space-y-5">
           <p role="status" className="text-sm">
             {saved?.readyToPublish
-              ? "El mapa está completo para preparar un aviso de privacidad."
+              ? "El mapa está completo para publicar un aviso de privacidad."
               : "El mapa está pendiente de completar; no se puede publicar un aviso con tratamientos sin confirmar."}
           </p>
+          <p className="text-muted-foreground text-sm">
+            Publicar guarda una versión inmutable del mapa. Esto no constituye una validación legal.
+            {saved?.latestPublishedVersion
+              ? ` Versión publicada: ${saved.latestPublishedVersion}.`
+              : " Aún no hay una versión publicada."}
+          </p>
+          {publishError && (
+            <p role="alert" className="text-destructive text-sm">
+              {publishError}
+            </p>
+          )}
 
           {treatments.length === 0 ? (
             <p className="rounded-md border p-4 text-muted-foreground text-sm">
@@ -164,11 +227,18 @@ export function PrivacyTreatmentMapView({
             <div className="space-y-5">
               {treatments.map((treatment, index) => {
                 const prefix = `privacy-treatment-${treatment.id}`;
+                const missingFields = missingPrivacyTreatmentFields(treatment);
                 return (
                   <fieldset key={treatment.id} className="space-y-4 rounded-lg border p-4">
                     <legend className="px-1 font-medium text-sm">
                       Finalidad {index + 1}: {treatment.purpose || "Sin nombre"}
                     </legend>
+                    {missingFields.length > 0 && (
+                      <p className="text-muted-foreground text-sm">
+                        Pendiente:{" "}
+                        {missingFields.map((field) => pendingFieldLabels[field]).join(", ")}.
+                      </p>
+                    )}
 
                     <label className="block space-y-1 text-sm" htmlFor={`${prefix}-purpose`}>
                       <span>Finalidad</span>
@@ -385,6 +455,14 @@ export function PrivacyTreatmentMapView({
             </Button>
             <Button type="submit" disabled={!editable || !dirty || saving}>
               {saving ? "Guardando mapa…" : "Guardar mapa de tratamientos"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!editable || dirty || publishing || !treatments.length}
+              onClick={() => void handlePublish()}
+            >
+              {publishing ? "Publicando aviso…" : "Publicar aviso de privacidad"}
             </Button>
           </div>
           {treatments.length >= MAX_PRIVACY_TREATMENTS && (
