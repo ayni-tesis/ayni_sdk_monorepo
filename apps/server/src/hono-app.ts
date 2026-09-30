@@ -94,19 +94,15 @@ const hasCurrentTermsAcceptance = async (userId: string, version: unknown) => {
   const [acceptance] = await db
     .select({ id: userTermsAcceptance.id })
     .from(userTermsAcceptance)
-    .where(
-      and(
-        eq(userTermsAcceptance.userId, userId),
-        eq(userTermsAcceptance.version, version),
-      ),
-    )
+    .where(and(eq(userTermsAcceptance.userId, userId), eq(userTermsAcceptance.version, version)))
     .limit(1);
   return Boolean(acceptance);
 };
 
 const getCurrentTermsSession = async (headers: Headers) => {
   const session = await auth.api.getSession({ headers });
-  return session && (await hasCurrentTermsAcceptance(session.user.id, session.user.termsAcceptedVersion))
+  return session &&
+    (await hasCurrentTermsAcceptance(session.user.id, session.user.termsAcceptedVersion))
     ? session
     : null;
 };
@@ -637,8 +633,7 @@ app.use("/api/auth/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
   if (
     (c.req.method === "GET" && path === "/api/auth/get-session") ||
-    (c.req.method === "POST" &&
-      ["/api/auth/sign-in/email", "/api/auth/sign-out"].includes(path))
+    (c.req.method === "POST" && ["/api/auth/sign-in/email", "/api/auth/sign-out"].includes(path))
   ) {
     return next();
   }
