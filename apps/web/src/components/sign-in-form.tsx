@@ -1,9 +1,9 @@
+import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import z from "zod";
-
 import { authClient } from "@/lib/auth-client";
 import { getBrowserPostAuthRedirect } from "@/lib/post-auth";
 
@@ -23,6 +23,7 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
     defaultValues: {
       email: "",
       password: "",
+      acceptUpdatedTerms: false,
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null);
@@ -30,11 +31,16 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
         {
           email: value.email,
           password: value.password,
-        },
+          termsAcceptedVersion: value.acceptUpdatedTerms ? CURRENT_TERMS_VERSION : "",
+        } as Parameters<typeof authClient.signIn.email>[0] & { termsAcceptedVersion: string },
         {
           onSuccess: () => {
             router.push(getBrowserPostAuthRedirect());
-            toast.success("Sesión iniciada correctamente");
+            toast.success(
+              value.acceptUpdatedTerms
+                ? "Términos aceptados. Sesión iniciada correctamente."
+                : "Sesión iniciada correctamente",
+            );
           },
           onError: () => {
             const message =
@@ -49,6 +55,7 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
       onSubmit: z.object({
         email: z.email("Ingresa un correo electrónico válido."),
         password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
+        acceptUpdatedTerms: z.boolean(),
       }),
     },
   });
@@ -145,6 +152,32 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
               )}
             </form.Field>
           </div>
+
+          <form.Field name="acceptUpdatedTerms">
+            {(field) => (
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name={field.name}
+                  checked={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.checked)}
+                />
+                <span>
+                  Si los términos cambiaron, acepto la versión vigente tras revisarla en{" "}
+                  <a
+                    className="underline"
+                    href={`/terms/${CURRENT_TERMS_VERSION}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Términos y condiciones
+                  </a>
+                  .
+                </span>
+              </label>
+            )}
+          </form.Field>
 
           <form.Subscribe>
             {(state) => (
