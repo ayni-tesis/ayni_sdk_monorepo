@@ -1,9 +1,9 @@
+import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import z from "zod";
-
 import { authClient } from "@/lib/auth-client";
 import { getBrowserPostAuthRedirect } from "@/lib/post-auth";
 
@@ -24,6 +24,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
       email: "",
       password: "",
       name: "",
+      acceptedTerms: false,
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null);
@@ -32,14 +33,15 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
           email: value.email,
           password: value.password,
           name: value.name,
-        },
+          termsAcceptedVersion: value.acceptedTerms ? CURRENT_TERMS_VERSION : "",
+        } as Parameters<typeof authClient.signUp.email>[0] & { termsAcceptedVersion: string },
         {
           onSuccess: () => {
             router.push(getBrowserPostAuthRedirect());
-            toast.success("Cuenta creada correctamente");
+            toast.success("Términos aceptados. Cuenta creada correctamente.");
           },
           onError: () => {
-            const message = "No pudimos crear la cuenta. Revisa los datos e inténtalo de nuevo.";
+            const message = "No pudimos registrar tu aceptación. Inténtalo nuevamente.";
             setSubmitError(message);
             toast.error(message);
           },
@@ -51,6 +53,9 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
         name: z.string().min(2, "El nombre debe tener al menos 2 caracteres."),
         email: z.email("Ingresa un correo electrónico válido."),
         password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
+        acceptedTerms: z.literal(true, {
+          error: "Debes aceptar los Términos y condiciones para crear tu cuenta.",
+        }),
       }),
     },
   });
@@ -156,6 +161,38 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
               )}
             </form.Field>
           </div>
+
+          <form.Field name="acceptedTerms">
+            {(field) => (
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name={field.name}
+                    checked={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.checked)}
+                  />
+                  <span>
+                    Acepto los{" "}
+                    <a
+                      className="underline"
+                      href={`/terms/${CURRENT_TERMS_VERSION}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Términos y condiciones de Ayni
+                    </a>
+                  </span>
+                </label>
+                {field.state.meta.errors.map((error) => (
+                  <p key={error?.message} className="text-destructive" role="alert">
+                    {error?.message}
+                  </p>
+                ))}
+              </div>
+            )}
+          </form.Field>
 
           <form.Subscribe>
             {(state) => (

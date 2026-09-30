@@ -1,5 +1,6 @@
 "use client";
 
+import { hasAcceptedCurrentTerms } from "@ayni/env/terms";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -10,12 +11,16 @@ import Dashboard from "./dashboard";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
+  const acceptedVersion = (session?.user as { termsAcceptedVersion?: string } | undefined)
+    ?.termsAcceptedVersion;
 
   useEffect(() => {
-    if (!isPending && !session) router.replace("/login");
-  }, [isPending, router, session]);
+    if (!isPending && (!session || !hasAcceptedCurrentTerms(acceptedVersion))) {
+      router.replace("/login");
+    }
+  }, [acceptedVersion, isPending, router, session]);
 
-  if (isPending || !session) return <Loader />;
+  if (isPending || !session || !hasAcceptedCurrentTerms(acceptedVersion)) return <Loader />;
 
   return <Dashboard userName={session.user.name}>{children}</Dashboard>;
 }
