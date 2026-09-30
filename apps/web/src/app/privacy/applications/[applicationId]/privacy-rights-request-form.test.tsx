@@ -31,7 +31,8 @@ describe("US-156 public rights request form", () => {
     client.post.mockResolvedValue({
       data: {
         requestNumber: "550e8400-e29b-41d4-a716-446655440001",
-        message: "Solicitud recibida. Guarda este número en un lugar privado para consultar su estado y respuesta.",
+        message:
+          "Solicitud recibida. Guarda este número en un lugar privado para consultar su estado y respuesta.",
       },
     });
     client.get.mockResolvedValue({

@@ -51,9 +51,8 @@ export function PrivacyRightsRequestForm({
   const [treatmentId, setTreatmentId] = useState(eligibleTreatments[0]?.id ?? "");
   const [contactEmail, setContactEmail] = useState("");
   const [details, setDetails] = useState("");
-  const [requestType, setRequestType] = useState<(typeof PRIVACY_RIGHTS_REQUEST_TYPES)[number]>(
-    "access",
-  );
+  const [requestType, setRequestType] =
+    useState<(typeof PRIVACY_RIGHTS_REQUEST_TYPES)[number]>("access");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<{ id: string; message: string } | null>(null);
   const [submitError, setSubmitError] = useState("");
@@ -111,10 +110,11 @@ export function PrivacyRightsRequestForm({
         <h2 id="privacy-rights-heading" className="font-semibold text-2xl">
           Solicitar o consultar mis derechos
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Este canal atiende datos tratados por esta aplicación. Las solicitudes sobre cuentas
-          Ayni se atienden por separado; Ayni publicará su canal cuando su aviso esté vigente. No
-          incluyas documentos ni información que no sea necesaria para ubicar y atender tu solicitud.
+        <p className="text-muted-foreground text-sm">
+          Este canal atiende datos tratados por esta aplicación. Las solicitudes sobre cuentas Ayni
+          se atienden por separado; Ayni publicará su canal cuando su aviso esté vigente. No
+          incluyas documentos ni información que no sea necesaria para ubicar y atender tu
+          solicitud.
         </p>
       </div>
 
@@ -151,9 +151,10 @@ export function PrivacyRightsRequestForm({
             ))}
           </select>
         </label>
-        <label className="block space-y-1 text-sm">
+        <label htmlFor="privacy-request-contact-email" className="block space-y-1 text-sm">
           <span>Correo de contacto</span>
           <Input
+            id="privacy-request-contact-email"
             type="email"
             autoComplete="email"
             maxLength={254}
@@ -164,8 +165,9 @@ export function PrivacyRightsRequestForm({
         </label>
         {selectedTreatment && (
           <p className="rounded-md bg-muted/40 p-3 text-sm">
-            Responsable: {selectedTreatment.roleEntity}. Canal publicado: {selectedTreatment.rightsChannel}.
-            Consulta el estado y la respuesta con el número de solicitud.
+            Responsable: {selectedTreatment.roleEntity}. Canal publicado:{" "}
+            {selectedTreatment.rightsChannel}. Consulta el estado y la respuesta con el número de
+            solicitud.
           </p>
         )}
         <label className="block space-y-1 text-sm">
@@ -177,12 +179,18 @@ export function PrivacyRightsRequestForm({
             onChange={(event) => setDetails(event.target.value)}
           />
         </label>
-        {submitError && <p role="alert" className="text-destructive text-sm">{submitError}</p>}
+        {submitError && (
+          <p role="alert" className="text-destructive text-sm">
+            {submitError}
+          </p>
+        )}
         {submitted && (
           <p role="status" className="space-y-1 text-sm">
             <span className="block">{submitted.message}</span>
             <code className="block select-all break-all">{submitted.id}</code>
-            <span className="block">Mantén este número privado; permite consultar tu respuesta.</span>
+            <span className="block">
+              Mantén este número privado; permite consultar tu respuesta.
+            </span>
           </p>
         )}
         <Button type="submit" disabled={submitting || !treatmentId}>
@@ -192,16 +200,21 @@ export function PrivacyRightsRequestForm({
 
       <form onSubmit={lookup} className="max-w-xl space-y-3 rounded-lg border p-4">
         <h3 className="font-medium">Consultar el estado</h3>
-        <label className="block space-y-1 text-sm">
+        <label htmlFor="privacy-request-number" className="block space-y-1 text-sm">
           <span>Número de solicitud</span>
           <Input
+            id="privacy-request-number"
             autoComplete="off"
             required
             value={requestNumber}
             onChange={(event) => setRequestNumber(event.target.value)}
           />
         </label>
-        {lookupError && <p role="alert" className="text-destructive text-sm">{lookupError}</p>}
+        {lookupError && (
+          <p role="alert" className="text-destructive text-sm">
+            {lookupError}
+          </p>
+        )}
         {status && (
           <div role="status" className="space-y-2 rounded-md bg-muted/40 p-3 text-sm">
             <p>Estado: {statusLabels[status.status] ?? status.status}</p>
