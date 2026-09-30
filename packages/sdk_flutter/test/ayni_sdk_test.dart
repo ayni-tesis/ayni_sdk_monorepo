@@ -214,7 +214,7 @@ void main() {
         expect(requests.map((request) => request.uri.path), [
           '/sdk/consents',
           '/sdk/sync',
-          '/sdk/workflow-versions/workflow-version-1',
+          '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
         ]);
       },
@@ -237,7 +237,7 @@ void main() {
         expect(requests.map((request) => request.uri.path), [
           '/sdk/consents',
           '/sdk/sync',
-          '/sdk/workflow-versions/workflow-version-1',
+          '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
         ]);
       },
@@ -259,8 +259,8 @@ void main() {
     test('rejects a direct identifier before sending anything', () async {
       final client = sdk();
 
-      await expectLater(
-        client.recordConsent(
+      expect(
+        () => client.recordConsent(
           subjectId: 'person@example.test',
           purpose: ConsentPurpose.modelImprovement,
           decision: ConsentDecision.accepted,
