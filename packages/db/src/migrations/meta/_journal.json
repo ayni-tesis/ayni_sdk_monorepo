@@ -155,6 +155,13 @@
       "when": 1790791309262,
       "tag": "0021_sdk_consent_receipt",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790796505347,
+      "tag": "0022_nappy_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }

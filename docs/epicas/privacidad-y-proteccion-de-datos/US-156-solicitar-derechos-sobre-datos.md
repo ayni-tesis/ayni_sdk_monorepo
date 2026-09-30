@@ -12,9 +12,10 @@ portabilidad, y conocer el estado de mi solicitud.
 
 - Las solicitudes sobre una cuenta de Ayni corresponden al responsable del
   tratamiento de esa cuenta.
-- Las solicitudes de usuarios finales de una aplicación cliente se dirigen al
-  responsable que esa aplicación identifica en su aviso. Ayni no las recibe en
-  nombre de la aplicación ni revela datos de otra organización.
+- Las solicitudes de usuarios finales de una aplicación cliente se presentan
+  en un formulario de Ayni vinculado al responsable y al aviso publicado de esa
+  aplicación. Ayni las almacena y las pone a disposición de sus administradores
+  y propietarios; no decide sobre ellas ni revela datos de otra organización.
 - El canal publicado debe identificar al responsable y permitir aportar solo la
   información necesaria para verificar y atender la solicitud.
 - El registro debe conservar responsable, fecha, tipo de derecho, estado y
@@ -41,10 +42,12 @@ correspondiente.
 
 ### Estados y mensajes
 
-- Éxito: `Solicitud recibida. Guarda este número para consultar su estado.`
+- Éxito: `Solicitud recibida. Guarda este número en un lugar privado para consultar su estado y respuesta.`
 - Error: `No pudimos registrar la solicitud. Inténtalo nuevamente o usa el
   canal de contacto del responsable.`
 - Sin permisos: una persona no puede consultar solicitudes de otra.
+- El número de solicitud es privado: funciona como credencial para consultar
+  el estado y la respuesta; la persona no debe compartirlo.
 
 ## Happy path
 
@@ -53,7 +56,7 @@ Scenario: Registrar una solicitud de acceso
   Given que soy titular de datos tratados por una aplicación
   When envío una solicitud de acceso por el canal de su responsable
   Then la solicitud queda vinculada al responsable correcto
-  And puedo consultar su estado y recibir respuesta por ese canal
+  And puedo consultar el estado y la respuesta con mi número privado de solicitud
 ```
 
 ## Bad path
@@ -82,11 +85,21 @@ Scenario: Solicitud dirigida a la organización equivocada
 
 ## Estado actual
 
-El aviso publicado por una aplicación cliente muestra el canal de derechos que
-declara su administrador. El SDK no registra solicitudes, consulta su estado ni
-las reenvía. El formulario y el registro de atención de esta historia aún no
-están implementados. El aviso de privacidad de las cuentas Ayni sigue en
-borrador mientras se confirman la entidad responsable y su canal de contacto.
+En el aviso de una aplicación cliente, la persona puede registrar una solicitud
+asociada a una finalidad y a la versión publicada que consultó. El formulario
+solicita un correo de contacto, el tipo de solicitud y detalles opcionales; no
+pide documentos de identidad ni adjuntos. La persona recibe un UUID aleatorio
+como número privado de solicitud, necesario para consultar el tipo, el estado,
+la respuesta o el motivo y la fecha de recepción. El panel limita los datos de
+contacto y detalles a administradores y propietarios; registra la creación,
+las consultas de estado y administrativas y los cambios de estado en una
+bitácora. La lista administrativa muestra 25 solicitudes por página. El correo
+queda disponible para que el responsable responda por su canal; el sistema no
+envía correos automáticamente. El SDK no recibe ni reenvía solicitudes.
+
+El flujo de aplicaciones cliente no atiende solicitudes de cuentas Ayni. El
+aviso de privacidad de cuentas Ayni sigue en borrador mientras se confirman la
+entidad responsable y su canal de contacto; ese canal no se ha publicado.
 
 ## Revisión legal antes de producción
 

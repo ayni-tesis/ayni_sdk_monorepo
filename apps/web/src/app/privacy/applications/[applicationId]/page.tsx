@@ -1,7 +1,8 @@
 import type { PrivacyTreatment } from "@ayni/api/privacy-treatment";
 import { env } from "@ayni/env/web";
+import { PrivacyRightsRequestForm } from "./privacy-rights-request-form";
 
-type Notice = {
+export type Notice = {
   version: number;
   publishedAt: string;
   treatments: PrivacyTreatment[];
@@ -146,6 +147,7 @@ export default async function ApplicationPrivacyNoticePage({
           </div>
         </section>
       ))}
+      <PrivacyRightsRequestForm applicationId={applicationId} treatments={result.treatments} />
     </main>
   );
 }
