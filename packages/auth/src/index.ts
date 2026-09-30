@@ -88,8 +88,8 @@ export const auth = betterAuth({
           !hasAcceptedCurrentTerms(ctx.body.termsAcceptedVersion)
         ) {
           throw new APIError("UNAUTHORIZED", {
-            message:
-              "No pudimos iniciar sesión. Revisa tu correo y contraseña e inténtalo de nuevo.",
+            code: "INVALID_EMAIL_OR_PASSWORD",
+            message: "Invalid email or password",
           });
         }
       }
@@ -99,11 +99,9 @@ export const auth = betterAuth({
         ctx.path === "/sign-in/email" &&
         hasAcceptedCurrentTerms(ctx.body?.termsAcceptedVersion) &&
         typeof ctx.body?.email === "string" &&
-        !(ctx.context.returned instanceof APIError) &&
-        ctx.context.returned
+        ctx.context.newSession
       ) {
-        const result = ctx.context.returned as { user?: { id?: unknown } };
-        if (typeof result.user?.id === "string") await recordCurrentTermsAcceptance(result.user.id);
+        await recordCurrentTermsAcceptance(ctx.context.newSession.user.id);
       }
     }),
   },

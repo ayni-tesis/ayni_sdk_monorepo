@@ -48,7 +48,7 @@ Scenario: Intentar crear una cuenta sin aceptar
 
 - La aceptación es una acción afirmativa separada del aviso de privacidad y de cualquier consentimiento opcional.
 - El registro conserva como mínimo la cuenta, versión aceptada y fecha/hora.
-- Una versión material nueva solicita aceptación antes de seguir usando las funciones cubiertas por los términos; la versión anterior queda en el historial.
+- Una versión material nueva solicita aceptación antes de seguir usando las funciones cubiertas por los términos, incluso en sesiones ya abiertas; la versión anterior queda en el historial.
 - El rechazo impide crear la cuenta o continuar el uso sujeto al acuerdo, y no activa tratamientos opcionales.
 - El registro no guarda credenciales ni datos personales innecesarios como evidencia de aceptación.
 
