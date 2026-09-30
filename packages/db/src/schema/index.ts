@@ -5,6 +5,7 @@ export * from "./invitation-link";
 export * from "./model";
 export * from "./model-version";
 export * from "./privacy-notice-version";
+export * from "./privacy-rights-request";
 export * from "./privacy-treatment-map";
 export * from "./sdk-consent-receipt";
 export * from "./sdk-credential";

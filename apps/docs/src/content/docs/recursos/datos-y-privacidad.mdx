@@ -77,6 +77,21 @@ dispositivo. El SDK no sigue redirecciones, así que la credencial nunca llega a
 otro host. Cada vez que recibe una credencial válida, el servidor de Ayni
 actualiza la fecha de su último uso.
 
+### Solicitudes de derechos
+
+Si una persona pide acceso, rectificación, cancelación, oposición o
+portabilidad sobre datos tratados por tu aplicación, oriéntala al canal que el
+responsable identificó en el aviso de privacidad publicado, o al formulario de
+solicitudes disponible en esa página. El formulario registra un correo de
+contacto y permite consultar el estado con el número de solicitud; los
+administradores y propietarios de la aplicación pueden atenderla desde
+`Privacidad y datos`. Ayni almacena la solicitud para la aplicación indicada:
+sus administradores y propietarios pueden ver los datos y responderla; Ayni no
+decide la solicitud ni envía correos automáticamente. La respuesta se consulta
+con el número privado. El SDK no recibe ni reenvía estas solicitudes. Una
+solicitud relativa a una cuenta Ayni no debe enviarse al canal de una aplicación
+cliente; Ayni publicará su propio canal cuando su aviso esté vigente.
+
 Como en cualquier conexión HTTP, el servidor y el almacenamiento de objetos
 reciben la dirección IP del dispositivo y el encabezado `User-Agent`
 predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.

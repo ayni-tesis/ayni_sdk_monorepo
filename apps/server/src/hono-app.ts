@@ -46,6 +46,13 @@ import {
 } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
+import {
+  createPrivacyRightsRequest,
+  getPublicPrivacyRightsRequest,
+  listPrivacyRightsRequests,
+  updatePrivacyRightsRequest,
+} from "./privacy-rights-request-store";
+import { createPrivacyRightsRequestsApp } from "./privacy-rights-requests";
 import { createPrivacyTreatmentMapApp } from "./privacy-treatment-map";
 import {
   getPrivacyTreatmentMap,
@@ -714,6 +721,21 @@ app.route(
       update: (input) => updatePrivacyTreatmentMap(db, input),
       publish: (input) => publishPrivacyNotice(db, input),
     },
+  }),
+);
+app.route(
+  "/",
+  createPrivacyRightsRequestsApp({
+    getSession: getCurrentTermsSession,
+    applications,
+    privacyMaps: { getPublished: (applicationId) => getPublishedPrivacyNotice(db, applicationId) },
+    requests: {
+      create: createPrivacyRightsRequest,
+      getPublic: getPublicPrivacyRightsRequest,
+      list: listPrivacyRightsRequests,
+      update: updatePrivacyRightsRequest,
+    },
+    database: db,
   }),
 );
 app.route(

@@ -25,6 +25,7 @@ export type ApplicationDatabase = {
 export type ApplicationActionInput = {
   applicationId: string;
   userId: string;
+  allowArchived?: boolean;
 };
 
 export type ApplicationActionResult<T> =
@@ -39,7 +40,7 @@ export type AuthorizedApplication = {
 
 export async function executeApplicationAction<T>(
   database: ApplicationDatabase,
-  { applicationId, userId }: ApplicationActionInput,
+  { applicationId, userId, allowArchived = false }: ApplicationActionInput,
   action: (tx: TransactionExecutor, application: AuthorizedApplication) => Promise<T>,
 ): Promise<ApplicationActionResult<T>> {
   return database.transaction(async (transaction) => {
@@ -74,7 +75,9 @@ export async function executeApplicationAction<T>(
     if (membership.role !== "admin" && membership.role !== "owner") {
       return { ok: false, reason: "forbidden" };
     }
-    if (foundApplication.status !== "active") return { ok: false, reason: "archived" };
+    if (!allowArchived && foundApplication.status !== "active") {
+      return { ok: false, reason: "archived" };
+    }
 
     const value = await action(tx, {
       id: foundApplication.id,

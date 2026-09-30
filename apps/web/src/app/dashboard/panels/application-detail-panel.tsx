@@ -6,6 +6,7 @@ import { CredentialsView } from "./application/credentials-view";
 import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
+import { PrivacyRightsRequestsView } from "./application/privacy-rights-requests-view";
 import { PrivacyTreatmentMapView } from "./application/privacy-treatment-map-view";
 import { SettingsView } from "./application/settings-view";
 import { TelemetryPolicyView } from "./application/telemetry-policy-view";
@@ -148,6 +149,11 @@ export function ApplicationDetailPanel({
         <div className="space-y-8">
           <PrivacyTreatmentMapView
             key={`privacy-map:${application.id}`}
+            application={application}
+            canManage={canManage}
+          />
+          <PrivacyRightsRequestsView
+            key={`rights-requests:${application.id}`}
             application={application}
             canManage={canManage}
           />
