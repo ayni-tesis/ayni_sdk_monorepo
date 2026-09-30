@@ -49,6 +49,7 @@ describe("US-156 public rights request form", () => {
     });
     render(<PrivacyRightsRequestForm applicationId="app-1" treatments={treatments} />);
 
+    expect(screen.getByText(/No enviamos correos automáticamente/)).toBeTruthy();
     expect(screen.getAllByRole("option")[0]?.textContent).toContain("Responsable de la aplicación");
     expect(screen.getAllByText(/Canal publicado: derechos@example.test/).length).toBe(1);
     fireEvent.change(screen.getByLabelText("Correo de contacto"), {

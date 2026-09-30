@@ -120,6 +120,11 @@ export function PrivacyRightsRequestForm({
 
       <form onSubmit={submit} className="max-w-xl space-y-4 rounded-lg border p-4">
         <h3 className="font-medium">Enviar una solicitud</h3>
+        <p className="text-muted-foreground text-sm">
+          Ayni guarda la solicitud para esta aplicación. Sus administradores y propietarios podrán
+          ver el correo y los detalles para atenderla. No enviamos correos automáticamente; consulta
+          la respuesta con el número privado.
+        </p>
         <label className="block space-y-1 text-sm">
           <span>Finalidad y responsable</span>
           <select
