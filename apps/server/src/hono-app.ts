@@ -46,14 +46,14 @@ import {
 } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
-import { createPrivacyTreatmentMapApp } from "./privacy-treatment-map";
-import { createPrivacyRightsRequestsApp } from "./privacy-rights-requests";
 import {
   createPrivacyRightsRequest,
   getPublicPrivacyRightsRequest,
   listPrivacyRightsRequests,
   updatePrivacyRightsRequest,
 } from "./privacy-rights-request-store";
+import { createPrivacyRightsRequestsApp } from "./privacy-rights-requests";
+import { createPrivacyTreatmentMapApp } from "./privacy-treatment-map";
 import {
   getPrivacyTreatmentMap,
   getPublishedPrivacyNotice,
