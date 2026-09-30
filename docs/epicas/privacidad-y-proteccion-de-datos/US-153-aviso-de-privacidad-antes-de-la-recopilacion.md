@@ -5,16 +5,17 @@
 ## Historia de usuario
 
 Como persona usuaria de Ayni o de una aplicación integrada con el SDK, quiero
-conocer quién trata mis datos, qué datos usa y con qué finalidad antes de
-entregarlos, para decidir con información clara.
+conocer quién trata mis datos, qué datos usa y con qué finalidad antes de que
+la aplicación los recopile o los entregue al SDK, para decidir con información clara.
 
 ## Interfaz
 
 ### Ubicación
 
-En el registro de una cuenta Ayni y, para una aplicación cliente, antes del
-primer tratamiento que requiera informar a la persona; acceso posterior desde
-`Privacidad`.
+En el registro de una cuenta Ayni y, para una aplicación cliente, antes de que
+su interfaz capture o entregue datos al SDK; acceso posterior desde `Privacidad`.
+La aplicación cliente controla ese paso. El SDK recibe bytes que la aplicación
+ya capturó y no puede mostrar el aviso ni impedir por sí solo la captura.
 
 ### Elementos y texto visible
 
@@ -48,16 +49,20 @@ Scenario: Leer el aviso vigente antes de entregar datos
 ```gherkin
 Scenario: La aplicación no tiene aviso publicado
   Given que la aplicación no configuró un aviso vigente
-  When inicia un flujo que requiere mostrarlo
+  When la aplicación intenta iniciar la captura que requiere el aviso
   Then la aplicación no presenta un aviso de otra aplicación como sustituto
   And informa que falta configuración
-  And no inicia el tratamiento que requiere ese aviso
+  And no inicia la captura ni entrega datos al SDK
 ```
 
 ## Criterios de aceptación
 
 - El aviso se puede leer antes de recopilar los datos a los que se refiere y
   sigue disponible después desde la aplicación.
+- La aplicación cliente muestra el aviso antes de capturar datos o entregarlos
+  al SDK. Esta historia no agrega una compuerta de aviso a `AyniSdk.run()`, que
+  procesa bytes proporcionados por la aplicación y también puede ejecutarse sin
+  conexión.
 - El aviso es independiente de la aceptación de términos y no registra por sí
   mismo un consentimiento.
 - Publicar una nueva versión conserva la anterior y muestra la versión vigente
@@ -84,9 +89,10 @@ Scenario: La aplicación no tiene aviso publicado
   aplicables, o indica si no declaró otros enlaces.
 - Los snapshots históricos sin una entidad declarada se conservan, pero no se
   sirven como aviso vigente hasta republicar el mapa con esa entidad.
-- Mostrar el aviso dentro de un flujo de captura del SDK requiere una historia
-  adicional cuando Ayni incorpore captura de datos al SDK. La app cliente debe
-  consultar y presentar este aviso antes de su propio tratamiento.
+- La captura y presentación del aviso pertenecen a la app cliente: `AyniSdk.run()`
+  procesa los bytes que recibe y no puede presentar el aviso ni determinar si la
+  app ya lo mostró. La app cliente debe consultar y presentar este aviso antes
+  de capturar o entregar esos bytes, incluso si ejecutará el workflow sin conexión.
 
 ## Revisión legal antes de producción
 
