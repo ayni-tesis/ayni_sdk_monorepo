@@ -18,6 +18,25 @@ No constituye asesoría legal: lo que debes declarar depende de tu app, de las
 tiendas donde la publicas y de las leyes que le aplican.
 :::
 
+## Antes de capturar datos en una app que integra Ayni
+
+La app integradora debe consultar y mostrar el aviso publicado de su aplicación
+antes de capturar datos que se tratarán con ella. Puede consultar la versión
+vigente en `GET /applications/{applicationId}/privacy-notice` del servidor de
+Ayni y presentar una pantalla legible equivalente a
+`/privacy/applications/{applicationId}`. La ruta pública responde `404` cuando
+la aplicación no tiene un aviso publicado; ante ese estado o un error, no
+continúes con la captura que requiere el aviso ni uses el aviso de otra
+aplicación como sustituto.
+
+`AyniSdk.run()` recibe bytes que la app ya capturó y puede ejecutarse sin
+conexión. No presenta avisos ni puede detener la captura; la app integradora
+controla el orden y debe presentar el aviso antes de recoger esos bytes. Si más
+adelante ofrece finalidades opcionales de mejora de Ayni, muestra cada decisión
+en un control separado, explica su efecto y respeta la elección y revocación de
+la persona conforme a US-154 y US-155. Aceptar términos no activa esas
+finalidades.
+
 ## Datos que el SDK envía
 
 Válido para `ayni_sdk` 0.1.0-beta.1.

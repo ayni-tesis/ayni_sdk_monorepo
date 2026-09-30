@@ -14,7 +14,13 @@ const privacyPolicyLinkSchema = z.strictObject({
   url: z
     .url()
     .max(2000)
-    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol)),
+    .refine((value) => {
+      try {
+        return ["http:", "https:"].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    }),
 });
 
 export const privacyTreatmentSchema = z.strictObject({

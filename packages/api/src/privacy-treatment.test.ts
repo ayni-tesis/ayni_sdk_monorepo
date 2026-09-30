@@ -77,5 +77,15 @@ describe("privacy treatment map", () => {
         ],
       }).success,
     ).toBe(false);
+    expect(
+      updatePrivacyMapSchema.safeParse({
+        treatments: [
+          {
+            ...completeTreatment,
+            policyLinks: [{ label: "Privacy", url: "not-a-url" }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

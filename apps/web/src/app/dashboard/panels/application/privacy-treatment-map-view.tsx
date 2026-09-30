@@ -107,6 +107,7 @@ export function PrivacyTreatmentMapView({
 }: PrivacyTreatmentMapViewProps) {
   const [saved, setSaved] = useState<PrivacyTreatmentMap | null>(null);
   const [treatments, setTreatments] = useState<PrivacyTreatment[]>([]);
+  const [policyLinksDrafts, setPolicyLinksDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -132,6 +133,9 @@ export function PrivacyTreatmentMapView({
       if (controller.signal.aborted) return;
       setSaved(data.map);
       setTreatments(data.map.treatments);
+      setPolicyLinksDrafts(
+        Object.fromEntries(data.map.treatments.map((item) => [item.id, policyLinksText(item)])),
+      );
     } catch (error) {
       if (controller.signal.aborted) return;
       setLoadError(errorMessage(error, LOAD_ERROR));
@@ -163,6 +167,9 @@ export function PrivacyTreatmentMapView({
       );
       setSaved(data.map);
       setTreatments(data.map.treatments);
+      setPolicyLinksDrafts(
+        Object.fromEntries(data.map.treatments.map((item) => [item.id, policyLinksText(item)])),
+      );
       toast.success("Mapa de tratamientos guardado.");
     } catch (error) {
       toast.error(errorMessage(error, SAVE_ERROR));
@@ -391,14 +398,19 @@ export function PrivacyTreatmentMapView({
                         id={`${prefix}-policies`}
                         className={fieldClassName}
                         rows={2}
-                        value={policyLinksText(treatment)}
+                        value={policyLinksDrafts[treatment.id] ?? policyLinksText(treatment)}
                         placeholder="Política de privacidad | https://ejemplo.com/privacidad"
                         disabled={!editable || saving}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setPolicyLinksDrafts((current) => ({
+                            ...current,
+                            [treatment.id]: value,
+                          }));
                           updateTreatment(treatment.id, {
-                            policyLinks: policyLinksFromText(event.target.value),
-                          })
-                        }
+                            policyLinks: policyLinksFromText(value),
+                          });
+                        }}
                       />
                     </label>
 

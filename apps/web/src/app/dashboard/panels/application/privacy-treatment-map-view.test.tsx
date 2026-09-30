@@ -127,6 +127,46 @@ describe("US-151: Privacy treatment map", () => {
     });
   });
 
+  it("preserves line breaks while entering multiple privacy policies", async () => {
+    client.put.mockResolvedValueOnce({ data: { map: emptyMap } });
+    render(<PrivacyTreatmentMapView application={activeApp} canManage />);
+    await screen.findByText("Aún no se han registrado tratamientos.");
+    fireEvent.click(screen.getByRole("button", { name: "Agregar tratamiento" }));
+    const policies = screen.getByLabelText("Políticas aplicables (una por línea: Nombre | URL)");
+    fireEvent.change(policies, {
+      target: { value: "Privacidad | https://example.test/privacy\n" },
+    });
+    expect((policies as HTMLTextAreaElement).value).toBe(
+      "Privacidad | https://example.test/privacy\n",
+    );
+    fireEvent.change(policies, {
+      target: {
+        value:
+          "Privacidad | https://example.test/privacy\nTérminos de uso | https://example.test/terms",
+      },
+    });
+
+    expect((policies as HTMLTextAreaElement).value).toBe(
+      "Privacidad | https://example.test/privacy\nTérminos de uso | https://example.test/terms",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Guardar mapa de tratamientos" }));
+    await waitFor(() => {
+      expect(client.put).toHaveBeenCalledWith(
+        "/applications/app-1/privacy-treatment-map",
+        expect.objectContaining({
+          treatments: [
+            expect.objectContaining({
+              policyLinks: [
+                { label: "Privacidad", url: "https://example.test/privacy" },
+                { label: "Términos de uso", url: "https://example.test/terms" },
+              ],
+            }),
+          ],
+        }),
+      );
+    });
+  });
+
   it("keeps the map read-only for members and archived applications", async () => {
     render(<PrivacyTreatmentMapView application={activeApp} canManage={false} />);
     await screen.findByText("Aún no se han registrado tratamientos.");
