@@ -133,8 +133,12 @@ showMessage(result.message);
 <p>Usa <code>ConsentPurpose.sdkImprovement</code> para el switch de trazas. <code>synced</code> confirma
 que Ayni recibió el recibo; <code>pending</code> significa que quedó guardado localmente y
 se enviará antes del próximo manifiesto de sync; ante <code>error</code>, deja esa finalidad
-desactivada. No envíes datos asociados a una finalidad hasta que el recibo esté
-sincronizado. La app debe ofrecer la revocación por finalidad según US-155.</p>
+desactivada. Para revocar, cambia primero el estado local a desactivado y llama
+a <code>recordConsent</code> con <code>ConsentDecision.declined</code> y la misma versión del aviso
+guardada al otorgarlo; conserva la preferencia aunque el recibo quede pendiente.
+No envíes datos asociados a una finalidad hasta que el recibo esté sincronizado.
+La app debe ofrecer revocación por finalidad y el canal de derechos publicado
+en su aviso.</p>
 <h2 id="ejecucin-local-de-workflows">Ejecución local de workflows</h2>
 <p>Con el SDK inicializado y sincronizado, ejecuta un workflow instalado con <code>run()</code>. La ejecución es local: no hace peticiones de red y la aplicación nunca interpreta el JSON del DAG.</p>
 <pre class="language-dart"><code class="language-dart">final sdk = AyniSdk.instance;
