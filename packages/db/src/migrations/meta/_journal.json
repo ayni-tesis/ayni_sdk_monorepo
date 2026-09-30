@@ -148,6 +148,13 @@
       "when": 1790755566262,
       "tag": "0020_mushy_randall",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790791309262,
+      "tag": "0021_sdk_consent_receipt",
+      "breakpoints": true
     }
   ]
 }

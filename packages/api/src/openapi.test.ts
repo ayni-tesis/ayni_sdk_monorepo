@@ -36,16 +36,28 @@ function jsonContent(path: string, method: string, status: string) {
 }
 
 const sdkOperations = [
-  { method: "post", path: "/sdk/sync", notFound: undefined },
+  { method: "post", path: "/sdk/sync", notFound: undefined, extraErrors: [] },
+  {
+    method: "post",
+    path: "/sdk/consents",
+    notFound: undefined,
+    extraErrors: [
+      { status: "400", code: "invalidConsent" },
+      { status: "409", code: "consentReceiptConflict" },
+      { status: "503", code: "privacyNoticeUnavailable" },
+    ],
+  },
   {
     method: "get",
     path: "/sdk/workflow-versions/{workflowVersionId}",
     notFound: "workflowVersionNotFound",
+    extraErrors: [],
   },
   {
     method: "get",
     path: "/sdk/model-versions/{modelVersionId}/manifest",
     notFound: "modelVersionNotFound",
+    extraErrors: [],
   },
 ] as const;
 
@@ -58,7 +70,7 @@ function errorCodes(path: string, method: string, status: string) {
   };
 }
 
-describe.each(sdkOperations)("$method $path errors", ({ method, path, notFound }) => {
+describe.each(sdkOperations)("$method $path errors", ({ method, path, notFound, extraErrors }) => {
   it("rejects an invalid or revoked credential with 401 and its code", () => {
     expect(errorCodes(path, method, "401")).toEqual({
       schema: ["invalidCredential", "credentialRevoked"],
@@ -82,7 +94,36 @@ describe.each(sdkOperations)("$method $path errors", ({ method, path, notFound }
       ["`401`", "`invalidCredential`"],
       ["`401`", "`credentialRevoked`"],
       ...(notFound ? [["`404`", `\`${notFound}\``]] : []),
+      ...extraErrors.map(({ status, code }) => [`\`${status}\``, `\`${code}\``]),
     ]);
+  });
+});
+
+describe("POST /sdk/consents", () => {
+  it("requires a strict receipt and returns the server acknowledgement", () => {
+    const requestBody = operation("/sdk/consents", "post").requestBody as JsonObject;
+    const content = requestBody.content as Record<string, JsonObject>;
+    const requestSchema = resolve(content["application/json"]?.schema);
+    const properties = requestSchema.properties as Record<string, JsonObject>;
+    expect(Object.keys(properties).sort()).toEqual([
+      "decidedAt",
+      "decision",
+      "noticeVersion",
+      "purpose",
+      "receiptId",
+      "subjectId",
+    ]);
+    expect(properties.purpose?.enum).toEqual(["ayniModelImprovement", "ayniSdkImprovement"]);
+    expect(properties.decision?.enum).toEqual(["accepted", "declined"]);
+    const response = resolve(jsonContent("/sdk/consents", "post", "201").schema);
+    expect(Object.keys(response.properties as Record<string, JsonObject>).sort()).toEqual([
+      "receiptId",
+      "receivedAt",
+    ]);
+  });
+
+  it("does not answer a consent request with a resource-not-found response", () => {
+    expect(document.paths["/sdk/consents"]?.post?.responses).not.toHaveProperty("404");
   });
 });
 

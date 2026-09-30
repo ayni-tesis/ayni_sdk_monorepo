@@ -21,6 +21,7 @@ void main() {
   late int statusCode;
   int? workflowStatusCode;
   int? modelManifestStatusCode;
+  late int consentStatusCode;
   late String responseBody;
   late String workflowResponseBody;
   late String modelManifestResponseBody;
@@ -29,6 +30,7 @@ void main() {
   Uri? redirectUrl;
   Duration? responseDelay;
   final requests = <HttpRequest>[];
+  final consentBodies = <Map<String, Object?>>[];
 
   // Two files per download: the downloader streams the definition into its
   // own `.part` attempt file (reported as `temporaryDefinition` and validated
@@ -41,10 +43,12 @@ void main() {
   setUp(() async {
     AyniSdk.resetForTesting();
     requests.clear();
+    consentBodies.clear();
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
     modelManifestStatusCode = null;
+    consentStatusCode = HttpStatus.created;
     modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
     workflowResponseBody = _validWorkflowDefinition();
@@ -77,7 +81,17 @@ void main() {
           final isModelManifest = request.uri.path.startsWith(
             '/sdk/model-versions/',
           );
-          if (isWorkflow) {
+          if (request.uri.path == '/sdk/consents') {
+            final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+            consentBodies.add(Map<String, Object?>.from(body));
+            request.response.statusCode = consentStatusCode;
+            request.response.write(
+              jsonEncode({
+                'receiptId': body['receiptId'],
+                'receivedAt': '2026-09-30T12:01:00.000Z',
+              }),
+            );
+          } else if (isWorkflow) {
             request.response.statusCode = workflowStatusCode ?? statusCode;
             request.response.write(workflowResponseBody);
           } else if (isModelManifest) {
@@ -150,6 +164,103 @@ void main() {
 
   Future<SyncStatus> syncStatus(AyniSdk client) async =>
       (await client.sync()).status;
+
+  group('recordConsent', () {
+    const subjectId = '550e8400-e29b-41d4-a716-446655440000';
+
+    test('sends a minimal receipt for one explicit purpose', () async {
+      final client = sdk();
+
+      final result = await client.recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.modelImprovement,
+        decision: ConsentDecision.accepted,
+        noticeVersion: '1.0.0',
+      );
+
+      expect(result.status, ConsentStatus.synced);
+      expect(requests.map((request) => request.uri.path), ['/sdk/consents']);
+      expect(requests.single.headers.value(HttpHeaders.authorizationHeader), 'Bearer ayni_sk_test');
+      expect(consentBodies.single, {
+        'receiptId': isA<String>().having((id) => id.length, 'UUID length', 36),
+        'subjectId': subjectId,
+        'purpose': 'ayniModelImprovement',
+        'decision': 'accepted',
+        'noticeVersion': '1.0.0',
+        'decidedAt': isA<String>(),
+      });
+      expect(consentBodies.single, isNot(contains('email')));
+    });
+
+    test('queues an offline receipt and sends it before the next sync manifest', () async {
+      consentStatusCode = HttpStatus.serviceUnavailable;
+      final result = await sdk().recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.sdkImprovement,
+        decision: ConsentDecision.accepted,
+        noticeVersion: '1.0.0',
+      );
+      expect(result.status, ConsentStatus.pending);
+      consentStatusCode = HttpStatus.created;
+      requests.clear();
+
+      expect(await syncStatus(sdk()), SyncStatus.updated);
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/consents',
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1',
+        '/sdk/model-versions/model-version-1/manifest',
+      ]);
+    });
+
+    test('continues required sync while a consent receipt remains pending', () async {
+      consentStatusCode = HttpStatus.serviceUnavailable;
+      final client = sdk();
+      await client.recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.modelImprovement,
+        decision: ConsentDecision.accepted,
+        noticeVersion: '1.0.0',
+      );
+      requests.clear();
+
+      expect(await syncStatus(client), SyncStatus.updated);
+      expect(requests.map((request) => request.uri.path), [
+        '/sdk/consents',
+        '/sdk/sync',
+        '/sdk/workflow-versions/workflow-version-1',
+        '/sdk/model-versions/model-version-1/manifest',
+      ]);
+    });
+
+    test('records a declined choice as its own purpose decision', () async {
+      final result = await sdk().recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.modelImprovement,
+        decision: ConsentDecision.declined,
+        noticeVersion: '1.0.0',
+      );
+
+      expect(result.status, ConsentStatus.synced);
+      expect(consentBodies.single['purpose'], 'ayniModelImprovement');
+      expect(consentBodies.single['decision'], 'declined');
+    });
+
+    test('rejects a direct identifier before sending anything', () async {
+      final client = sdk();
+
+      await expectLater(
+        client.recordConsent(
+          subjectId: 'person@example.test',
+          purpose: ConsentPurpose.modelImprovement,
+          decision: ConsentDecision.accepted,
+          noticeVersion: '1.0.0',
+        ),
+        throwsArgumentError,
+      );
+      expect(requests, isEmpty);
+    });
+  });
 
   Future<File> seedInventory(AyniSdk client) async {
     expect(await syncStatus(client), SyncStatus.updated);

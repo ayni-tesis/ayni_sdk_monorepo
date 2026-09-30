@@ -29,6 +29,12 @@ const Map<String, Set<String>> expectedExports = {
     'WorkflowResult',
     'WorkflowValue',
   },
+  'src/sdk_consent.dart': {
+    'ConsentDecision',
+    'ConsentPurpose',
+    'ConsentResult',
+    'ConsentStatus',
+  },
 };
 
 String stripComments(String source) {
@@ -191,6 +197,10 @@ void main() {
         'WorkflowErrorCategory': WorkflowErrorCategory,
         'WorkflowResult': WorkflowResult,
         'WorkflowValue': WorkflowValue,
+        'ConsentDecision': ConsentDecision,
+        'ConsentPurpose': ConsentPurpose,
+        'ConsentResult': ConsentResult,
+        'ConsentStatus': ConsentStatus,
       };
       final expectedNames = expectedExports.values
           .expand((names) => names)
