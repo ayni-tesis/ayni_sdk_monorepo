@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createOpenApiDocument } from "@ayni/api";
+import type { SdkConsentReceipt } from "@ayni/api/sdk-consent";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
 import {
@@ -52,6 +53,8 @@ import {
   publishPrivacyNotice,
   updatePrivacyTreatmentMap,
 } from "./privacy-treatment-map-store";
+import { recordSdkConsentReceipt } from "./sdk-consent-store";
+import { createSdkConsentsApp } from "./sdk-consents";
 import {
   createSdkCredential,
   listSdkCredentials,
@@ -307,6 +310,15 @@ const sdkSync = {
   },
   getManifest(applicationId: string) {
     return getSdkSyncManifest(db, applicationId);
+  },
+};
+
+const sdkConsents = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  record(applicationId: string, receipt: SdkConsentReceipt) {
+    return recordSdkConsentReceipt(db, { applicationId, ...receipt });
   },
 };
 
@@ -744,6 +756,13 @@ app.route(
   }),
 );
 app.route("/", createSdkSyncApp({ credentials: sdkSync, sync: sdkSync }));
+app.route(
+  "/",
+  createSdkConsentsApp({
+    credentials: sdkConsents,
+    consents: sdkConsents,
+  }),
+);
 app.route(
   "/",
   createSdkWorkflowVersionsApp({

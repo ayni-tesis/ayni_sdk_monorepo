@@ -92,6 +92,34 @@ for (final resource in result.resources) {
 
 `result.resources` contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/sync.dart`.
 
+## Preferencias de privacidad
+
+La app integradora debe mostrar el aviso a sus usuarios y construir dos
+switches independientes, apagados por defecto: contribuir imágenes y etiquetas
+para mejorar modelos, y contribuir trazas técnicas para mejorar el SDK. La
+aceptación de los términos no los activa. La recolección necesaria para prestar
+el servicio se informa y se basa por separado.
+
+Genera un UUID v4 opaco y aleatorio para cada persona dentro de esta aplicación;
+guarda la relación en la app cliente y no envíes nombre, correo, teléfono ni
+hashes de esos datos. Al cambiar un switch, registra la acción:
+
+```dart
+final result = await sdk.recordConsent(
+  subjectId: opaqueUserId,
+  purpose: ConsentPurpose.modelImprovement,
+  decision: enabled ? ConsentDecision.accepted : ConsentDecision.declined,
+  noticeVersion: displayedNoticeVersion,
+);
+showMessage(result.message);
+```
+
+Usa `ConsentPurpose.sdkImprovement` para el switch de trazas. `synced` confirma
+que Ayni recibió el recibo; `pending` significa que quedó guardado localmente y
+se enviará antes del próximo manifiesto de sync; ante `error`, deja esa finalidad
+desactivada. No envíes datos asociados a una finalidad hasta que el recibo esté
+sincronizado. La app debe ofrecer la revocación por finalidad según US-155.
+
 ## Ejecución local de workflows
 
 Con el SDK inicializado y sincronizado, ejecuta un workflow instalado con `run()`. La ejecución es local: no hace peticiones de red y la aplicación nunca interpreta el JSON del DAG.
