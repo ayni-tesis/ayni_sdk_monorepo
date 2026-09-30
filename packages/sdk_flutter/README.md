@@ -120,10 +120,11 @@ Usa `ConsentPurpose.sdkImprovement` para el switch de trazas. `synced` confirma
 que Ayni recibió el recibo; `pending` significa que quedó guardado localmente y
 se enviará antes del próximo manifiesto de sync; ante `error`, deja esa finalidad
 desactivada. Para revocar, cambia primero el estado local a desactivado y llama
-a `recordConsent` con `ConsentDecision.declined`; conserva la preferencia aunque
-el recibo quede pendiente. No envíes datos asociados a una finalidad hasta que
-el recibo esté sincronizado. La app debe ofrecer revocación por finalidad y el
-canal de derechos publicado en su aviso.
+a `recordConsent` con `ConsentDecision.declined` y la misma versión del aviso
+guardada al otorgarlo; conserva la preferencia aunque el recibo quede pendiente.
+No envíes datos asociados a una finalidad hasta que el recibo esté sincronizado.
+La app debe ofrecer revocación por finalidad y el canal de derechos publicado
+en su aviso.
 
 ## Ejecución local de workflows
 
