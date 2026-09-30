@@ -82,7 +82,8 @@ void main() {
             '/sdk/model-versions/',
           );
           if (request.uri.path == '/sdk/consents') {
-            final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+            final body =
+                jsonDecode(await utf8.decoder.bind(request).join()) as Map;
             consentBodies.add(Map<String, Object?>.from(body));
             request.response.statusCode = consentStatusCode;
             request.response.write(
@@ -180,7 +181,10 @@ void main() {
 
       expect(result.status, ConsentStatus.synced);
       expect(requests.map((request) => request.uri.path), ['/sdk/consents']);
-      expect(requests.single.headers.value(HttpHeaders.authorizationHeader), 'Bearer ayni_sk_test');
+      expect(
+        requests.single.headers.value(HttpHeaders.authorizationHeader),
+        'Bearer ayni_sk_test',
+      );
       expect(consentBodies.single, {
         'receiptId': isA<String>().having((id) => id.length, 'UUID length', 36),
         'subjectId': subjectId,
@@ -192,46 +196,52 @@ void main() {
       expect(consentBodies.single, isNot(contains('email')));
     });
 
-    test('queues an offline receipt and sends it before the next sync manifest', () async {
-      consentStatusCode = HttpStatus.serviceUnavailable;
-      final result = await sdk().recordConsent(
-        subjectId: subjectId,
-        purpose: ConsentPurpose.sdkImprovement,
-        decision: ConsentDecision.accepted,
-        noticeVersion: '1.0.0',
-      );
-      expect(result.status, ConsentStatus.pending);
-      consentStatusCode = HttpStatus.created;
-      requests.clear();
+    test(
+      'queues an offline receipt and sends it before the next sync manifest',
+      () async {
+        consentStatusCode = HttpStatus.serviceUnavailable;
+        final result = await sdk().recordConsent(
+          subjectId: subjectId,
+          purpose: ConsentPurpose.sdkImprovement,
+          decision: ConsentDecision.accepted,
+          noticeVersion: '1.0.0',
+        );
+        expect(result.status, ConsentStatus.pending);
+        consentStatusCode = HttpStatus.created;
+        requests.clear();
 
-      expect(await syncStatus(sdk()), SyncStatus.updated);
-      expect(requests.map((request) => request.uri.path), [
-        '/sdk/consents',
-        '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1',
-        '/sdk/model-versions/model-version-1/manifest',
-      ]);
-    });
+        expect(await syncStatus(sdk()), SyncStatus.updated);
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/consents',
+          '/sdk/sync',
+          '/sdk/workflow-versions/workflow-version-1',
+          '/sdk/model-versions/model-version-1/manifest',
+        ]);
+      },
+    );
 
-    test('continues required sync while a consent receipt remains pending', () async {
-      consentStatusCode = HttpStatus.serviceUnavailable;
-      final client = sdk();
-      await client.recordConsent(
-        subjectId: subjectId,
-        purpose: ConsentPurpose.modelImprovement,
-        decision: ConsentDecision.accepted,
-        noticeVersion: '1.0.0',
-      );
-      requests.clear();
+    test(
+      'continues required sync while a consent receipt remains pending',
+      () async {
+        consentStatusCode = HttpStatus.serviceUnavailable;
+        final client = sdk();
+        await client.recordConsent(
+          subjectId: subjectId,
+          purpose: ConsentPurpose.modelImprovement,
+          decision: ConsentDecision.accepted,
+          noticeVersion: '1.0.0',
+        );
+        requests.clear();
 
-      expect(await syncStatus(client), SyncStatus.updated);
-      expect(requests.map((request) => request.uri.path), [
-        '/sdk/consents',
-        '/sdk/sync',
-        '/sdk/workflow-versions/workflow-version-1',
-        '/sdk/model-versions/model-version-1/manifest',
-      ]);
-    });
+        expect(await syncStatus(client), SyncStatus.updated);
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/consents',
+          '/sdk/sync',
+          '/sdk/workflow-versions/workflow-version-1',
+          '/sdk/model-versions/model-version-1/manifest',
+        ]);
+      },
+    );
 
     test('records a declined choice as its own purpose decision', () async {
       final result = await sdk().recordConsent(

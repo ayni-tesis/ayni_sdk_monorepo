@@ -112,6 +112,29 @@ for (final resource in result.resources) {
 }
 </code></pre>
 <p><code>result.resources</code> contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/sync.dart</code>.</p>
+<h2 id="preferencias-de-privacidad">Preferencias de privacidad</h2>
+<p>La app integradora debe mostrar el aviso a sus usuarios y construir dos
+switches independientes, apagados por defecto: contribuir imágenes y etiquetas
+para mejorar modelos, y contribuir trazas técnicas para mejorar el SDK. La
+aceptación de los términos no los activa. La recolección necesaria para prestar
+el servicio se informa y se basa por separado.</p>
+<p>Genera un UUID v4 opaco y aleatorio para cada persona dentro de esta aplicación;
+guarda la relación en la app cliente y no envíes nombre, correo, teléfono ni
+hashes de esos datos. Al cambiar un switch, registra la acción:</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.recordConsent(
+  subjectId: opaqueUserId,
+  purpose: ConsentPurpose.modelImprovement,
+  decision: enabled ? ConsentDecision.accepted : ConsentDecision.declined,
+  noticeVersion: displayedNoticeVersion,
+);
+showMessage(result.message);
+</code></pre>
+<p>El ejemplo comprobado está en <code>example/reference/consent.dart</code>.</p>
+<p>Usa <code>ConsentPurpose.sdkImprovement</code> para el switch de trazas. <code>synced</code> confirma
+que Ayni recibió el recibo; <code>pending</code> significa que quedó guardado localmente y
+se enviará antes del próximo manifiesto de sync; ante <code>error</code>, deja esa finalidad
+desactivada. No envíes datos asociados a una finalidad hasta que el recibo esté
+sincronizado. La app debe ofrecer la revocación por finalidad según US-155.</p>
 <h2 id="ejecucin-local-de-workflows">Ejecución local de workflows</h2>
 <p>Con el SDK inicializado y sincronizado, ejecuta un workflow instalado con <code>run()</code>. La ejecución es local: no hace peticiones de red y la aplicación nunca interpreta el JSON del DAG.</p>
 <pre class="language-dart"><code class="language-dart">final sdk = AyniSdk.instance;

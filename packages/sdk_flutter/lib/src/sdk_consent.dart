@@ -13,10 +13,25 @@ enum ConsentPurpose {
 }
 
 /// The user's explicit answer for one [ConsentPurpose].
-enum ConsentDecision { accepted, declined }
+enum ConsentDecision {
+  /// The user agreed to this optional use.
+  accepted,
+
+  /// The user declined this optional use.
+  declined,
+}
 
 /// Whether an explicit consent decision reached Ayni.
-enum ConsentStatus { synced, pending, error }
+enum ConsentStatus {
+  /// Ayni acknowledged the receipt.
+  synced,
+
+  /// The receipt is saved locally and will be retried.
+  pending,
+
+  /// The receipt could not be saved locally.
+  error,
+}
 
 /// Result of saving one consent choice locally and, when online, on Ayni.
 class ConsentResult {

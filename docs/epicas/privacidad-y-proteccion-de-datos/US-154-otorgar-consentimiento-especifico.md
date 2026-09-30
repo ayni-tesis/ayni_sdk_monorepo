@@ -59,3 +59,5 @@ fecha de recepción.
 - Mientras el aviso de Ayni esté en borrador, el endpoint no registra recibos.
 - La recolección necesaria para el servicio sigue su propia finalidad y base
   aplicable; no queda controlada por estos dos switches.
+- La guía `Recursos` → `Datos y privacidad` documenta los datos enviados y
+  guardados por este flujo.

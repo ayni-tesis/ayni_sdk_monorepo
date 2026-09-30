@@ -82,8 +82,11 @@ lo recibe: ve el resultado de la última columna.
 
 | `code` | Estado HTTP | Cuándo ocurre | Qué ve la app |
 | --- | --- | --- | --- |
+| `invalidConsent` | `400` | El recibo enviado a `POST /sdk/consents` no cumple el esquema. | `recordConsent()` devuelve `ConsentStatus.pending` y conserva el recibo para reintentar. |
 | `invalidCredential` | `401` | Falta la credencial, no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o su aplicación está archivada. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. |
 | `credentialRevoked` | `401` | Un administrador revocó o regeneró la credencial. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. Si se revoca a mitad de una sincronización, mientras se descarga un modelo, el workflow que lo usa trae `dependencyFailed`. |
+| `consentReceiptConflict` | `409` | El `receiptId` ya existe con otros datos. | `recordConsent()` devuelve `ConsentStatus.pending` y conserva el recibo local. |
+| `privacyNoticeUnavailable` | `503` | El aviso de privacidad de Ayni todavía está en borrador. | `recordConsent()` devuelve `ConsentStatus.pending`; `sync()` puede continuar con workflows y modelos. |
 | `workflowVersionNotFound` | `404` | La versión de workflow que listó el servidor ya no se puede descargar, por ejemplo porque su workflow se archivó durante la sincronización. | El workflow trae `workflowUnavailable` y `sync()` devuelve `SyncStatus.error`. |
 | `modelVersionNotFound` | `404` | La versión de modelo que usa un workflow ya no se puede descargar. | El workflow trae `dependencyFailed` con esa versión en `<modelo>`, y `sync()` devuelve `SyncStatus.error`. |
 

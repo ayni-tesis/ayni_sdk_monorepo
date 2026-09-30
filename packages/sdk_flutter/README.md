@@ -114,6 +114,8 @@ final result = await sdk.recordConsent(
 showMessage(result.message);
 ```
 
+El ejemplo comprobado está en `example/reference/consent.dart`.
+
 Usa `ConsentPurpose.sdkImprovement` para el switch de trazas. `synced` confirma
 que Ayni recibió el recibo; `pending` significa que quedó guardado localmente y
 se enviará antes del próximo manifiesto de sync; ante `error`, deja esa finalidad
