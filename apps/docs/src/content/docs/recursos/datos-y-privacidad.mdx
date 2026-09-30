@@ -97,9 +97,11 @@ que requiere y cuánto tiempo se conserva.
 Válido para `ayni_sdk` 0.1.0-beta.1.
 
 Todo lo que guarda el SDK está dentro del `storageDirectory` que le pasa tu
-app. Son los recursos que tu aplicación publicó en Ayni: el SDK no escribe la
-credencial, que solo mantiene en memoria, ni datos del usuario o del
-dispositivo.
+app. Ahí conserva los recursos que tu aplicación publicó en Ayni y los recibos
+seudónimos pendientes de confirmar. Estos recibos incluyen un ID aleatorio de
+persona, finalidad, decisión, versión del aviso y fecha; no incluyen nombre,
+correo, teléfono ni hashes de identificadores directos. La credencial solo se
+mantiene en memoria.
 
 | Dato | Ubicación en `storageDirectory` | Cómo eliminarlo |
 | --- | --- | --- |
@@ -107,7 +109,7 @@ dispositivo.
 | Definición de cada versión de workflow instalada. | `workflow-definitions/<ID codificado>.json` | Borra `storageDirectory` completo. |
 | Archivo de cada versión de modelo instalada, sus metadatos (ID de la versión y SHA-256) y un archivo vacío que bloquea la instalación mientras ocurre. | `<modelVersionId>/<modelVersionId>.tflite`, `<modelVersionId>/<modelVersionId>.json` y `<modelVersionId>/<modelVersionId>.lock` | Borra `storageDirectory` completo. |
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
-| Recibos de decisiones de privacidad pendientes de enviar a Ayni. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
+| Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
 | Archivos temporales de las descargas, verificaciones e instalaciones en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()`, pueden quedar: borra `storageDirectory` completo. |
 
 El SDK no borra las versiones anteriores de un workflow o de un modelo al

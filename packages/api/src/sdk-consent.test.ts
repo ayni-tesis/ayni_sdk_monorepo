@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-
+import { openApiDocument } from "./index";
 import { sdkConsentReceiptSchema } from "./sdk-consent";
 
 const receipt = {
@@ -26,6 +26,15 @@ describe("SDK consent receipt schema", () => {
         receiptId: "550e8400-e29b-11d4-a716-446655440001",
       }).success,
     ).toBe(false);
+  });
+
+  it("publishes the UUID v4 restriction in OpenAPI", () => {
+    const schema = openApiDocument.components?.schemas?.SdkConsentReceipt as
+      | { properties?: Record<string, { pattern?: string }> }
+      | undefined;
+
+    expect(schema?.properties?.receiptId?.pattern).toContain("-4");
+    expect(schema?.properties?.subjectId?.pattern).toContain("-4");
   });
 
   it("rejects unknown fields and invalid purposes or decisions", () => {

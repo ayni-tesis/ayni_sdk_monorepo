@@ -664,6 +664,7 @@ class AyniSdk {
   /// Runs right before the inventory is saved; it exists for the SDK's tests,
   /// which attach it through [createAyniSdkForTesting].
   Future<void> Function()? _onBeforeInventoryPersist;
+  Future<void> Function()? _onBeforeConsentReceiptRemoval;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
   ///
@@ -675,6 +676,7 @@ class AyniSdk {
   final Map<String, _ActiveExecution> _activeExecutions = {};
   late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(
     storageDirectory,
+    beforeRemove: _onBeforeConsentReceiptRemoval,
   );
   Future<void> _consentWork = Future<void>.value();
 
@@ -952,6 +954,7 @@ class AyniSdk {
         'Debe identificar el aviso mostrado.',
       );
     }
+    Future<void>? receiptWork;
     return _serializeConsentWork(() async {
       final receipt = ConsentReceipt(
         receiptId: _newConsentReceiptId(),
@@ -978,7 +981,18 @@ class AyniSdk {
           return const ConsentResult(ConsentStatus.pending);
         }
         if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
-        final synced = await _syncConsentReceipts(client).timeout(syncTimeout);
+        final pendingWork = _syncConsentReceipts(client);
+        receiptWork = pendingWork.then<void>(
+          (_) {},
+          onError: (Object _, StackTrace __) {},
+        );
+        final synced = await pendingWork.timeout(
+          syncTimeout,
+          onTimeout: () {
+            client.close(force: true);
+            return false;
+          },
+        );
         return synced
             ? const ConsentResult(ConsentStatus.synced)
             : const ConsentResult(ConsentStatus.pending);
@@ -993,7 +1007,7 @@ class AyniSdk {
       } finally {
         client.close(force: true);
       }
-    });
+    }, waitUntilComplete: () => receiptWork ?? Future<void>.value());
   }
 
   bool _isRandomUuidV4(String value) => RegExp(
@@ -1011,10 +1025,23 @@ class AyniSdk {
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
-  Future<T> _serializeConsentWork<T>(Future<T> Function() operation) {
+  Future<T> _serializeConsentWork<T>(
+    Future<T> Function() operation, {
+    Future<void> Function()? waitUntilComplete,
+  }) {
     final previous = _consentWork;
     final result = previous.then((_) => operation());
-    _consentWork = result.then<void>(
+    Future<void> waitForUnderlyingWork() async {
+      try {
+        await waitUntilComplete?.call();
+      } catch (_) {}
+    }
+
+    final held = result.then<void>(
+      (_) => waitForUnderlyingWork(),
+      onError: (Object _, StackTrace __) => waitForUnderlyingWork(),
+    );
+    _consentWork = held.then<void>(
       (_) {},
       onError: (Object _, StackTrace __) {},
     );
@@ -1033,8 +1060,23 @@ class AyniSdk {
         ..set(HttpHeaders.authorizationHeader, 'Bearer $_credential')
         ..contentType = ContentType.json;
       request.write(jsonEncode(receipt.toJson()));
-      final response = await request.close();
-      final body = await utf8.decoder.bind(response).join();
+      final response = await request.close().timeout(
+        _consentAttemptTimeout,
+        onTimeout: () {
+          request.abort();
+          throw TimeoutException('Consent receipt request timed out');
+        },
+      );
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(
+            _consentAttemptTimeout,
+            onTimeout: () {
+              request.abort();
+              throw TimeoutException('Consent receipt response timed out');
+            },
+          );
       if (response.statusCode != HttpStatus.created) return false;
       final decoded = jsonDecode(body);
       if (decoded is! Map ||
@@ -1046,6 +1088,14 @@ class AyniSdk {
       await _consentReceipts.remove(receipt.receiptId);
     }
     return true;
+  }
+
+  Duration get _consentAttemptTimeout {
+    final share = syncTimeout ~/ 3;
+    if (share <= Duration.zero) return const Duration(microseconds: 1);
+    return share > const Duration(seconds: 3)
+        ? const Duration(seconds: 3)
+        : share;
   }
 
   Future<SyncResult> _syncAfter(
@@ -1833,6 +1883,7 @@ AyniSdk createAyniSdkForTesting({
   Duration syncTimeout = const Duration(seconds: 30),
   bool allowInsecureLoopback = false,
   Future<void> Function()? onBeforeInventoryPersist,
+  Future<void> Function()? onBeforeConsentReceiptRemoval,
   void Function(String message)? onProgress,
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
@@ -1847,6 +1898,7 @@ AyniSdk createAyniSdkForTesting({
     onProgress: onProgress,
   );
   sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
+  sdk._onBeforeConsentReceiptRemoval = onBeforeConsentReceiptRemoval;
   sdk._onWorkflowDownload = onWorkflowDownload;
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;

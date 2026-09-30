@@ -22,6 +22,7 @@ void main() {
   int? workflowStatusCode;
   int? modelManifestStatusCode;
   late int consentStatusCode;
+  var stallConsentResponse = false;
   late String responseBody;
   late String workflowResponseBody;
   late String modelManifestResponseBody;
@@ -49,6 +50,7 @@ void main() {
     workflowStatusCode = null;
     modelManifestStatusCode = null;
     consentStatusCode = HttpStatus.created;
+    stallConsentResponse = false;
     modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
     workflowResponseBody = _validWorkflowDefinition();
@@ -92,6 +94,17 @@ void main() {
                 'receivedAt': '2026-09-30T12:01:00.000Z',
               }),
             );
+            if (stallConsentResponse) {
+              unawaited(
+                Future<void>.delayed(const Duration(milliseconds: 500))
+                    .then((_) async {
+                      try {
+                        await request.response.close();
+                      } on HttpException {}
+                    }),
+              );
+              return;
+            }
           } else if (isWorkflow) {
             request.response.statusCode = workflowStatusCode ?? statusCode;
             request.response.write(workflowResponseBody);
@@ -148,6 +161,7 @@ void main() {
   AyniSdk sdk({
     Duration? timeout,
     Future<void> Function()? onBeforeInventoryPersist,
+    Future<void> Function()? onBeforeConsentReceiptRemoval,
     void Function(String message)? onProgress,
     void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   }) => createAyniSdkForTesting(
@@ -159,6 +173,7 @@ void main() {
     syncTimeout: timeout ?? const Duration(seconds: 30),
     allowInsecureLoopback: true,
     onBeforeInventoryPersist: onBeforeInventoryPersist,
+    onBeforeConsentReceiptRemoval: onBeforeConsentReceiptRemoval,
     onProgress: onProgress,
     onWorkflowDownload: onWorkflowDownload,
   );
@@ -240,6 +255,112 @@ void main() {
           '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
         ]);
+      },
+    );
+
+    test('keeps sync available when consent acknowledgement stalls', () async {
+      consentStatusCode = HttpStatus.serviceUnavailable;
+      await sdk().recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.modelImprovement,
+        decision: ConsentDecision.accepted,
+        noticeVersion: '1.0.0',
+      );
+      consentStatusCode = HttpStatus.created;
+      stallConsentResponse = true;
+      requests.clear();
+
+      expect(
+        await syncStatus(sdk(timeout: const Duration(milliseconds: 900))),
+        SyncStatus.updated,
+      );
+      expect(
+        requests.map((request) => request.uri.path),
+        containsAllInOrder(['/sdk/consents', '/sdk/sync']),
+      );
+    });
+
+    test(
+      'retains serialization until timed-out receipt cleanup completes',
+      () async {
+        final removeStarted = Completer<void>();
+        final releaseRemove = Completer<void>();
+        var pauseFirstRemoval = true;
+        final client = sdk(
+          timeout: const Duration(milliseconds: 100),
+          onBeforeConsentReceiptRemoval: () async {
+            if (pauseFirstRemoval) {
+              pauseFirstRemoval = false;
+              removeStarted.complete();
+              await releaseRemove.future;
+            }
+          },
+        );
+        final first = client.recordConsent(
+          subjectId: subjectId,
+          purpose: ConsentPurpose.modelImprovement,
+          decision: ConsentDecision.accepted,
+          noticeVersion: '1.0.0',
+        );
+        await removeStarted.future.timeout(const Duration(seconds: 2));
+
+        expect((await first).status, ConsentStatus.pending);
+        var secondCompleted = false;
+        final second = client
+            .recordConsent(
+              subjectId: subjectId,
+              purpose: ConsentPurpose.sdkImprovement,
+              decision: ConsentDecision.accepted,
+              noticeVersion: '1.0.0',
+            )
+            .then((result) {
+              secondCompleted = true;
+              return result;
+            });
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(secondCompleted, isFalse);
+        expect(
+          jsonDecode(
+            await File(
+              '${storageDirectory.path}${Platform.pathSeparator}consent-receipts.json',
+            ).readAsString(),
+          ),
+          hasLength(1),
+        );
+
+        releaseRemove.complete();
+        expect((await second).status, ConsentStatus.synced);
+      },
+    );
+
+    test(
+      'serializes receipt mutations across SDK instances sharing storage',
+      () async {
+        consentStatusCode = HttpStatus.serviceUnavailable;
+        final first = sdk();
+        final second = sdk();
+
+        await Future.wait([
+          first.recordConsent(
+            subjectId: subjectId,
+            purpose: ConsentPurpose.modelImprovement,
+            decision: ConsentDecision.accepted,
+            noticeVersion: '1.0.0',
+          ),
+          second.recordConsent(
+            subjectId: subjectId,
+            purpose: ConsentPurpose.sdkImprovement,
+            decision: ConsentDecision.accepted,
+            noticeVersion: '1.0.0',
+          ),
+        ]);
+
+        final receipts = jsonDecode(
+          await File(
+            '${storageDirectory.path}${Platform.pathSeparator}consent-receipts.json',
+          ).readAsString(),
+        ) as List;
+        expect(receipts, hasLength(2));
       },
     );
 

@@ -24,13 +24,15 @@ export async function recordSdkConsentReceipt(
   database: SdkConsentReceiptDatabase,
   { applicationId, ...receipt }: RecordSdkConsentReceiptInput,
 ): Promise<RecordSdkConsentReceiptResult> {
+  const receiptId = receipt.receiptId.toLowerCase();
+  const subjectId = receipt.subjectId.toLowerCase();
   const decidedAt = new Date(receipt.decidedAt);
   const [inserted] = await database
     .insert(sdkConsentReceipt)
     .values({
       applicationId,
-      receiptId: receipt.receiptId,
-      subjectId: receipt.subjectId,
+      receiptId,
+      subjectId,
       purpose: receipt.purpose,
       decision: receipt.decision,
       noticeVersion: receipt.noticeVersion,
@@ -42,7 +44,7 @@ export async function recordSdkConsentReceipt(
   if (inserted) {
     return {
       ok: true,
-      receiptId: receipt.receiptId,
+      receiptId,
       receivedAt: iso(inserted.receivedAt),
     };
   }
@@ -60,14 +62,14 @@ export async function recordSdkConsentReceipt(
     .where(
       and(
         eq(sdkConsentReceipt.applicationId, applicationId),
-        eq(sdkConsentReceipt.receiptId, receipt.receiptId),
+        eq(sdkConsentReceipt.receiptId, receiptId),
       ),
     )
     .limit(1);
 
   if (
     !existing ||
-    existing.subjectId !== receipt.subjectId ||
+    existing.subjectId !== subjectId ||
     existing.purpose !== receipt.purpose ||
     existing.decision !== receipt.decision ||
     existing.noticeVersion !== receipt.noticeVersion ||
@@ -78,7 +80,7 @@ export async function recordSdkConsentReceipt(
 
   return {
     ok: true,
-    receiptId: receipt.receiptId,
+    receiptId,
     receivedAt: iso(existing.receivedAt),
   };
 }

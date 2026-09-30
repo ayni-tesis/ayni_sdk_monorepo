@@ -68,12 +68,17 @@ class ConsentReceipt {
 }
 
 class ConsentReceiptStore {
-  ConsentReceiptStore(Directory directory)
+  ConsentReceiptStore(Directory directory, {this.beforeRemove})
     : _file = File(
         '${directory.path}${Platform.pathSeparator}consent-receipts.json',
       );
 
+  // ponytail: one lock serializes mutations across directories; use
+  // per-directory locks if contention matters.
+  static Future<void> _work = Future<void>.value();
+
   final File _file;
+  final Future<void> Function()? beforeRemove;
 
   Future<List<ConsentReceipt>> pending() async {
     if (!await _file.exists()) return [];
@@ -88,19 +93,31 @@ class ConsentReceiptStore {
   }
 
   Future<void> enqueue(ConsentReceipt receipt) async {
-    final receipts = await pending();
-    receipts.add(receipt);
-    await _write(receipts);
+    await _serialize(() async {
+      final receipts = await pending();
+      receipts.add(receipt);
+      await _write(receipts);
+    });
   }
 
   Future<void> remove(String receiptId) async {
-    final receipts = await pending();
-    receipts.removeWhere((receipt) => receipt.receiptId == receiptId);
-    if (receipts.isEmpty && await _file.exists()) {
-      await _file.delete();
-      return;
-    }
-    await _write(receipts);
+    await _serialize(() async {
+      await beforeRemove?.call();
+      final receipts = await pending();
+      receipts.removeWhere((receipt) => receipt.receiptId == receiptId);
+      if (receipts.isEmpty && await _file.exists()) {
+        await _file.delete();
+        return;
+      }
+      await _write(receipts);
+    });
+  }
+
+  Future<void> _serialize(Future<void> Function() operation) {
+    final previous = _work;
+    final result = previous.then((_) => operation());
+    _work = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
   }
 
   Future<void> _write(List<ConsentReceipt> receipts) async {

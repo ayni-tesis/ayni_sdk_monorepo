@@ -58,6 +58,39 @@ describe("recordSdkConsentReceipt", () => {
     });
   });
 
+  it("normalizes UUID casing for storage and idempotent retries", async () => {
+    const receivedAt = new Date("2026-09-30T12:01:00.000Z");
+    const { database, values } = makeDatabase({
+      existing: {
+        subjectId: receipt.subjectId,
+        purpose: receipt.purpose,
+        decision: receipt.decision,
+        noticeVersion: receipt.noticeVersion,
+        decidedAt: new Date(receipt.decidedAt),
+        receivedAt,
+      },
+    });
+
+    await expect(
+      recordSdkConsentReceipt(database, {
+        ...receipt,
+        receiptId: receipt.receiptId.toUpperCase(),
+        subjectId: receipt.subjectId.toUpperCase(),
+        applicationId: "app-1",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      receiptId: receipt.receiptId,
+      receivedAt: receivedAt.toISOString(),
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiptId: receipt.receiptId,
+        subjectId: receipt.subjectId,
+      }),
+    );
+  });
+
   it("acknowledges an identical retry without inserting a duplicate", async () => {
     const receivedAt = new Date("2026-09-30T12:01:00.000Z");
     const { database } = makeDatabase({
