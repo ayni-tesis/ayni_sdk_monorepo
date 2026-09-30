@@ -8,6 +8,7 @@ describe("sdkContract", () => {
     const document = JSON.parse(readFileSync(apiDocumentPath, "utf8"));
 
     expect(Object.keys(sdkContract(document).paths)).toEqual([
+      "/sdk/consents",
       "/sdk/sync",
       "/sdk/workflow-versions/{workflowVersionId}",
       "/sdk/model-versions/{modelVersionId}/manifest",

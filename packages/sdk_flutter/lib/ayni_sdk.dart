@@ -33,3 +33,5 @@ export 'src/workflow_execution.dart'
         WorkflowErrorCategory,
         WorkflowResult,
         WorkflowValue;
+export 'src/sdk_consent.dart'
+    show ConsentDecision, ConsentPurpose, ConsentResult, ConsentStatus;

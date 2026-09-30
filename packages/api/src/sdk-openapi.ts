@@ -5,7 +5,14 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
+import { sdkConsentReceiptSchema } from "./sdk-consent";
+
 extendZodWithOpenApi(z);
+
+const SdkConsentReceiptSchema = sdkConsentReceiptSchema.extend({}).openapi("SdkConsentReceipt");
+const SdkConsentAcknowledgementSchema = z
+  .object({ receiptId: z.uuid(), receivedAt: z.iso.datetime() })
+  .openapi("SdkConsentAcknowledgement");
 
 export const SdkSyncWorkflowSchema = z
   .object({
@@ -171,7 +178,12 @@ const modelManifestExample = {
 } satisfies z.infer<typeof SdkModelVersionManifestSchema>;
 
 /** An error an SDK endpoint answers with: its status, `code`, `message`, and cause. */
-type SdkError = { status: "401" | "404"; code: string; message: string; cause: string };
+type SdkError = {
+  status: "400" | "401" | "404" | "409" | "503";
+  code: string;
+  message: string;
+  cause: string;
+};
 
 function credentialErrors(revokedMessage: string): SdkError[] {
   return [
@@ -202,7 +214,15 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
         status,
         {
           description:
-            status === "401" ? "Credencial no válida o revocada." : "Recurso no disponible.",
+            status === "401"
+              ? "Credencial no válida o revocada."
+              : status === "400"
+                ? "Solicitud de consentimiento no válida."
+                : status === "409"
+                  ? "El identificador de recibo ya se usó con otros datos."
+                  : status === "503"
+                    ? "El aviso de privacidad de Ayni todavía no está publicado."
+                    : "Recurso no disponible.",
           content: {
             "application/json": {
               schema: z.object({
@@ -290,6 +310,70 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
   });
   const security = [{ [sdkCredential.name]: [] }];
   const revokedMessage = "La credencial fue revocada. Genera una nueva credencial para continuar.";
+
+  const consentErrors: SdkError[] = [
+    ...credentialErrors(revokedMessage),
+    {
+      status: "400",
+      code: "invalidConsent",
+      message: "La decisión de consentimiento no es válida.",
+      cause: "Falta un campo o su propósito, decisión, fecha o identificador no es válido.",
+    },
+    {
+      status: "409",
+      code: "consentReceiptConflict",
+      message: "El recibo de consentimiento ya existe con otros datos.",
+      cause: "Se reutilizó el mismo identificador de recibo para otra decisión.",
+    },
+    {
+      status: "503",
+      code: "privacyNoticeUnavailable",
+      message: "El aviso de privacidad de Ayni aún no está publicado.",
+      cause: "Ayni no registra decisiones para usos propios hasta publicar su aviso vigente.",
+    },
+  ];
+  registry.registerPath({
+    method: "post",
+    path: "/sdk/consents",
+    tags: ["Endpoints"],
+    operationId: "registrar-decision-de-consentimiento",
+    summary: "Registrar una decisión opcional de privacidad",
+    description: describeWithErrors(
+      "Registra de forma idempotente la elección de una persona para un uso adicional " +
+        "de Ayni. La identidad es un UUID aleatorio y opaco generado por la app integradora; " +
+        "no envíes nombre, correo, teléfono ni hashes derivados de ellos. Reutiliza el mismo " +
+        "`receiptId` al reintentar una decisión guardada sin conexión.",
+      consentErrors,
+    ),
+    security,
+    "x-codeSamples": curlSample("post", "/sdk/consents"),
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: SdkConsentReceiptSchema } },
+      },
+    },
+    responses: {
+      "201": {
+        description: "El servidor guardó o ya había recibido este recibo.",
+        content: {
+          "application/json": {
+            schema: SdkConsentAcknowledgementSchema,
+            examples: {
+              recibido: {
+                summary: "Recibo sincronizado",
+                value: {
+                  receiptId: "550e8400-e29b-41d4-a716-446655440001",
+                  receivedAt: "2026-09-30T12:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+      ...errorResponses(consentErrors),
+    },
+  });
 
   const syncErrors = credentialErrors(
     "La credencial fue revocada. Genera una nueva credencial para sincronizar.",

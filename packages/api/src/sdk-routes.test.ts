@@ -7,6 +7,7 @@ describe("sdkRouteDrift", () => {
     paths: {
       "/health": { get: {} },
       "/sdk/sync": { post: {} },
+      "/sdk/consents": { post: {} },
       "/sdk/workflow-versions/{workflowVersionId}": { get: {}, parameters: [] },
     },
   };
@@ -14,6 +15,7 @@ describe("sdkRouteDrift", () => {
   it("finds nothing when the server and the specification agree on the /sdk/* routes", () => {
     const routes = [
       { method: "POST", path: "/sdk/sync" },
+      { method: "POST", path: "/sdk/consents" },
       { method: "GET", path: "/sdk/workflow-versions/{workflowVersionId}" },
     ];
 
@@ -32,7 +34,10 @@ describe("sdkRouteDrift", () => {
         { method: "GET", path: "/sdk/sync" },
         { method: "DELETE", path: "/sdk/models/{modelId}" },
       ],
-      unimplemented: [{ method: "POST", path: "/sdk/sync" }],
+      unimplemented: [
+        { method: "POST", path: "/sdk/sync" },
+        { method: "POST", path: "/sdk/consents" },
+      ],
     });
   });
 });
@@ -47,11 +52,13 @@ describe("sdkRoutesInSource", () => {
         "/sdk/sync",
         handler,
       );
+      app.post("/sdk/consents", handler);
     `;
 
     expect(sdkRoutesInSource(source)).toEqual([
       { method: "GET", path: "/sdk/workflow-versions/{workflowVersionId}" },
       { method: "POST", path: "/sdk/sync" },
+      { method: "POST", path: "/sdk/consents" },
     ]);
   });
 

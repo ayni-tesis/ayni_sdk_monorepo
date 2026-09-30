@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
+import 'consent_receipt_store.dart';
+import 'sdk_consent.dart';
 import 'sdk_internal.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
@@ -671,6 +673,10 @@ class AyniSdk {
 
   final String _credential;
   final Map<String, _ActiveExecution> _activeExecutions = {};
+  late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(
+    storageDirectory,
+  );
+  Future<void> _consentWork = Future<void>.value();
 
   /// Requests cancellation of an active execution.
   ///
@@ -916,6 +922,180 @@ class AyniSdk {
     return _syncAfter(previousSync, syncFinished);
   }
 
+  /// Records one user's explicit choice for one optional Ayni-owned purpose.
+  ///
+  /// The integrator creates and retains a random UUID v4 for each user within
+  /// this application. Do not pass a name, e-mail, phone number, or a hash of
+  /// direct identifiers. The receipt is saved locally before the SDK attempts
+  /// to send it; offline receipts are sent before the next sync manifest.
+  ///
+  /// The host app must show the relevant notice and an off-by-default control
+  /// before calling this method. Ayni does not provide the host app's switch.
+  Future<ConsentResult> recordConsent({
+    required String subjectId,
+    required ConsentPurpose purpose,
+    required ConsentDecision decision,
+    required String noticeVersion,
+  }) {
+    if (!_isRandomUuidV4(subjectId)) {
+      throw ArgumentError.value(
+        subjectId,
+        'subjectId',
+        'Debe ser un UUID v4 opaco y aleatorio.',
+      );
+    }
+    final version = noticeVersion.trim();
+    if (version.isEmpty || version.length > 128) {
+      throw ArgumentError.value(
+        noticeVersion,
+        'noticeVersion',
+        'Debe identificar el aviso mostrado.',
+      );
+    }
+    Future<void>? receiptWork;
+    return _serializeConsentWork(() async {
+      final receipt = ConsentReceipt(
+        receiptId: _newConsentReceiptId(),
+        subjectId: subjectId,
+        purpose: purpose,
+        decision: decision,
+        noticeVersion: version,
+        decidedAt: DateTime.now().toUtc(),
+      );
+      try {
+        await _consentReceipts.enqueue(receipt);
+      } on FileSystemException {
+        return const ConsentResult(ConsentStatus.error);
+      } on FormatException {
+        return const ConsentResult(ConsentStatus.error);
+      }
+
+      final client = HttpClient()..connectionTimeout = syncTimeout;
+      try {
+        if (!_canSendCredentialTo(
+          serverUrl,
+          allowInsecureLoopback: allowInsecureLoopback,
+        )) {
+          return const ConsentResult(ConsentStatus.pending);
+        }
+        if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
+        final pendingWork = _syncConsentReceipts(client);
+        receiptWork = pendingWork.then<void>(
+          (_) {},
+          onError: (Object _, StackTrace __) {},
+        );
+        final synced = await pendingWork.timeout(
+          syncTimeout,
+          onTimeout: () {
+            client.close(force: true);
+            return false;
+          },
+        );
+        return synced
+            ? const ConsentResult(ConsentStatus.synced)
+            : const ConsentResult(ConsentStatus.pending);
+      } on SocketException {
+        return const ConsentResult(ConsentStatus.pending);
+      } on IOException {
+        return const ConsentResult(ConsentStatus.pending);
+      } on TimeoutException {
+        return const ConsentResult(ConsentStatus.pending);
+      } on FormatException {
+        return const ConsentResult(ConsentStatus.pending);
+      } finally {
+        client.close(force: true);
+      }
+    }, waitUntilComplete: () => receiptWork ?? Future<void>.value());
+  }
+
+  bool _isRandomUuidV4(String value) => RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+  ).hasMatch(value);
+
+  String _newConsentReceiptId() {
+    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  Future<T> _serializeConsentWork<T>(
+    Future<T> Function() operation, {
+    Future<void> Function()? waitUntilComplete,
+  }) {
+    final previous = _consentWork;
+    final result = previous.then((_) => operation());
+    Future<void> waitForUnderlyingWork() async {
+      try {
+        await waitUntilComplete?.call();
+      } catch (_) {}
+    }
+
+    final held = result.then<void>(
+      (_) => waitForUnderlyingWork(),
+      onError: (Object _, StackTrace __) => waitForUnderlyingWork(),
+    );
+    _consentWork = held.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<bool> _syncConsentReceipts(
+    HttpClient client, {
+    _SyncDeadline? deadline,
+  }) async {
+    for (final receipt in await _consentReceipts.pending()) {
+      if (deadline?.expired ?? false) return false;
+      final request = await client.postUrl(serverUrl.resolve('/sdk/consents'));
+      request.followRedirects = false;
+      request.headers
+        ..set(HttpHeaders.authorizationHeader, 'Bearer $_credential')
+        ..contentType = ContentType.json;
+      request.write(jsonEncode(receipt.toJson()));
+      final response = await request.close().timeout(
+        _consentAttemptTimeout,
+        onTimeout: () {
+          request.abort();
+          throw TimeoutException('Consent receipt request timed out');
+        },
+      );
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(
+            _consentAttemptTimeout,
+            onTimeout: () {
+              request.abort();
+              throw TimeoutException('Consent receipt response timed out');
+            },
+          );
+      if (response.statusCode != HttpStatus.created) return false;
+      final decoded = jsonDecode(body);
+      if (decoded is! Map ||
+          decoded['receiptId'] != receipt.receiptId ||
+          decoded['receivedAt'] is! String ||
+          DateTime.tryParse(decoded['receivedAt'] as String) == null) {
+        return false;
+      }
+      await _consentReceipts.remove(receipt.receiptId);
+    }
+    return true;
+  }
+
+  Duration get _consentAttemptTimeout {
+    final share = syncTimeout ~/ 3;
+    if (share <= Duration.zero) return const Duration(microseconds: 1);
+    return share > const Duration(seconds: 3)
+        ? const Duration(seconds: 3)
+        : share;
+  }
+
   Future<SyncResult> _syncAfter(
     Future<void> previousSync,
     Completer<void> syncFinished,
@@ -932,7 +1112,7 @@ class AyniSdk {
         return const SyncResult(SyncStatus.error);
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
-      final operation = _sync(client, deadline);
+      final operation = _serializeConsentWork(() => _sync(client, deadline));
       return await operation.timeout(
         syncTimeout,
         onTimeout: () {
@@ -966,6 +1146,13 @@ class AyniSdk {
   }
 
   Future<SyncResult> _sync(HttpClient client, _SyncDeadline deadline) async {
+    try {
+      await _syncConsentReceipts(client, deadline: deadline);
+    } on Exception {
+      // A pending optional-use receipt must not block required resource sync.
+      // Future optional-data uploads must gate their own purpose on receipt ack.
+    }
+    if (deadline.expired) return const SyncResult(SyncStatus.error);
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
     request.followRedirects = false;
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
@@ -1694,6 +1881,7 @@ AyniSdk createAyniSdkForTesting({
   Duration syncTimeout = const Duration(seconds: 30),
   bool allowInsecureLoopback = false,
   Future<void> Function()? onBeforeInventoryPersist,
+  Future<void> Function()? onBeforeConsentReceiptRemoval,
   void Function(String message)? onProgress,
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
@@ -1708,6 +1896,7 @@ AyniSdk createAyniSdkForTesting({
     onProgress: onProgress,
   );
   sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
+  ConsentReceiptStore.beforeRemoveForTesting = onBeforeConsentReceiptRemoval;
   sdk._onWorkflowDownload = onWorkflowDownload;
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;

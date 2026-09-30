@@ -31,6 +31,52 @@
         },
         "required": ["status"]
       },
+      "SdkConsentAcknowledgement": {
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["receiptId", "receivedAt"]
+      },
+      "SdkConsentReceipt": {
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i"
+          },
+          "subjectId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": ["ayniModelImprovement", "ayniSdkImprovement"]
+          },
+          "decision": {
+            "type": "string",
+            "enum": ["accepted", "declined"]
+          },
+          "noticeVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["receiptId", "subjectId", "purpose", "decision", "noticeVersion", "decidedAt"],
+        "additionalProperties": false
+      },
       "SdkSyncManifest": {
         "type": "object",
         "properties": {
@@ -301,6 +347,188 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/consents": {
+      "post": {
+        "tags": ["Endpoints"],
+        "operationId": "registrar-decision-de-consentimiento",
+        "summary": "Registrar una decisión opcional de privacidad",
+        "description": "Registra de forma idempotente la elección de una persona para un uso adicional de Ayni. La identidad es un UUID aleatorio y opaco generado por la app integradora; no envíes nombre, correo, teléfono ni hashes derivados de ellos. Reutiliza el mismo `receiptId` al reintentar una decisión guardada sin conexión.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidConsent` | La decisión de consentimiento no es válida. | Falta un campo o su propósito, decisión, fecha o identificador no es válido. |\n| `409` | `consentReceiptConflict` | El recibo de consentimiento ya existe con otros datos. | Se reutilizó el mismo identificador de recibo para otra decisión. |\n| `503` | `privacyNoticeUnavailable` | El aviso de privacidad de Ayni aún no está publicado. | Ayni no registra decisiones para usos propios hasta publicar su aviso vigente. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl -X POST https://tu-servidor-ayni.example/sdk/consents \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SdkConsentReceipt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "El servidor guardó o ya había recibido este recibo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkConsentAcknowledgement"
+                },
+                "examples": {
+                  "recibido": {
+                    "summary": "Recibo sincronizado",
+                    "value": {
+                      "receiptId": "550e8400-e29b-41d4-a716-446655440001",
+                      "receivedAt": "2026-09-30T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud de consentimiento no válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidConsent"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidConsent": {
+                    "description": "Falta un campo o su propósito, decisión, fecha o identificador no es válido.",
+                    "value": {
+                      "message": "La decisión de consentimiento no es válida.",
+                      "code": "invalidConsent"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El identificador de recibo ya se usó con otros datos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["consentReceiptConflict"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "consentReceiptConflict": {
+                    "description": "Se reutilizó el mismo identificador de recibo para otra decisión.",
+                    "value": {
+                      "message": "El recibo de consentimiento ya existe con otros datos.",
+                      "code": "consentReceiptConflict"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "El aviso de privacidad de Ayni todavía no está publicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["privacyNoticeUnavailable"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "privacyNoticeUnavailable": {
+                    "description": "Ayni no registra decisiones para usos propios hasta publicar su aviso vigente.",
+                    "value": {
+                      "message": "El aviso de privacidad de Ayni aún no está publicado.",
+                      "code": "privacyNoticeUnavailable"
+                    }
+                  }
                 }
               }
             }
