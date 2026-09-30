@@ -27,6 +27,10 @@ ya capturó y no puede mostrar el aviso ni impedir por sí solo la captura.
 - Ayni publica el aviso de privacidad de sus propias cuentas. Para una
   aplicación cliente, expone el aviso configurado por esa aplicación sin
   redactar hechos ni roles que el administrador no haya confirmado.
+- El aviso separa la recolección necesaria para prestar el servicio de cualquier
+  uso adicional por Ayni para mejorar sus modelos o componentes. Los usos
+  adicionales se ofrecen como finalidades opcionales independientes y enlazan
+  a la decisión correspondiente de US-154.
 
 ### Estados y mensajes
 
@@ -65,6 +69,16 @@ Scenario: La aplicación no tiene aviso publicado
   conexión.
 - El aviso es independiente de la aceptación de términos y no registra por sí
   mismo un consentimiento.
+- La aceptación de los términos no activa por defecto el uso de imágenes,
+  etiquetas ni trazas para mejoras propias de Ayni. Cada finalidad adicional
+  permanece desactivada hasta que la persona la acepte expresamente en la app
+  cliente; sus preferencias se guardan por persona y aplicación y se pueden
+  revocar conforme a US-155.
+- La app integradora debe mostrar el aviso antes de la captura y ofrecer esos
+  controles separados, explicar cada finalidad a sus usuarios y respetar sus
+  decisiones. Esta obligación se refiere al uso adicional de Ayni; la
+  recolección necesaria para prestar el servicio del SDK tiene aviso y base
+  aplicable propios.
 - Publicar una nueva versión conserva la anterior y muestra la versión vigente
   correspondiente a cada flujo.
 - La información requerida se verifica contra el tratamiento configurado y la
