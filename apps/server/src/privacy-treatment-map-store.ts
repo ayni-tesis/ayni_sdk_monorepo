@@ -110,11 +110,14 @@ export async function getPublishedPrivacyNotice(
   );
   if (!row || !Array.isArray(row.treatments)) return;
   const publishedAt = row.publishedAt;
+  const treatments = row.treatments.map((value) => privacyTreatmentSchema.parse(value));
+  // Legacy immutable snapshots lack an identified role entity; require a complete republish.
+  if (treatments.some((treatment) => !treatment.roleEntity)) return;
   return {
     applicationId,
     version,
     publishedAt: publishedAt instanceof Date ? publishedAt.toISOString() : String(publishedAt),
-    treatments: row.treatments.map((value) => privacyTreatmentSchema.parse(value)),
+    treatments,
   };
 }
 

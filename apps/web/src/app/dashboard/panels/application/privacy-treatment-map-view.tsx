@@ -6,6 +6,8 @@ import {
   type PrivacyTreatment,
 } from "@ayni/api/privacy-treatment";
 import axios from "axios";
+import type { Route } from "next";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ const pendingFieldLabels: Record<string, string> = {
   requirement: "obligatoriedad",
   legalBasis: "base aplicable confirmada",
   role: "rol",
+  roleEntity: "nombre de la entidad responsable o encargada",
   recipients: "destinatarios",
   transfers: "transferencias",
   retention: "conservación",
@@ -57,6 +60,8 @@ function emptyTreatment(): PrivacyTreatment {
     legalBasis: "",
     legalBasisConfirmed: false,
     role: "undetermined",
+    roleEntity: "",
+    policyLinks: [],
     recipients: [],
     transfers: "",
     retention: "",
@@ -75,6 +80,21 @@ function fromLines(value: string): string[] {
     .filter(Boolean);
 }
 
+function policyLinksText(treatment: PrivacyTreatment): string {
+  return treatment.policyLinks.map(({ label, url }) => `${label} | ${url}`).join("\n");
+}
+
+function policyLinksFromText(value: string): PrivacyTreatment["policyLinks"] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label, ...url] = line.split("|");
+      return { label: label?.trim() ?? "", url: url.join("|").trim() };
+    });
+}
+
 export type PrivacyTreatmentMapViewProps = {
   application: Application;
   canManage?: boolean;
@@ -87,6 +107,7 @@ export function PrivacyTreatmentMapView({
 }: PrivacyTreatmentMapViewProps) {
   const [saved, setSaved] = useState<PrivacyTreatmentMap | null>(null);
   const [treatments, setTreatments] = useState<PrivacyTreatment[]>([]);
+  const [policyLinksDrafts, setPolicyLinksDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -112,6 +133,9 @@ export function PrivacyTreatmentMapView({
       if (controller.signal.aborted) return;
       setSaved(data.map);
       setTreatments(data.map.treatments);
+      setPolicyLinksDrafts(
+        Object.fromEntries(data.map.treatments.map((item) => [item.id, policyLinksText(item)])),
+      );
     } catch (error) {
       if (controller.signal.aborted) return;
       setLoadError(errorMessage(error, LOAD_ERROR));
@@ -143,6 +167,9 @@ export function PrivacyTreatmentMapView({
       );
       setSaved(data.map);
       setTreatments(data.map.treatments);
+      setPolicyLinksDrafts(
+        Object.fromEntries(data.map.treatments.map((item) => [item.id, policyLinksText(item)])),
+      );
       toast.success("Mapa de tratamientos guardado.");
     } catch (error) {
       toast.error(errorMessage(error, SAVE_ERROR));
@@ -213,6 +240,15 @@ export function PrivacyTreatmentMapView({
               ? ` Versión publicada: ${saved.latestPublishedVersion}.`
               : " Aún no hay una versión publicada."}
           </p>
+          {saved?.latestPublishedVersion ? (
+            <Link
+              className="text-primary text-sm underline underline-offset-4"
+              href={`/privacy/applications/${application.id}` as Route}
+              target="_blank"
+            >
+              Consultar aviso público
+            </Link>
+          ) : null}
           {publishError && (
             <p role="alert" className="text-destructive text-sm">
               {publishError}
@@ -342,6 +378,41 @@ export function PrivacyTreatmentMapView({
                         </select>
                       </label>
                     </div>
+
+                    <label className="block space-y-1 text-sm" htmlFor={`${prefix}-role-entity`}>
+                      <span>Nombre de la entidad que declara el rol</span>
+                      <Input
+                        id={`${prefix}-role-entity`}
+                        value={treatment.roleEntity}
+                        placeholder="Persona u organización"
+                        disabled={!editable || saving}
+                        onChange={(event) =>
+                          updateTreatment(treatment.id, { roleEntity: event.target.value })
+                        }
+                      />
+                    </label>
+
+                    <label className="block space-y-1 text-sm" htmlFor={`${prefix}-policies`}>
+                      <span>Políticas aplicables (una por línea: Nombre | URL)</span>
+                      <textarea
+                        id={`${prefix}-policies`}
+                        className={fieldClassName}
+                        rows={2}
+                        value={policyLinksDrafts[treatment.id] ?? policyLinksText(treatment)}
+                        placeholder="Política de privacidad | https://ejemplo.com/privacidad"
+                        disabled={!editable || saving}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setPolicyLinksDrafts((current) => ({
+                            ...current,
+                            [treatment.id]: value,
+                          }));
+                          updateTreatment(treatment.id, {
+                            policyLinks: policyLinksFromText(value),
+                          });
+                        }}
+                      />
+                    </label>
 
                     <label className="block space-y-1 text-sm" htmlFor={`${prefix}-basis`}>
                       <span>Base aplicable (déjala vacía si está por determinar)</span>

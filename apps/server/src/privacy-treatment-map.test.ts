@@ -34,6 +34,8 @@ const validTreatment = {
   legalBasis: "Por confirmar",
   legalBasisConfirmed: true,
   role: "processor",
+  roleEntity: "Ayni S.A.C.",
+  policyLinks: [],
   recipients: ["Ninguno"],
   transfers: "No aplica",
   retention: "30 días",

@@ -53,6 +53,8 @@ describe("US-151: Privacy treatment map", () => {
           legalBasis: "Base verificada",
           legalBasisConfirmed: true,
           role: "processor",
+          roleEntity: "Ayni S.A.C.",
+          policyLinks: [{ label: "Privacidad", url: "https://example.test/privacy" }],
           recipients: ["Ninguno"],
           transfers: "No aplica",
           retention: "30 días",
@@ -86,6 +88,12 @@ describe("US-151: Privacy treatment map", () => {
     fireEvent.change(screen.getByLabelText("Rol de Ayni o de la aplicación"), {
       target: { value: "processor" },
     });
+    fireEvent.change(screen.getByLabelText("Nombre de la entidad que declara el rol"), {
+      target: { value: "Ayni S.A.C." },
+    });
+    fireEvent.change(screen.getByLabelText("Políticas aplicables (una por línea: Nombre | URL)"), {
+      target: { value: "Privacidad | https://example.test/privacy" },
+    });
     fireEvent.change(
       screen.getByLabelText("Base aplicable (déjala vacía si está por determinar)"),
       {
@@ -116,6 +124,46 @@ describe("US-151: Privacy treatment map", () => {
       expect(
         screen.getByText("El mapa está completo para publicar un aviso de privacidad."),
       ).toBeTruthy();
+    });
+  });
+
+  it("preserves line breaks while entering multiple privacy policies", async () => {
+    client.put.mockResolvedValueOnce({ data: { map: emptyMap } });
+    render(<PrivacyTreatmentMapView application={activeApp} canManage />);
+    await screen.findByText("Aún no se han registrado tratamientos.");
+    fireEvent.click(screen.getByRole("button", { name: "Agregar tratamiento" }));
+    const policies = screen.getByLabelText("Políticas aplicables (una por línea: Nombre | URL)");
+    fireEvent.change(policies, {
+      target: { value: "Privacidad | https://example.test/privacy\n" },
+    });
+    expect((policies as HTMLTextAreaElement).value).toBe(
+      "Privacidad | https://example.test/privacy\n",
+    );
+    fireEvent.change(policies, {
+      target: {
+        value:
+          "Privacidad | https://example.test/privacy\nTérminos de uso | https://example.test/terms",
+      },
+    });
+
+    expect((policies as HTMLTextAreaElement).value).toBe(
+      "Privacidad | https://example.test/privacy\nTérminos de uso | https://example.test/terms",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Guardar mapa de tratamientos" }));
+    await waitFor(() => {
+      expect(client.put).toHaveBeenCalledWith(
+        "/applications/app-1/privacy-treatment-map",
+        expect.objectContaining({
+          treatments: [
+            expect.objectContaining({
+              policyLinks: [
+                { label: "Privacidad", url: "https://example.test/privacy" },
+                { label: "Términos de uso", url: "https://example.test/terms" },
+              ],
+            }),
+          ],
+        }),
+      );
     });
   });
 
@@ -152,6 +200,8 @@ describe("US-151: Privacy treatment map", () => {
               legalBasis: "",
               legalBasisConfirmed: false,
               role: "undetermined",
+              roleEntity: "",
+              policyLinks: [],
               recipients: [],
               transfers: "",
               retention: "",
@@ -170,7 +220,7 @@ describe("US-151: Privacy treatment map", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Pendiente: categorías de datos, titular de los datos, fuente, obligatoriedad, base aplicable confirmada, rol, destinatarios, transferencias, conservación, canal de derechos.",
+        "Pendiente: categorías de datos, titular de los datos, fuente, obligatoriedad, base aplicable confirmada, rol, nombre de la entidad responsable o encargada, destinatarios, transferencias, conservación, canal de derechos.",
       ),
     ).toBeTruthy();
   });
@@ -192,6 +242,8 @@ describe("US-151: Privacy treatment map", () => {
               legalBasis: "Base revisada",
               legalBasisConfirmed: true,
               role: "processor",
+              roleEntity: "Ayni S.A.C.",
+              policyLinks: [],
               recipients: ["Ninguno"],
               transfers: "No aplica",
               retention: "30 días",

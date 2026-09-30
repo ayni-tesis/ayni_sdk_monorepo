@@ -1,3 +1,4 @@
+import { AYNI_PRIVACY_NOTICE } from "@ayni/env/privacy-notice";
 import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
@@ -62,6 +63,19 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
 
   if (isPending) {
     return <Loader />;
+  }
+
+  if (AYNI_PRIVACY_NOTICE.status !== "published") {
+    return (
+      <Card className="mx-auto w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Registro temporalmente no disponible</CardTitle>
+          <CardDescription>
+            Ayni habilitará la creación de cuentas cuando publique su aviso de privacidad completo.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
   }
 
   return (
@@ -161,6 +175,19 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
               )}
             </form.Field>
           </div>
+
+          <p className="text-sm">
+            Antes de crear tu cuenta, consulta el{" "}
+            <a
+              className="underline"
+              href={`/privacy/ayni/${AYNI_PRIVACY_NOTICE.version}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Aviso de privacidad de Ayni
+            </a>
+            .
+          </p>
 
           <form.Field name="acceptedTerms">
             {(field) => (

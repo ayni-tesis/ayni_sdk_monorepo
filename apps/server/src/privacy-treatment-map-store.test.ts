@@ -20,6 +20,8 @@ const treatment: PrivacyTreatment = {
   legalBasis: "Por confirmar",
   legalBasisConfirmed: true,
   role: "processor",
+  roleEntity: "Ayni S.A.C.",
+  policyLinks: [],
   recipients: ["Ninguno"],
   transfers: "No aplica",
   retention: "30 días",
@@ -242,5 +244,27 @@ describe("getPublishedPrivacyNotice", () => {
       publishedAt: publishedAt.toISOString(),
       treatments: [treatment],
     });
+  });
+
+  it("does not serve a legacy snapshot until it is republished with a named role entity", async () => {
+    const { roleEntity, ...legacyTreatment } = treatment;
+    expect(roleEntity).toBe("Ayni S.A.C.");
+    const database = {
+      transaction: <T>(callback: (transaction: unknown) => Promise<T>) =>
+        callback({
+          select: () => ({
+            from: (table: unknown) => ({
+              where: () => ({
+                limit: async () =>
+                  table === applicationPrivacyTreatmentMap
+                    ? [{ latestPublishedVersion: 1 }]
+                    : [{ publishedAt: new Date(), treatments: [legacyTreatment] }],
+              }),
+            }),
+          }),
+        }),
+    };
+
+    await expect(getPublishedPrivacyNotice(database, "app-1")).resolves.toBeUndefined();
   });
 });

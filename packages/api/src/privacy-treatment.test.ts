@@ -16,6 +16,8 @@ const completeTreatment: PrivacyTreatment = {
   legalBasis: "Confirmar con asesoría legal",
   legalBasisConfirmed: true,
   role: "processor",
+  roleEntity: "Ayni S.A.C.",
+  policyLinks: [],
   recipients: ["Proveedor de almacenamiento"],
   transfers: "No aplica",
   retention: "30 días",
@@ -37,9 +39,18 @@ describe("privacy treatment map", () => {
       missingPrivacyTreatmentFields({
         ...completeTreatment,
         role: "undetermined",
+        roleEntity: "",
         legalBasisConfirmed: false,
       }),
-    ).toEqual(["legalBasis", "role"]);
+    ).toEqual(["legalBasis", "role", "roleEntity"]);
+  });
+
+  it("keeps older saved entries readable but incomplete without an identified entity", () => {
+    const { roleEntity, ...olderTreatment } = completeTreatment;
+    expect(roleEntity).toBe("Ayni S.A.C.");
+    const parsed = updatePrivacyMapSchema.parse({ treatments: [olderTreatment] }).treatments[0];
+    expect(parsed?.roleEntity).toBe("");
+    expect(parsed ? missingPrivacyTreatmentFields(parsed) : []).toContain("roleEntity");
   });
 
   it("rejects duplicate identifiers and undeclared fields", () => {
@@ -51,6 +62,29 @@ describe("privacy treatment map", () => {
     expect(
       updatePrivacyMapSchema.safeParse({
         treatments: [{ ...completeTreatment, secret: "unexpected" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts only web links for declared privacy policies", () => {
+    expect(
+      updatePrivacyMapSchema.safeParse({
+        treatments: [
+          {
+            ...completeTreatment,
+            policyLinks: [{ label: "Privacy", url: "javascript:alert(1)" }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      updatePrivacyMapSchema.safeParse({
+        treatments: [
+          {
+            ...completeTreatment,
+            policyLinks: [{ label: "Privacy", url: "not-a-url" }],
+          },
+        ],
       }).success,
     ).toBe(false);
   });

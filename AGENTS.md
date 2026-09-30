@@ -43,6 +43,7 @@ This file provides context about the project for AI assistants.
 
 ### Additional Features
 
+- US-153 privacy notices: client applications configure policy links and a named entity for each responsible/processor role. The public notice page displays the immutable current snapshot; snapshots without a named entity stay stored but are not served until republished. Ayni's `/privacy/ayni/:version` account notice is draft until legal identity, rights contact, providers/recipients, transfers, retention, and legal review are confirmed; signup UI and Better Auth server hooks both block account creation while it remains draft. Notice access is separate from terms acceptance and does not record consent.
 - Testing: vitest
 - Caching: upstash-redis
 - Logging: pino
