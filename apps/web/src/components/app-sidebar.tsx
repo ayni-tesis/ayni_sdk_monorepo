@@ -1,5 +1,6 @@
 "use client";
 
+import { AYNI_PRIVACY_NOTICE } from "@ayni/env/privacy-notice";
 import {
   IconApps,
   IconCpu,
@@ -11,6 +12,8 @@ import {
   IconShieldLock,
   IconUsers,
 } from "@tabler/icons-react";
+import type { Route } from "next";
+import Link from "next/link";
 import type { Application, DashboardView, WorkspaceItem } from "@/app/dashboard/types";
 import {
   Sidebar,
@@ -232,7 +235,12 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter className="p-3 text-muted-foreground text-xs">
-        Offline-first · SDK Flutter
+        <Link
+          className="underline underline-offset-4"
+          href={`/privacy/ayni/${AYNI_PRIVACY_NOTICE.version}` as Route}
+        >
+          Aviso de privacidad de Ayni
+        </Link>
       </SidebarFooter>
     </Sidebar>
   );

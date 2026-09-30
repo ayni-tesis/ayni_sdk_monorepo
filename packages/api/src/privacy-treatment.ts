@@ -9,6 +9,14 @@ export const PRIVACY_TREATMENT_CONTEXTS = [
   "undetermined",
 ] as const;
 
+const privacyPolicyLinkSchema = z.strictObject({
+  label: z.string().trim().min(1).max(100),
+  url: z
+    .url()
+    .max(2000)
+    .refine((value) => ["http:", "https:"].includes(new URL(value).protocol)),
+});
+
 export const privacyTreatmentSchema = z.strictObject({
   id: z.uuid(),
   purpose: z.string().trim().max(500),
@@ -19,6 +27,8 @@ export const privacyTreatmentSchema = z.strictObject({
   legalBasis: z.string().trim().max(500),
   legalBasisConfirmed: z.boolean(),
   role: z.enum(PRIVACY_TREATMENT_ROLES),
+  roleEntity: z.string().trim().max(200).default(""),
+  policyLinks: z.array(privacyPolicyLinkSchema).max(10).default([]),
   recipients: z.array(z.string().trim().min(1).max(200)).max(30),
   transfers: z.string().trim().max(500),
   retention: z.string().trim().max(500),
@@ -42,6 +52,7 @@ export function missingPrivacyTreatmentFields(treatment: PrivacyTreatment): stri
     treatment.requirement === "undetermined" && "requirement",
     (!treatment.legalBasis || !treatment.legalBasisConfirmed) && "legalBasis",
     treatment.role === "undetermined" && "role",
+    !treatment.roleEntity && "roleEntity",
     !treatment.recipients.length && "recipients",
     !treatment.transfers && "transfers",
     !treatment.retention && "retention",

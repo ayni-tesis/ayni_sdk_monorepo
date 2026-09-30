@@ -1,5 +1,6 @@
 import { db } from "@ayni/db";
 import * as schema from "@ayni/db/schema/auth";
+import { AYNI_PRIVACY_NOTICE } from "@ayni/env/privacy-notice";
 import { env } from "@ayni/env/server";
 import { CURRENT_TERMS_VERSION, hasAcceptedCurrentTerms } from "@ayni/env/terms";
 import { betterAuth } from "better-auth";
@@ -44,6 +45,15 @@ async function recordCurrentTermsAcceptance(userId: string) {
   });
 }
 
+function ensureAyniPrivacyNoticeIsPublished() {
+  if (AYNI_PRIVACY_NOTICE.status !== "published") {
+    throw new APIError("SERVICE_UNAVAILABLE", {
+      message:
+        "El registro no está disponible mientras el aviso de privacidad de Ayni siga pendiente.",
+    });
+  }
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -56,6 +66,7 @@ export const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path === "/sign-up/email") ensureAyniPrivacyNoticeIsPublished();
       if (
         ctx.path === "/sign-up/email" &&
         !hasAcceptedCurrentTerms(ctx.body?.termsAcceptedVersion)
@@ -115,6 +126,7 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
+          ensureAyniPrivacyNoticeIsPublished();
           if (!hasAcceptedCurrentTerms(user.termsAcceptedVersion)) {
             throw new APIError("BAD_REQUEST", {
               message: "Debes aceptar los Términos y condiciones para crear tu cuenta.",

@@ -53,6 +53,8 @@ describe("US-151: Privacy treatment map", () => {
           legalBasis: "Base verificada",
           legalBasisConfirmed: true,
           role: "processor",
+          roleEntity: "Ayni S.A.C.",
+          policyLinks: [{ label: "Privacidad", url: "https://example.test/privacy" }],
           recipients: ["Ninguno"],
           transfers: "No aplica",
           retention: "30 días",
@@ -85,6 +87,12 @@ describe("US-151: Privacy treatment map", () => {
     });
     fireEvent.change(screen.getByLabelText("Rol de Ayni o de la aplicación"), {
       target: { value: "processor" },
+    });
+    fireEvent.change(screen.getByLabelText("Nombre de la entidad que declara el rol"), {
+      target: { value: "Ayni S.A.C." },
+    });
+    fireEvent.change(screen.getByLabelText("Políticas aplicables (una por línea: Nombre | URL)"), {
+      target: { value: "Privacidad | https://example.test/privacy" },
     });
     fireEvent.change(
       screen.getByLabelText("Base aplicable (déjala vacía si está por determinar)"),
@@ -152,6 +160,8 @@ describe("US-151: Privacy treatment map", () => {
               legalBasis: "",
               legalBasisConfirmed: false,
               role: "undetermined",
+              roleEntity: "",
+              policyLinks: [],
               recipients: [],
               transfers: "",
               retention: "",
@@ -170,7 +180,7 @@ describe("US-151: Privacy treatment map", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Pendiente: categorías de datos, titular de los datos, fuente, obligatoriedad, base aplicable confirmada, rol, destinatarios, transferencias, conservación, canal de derechos.",
+        "Pendiente: categorías de datos, titular de los datos, fuente, obligatoriedad, base aplicable confirmada, rol, nombre de la entidad responsable o encargada, destinatarios, transferencias, conservación, canal de derechos.",
       ),
     ).toBeTruthy();
   });
@@ -192,6 +202,8 @@ describe("US-151: Privacy treatment map", () => {
               legalBasis: "Base revisada",
               legalBasisConfirmed: true,
               role: "processor",
+              roleEntity: "Ayni S.A.C.",
+              policyLinks: [],
               recipients: ["Ninguno"],
               transfers: "No aplica",
               retention: "30 días",
