@@ -37,6 +37,8 @@ import {
 } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
 import { createModelsApp } from "./models";
+import { createPrivacyTreatmentMapApp } from "./privacy-treatment-map";
+import { getPrivacyTreatmentMap, updatePrivacyTreatmentMap } from "./privacy-treatment-map-store";
 import {
   createSdkCredential,
   listSdkCredentials,
@@ -639,6 +641,17 @@ app.route(
     getSession: (headers) => auth.api.getSession({ headers }),
     applications,
     telemetryPolicies,
+  }),
+);
+app.route(
+  "/",
+  createPrivacyTreatmentMapApp({
+    getSession: (headers) => auth.api.getSession({ headers }),
+    applications,
+    privacyMaps: {
+      get: (applicationId) => getPrivacyTreatmentMap(db, applicationId),
+      update: (input) => updatePrivacyTreatmentMap(db, input),
+    },
   }),
 );
 app.route(
