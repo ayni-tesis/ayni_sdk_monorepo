@@ -6,7 +6,43 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { organization } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+
+async function recordCurrentTermsAcceptance(userId: string) {
+  await db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ id: schema.user.id })
+      .from(schema.user)
+      .where(eq(schema.user.id, userId))
+      .for("update")
+      .limit(1);
+    if (!user) return;
+
+    const [existing] = await tx
+      .select({ id: schema.userTermsAcceptance.id })
+      .from(schema.userTermsAcceptance)
+      .where(
+        and(
+          eq(schema.userTermsAcceptance.userId, user.id),
+          eq(schema.userTermsAcceptance.version, CURRENT_TERMS_VERSION),
+        ),
+      )
+      .limit(1);
+    if (existing) return;
+
+    const acceptedAt = new Date();
+    await tx
+      .update(schema.user)
+      .set({ termsAcceptedVersion: CURRENT_TERMS_VERSION, termsAcceptedAt: acceptedAt })
+      .where(eq(schema.user.id, user.id));
+    await tx.insert(schema.userTermsAcceptance).values({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      version: CURRENT_TERMS_VERSION,
+      acceptedAt,
+    });
+  });
+}
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -30,13 +66,25 @@ export const auth = betterAuth({
       }
       if (ctx.path === "/sign-in/email" && typeof ctx.body?.email === "string") {
         const [existing] = await db
-          .select({ termsAcceptedVersion: schema.user.termsAcceptedVersion })
+          .select({ id: schema.user.id, termsAcceptedVersion: schema.user.termsAcceptedVersion })
           .from(schema.user)
           .where(eq(schema.user.email, ctx.body.email.toLowerCase()))
           .limit(1);
+        const [acceptance] = existing
+          ? await db
+              .select({ id: schema.userTermsAcceptance.id })
+              .from(schema.userTermsAcceptance)
+              .where(
+                and(
+                  eq(schema.userTermsAcceptance.userId, existing.id),
+                  eq(schema.userTermsAcceptance.version, CURRENT_TERMS_VERSION),
+                ),
+              )
+              .limit(1)
+          : [];
         if (
           existing &&
-          existing.termsAcceptedVersion !== CURRENT_TERMS_VERSION &&
+          (!acceptance || existing.termsAcceptedVersion !== CURRENT_TERMS_VERSION) &&
           !hasAcceptedCurrentTerms(ctx.body.termsAcceptedVersion)
         ) {
           throw new APIError("UNAUTHORIZED", {
@@ -50,12 +98,12 @@ export const auth = betterAuth({
       if (
         ctx.path === "/sign-in/email" &&
         hasAcceptedCurrentTerms(ctx.body?.termsAcceptedVersion) &&
-        typeof ctx.body?.email === "string"
+        typeof ctx.body?.email === "string" &&
+        !(ctx.context.returned instanceof APIError) &&
+        ctx.context.returned
       ) {
-        await db
-          .update(schema.user)
-          .set({ termsAcceptedVersion: CURRENT_TERMS_VERSION, termsAcceptedAt: new Date() })
-          .where(eq(schema.user.email, ctx.body.email.toLowerCase()));
+        const result = ctx.context.returned as { user?: { id?: unknown } };
+        if (typeof result.user?.id === "string") await recordCurrentTermsAcceptance(result.user.id);
       }
     }),
   },
@@ -75,6 +123,10 @@ export const auth = betterAuth({
             });
           }
           return { data: { ...user, termsAcceptedAt: new Date() } };
+        },
+        after: async (user) => {
+          if (!hasAcceptedCurrentTerms(user.termsAcceptedVersion)) return;
+          await recordCurrentTermsAcceptance(user.id);
         },
       },
     },

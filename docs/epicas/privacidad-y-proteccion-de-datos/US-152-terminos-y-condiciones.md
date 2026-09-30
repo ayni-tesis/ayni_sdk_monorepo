@@ -54,6 +54,6 @@ Scenario: Intentar crear una cuenta sin aceptar
 
 ## Implementación
 
-La versión `1.0.0` se muestra en `/terms/1.0.0`. El formulario de registro envía esa versión solo tras marcar la casilla; Better Auth valida nuevamente la versión y guarda la aceptación y su fecha en el registro de usuario. Al cambiar la versión del producto, el siguiente inicio de sesión solicita una aceptación afirmativa antes de iniciar sesión y conserva la página de términos anterior.
+La versión `1.0.0` se muestra en `/terms/1.0.0`. El formulario de registro envía esa versión solo tras marcar la casilla; Better Auth valida nuevamente la versión y guarda la versión y fecha más recientes en el usuario, además de una fila histórica por cada versión aceptada. Al cambiar la versión del producto, las sesiones existentes dejan de acceder al dashboard, sus API y las operaciones de organización hasta que la persona acepta la versión nueva al iniciar sesión; se conserva el historial de aceptaciones y la página de términos anterior.
 
 El texto publicado actualmente es un borrador de producto. Se requiere revisión legal antes de su puesta en producción; la implementación no afirma cumplimiento normativo.

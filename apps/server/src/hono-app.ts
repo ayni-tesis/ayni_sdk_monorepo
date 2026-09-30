@@ -2,8 +2,16 @@ import { createHash } from "node:crypto";
 import { createOpenApiDocument } from "@ayni/api";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
-import { application, invitationLink, member, organization, user } from "@ayni/db/schema/index";
+import {
+  application,
+  invitationLink,
+  member,
+  organization,
+  user,
+  userTermsAcceptance,
+} from "@ayni/db/schema/index";
 import { env } from "@ayni/env/server";
+import { hasAcceptedCurrentTerms } from "@ayni/env/terms";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
@@ -80,6 +88,28 @@ import { createWorkflowsApp } from "./workflows";
 import { createWorkspacesApp, type WorkspaceItem } from "./workspaces";
 
 export { toApplication };
+
+const hasCurrentTermsAcceptance = async (userId: string, version: unknown) => {
+  if (typeof version !== "string" || !hasAcceptedCurrentTerms(version)) return false;
+  const [acceptance] = await db
+    .select({ id: userTermsAcceptance.id })
+    .from(userTermsAcceptance)
+    .where(
+      and(
+        eq(userTermsAcceptance.userId, userId),
+        eq(userTermsAcceptance.version, version),
+      ),
+    )
+    .limit(1);
+  return Boolean(acceptance);
+};
+
+const getCurrentTermsSession = async (headers: Headers) => {
+  const session = await auth.api.getSession({ headers });
+  return session && (await hasCurrentTermsAcceptance(session.user.id, session.user.termsAcceptedVersion))
+    ? session
+    : null;
+};
 
 const applications = {
   async getMembership(userId: string, organizationId: string) {
@@ -603,39 +633,57 @@ app.use(
   }),
 );
 
+app.use("/api/auth/*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  if (
+    (c.req.method === "GET" && path === "/api/auth/get-session") ||
+    (c.req.method === "POST" &&
+      ["/api/auth/sign-in/email", "/api/auth/sign-out"].includes(path))
+  ) {
+    return next();
+  }
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (
+    session &&
+    !(await hasCurrentTermsAcceptance(session.user.id, session.user.termsAcceptedVersion))
+  ) {
+    return c.json({ message: "Debes aceptar los términos vigentes para continuar." }, 401);
+  }
+  return next();
+});
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route(
   "/",
   createApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
   }),
 );
 app.route(
   "/",
   createWorkspacesApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     workspaces,
   }),
 );
 app.route(
   "/",
   createMembersApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     members,
   }),
 );
 app.route(
   "/",
   createInvitationsApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     invitations,
   }),
 );
 app.route(
   "/",
   createSdkCredentialsApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     credentials: sdkCredentials,
   }),
@@ -643,7 +691,7 @@ app.route(
 app.route(
   "/",
   createTelemetryPolicyApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     telemetryPolicies,
   }),
@@ -651,7 +699,7 @@ app.route(
 app.route(
   "/",
   createPrivacyTreatmentMapApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     privacyMaps: {
       get: (applicationId) => getPrivacyTreatmentMap(db, applicationId),
@@ -664,7 +712,7 @@ app.route(
 app.route(
   "/",
   createCollectionPolicyApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     collectionPolicies,
   }),
@@ -672,7 +720,7 @@ app.route(
 app.route(
   "/",
   createModelsApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     models,
   }),
@@ -680,7 +728,7 @@ app.route(
 app.route(
   "/",
   createModelVersionsApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     modelVersions,
   }),
@@ -688,7 +736,7 @@ app.route(
 app.route(
   "/",
   createWorkflowsApp({
-    getSession: (headers) => auth.api.getSession({ headers }),
+    getSession: getCurrentTermsSession,
     applications,
     workflows,
   }),
