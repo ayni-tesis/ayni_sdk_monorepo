@@ -45,21 +45,21 @@ describe("SignInForm", () => {
   });
 
   it("redirects to the next parameter after signing in", async () => {
-    window.history.replaceState({}, "", "/login?next=%2Fjoin%3Ftoken%3Dtok-1");
+    window.history.replaceState({}, "", "/sign-in?next=%2Fjoin%3Ftoken%3Dtok-1");
     render(<SignInForm onSwitchToSignUp={vi.fn()} />);
     await submitForm();
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/join?token=tok-1"));
   });
 
   it("redirects to the dashboard when there is no next parameter", async () => {
-    window.history.replaceState({}, "", "/login");
+    window.history.replaceState({}, "", "/sign-in");
     render(<SignInForm onSwitchToSignUp={vi.fn()} />);
     await submitForm();
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
   });
 
   it("ignores external next targets", async () => {
-    window.history.replaceState({}, "", "/login?next=%2F%2Fevil.com");
+    window.history.replaceState({}, "", "/sign-in?next=%2F%2Fevil.com");
     render(<SignInForm onSwitchToSignUp={vi.fn()} />);
     await submitForm();
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));

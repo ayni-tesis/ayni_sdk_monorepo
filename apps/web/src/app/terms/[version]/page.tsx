@@ -36,8 +36,17 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
       </p>
       <h2 className="font-semibold text-xl">Contacto</h2>
       <p>
-        Para consultas sobre estas condiciones, contacta al equipo de Ayni por el canal de soporte
-        de tu organización.
+        Ayni es un proyecto de tesis. Para consultas sobre estas condiciones, escribe al equipo de
+        tesis a{" "}
+        <a className="underline" href="mailto:U202219315@upc.edu.pe">
+          U202219315@upc.edu.pe
+        </a>{" "}
+        o{" "}
+        <a className="underline" href="mailto:U20221A715@upc.edu.pe">
+          U20221A715@upc.edu.pe
+        </a>
+        . Estos correos son canales de contacto del equipo de tesis y no implican que la UPC sea
+        responsable de la plataforma o del tratamiento de datos.
       </p>
       <p className="border-t pt-4 text-muted-foreground text-sm">
         Borrador sujeto a validación legal antes de su puesta en producción.

@@ -14,11 +14,11 @@ Navegación principal, acciones de introducción y pie de página en `/`.
 
 ### Elementos y texto visible
 
-- Acción de registro: `Crear un workspace`, destino `/register`.
+- Acción de registro: `Crear un workspace`, destino `/sign-up`.
 - Acción de dashboard: `Ir al dashboard`, destino `/dashboard`.
 - La navegación y el pie de página ofrecen destinos equivalentes con etiquetas claras en español.
 
-**Estado actual:** los enlaces a `/register` y `/dashboard` ya existen, con etiquetas en inglés.
+**Estado actual:** los enlaces a `/sign-up` y `/dashboard` ya existen, con etiquetas en inglés.
 
 ### Estados y mensajes
 
@@ -31,7 +31,7 @@ Navegación principal, acciones de introducción y pie de página en `/`.
 Scenario: Ir al registro
   Given que estoy en la página inicial
   When activo “Crear un workspace”
-  Then navego a /register
+  Then navego a /sign-up
 ```
 
 ```gherkin
@@ -54,5 +54,5 @@ Scenario: Mantener destinos explícitos
 ## Criterios de aceptación
 
 - Las acciones están disponibles y etiquetadas en español.
-- El registro dirige a `/register` y el dashboard a `/dashboard`.
+- El registro dirige a `/sign-up` y el dashboard a `/dashboard`.
 - Las acciones son enlaces navegables y utilizables con teclado.

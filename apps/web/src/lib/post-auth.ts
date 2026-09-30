@@ -15,7 +15,7 @@ export function getBrowserPostAuthRedirect(): Route {
   return getSafePostAuthRedirect(window.location.search);
 }
 
-export function joinLoginRedirect(token?: string): Route {
+export function joinSignInRedirect(token?: string): Route {
   const next = token ? `/join?token=${encodeURIComponent(token)}` : "/join";
-  return `/login?next=${encodeURIComponent(next)}` as Route;
+  return `/sign-in?next=${encodeURIComponent(next)}` as Route;
 }

@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
-import { joinLoginRedirect } from "@/lib/post-auth";
+import { joinSignInRedirect } from "@/lib/post-auth";
 
 import JoinInvitation from "./join";
 
@@ -21,7 +21,7 @@ export default async function JoinPage({
   });
 
   if (!session?.user) {
-    redirect(joinLoginRedirect(token));
+    redirect(joinSignInRedirect(token));
   }
 
   return <JoinInvitation token={token ?? ""} userName={session.user.name} />;

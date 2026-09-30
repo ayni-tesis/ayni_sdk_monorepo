@@ -22,15 +22,23 @@ export default async function AyniPrivacyNoticePage({
       <p>Versión {version} · Fecha de vigencia pendiente de revisión legal</p>
       <p role="status" className="rounded-md border border-amber-500 p-4 text-sm">
         Borrador de producto. No usar como aviso legal vigente hasta completar la identidad del
-        responsable, el canal para ejercer derechos, los destinatarios, la conservación y la
-        revisión legal.
+        responsable, los destinatarios, la conservación y la revisión legal.
       </p>
 
       <section className="space-y-2">
         <h2 className="font-semibold text-xl">Responsable y contacto</h2>
         <p>
-          La persona jurídica responsable y el canal para consultas o ejercicio de derechos están
-          pendientes de confirmación. Ayni no completa esos datos por inferencia.
+          Ayni es un proyecto de tesis. Para consultas sobre privacidad o para presentar solicitudes
+          relacionadas con tus datos, puedes escribir al equipo de tesis a{" "}
+          <a className="underline" href="mailto:U202219315@upc.edu.pe">
+            U202219315@upc.edu.pe
+          </a>{" "}
+          o{" "}
+          <a className="underline" href="mailto:U20221A715@upc.edu.pe">
+            U20221A715@upc.edu.pe
+          </a>
+          . La identidad de la persona responsable del tratamiento aún debe confirmarse; estos
+          correos no implican que la UPC sea responsable del tratamiento.
         </p>
       </section>
 
@@ -52,9 +60,10 @@ export default async function AyniPrivacyNoticePage({
       <section className="space-y-2">
         <h2 className="font-semibold text-xl">Información pendiente de confirmar</h2>
         <p>
-          Antes de publicar este aviso como vigente, Ayni debe confirmar las categorías completas,
-          los campos obligatorios y opcionales, los proveedores y destinatarios, las transferencias,
-          los plazos de conservación y el canal para ejercer derechos.
+          Antes de publicar este aviso como vigente, el equipo debe confirmar la identidad de la
+          persona responsable, las categorías completas, los campos obligatorios y opcionales, los
+          proveedores y destinatarios, las transferencias, los plazos de conservación y la revisión
+          legal.
         </p>
       </section>
 
@@ -65,7 +74,7 @@ export default async function AyniPrivacyNoticePage({
         </Link>{" "}
         y no registra consentimiento.
       </p>
-      <Link className="text-primary underline underline-offset-4" href="/register">
+      <Link className="text-primary underline underline-offset-4" href="/sign-up">
         Volver al registro
       </Link>
     </main>
