@@ -673,7 +673,9 @@ class AyniSdk {
 
   final String _credential;
   final Map<String, _ActiveExecution> _activeExecutions = {};
-  late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(storageDirectory);
+  late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(
+    storageDirectory,
+  );
   Future<void> _consentWork = Future<void>.value();
 
   /// Requests cancellation of an active execution.
@@ -936,11 +938,19 @@ class AyniSdk {
     required String noticeVersion,
   }) {
     if (!_isRandomUuidV4(subjectId)) {
-      throw ArgumentError.value(subjectId, 'subjectId', 'Debe ser un UUID v4 opaco y aleatorio.');
+      throw ArgumentError.value(
+        subjectId,
+        'subjectId',
+        'Debe ser un UUID v4 opaco y aleatorio.',
+      );
     }
     final version = noticeVersion.trim();
     if (version.isEmpty || version.length > 128) {
-      throw ArgumentError.value(noticeVersion, 'noticeVersion', 'Debe identificar el aviso mostrado.');
+      throw ArgumentError.value(
+        noticeVersion,
+        'noticeVersion',
+        'Debe identificar el aviso mostrado.',
+      );
     }
     return _serializeConsentWork(() async {
       final receipt = ConsentReceipt(
@@ -994,7 +1004,9 @@ class AyniSdk {
     final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
@@ -1002,7 +1014,10 @@ class AyniSdk {
   Future<T> _serializeConsentWork<T>(Future<T> Function() operation) {
     final previous = _consentWork;
     final result = previous.then((_) => operation());
-    _consentWork = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _consentWork = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
     return result;
   }
 

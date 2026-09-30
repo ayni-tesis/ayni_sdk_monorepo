@@ -101,10 +101,12 @@ describe("Datos y privacidad (US-147)", () => {
     expect(page.includes("\n## Datos opcionales\n")).toBe(optional.length > 0);
   });
 
-  it("states what the SDK does not do while requests carry no body and no header but the credential", () => {
+  it("states what the SDK does not do while only consent receipts carry a body", () => {
     const doesNot = section("## Lo que el SDK no hace");
 
-    expect(requests.filter((request) => request.sendsBody)).toEqual([]);
+    expect(
+      requests.filter((request) => request.sendsBody).map((request) => request.target),
+    ).toEqual(["/sdk/consents"]);
     expect(
       requests.flatMap(({ headers }) =>
         headers.filter((header) => header !== "HttpHeaders.authorizationHeader"),

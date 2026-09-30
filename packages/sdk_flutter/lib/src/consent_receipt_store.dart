@@ -1,3 +1,5 @@
+// ignore_for_file: public_member_api_docs
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -37,9 +39,15 @@ class ConsentReceipt {
     final decisionValue = value['decision'];
     final noticeVersion = value['noticeVersion'];
     final decidedAtValue = value['decidedAt'];
-    final purpose = ConsentPurpose.values.where((item) => item.wireValue == purposeValue);
-    final decision = ConsentDecision.values.where((item) => item.name == decisionValue);
-    final decidedAt = decidedAtValue is String ? DateTime.tryParse(decidedAtValue) : null;
+    final purpose = ConsentPurpose.values.where(
+      (item) => item.wireValue == purposeValue,
+    );
+    final decision = ConsentDecision.values.where(
+      (item) => item.name == decisionValue,
+    );
+    final decidedAt = decidedAtValue is String
+        ? DateTime.tryParse(decidedAtValue)
+        : null;
     if (receiptId is! String ||
         subjectId is! String ||
         purpose.isEmpty ||
@@ -61,14 +69,17 @@ class ConsentReceipt {
 
 class ConsentReceiptStore {
   ConsentReceiptStore(Directory directory)
-    : _file = File('${directory.path}${Platform.pathSeparator}consent-receipts.json');
+    : _file = File(
+        '${directory.path}${Platform.pathSeparator}consent-receipts.json',
+      );
 
   final File _file;
 
   Future<List<ConsentReceipt>> pending() async {
     if (!await _file.exists()) return [];
     final decoded = jsonDecode(await _file.readAsString());
-    if (decoded is! List) throw const FormatException('Invalid consent receipt queue');
+    if (decoded is! List)
+      throw const FormatException('Invalid consent receipt queue');
     final receipts = decoded.map(ConsentReceipt.fromJson).toList();
     if (receipts.any((receipt) => receipt == null)) {
       throw const FormatException('Invalid consent receipt queue');

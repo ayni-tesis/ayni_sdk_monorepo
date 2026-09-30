@@ -121,13 +121,21 @@ describe("Estados y errores (US-146)", () => {
 
     expect(rows.map((row) => (row[0] ?? "").replace(/`/g, ""))).toEqual(sdkErrorCodes());
     expect(sdkErrorCodes()).toEqual([
+      "invalidConsent",
       "invalidCredential",
       "credentialRevoked",
+      "consentReceiptConflict",
+      "privacyNoticeUnavailable",
       "workflowVersionNotFound",
       "modelVersionNotFound",
     ]);
     for (const row of rows) {
-      expect(row.at(-1), row[0]).toContain("`SyncStatus.error`");
+      const code = (row[0] ?? "").replace(/`/g, "");
+      expect(row.at(-1), row[0]).toContain(
+        ["invalidConsent", "consentReceiptConflict", "privacyNoticeUnavailable"].includes(code)
+          ? "`ConsentStatus.pending`"
+          : "`SyncStatus.error`",
+      );
     }
   });
 
