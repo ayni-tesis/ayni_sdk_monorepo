@@ -141,11 +141,11 @@ export function AppSidebar({
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={activeView === "privacy"}
-                    tooltip="Privacidad y telemetría"
+                    tooltip="Privacidad y datos"
                     onClick={() => onViewChange?.("privacy")}
                   >
                     <IconShieldLock />
-                    <span>Privacidad y telemetría</span>
+                    <span>Privacidad y datos</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
