@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart';
+import 'package:ayni_sdk/src/consent_receipt_store.dart';
 import 'package:ayni_sdk/src/model_artifact_installer.dart';
 import 'package:ayni_sdk/src/sdk_internal.dart';
 import 'package:ayni_sdk/src/workflow_version_downloader.dart';
@@ -153,6 +154,7 @@ void main() {
 
   tearDown(() async {
     AyniSdk.resetForTesting();
+    ConsentReceiptStore.beforeRemoveForTesting = null;
     await server.close(force: true);
     await artifactServer.close(force: true);
     await storageDirectory.delete(recursive: true);

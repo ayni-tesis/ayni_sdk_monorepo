@@ -68,7 +68,7 @@ class ConsentReceipt {
 }
 
 class ConsentReceiptStore {
-  ConsentReceiptStore(Directory directory, {this.beforeRemove})
+  ConsentReceiptStore(Directory directory)
     : _file = File(
         '${directory.path}${Platform.pathSeparator}consent-receipts.json',
       );
@@ -76,9 +76,9 @@ class ConsentReceiptStore {
   // ponytail: one lock serializes mutations across directories; use
   // per-directory locks if contention matters.
   static Future<void> _work = Future<void>.value();
+  static Future<void> Function()? beforeRemoveForTesting;
 
   final File _file;
-  final Future<void> Function()? beforeRemove;
 
   Future<List<ConsentReceipt>> pending() async {
     if (!await _file.exists()) return [];
@@ -102,7 +102,7 @@ class ConsentReceiptStore {
 
   Future<void> remove(String receiptId) async {
     await _serialize(() async {
-      await beforeRemove?.call();
+      await beforeRemoveForTesting?.call();
       final receipts = await pending();
       receipts.removeWhere((receipt) => receipt.receiptId == receiptId);
       if (receipts.isEmpty && await _file.exists()) {

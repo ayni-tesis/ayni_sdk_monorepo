@@ -664,7 +664,6 @@ class AyniSdk {
   /// Runs right before the inventory is saved; it exists for the SDK's tests,
   /// which attach it through [createAyniSdkForTesting].
   Future<void> Function()? _onBeforeInventoryPersist;
-  Future<void> Function()? _onBeforeConsentReceiptRemoval;
 
   /// Reports SDK activity, including `Descargando workflow <nombre>…`.
   ///
@@ -676,7 +675,6 @@ class AyniSdk {
   final Map<String, _ActiveExecution> _activeExecutions = {};
   late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(
     storageDirectory,
-    beforeRemove: _onBeforeConsentReceiptRemoval,
   );
   Future<void> _consentWork = Future<void>.value();
 
@@ -1898,7 +1896,7 @@ AyniSdk createAyniSdkForTesting({
     onProgress: onProgress,
   );
   sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
-  sdk._onBeforeConsentReceiptRemoval = onBeforeConsentReceiptRemoval;
+  ConsentReceiptStore.beforeRemoveForTesting = onBeforeConsentReceiptRemoval;
   sdk._onWorkflowDownload = onWorkflowDownload;
   if (workflowVersionDownloader != null) {
     sdk._workflowVersionDownloader = workflowVersionDownloader;
