@@ -114,8 +114,10 @@ plataformas iniciales soportadas.
 | Empaquetado y distribución del SDK | US-089–US-099 | `epicas/empaquetado-distribucion-sdk` |
 | Observabilidad, telemetría y diagnóstico | US-100–US-113 | `epicas/observabilidad-telemetria-diagnostico` |
 | Página inicial para desarrolladores | US-133–US-136 | `epicas/pagina-inicial-ayni` |
+| Documentación del SDK | US-137–US-150 | `epicas/documentacion-sdk` |
+| Privacidad y protección de datos personales | US-151–US-157 | `epicas/privacidad-proteccion-datos` |
 
-Total: **136 historias de usuario**.
+Total: **157 historias de usuario**.
 
 ## Límites actuales
 
