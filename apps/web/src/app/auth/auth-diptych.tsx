@@ -504,10 +504,9 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Acepto los Términos y condiciones ({CURRENT_TERMS_VERSION}) y declaro
-                          tener 18 años o más.
-                        </a>
-                        .
+                          Términos y condiciones ({CURRENT_TERMS_VERSION})
+                        </a>{" "}
+                        y declaro tener 18 años o más.
                       </span>
                     </label>
                     {field.state.meta.errors.map((error) => (

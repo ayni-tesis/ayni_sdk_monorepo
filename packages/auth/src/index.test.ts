@@ -12,7 +12,7 @@ vi.hoisted(() => {
 
 import { auth } from "./index";
 
-describe("account privacy notice gate", () => {
+describe("account terms acceptance", () => {
   let response: Response;
 
   beforeAll(async () => {
@@ -30,11 +30,10 @@ describe("account privacy notice gate", () => {
     );
   });
 
-  it("rejects direct account creation until the Ayni notice is published", async () => {
-    expect(response.status).toBe(503);
+  it("requires current terms acceptance after the Ayni notice is published", async () => {
+    expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({
-      message:
-        "El registro no está disponible mientras el aviso de privacidad de Ayni siga pendiente.",
+      message: "Debes aceptar los Términos y condiciones para crear tu cuenta.",
     });
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { pushMock, signInEmailMock, toastMock } = vi.hoisted(() => ({
@@ -47,12 +47,12 @@ describe("AuthDiptych", () => {
     expect(pushMock).toHaveBeenCalledWith("/sign-up");
   });
 
-  it("renders in sign-up mode and shows privacy draft notice or registration form", () => {
+  it("renders the sign-up form after the privacy notice is published", () => {
     render(<AuthDiptych initialMode="sign-up" />);
 
     expect(screen.getByRole("heading", { name: /crea tu cuenta/i })).toBeTruthy();
-    // In test environment, AYNI_PRIVACY_NOTICE is draft:
-    expect(screen.getByText(/registro temporalmente no disponible/i)).toBeTruthy();
+    expect(screen.getByLabelText(/correo electrónico/i)).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /términos y condiciones/i })).toBeTruthy();
   });
 
   it("switches to sign-in mode when clicking the sign-in tab from sign-up", () => {
