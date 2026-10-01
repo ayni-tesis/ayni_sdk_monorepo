@@ -16,7 +16,7 @@ todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por e
 
 | Requisito | Valor |
 | --- | --- |
-| Paquete | `ayni_sdk` `0.1.0-beta.1` (prelanzamiento para pruebas piloto) |
+| Paquete | `ayni_sdk` `0.1.0` (estable) |
 | Dart | `>=3.8.0 <4.0.0` |
 | Flutter | Una versión que incluya Dart 3.8 o superior. El SDK depende de `tflite_flutter`, un plugin de Flutter. |
 | Dependencias | `crypto`, `ffi`, `image` y `tflite_flutter`. Se instalan junto con el paquete. |
@@ -25,11 +25,11 @@ todos los parámetros de `AyniSdk`. Si es tu primera integración, empieza por e
 ## Instalar
 
 Puedes ver el paquete y sus versiones en [pub.dev](https://pub.dev/packages/ayni_sdk).
-Para instalar la versión preliminar, agrega al `pubspec.yaml` de tu app:
+Agrega al `pubspec.yaml` de tu app:
 
 ```yaml title="pubspec.yaml"
 dependencies:
-  ayni_sdk: ^0.1.0-beta.1
+  ayni_sdk: ^0.1.0
 ```
 
 También puedes instalarlo desde Git o desde una copia local:
@@ -192,6 +192,26 @@ Requisitos de Android en `android/app/build.gradle`:
 
 - **Versión mínima admitida:** Android 8.0 (API 26) o posterior. Configurar `minSdkVersion 26` (o `minSdk = 26`) es una decisión de tu aplicación: si tu app no exige `minSdkVersion 26` a nivel global para admitir dispositivos antiguos en otras funciones, la inicialización del SDK se encarga de rechazar la ejecución de modelos en ellos; si decides excluir directamente esos dispositivos con `minSdkVersion 26`, el sistema operativo impedirá su instalación y `unsupportedPlatform` no será alcanzable en instalaciones normales.
 - **Versión de compilación:** Compila con `compileSdkVersion 36` (o `compileSdk = 36`), requerida por `tflite_flutter`.
+
+Con Flutter 3.44 y `tflite_flutter` 0.12.1, el subproyecto del plugin declara
+Java 11 mientras Kotlin compila a Java 17. Alinea sus tareas Java en
+`android/build.gradle.kts` para que Gradle pueda compilar la app:
+
+```kotlin
+gradle.projectsEvaluated {
+    rootProject.subprojects
+        .filter { it.name == "tflite_flutter" }
+        .forEach { plugin ->
+            plugin.tasks.withType<JavaCompile>().configureEach {
+                sourceCompatibility = JavaVersion.VERSION_17.toString()
+                targetCompatibility = JavaVersion.VERSION_17.toString()
+            }
+        }
+}
+```
+
+Este ajuste deja de ser necesario cuando `tflite_flutter` alinee ambos
+targets.
 
 Al compilar la app para una versión Android compatible, el runtime nativo queda disponible para el SDK: `Runtime Android listo.`.
 

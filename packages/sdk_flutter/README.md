@@ -12,7 +12,7 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.1.0-beta.1
+  ayni_sdk: ^0.1.0
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -27,7 +27,8 @@ de compilar: `No se pudo resolver la versión solicitada de ayni_sdk.` La app
 consumidora de referencia está en `example/app` y fija la versión resuelta en
 su `pubspec.lock`.
 
-Esta versión es para pruebas piloto y puede cambiar.
+Consulta las notas de cada versión en el
+[changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
 
 ## API Pública
 
@@ -186,7 +187,7 @@ La cancelación detiene los nodos pendientes después de que termine una inferen
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.1.0-beta.1: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.
@@ -198,6 +199,22 @@ Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Cons
 El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en Android a través de `tflite_flutter`.
 
 - Configura `minSdkVersion 26` (Android 8.0) y `compileSdkVersion 36` en `android/app/build.gradle`.
+- Con Flutter 3.44 y `tflite_flutter` 0.12.1, alinea el target Java del subproyecto Android de `tflite_flutter` con Kotlin 17 en `android/build.gradle.kts`:
+
+  ```kotlin
+  gradle.projectsEvaluated {
+      rootProject.subprojects
+          .filter { it.name == "tflite_flutter" }
+          .forEach { plugin ->
+              plugin.tasks.withType<JavaCompile>().configureEach {
+                  sourceCompatibility = JavaVersion.VERSION_17.toString()
+                  targetCompatibility = JavaVersion.VERSION_17.toString()
+              }
+          }
+  }
+  ```
+
+  Este ajuste deja de ser necesario cuando `tflite_flutter` alinee ambos targets.
 - La compilación correcta indica `Runtime Android listo.`.
 - Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API < 26), `AyniSdk.initialize` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` antes de intentar cargar cualquier modelo.
 - La configuración no requiere modificar el código del workflow.

@@ -1,3 +1,15 @@
+## 0.1.0 - 2026-10-01
+
+Primera versión estable de `ayni_sdk`.
+
+### Novedades
+
+- API pública para inicializar el SDK, sincronizar recursos y ejecutar workflows
+  localmente en Android e iOS.
+- Verificación de integridad de modelos y validación de workflows antes de
+  instalarlos.
+- Conservación de los recursos locales válidos cuando una actualización falla.
+
 ## 0.1.0-beta.1 - 2026-09-28
 
 Esta versión es para pruebas piloto y puede cambiar.

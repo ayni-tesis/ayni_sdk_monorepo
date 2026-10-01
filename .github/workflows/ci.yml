@@ -91,6 +91,10 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart pub get
 
+      - name: Verify SDK publish archive
+        working-directory: packages/sdk_flutter
+        run: dart pub publish --dry-run
+
       - name: Resolve SDK example app dependencies
         working-directory: packages/sdk_flutter/example/app
         run: flutter pub get
@@ -137,3 +141,68 @@ jobs:
       - name: Test Android demo app
         working-directory: apps/native
         run: flutter test
+
+  sdk-release-platforms:
+    name: SDK release build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-latest
+          - platform: ios
+            os: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Create SDK consumer app
+        run: |
+          flutter create --platforms=${{ matrix.platform }} \
+            --project-name ayni_sdk_release_check \
+            release-check-app
+
+      - name: Add SDK from this release commit
+        working-directory: release-check-app
+        run: |
+          flutter pub add "ayni_sdk@{path: $GITHUB_WORKSPACE/packages/sdk_flutter}"
+
+      - name: Align tflite_flutter Android JVM targets
+        if: matrix.platform == 'android'
+        working-directory: release-check-app
+        run: |
+          cat >> android/build.gradle.kts <<'EOF'
+          gradle.projectsEvaluated {
+              rootProject.subprojects
+                  .filter { it.name == "tflite_flutter" }
+                  .forEach { plugin ->
+                      plugin.tasks.withType<JavaCompile>().configureEach {
+                          sourceCompatibility = JavaVersion.VERSION_17.toString()
+                          targetCompatibility = JavaVersion.VERSION_17.toString()
+                      }
+                  }
+          }
+          EOF
+
+      - name: Build Android app
+        if: matrix.platform == 'android'
+        working-directory: release-check-app
+        run: |
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' android/app/build.gradle.kts
+          flutter build apk --debug
+
+      - name: Build iOS app
+        if: matrix.platform == 'ios'
+        working-directory: release-check-app
+        run: |
+          sed -i '' "s/# platform :ios, '.*'/platform :ios, '11.0'/" ios/Podfile
+          flutter build ios --no-codesign --debug
