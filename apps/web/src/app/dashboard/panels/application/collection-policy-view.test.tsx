@@ -89,8 +89,8 @@ describe("US-063: Configurar la política de recolección", () => {
       "/applications/app-1/collection-policy",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(screen.getByRole("heading", { name: "Privacidad y recolección" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Recolección de evidencia" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Política de captura" })).toBeTruthy();
     expect(toggle().checked).toBe(false);
     expect(consent().checked).toBe(false);
     expect(network().value).toBe("wifi");
@@ -276,7 +276,7 @@ describe("US-063: Configurar la política de recolección", () => {
     expect(client.get).toHaveBeenCalledTimes(2);
   });
 
-  it("is the application's Privacidad y recolección section", async () => {
+  it("is the application's Recolección de evidencia section", async () => {
     render(
       <ApplicationDetailPanel
         application={activeApp}

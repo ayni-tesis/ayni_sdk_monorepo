@@ -154,11 +154,11 @@ export function AppSidebar({
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={activeView === "collection"}
-                    tooltip="Privacidad y recolección"
+                    tooltip="Recolección de evidencia"
                     onClick={() => onViewChange?.("collection")}
                   >
                     <IconPhotoShield />
-                    <span>Privacidad y recolección</span>
+                    <span>Recolección de evidencia</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
