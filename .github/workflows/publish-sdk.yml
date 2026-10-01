@@ -43,6 +43,10 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart pub get
 
+      - name: Resolve SDK example app dependencies
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter pub get
+
       - name: Analyze package
         working-directory: packages/sdk_flutter
         run: dart analyze
