@@ -97,12 +97,13 @@ void main() {
             );
             if (stallConsentResponse) {
               unawaited(
-                Future<void>.delayed(const Duration(milliseconds: 500))
-                    .then((_) async {
-                      try {
-                        await request.response.close();
-                      } on HttpException {}
-                    }),
+                Future<void>.delayed(const Duration(milliseconds: 500)).then((
+                  _,
+                ) async {
+                  try {
+                    await request.response.close();
+                  } on HttpException {}
+                }),
               );
               return;
             }
@@ -357,11 +358,13 @@ void main() {
           ),
         ]);
 
-        final receipts = jsonDecode(
-          await File(
-            '${storageDirectory.path}${Platform.pathSeparator}consent-receipts.json',
-          ).readAsString(),
-        ) as List;
+        final receipts =
+            jsonDecode(
+                  await File(
+                    '${storageDirectory.path}${Platform.pathSeparator}consent-receipts.json',
+                  ).readAsString(),
+                )
+                as List;
         expect(receipts, hasLength(2));
       },
     );

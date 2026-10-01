@@ -18,8 +18,8 @@ const quotedLines = 40;
 
 /** Runs `program` in `cwd`; `output` joins its stdout and stderr. */
 function execute(cwd: string, program: string, args: string[]) {
-  // On Windows `dart` is a `.bat` file, which only a shell can run.
-  const shell = process.platform === "win32" && program === "dart";
+  // On Windows `dart` and `flutter` are `.bat` files, which need a shell.
+  const shell = process.platform === "win32" && ["dart", "flutter"].includes(program);
   const options = { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 } as const;
   const result = shell
     ? spawnSync([program, ...args].join(" "), { ...options, shell: true })
@@ -53,6 +53,11 @@ const checks: Check[] = [
     run: async () => {
       const dependencies = execute(sdk, "dart", ["pub", "get"]);
       if (!dependencies.ok) return failure("dart pub get", dependencies.output);
+      const exampleApp = join(sdk, "example", "app");
+      const appDependencies = execute(exampleApp, "flutter", ["pub", "get"]);
+      if (!appDependencies.ok) {
+        return failure("flutter pub get (example/app)", appDependencies.output);
+      }
       const analysis = execute(sdk, "dart", ["analyze", "--format=machine", "example"]);
       if (analysis.ok) return [];
       const problems = analyzerFailures(analysis.output, {

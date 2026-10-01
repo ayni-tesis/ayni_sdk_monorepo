@@ -91,6 +91,10 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart pub get
 
+      - name: Resolve SDK example app dependencies
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter pub get
+
       - name: Analyze SDK package
         working-directory: packages/sdk_flutter
         run: dart analyze
@@ -98,6 +102,14 @@ jobs:
       - name: Test SDK package
         working-directory: packages/sdk_flutter
         run: dart test
+
+      - name: Analyze SDK example app
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter analyze
+
+      - name: Test SDK example app
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter test
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

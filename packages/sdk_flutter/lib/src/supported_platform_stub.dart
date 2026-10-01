@@ -93,4 +93,3 @@ bool get isSupported {
   if (_testIsAndroid == false && _testIsIos == false) return false;
   return true;
 }
-

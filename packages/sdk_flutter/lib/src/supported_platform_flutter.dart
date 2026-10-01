@@ -60,9 +60,11 @@ int? _readAndroidSdkVersion() {
   }
   try {
     final libc = DynamicLibrary.open('libc.so');
-    final getProp = libc.lookupFunction<
-        Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
-        int Function(Pointer<Utf8>, Pointer<Utf8>)>('__system_property_get');
+    final getProp = libc
+        .lookupFunction<
+          Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
+          int Function(Pointer<Utf8>, Pointer<Utf8>)
+        >('__system_property_get');
     final propName = 'ro.build.version.sdk'.toNativeUtf8();
     final valueBuffer = calloc<Uint8>(92).cast<Utf8>();
     try {
@@ -89,11 +91,23 @@ int? _readIosMajorVersion() {
     return null;
   }
   try {
-    final sysctl = DynamicLibrary.process().lookupFunction<
-        Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<IntPtr>,
-            Pointer<Void>, IntPtr),
-        int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<IntPtr>,
-            Pointer<Void>, int)>('sysctlbyname');
+    final sysctl = DynamicLibrary.process()
+        .lookupFunction<
+          Int32 Function(
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer<IntPtr>,
+            Pointer<Void>,
+            IntPtr,
+          ),
+          int Function(
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer<IntPtr>,
+            Pointer<Void>,
+            int,
+          )
+        >('sysctlbyname');
     final name = 'kern.osproductversion'.toNativeUtf8();
     final buffer = calloc<Uint8>(64).cast<Utf8>();
     final sizePtr = calloc<IntPtr>()..value = 64;
@@ -114,8 +128,9 @@ int? _readIosMajorVersion() {
   }
   try {
     final osVersion = Platform.operatingSystemVersion;
-    final match =
-        RegExp(r'(?:Version\s+)?(\d+)(?:\.(\d+))?').firstMatch(osVersion);
+    final match = RegExp(
+      r'(?:Version\s+)?(\d+)(?:\.(\d+))?',
+    ).firstMatch(osVersion);
     if (match != null) {
       return int.tryParse(match.group(1)!);
     }
@@ -156,4 +171,3 @@ bool get isSupported {
   }
   return false;
 }
-
