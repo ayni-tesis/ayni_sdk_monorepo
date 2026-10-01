@@ -194,10 +194,33 @@ sdk.cancelExecution(executionId);
 <h3 id="configuracin-android">Configuración Android</h3>
 <p>El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en Android a través de <code>tflite_flutter</code>.</p>
 <ul>
-<li>Configura <code>minSdkVersion 26</code> (Android 8.0) y <code>compileSdkVersion 36</code> en <code>android/app/build.gradle</code>.</li>
-<li>La compilación correcta indica <code>Runtime Android listo.</code>.</li>
-<li>Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API &lt; 26), <code>AyniSdk.initialize</code> devuelve <code>InitializationStatus.unsupportedPlatform</code> con el mensaje <code>Este dispositivo Android no cumple el requisito mínimo del SDK.</code> antes de intentar cargar cualquier modelo.</li>
-<li>La configuración no requiere modificar el código del workflow.</li>
+<li>
+<p>Configura <code>minSdkVersion 26</code> (Android 8.0) y <code>compileSdkVersion 36</code> en <code>android/app/build.gradle</code>.</p>
+</li>
+<li>
+<p>Con Flutter 3.44 y <code>tflite_flutter</code> 0.12.1, alinea el target Java del subproyecto Android de <code>tflite_flutter</code> con Kotlin 17 en <code>android/build.gradle.kts</code>:</p>
+<pre class="language-kotlin"><code class="language-kotlin">gradle.projectsEvaluated {
+    rootProject.subprojects
+        .filter { it.name == "tflite_flutter" }
+        .forEach { plugin -&gt;
+            plugin.tasks.withType&lt;JavaCompile&gt;().configureEach {
+                sourceCompatibility = JavaVersion.VERSION_17.toString()
+                targetCompatibility = JavaVersion.VERSION_17.toString()
+            }
+        }
+}
+</code></pre>
+<p>Este ajuste deja de ser necesario cuando <code>tflite_flutter</code> alinee ambos targets.</p>
+</li>
+<li>
+<p>La compilación correcta indica <code>Runtime Android listo.</code>.</p>
+</li>
+<li>
+<p>Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API &lt; 26), <code>AyniSdk.initialize</code> devuelve <code>InitializationStatus.unsupportedPlatform</code> con el mensaje <code>Este dispositivo Android no cumple el requisito mínimo del SDK.</code> antes de intentar cargar cualquier modelo.</p>
+</li>
+<li>
+<p>La configuración no requiere modificar el código del workflow.</p>
+</li>
 </ul>
 <h3 id="configuracin-ios">Configuración iOS</h3>
 <p>El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en iOS a través de <code>tflite_flutter</code> y CocoaPods (<code>TensorFlowLiteSwift</code>).</p>
