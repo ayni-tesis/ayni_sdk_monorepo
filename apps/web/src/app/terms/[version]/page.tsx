@@ -27,7 +27,8 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
       {version === CURRENT_TERMS_VERSION && (
         <p>
           La creación de cuentas de desarrollador está reservada a personas de 18 años o más. Al
-          aceptar estos términos, declaras cumplir este requisito. No solicitamos fecha de nacimiento.
+          aceptar estos términos, declaras cumplir este requisito. No solicitamos fecha de
+          nacimiento.
         </p>
       )}
       <h2 className="font-semibold text-xl">Aplicaciones y SDK</h2>
@@ -45,8 +46,7 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
       <h2 className="font-semibold text-xl">Contacto</h2>
       <p>
         Ayni es un proyecto de tesis en Perú, a cargo de Daniel F. Mamani Silva y Diego R. Cisneros
-        Tafur.
-        Para consultas sobre estas condiciones, escribe a{" "}
+        Tafur. Para consultas sobre estas condiciones, escribe a{" "}
         <a className="underline" href="mailto:U202219315@upc.edu.pe">
           U202219315@upc.edu.pe
         </a>{" "}
@@ -55,9 +55,8 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
           U20221A715@upc.edu.pe
         </a>
         . El primer correo corresponde a Daniel F. Mamani Silva y el segundo a Diego R. Cisneros
-        Tafur. Estos
-        correos son canales de contacto del equipo de tesis y no implican que la UPC sea responsable
-        de la plataforma o del tratamiento de datos.
+        Tafur. Estos correos son canales de contacto del equipo de tesis y no implican que la UPC
+        sea responsable de la plataforma o del tratamiento de datos.
       </p>
       <p className="border-t pt-4 text-muted-foreground text-sm">
         {version === CURRENT_TERMS_VERSION

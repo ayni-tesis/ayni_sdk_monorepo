@@ -25,8 +25,8 @@ export default async function AyniPrivacyNoticePage({
       <section className="space-y-2">
         <h2 className="font-semibold text-xl">Responsable y contacto</h2>
         <p>
-          Ayni es un proyecto de tesis en Perú. Las personas responsables del proyecto son Daniel
-          F. Mamani Silva y Diego R. Cisneros Tafur. Para consultas sobre privacidad o para presentar
+          Ayni es un proyecto de tesis en Perú. Las personas responsables del proyecto son Daniel F.
+          Mamani Silva y Diego R. Cisneros Tafur. Para consultas sobre privacidad o para presentar
           solicitudes relacionadas con tus datos, puedes escribirles a{" "}
           <a className="underline" href="mailto:U202219315@upc.edu.pe">
             U202219315@upc.edu.pe
@@ -84,9 +84,9 @@ export default async function AyniPrivacyNoticePage({
           aplicación.
         </p>
         <p>
-          Ayni no recolecta actualmente imágenes ni trazas de uso del SDK. La captura y sincronización
-          de ese material pertenecen a una funcionalidad futura; este aviso y los controles de
-          consentimiento deberán actualizarse antes de habilitarla.
+          Ayni no recolecta actualmente imágenes ni trazas de uso del SDK. La captura y
+          sincronización de ese material pertenecen a una funcionalidad futura; este aviso y los
+          controles de consentimiento deberán actualizarse antes de habilitarla.
         </p>
       </section>
 
@@ -123,7 +123,7 @@ export default async function AyniPrivacyNoticePage({
 
       <p className="border-t pt-4 text-muted-foreground text-sm">
         Este aviso es independiente de los{" "}
-        <Link className="underline" href={("/terms/" + CURRENT_TERMS_VERSION) as Route}>
+        <Link className="underline" href={`/terms/${CURRENT_TERMS_VERSION}` as Route}>
           Términos y condiciones
         </Link>{" "}
         y no registra consentimiento.

@@ -139,7 +139,7 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
           <span className={styles.brandText}>ayni</span>
         </Link>
 
-        <div className={styles.statusIndicator} aria-label="Estado del runtime">
+        <div className={styles.statusIndicator} role="status">
           <span className={styles.statusDot} aria-hidden="true" />
           <span>RUNTIME READY</span>
         </div>
@@ -149,7 +149,10 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
       <main className={styles.stageContainer}>
         <div className={styles.consoleCard}>
           <div className={`${styles.cornerMarker} ${styles.cornerTopLeft}`} aria-hidden="true" />
-          <div className={`${styles.cornerMarker} ${styles.cornerBottomRight}`} aria-hidden="true" />
+          <div
+            className={`${styles.cornerMarker} ${styles.cornerBottomRight}`}
+            aria-hidden="true"
+          />
 
           <div className={styles.consoleHeader}>
             <h1 className={styles.consoleTitle}>
@@ -503,7 +506,8 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
                         >
                           Acepto los Términos y condiciones ({CURRENT_TERMS_VERSION}) y declaro
                           tener 18 años o más.
-                        </a>.
+                        </a>
+                        .
                       </span>
                     </label>
                     {field.state.meta.errors.map((error) => (
@@ -554,7 +558,7 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
       {/* Minimal Bottom Colophon */}
       <footer className={styles.bottomColophon}>
         <div>
-          <span>AYNI // RUNTIME 0.1.0 · ON-DEVICE DAG ENGINE</span>
+          <span>{"AYNI // RUNTIME 0.1.0 · ON-DEVICE DAG ENGINE"}</span>
         </div>
         <div className={styles.legalLinks}>
           <a href={`/terms/${CURRENT_TERMS_VERSION}`} className={styles.legalLink}>

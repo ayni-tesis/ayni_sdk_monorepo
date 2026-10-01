@@ -49,7 +49,10 @@
     linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
     radial-gradient(circle at 50% 30%, rgba(54, 182, 201, 0.06) 0%, transparent 65%);
-  background-size: 32px 32px, 32px 32px, 100% 100%;
+  background-size:
+    32px 32px,
+    32px 32px,
+    100% 100%;
   background-position: center center;
 }
 
@@ -297,7 +300,9 @@
 
 .fieldInput:focus-visible {
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 1px var(--color-border-focus), 0 0 12px var(--color-frosted-glow);
+  box-shadow:
+    0 0 0 1px var(--color-border-focus),
+    0 0 12px var(--color-frosted-glow);
 }
 
 .fieldInput:disabled {
