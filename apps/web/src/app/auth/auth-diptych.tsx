@@ -17,23 +17,15 @@ export type AuthMode = "sign-in" | "sign-up";
 
 interface AuthDiptychProps {
   initialMode: AuthMode;
+  next?: string;
 }
 
-export function AuthDiptych({ initialMode }: AuthDiptychProps) {
+export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const mode = initialMode;
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { isPending: isSessionPending } = authClient.useSession();
-
-  const handleModeChange = (newMode: AuthMode) => {
-    setSubmitError(null);
-    setMode(newMode);
-    if (newMode === "sign-in") {
-      router.push("/sign-in" as Route);
-    } else {
-      router.push("/sign-up" as Route);
-    }
-  };
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
 
   const signInForm = useForm({
     defaultValues: {
@@ -165,27 +157,22 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
             </p>
           </div>
 
-          {/* Segmented Switcher */}
-          <div className={styles.segmentedControl} role="tablist" aria-label="Modo de acceso">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "sign-in"}
+          <nav className={styles.segmentedControl} aria-label="Acceso">
+            <Link
+              href={`/sign-in${nextQuery}` as Route}
+              aria-current={mode === "sign-in" ? "page" : undefined}
               className={`${styles.segmentBtn} ${mode === "sign-in" ? styles.segmentActive : ""}`}
-              onClick={() => handleModeChange("sign-in")}
             >
               Iniciar sesión
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "sign-up"}
+            </Link>
+            <Link
+              href={`/sign-up${nextQuery}` as Route}
+              aria-current={mode === "sign-up" ? "page" : undefined}
               className={`${styles.segmentBtn} ${mode === "sign-up" ? styles.segmentActive : ""}`}
-              onClick={() => handleModeChange("sign-up")}
             >
               Registrarse
-            </button>
-          </div>
+            </Link>
+          </nav>
 
           {mode === "sign-in" ? (
             <form
@@ -327,13 +314,9 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
 
               <div className={styles.switchBar}>
                 <span>¿No tienes una cuenta aún?</span>
-                <button
-                  type="button"
-                  onClick={() => handleModeChange("sign-up")}
-                  className={styles.linkButton}
-                >
+                <Link href={`/sign-up${nextQuery}` as Route} className={styles.linkButton}>
                   Registrarse
-                </button>
+                </Link>
               </div>
             </form>
           ) : AYNI_PRIVACY_NOTICE.status !== "published" ? (
@@ -346,13 +329,9 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
               </p>
               <div className={styles.switchBar}>
                 <span>¿Ya tienes credenciales?</span>
-                <button
-                  type="button"
-                  onClick={() => handleModeChange("sign-in")}
-                  className={styles.linkButton}
-                >
+                <Link href={`/sign-in${nextQuery}` as Route} className={styles.linkButton}>
                   Iniciar sesión
-                </button>
+                </Link>
               </div>
             </div>
           ) : (
@@ -541,13 +520,9 @@ export function AuthDiptych({ initialMode }: AuthDiptychProps) {
 
               <div className={styles.switchBar}>
                 <span>¿Ya tienes una cuenta registrada?</span>
-                <button
-                  type="button"
-                  onClick={() => handleModeChange("sign-in")}
-                  className={styles.linkButton}
-                >
+                <Link href={`/sign-in${nextQuery}` as Route} className={styles.linkButton}>
                   Iniciar sesión
-                </button>
+                </Link>
               </div>
             </form>
           )}

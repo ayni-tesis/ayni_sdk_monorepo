@@ -1,20 +1,25 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { pushMock, signInEmailMock, toastMock } = vi.hoisted(() => ({
-  pushMock: vi.fn(),
-  signInEmailMock: vi.fn(),
-  toastMock: { success: vi.fn(), error: vi.fn() },
-}));
+const { privacyNoticeMock, pushMock, signInEmailMock, signUpEmailMock, toastMock } = vi.hoisted(
+  () => ({
+    privacyNoticeMock: { version: "1.0.1", status: "published" as "draft" | "published" },
+    pushMock: vi.fn(),
+    signInEmailMock: vi.fn(),
+    signUpEmailMock: vi.fn(),
+    toastMock: { success: vi.fn(), error: vi.fn() },
+  }),
+);
 
+vi.mock("@ayni/env/privacy-notice", () => ({ AYNI_PRIVACY_NOTICE: privacyNoticeMock }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     useSession: () => ({ isPending: false }),
     signIn: { email: signInEmailMock },
-    signUp: { email: vi.fn() },
+    signUp: { email: signUpEmailMock },
   },
 }));
 
@@ -23,6 +28,12 @@ import { AuthDiptych } from "./auth-diptych";
 describe("AuthDiptych", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    privacyNoticeMock.status = "published";
+    signUpEmailMock.mockImplementation(
+      async (_credentials: unknown, callbacks: { onSuccess?: () => void }) => {
+        callbacks.onSuccess?.();
+      },
+    );
   });
 
   afterEach(() => {
@@ -38,16 +49,26 @@ describe("AuthDiptych", () => {
     expect(screen.getByRole("button", { name: /iniciar sesión/i })).toBeTruthy();
   });
 
-  it("switches to sign-up mode when clicking the register tab", () => {
+  it("shows auth navigation links and marks the active route", () => {
     render(<AuthDiptych initialMode="sign-in" />);
 
-    const signUpTab = screen.getByRole("tab", { name: /registrarse/i });
-    fireEvent.click(signUpTab);
-
-    expect(pushMock).toHaveBeenCalledWith("/sign-up");
+    const nav = within(screen.getByRole("navigation", { name: "Acceso" }));
+    const signUpLink = nav.getByRole("link", { name: "Registrarse" });
+    expect(signUpLink.getAttribute("href")).toBe("/sign-up");
+    expect(nav.getByRole("link", { name: "Iniciar sesión" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
   });
 
-  it("renders the sign-up form after the privacy notice is published", () => {
+  it("shows the unavailable state when the privacy notice is a draft", () => {
+    privacyNoticeMock.status = "draft";
+    render(<AuthDiptych initialMode="sign-up" />);
+
+    expect(screen.getByText(/registro temporalmente no disponible/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/correo electrónico/i)).toBeNull();
+  });
+
+  it("renders the sign-up form when the privacy notice is published", () => {
     render(<AuthDiptych initialMode="sign-up" />);
 
     expect(screen.getByRole("heading", { name: /crea tu cuenta/i })).toBeTruthy();
@@ -55,12 +76,37 @@ describe("AuthDiptych", () => {
     expect(screen.getByRole("checkbox", { name: /términos y condiciones/i })).toBeTruthy();
   });
 
-  it("switches to sign-in mode when clicking the sign-in tab from sign-up", () => {
-    render(<AuthDiptych initialMode="sign-up" />);
+  it("preserves an invitation through sign-in, sign-up, and successful registration", async () => {
+    const next = "/join?token=tok-1";
+    window.history.replaceState({}, "", `/sign-in?next=${encodeURIComponent(next)}`);
+    const { unmount } = render(<AuthDiptych initialMode="sign-in" next={next} />);
 
-    const signInTab = screen.getByRole("tab", { name: /iniciar sesión/i });
-    fireEvent.click(signInTab);
+    const signUpHref = within(screen.getByRole("navigation", { name: "Acceso" }))
+      .getByRole("link", { name: "Registrarse" })
+      .getAttribute("href");
+    expect(signUpHref).toBe(`/sign-up?next=${encodeURIComponent(next)}`);
+    unmount();
 
-    expect(pushMock).toHaveBeenCalledWith("/sign-in");
+    window.history.replaceState({}, "", signUpHref);
+    render(<AuthDiptych initialMode="sign-up" next={next} />);
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Acceso" }))
+        .getByRole("link", { name: "Iniciar sesión" })
+        .getAttribute("href"),
+    ).toBe(`/sign-in?next=${encodeURIComponent(next)}`);
+    fireEvent.change(screen.getByLabelText("Nombre completo"), {
+      target: { value: "Test User" },
+    });
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /crear cuenta/i }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith(next));
   });
 });

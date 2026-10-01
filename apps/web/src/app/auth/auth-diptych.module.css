@@ -216,6 +216,7 @@
   font-weight: 500;
   border-radius: 6px;
   cursor: pointer;
+  text-decoration: none;
   outline: none;
   transition:
     color var(--dur-fast) var(--ease-out),

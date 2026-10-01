@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   description: "Crea tu cuenta de desarrollador en Ayni para desplegar workflows en dispositivos.",
 };
 
-export default function SignUpPage() {
-  return <AuthDiptych initialMode="sign-up" />;
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
+  return <AuthDiptych initialMode="sign-up" next={next} />;
 }

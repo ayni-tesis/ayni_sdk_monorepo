@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   description: "Accede al workspace de ingeniería de Machine Learning y runtime edge de Ayni.",
 };
 
-export default function SignInPage() {
-  return <AuthDiptych initialMode="sign-in" />;
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
+  return <AuthDiptych initialMode="sign-in" next={next} />;
 }
