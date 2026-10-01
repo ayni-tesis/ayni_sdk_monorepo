@@ -444,7 +444,9 @@ abstract final class PackageValidator {
     String? currentSection;
     for (final rawLine in lines) {
       final commentIndex = rawLine.indexOf('#');
-      final line = (commentIndex >= 0 ? rawLine.substring(0, commentIndex) : rawLine).trimRight();
+      final line =
+          (commentIndex >= 0 ? rawLine.substring(0, commentIndex) : rawLine)
+              .trimRight();
       if (line.trim().isEmpty) continue;
 
       if (!line.startsWith(' ') && !line.startsWith('\t')) {
@@ -459,7 +461,9 @@ abstract final class PackageValidator {
 
       if (currentSection == 'dependencies') {
         final trimmed = line.trim();
-        final match = RegExp('^${RegExp.escape(dependencyName)}(?:\\s*:|\$)').hasMatch(trimmed);
+        final match = RegExp(
+          '^${RegExp.escape(dependencyName)}(?:\\s*:|\$)',
+        ).hasMatch(trimmed);
         if (match) return true;
       }
     }

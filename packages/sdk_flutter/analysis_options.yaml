@@ -10,3 +10,4 @@ analyzer:
     public_member_api_docs: error
   exclude:
     - test/fixtures/**
+    - build/**

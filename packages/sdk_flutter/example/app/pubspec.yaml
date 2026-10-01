@@ -1,0 +1,20 @@
+name: ayni_sdk_example
+description: Example Flutter app for the ayni_sdk package.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  ayni_sdk: ^0.1.0-beta.1
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

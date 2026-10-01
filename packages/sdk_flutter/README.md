@@ -15,6 +15,18 @@ dependencies:
   ayni_sdk: ^0.1.0-beta.1
 ```
 
+Resuelve las dependencias desde la carpeta de tu aplicación:
+
+```sh
+flutter pub get
+```
+
+Al completarse, verás `Dependencias resueltas.`.
+Si pub.dev no puede resolver la versión solicitada, corrige la restricción antes
+de compilar: `No se pudo resolver la versión solicitada de ayni_sdk.` La app
+consumidora de referencia está en `example/app` y fija la versión resuelta en
+su `pubspec.lock`.
+
 Esta versión es para pruebas piloto y puede cambiar.
 
 ## API Pública
