@@ -25,8 +25,9 @@ Si pub.dev no puede resolver la versión solicitada, corrige la restricción ant
 de compilar: `No se pudo resolver la versión solicitada de ayni_sdk.` La app
 de ejemplo está en `example/app`: solicita una credencial de prueba, inicializa
 el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
-instrucciones están en [`example/app/README.md`](example/app/README.md) y fija
-la versión resuelta en su `pubspec.lock`.
+instrucciones están en el
+[README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
+y fija la versión resuelta en su `pubspec.lock`.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
