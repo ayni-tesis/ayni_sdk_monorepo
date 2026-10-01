@@ -42,6 +42,12 @@ Los derechos de acceso, actualización, inclusión, rectificación, supresión y
 oposición están en la Ley, arts. 19–22. El flujo transfronterizo debe evaluarse
 conforme a la Ley, art. 15, y el Reglamento, arts. 12–20.
 
+La ANPD considera dato personal toda información que identifica o hace
+identificable a una persona; incluye expresamente el nombre y el correo
+electrónico ([guía de datos personales](https://www.gob.pe/institucion/anpd/informes-publicaciones/4231337-datos-personales)).
+Por tanto, aunque Ayni no recoja imágenes ni trazas del SDK actualmente, los
+datos de cuenta sí son datos personales.
+
 Identificar categorías concretas de datos en el aviso ayuda a que la
 información sea detallada y entendible. Sin embargo, la lista literal del art.
 18 y del art. 6.1 no formula “categorías de datos” como un campo independiente;
@@ -49,34 +55,37 @@ no debe describirse esa etiqueta como una cita textual de requisito.
 
 La inscripción del banco es una obligación separada del aviso: el [trámite
 oficial de la ANPD](https://www.gob.pe/8060-inscribir-banco-de-datos-en-el-registro-nacional-de-proteccion-de-datos-personales)
-indica que quien sea titular de un banco de datos personales debe inscribirlo
-en el Registro Nacional de Protección de Datos Personales. El Reglamento, art.
-42, regula la inscripción. La aplicabilidad, nombre y código del banco de
-cuentas de Ayni deben verificarse; no se deben inventar ni usar el aviso para
-afirmar que la inscripción ya ocurrió.
+indica que también las personas naturales titulares deben inscribirlo en el
+Registro Nacional de Protección de Datos Personales. No se trata de un banco
+financiero: la base organizada de cuentas es el banco de datos personales.
+La inscripción y la comunicación del flujo transfronterizo se tramitan ante la
+ANPD; la página del [flujo transfronterizo](https://www.gob.pe/9253-inscribir-flujo-transfronterizo-de-datos-personales)
+indica que los formularios de inscripción ya incluyen su comunicación.
 
-## Hechos de Ayni que faltan confirmar antes de publicar
+## Hechos de Ayni y decisiones de producto
 
-La interfaz vigente solicita nombre, correo electrónico y contraseña al crear
-una cuenta ([formulario de registro](../../apps/web/src/app/auth/auth-diptych.tsx));
-la configuración del servidor habilita registro por correo y contraseña
-([auth](../../packages/auth/src/index.ts)). Esto solo acredita los campos
-observables en ese flujo, no el inventario completo de datos tratados por Ayni.
+El registro solicita nombre, correo y contraseña ([formulario de registro](../../apps/web/src/app/auth/auth-diptych.tsx));
+Better Auth habilita correo y contraseña, pero no OAuth ([auth](../../packages/auth/src/index.ts)).
+El esquema guarda el nombre, correo, hash de contraseña, sesiones con IP y
+agente de usuario cuando estén disponibles, metadatos de sesión, y la fecha y
+versión de aceptación de términos ([esquema](../../packages/db/src/schema/auth.ts)).
+El aviso debe describir estas categorías. Google/GitHub no está activo; si se
+incorpora después, revisar los campos realmente recibidos y actualizar el aviso.
 
-El equipo indicó que Ayni es una tesis en Perú, a cargo de Daniel Mamani S. y Diego R. Cisneros T.,
-con los correos U202219315@upc.edu.pe y U20221A715@upc.edu.pe, respectivamente. El equipo dijo
-que el banco de datos de cuentas no está inscrito y que revisará si corresponde registrarlo. La
-UPC no se identifica como responsable por el solo uso de correos institucionales. Queda confirmar
-la dirección de contacto que se incluirá y revisar legalmente la asignación de responsabilidades:
+El equipo indicó que Ayni es una tesis en Perú, a cargo de Daniel F. Mamani Silva y Diego R.
+Cisneros Tafur, con los correos U202219315@upc.edu.pe y U20221A715@upc.edu.pe, respectivamente.
+Los autores son los contactos del proyecto; la UPC no se identifica como responsable por el solo
+uso de correos institucionales.
 
-1. **Entidad y rol:** confirmar quién asume el rol de responsable/titular del
-   banco para cada tratamiento y la dirección de contacto que se publicará.
-   Si la revisión concluye que corresponde una persona jurídica, consignar sus
-   datos y RUC; no inventarlos para una tesis.
-2. **Banco de datos:** nombre exacto del banco que contendrá las cuentas,
-   existencia/código de inscripción y responsable titular. Confirmar si el
-   deber de inscripción aplica y completar el trámite por separado si aún no
-   se hizo.
+1. **Entidad y rol:** reflejar a los autores y sus correos como responsables/
+   contactos del proyecto, sin atribuir ese rol a UPC.
+2. **Banco de datos:** la base de perfiles de usuario es un banco de datos
+   personales; el equipo propone llamarlo “Cuentas Ayni” y confirmó que aún no
+   está inscrito. El artículo 42.1 del Reglamento obliga a personas naturales
+   o jurídicas que creen, modifiquen o cancelen bancos a tramitar su inscripción.
+   La excepción doméstica de la Ley no describe una plataforma para desarrolladores.
+   ANPD ofrece el trámite también a personas naturales; se debe tramitar la
+   inscripción y comunicar el flujo transfronterizo que corresponda.
 3. **Inventario de datos y fuentes:** campos de registro y perfil, identificadores
    de cuenta, autenticación/sesión, eventos de seguridad y soporte,
    comunicaciones y cualquier dato de navegación que realmente se recoja;
@@ -87,51 +96,67 @@ la dirección de contacto que se incluirá y revisar legalmente la asignación d
    términos— solo si cada uso se verifica en el producto y operación. Asesoría
    legal debe confirmar la base aplicable; no presentar una finalidad futura o
    un consentimiento como si ya estuviera implementado.
-5. **Destinatarios, encargados y transferencias:** el equipo indicó que usa
-   Vercel (aplicación), Neon (base de datos) y Cloudflare R2 (artefactos de
-   modelos). Confirmar en las cuentas de servicio las regiones de datos,
-   países de acceso, categorías que recibe cada proveedor y mecanismo legal
-   para transferencias internacionales. Las regiones no constan en el repo.
-6. **Retención y eliminación:** el equipo definió conservar la cuenta hasta
-   que la persona solicite eliminarla o cumpla un año sin iniciar sesión, lo
-   que ocurra primero. El equipo precisó que ejecutará ambas eliminaciones
-   manualmente mediante la base de datos; el repo no contiene un proceso
-   automático. Antes de describirlo como práctica vigente, acordar el alcance
-   sobre workspaces/recursos y definir el tratamiento de sesiones, copias de
-   seguridad, registros técnicos y evidencia de aceptación.
-7. **Derechos y contacto:** las personas y correos de contacto ya fueron
-   proporcionados. Confirmar que el equipo los monitorea y cómo verificará
-   identidad de forma proporcional al atender solicitudes.
-8. **Automatización y población destinataria:** el equipo indicó que las
-   cuentas se dirigen a desarrolladores. Confirmar si existe edad mínima y si
-   hay decisiones automatizadas o perfiles que afecten a titulares y sus
-   consecuencias.
-9. **Publicación:** versión, fecha de vigencia, ubicación pública estable y
-   revisión legal del texto final frente a los flujos reales.
+5. **Destinatarios, encargados y transferencias:** el equipo confirma que
+   Vercel y Neon procesan los datos de cuenta en São Paulo, Brasil. Cloudflare
+   R2 guarda artefactos de modelos, no datos del perfil de cuenta; la ubicación
+   de un CDN indica dónde puede servirse contenido en caché y no dónde se
+   almacena el objeto. La documentación de R2 confirma que la caché requiere
+   dominio personalizado y configuración, y que la ubicación de almacenamiento
+   se maneja por separado ([ubicación](https://developers.cloudflare.com/r2/reference/data-location/),
+   [caché R2](https://developers.cloudflare.com/cache/interaction-cloudflare-products/r2/)).
+   Para el aviso de cuentas basta describir la transferencia de sus datos a
+   Brasil mediante Vercel/Neon. Las imágenes y trazas del SDK pertenecen a una
+   épica futura y no deben presentarse como recolección actual.
+6. **Retención y eliminación:** la decisión de producto es conservar los datos
+   mientras la cuenta exista, sin eliminación automática por inactividad. La
+   persona puede pedir cierre y supresión por correo; el equipo deshabilita la
+   cuenta y elimina manualmente lo que ya no sea necesario. Los recursos
+   compartidos pueden continuar mientras sean necesarios para los demás
+   miembros. No se promete conservar datos personales para siempre una vez que
+   ya no sean necesarios: la Ley exige conservarlos solo por el tiempo
+   necesario (art. 8).
+7. **Derechos y contacto:** incluir los nombres completos que proporcionó el
+   equipo y sus correos. Las solicitudes pueden dirigirse a esos correos;
+   definir la verificación proporcional de identidad y confirmar que ambos
+   canales serán monitoreados.
+8. **Automatización y población destinataria:** se decidió reservar las
+   cuentas de desarrollador a personas de 18 años o más. La edad se declara al
+   aceptar los términos; no se recopila fecha de nacimiento ni se habilita un
+   flujo de consentimiento de menores. La restricción aplica a las cuentas de
+   Ayni, no a los usuarios finales de aplicaciones que integren el SDK. Revisar
+   además si existe alguna decisión automatizada que afecte significativamente
+   a las cuentas.
+9. **Obligación independiente:** inscribir Cuentas Ayni y comunicar el flujo
+   transfronterizo a Brasil ante la ANPD. La inscripción no es un trámite
+   financiero ni forma parte de la publicación del aviso; debe completarse por
+   separado por quien figure como titular del banco.
 
 ### Estado técnico observado
 
-El repositorio mantiene `AYNI_PRIVACY_NOTICE` en versión `1.0.0` con estado
-`draft` ([configuración](../../packages/env/src/privacy-notice.ts)). El flujo de
-registro y el hook del servidor bloquean altas mientras el aviso no se marque
-publicado ([registro](../../apps/web/src/app/auth/auth-diptych.tsx),
-[servidor de autenticación](../../packages/auth/src/index.ts)). La página
-visible actualmente indica que siguen pendientes la confirmación legal del
-responsable, regiones/destinatarios, transferencias, el procedimiento y
-alcance de la retención manual definida, la inscripción aplicable y la
-revisión legal
+El repositorio mantiene `AYNI_PRIVACY_NOTICE` en versión `1.0.1` con estado
+`published` ([configuración](../../packages/env/src/privacy-notice.ts)). El
+registro se habilita y el inicio de sesión requiere aceptar la versión actual
+de los términos; la versión 1.0.1 incluye una declaración de mayoría de edad
+([registro](../../apps/web/src/app/auth/auth-diptych.tsx),
+[autenticación](../../packages/auth/src/index.ts)). La inscripción del banco
+Cuentas Ayni y la comunicación del flujo transfronterizo siguen pendientes
+como obligación administrativa independiente. Cloudflare R2 no contiene datos
+de perfil según el equipo; su ubicación no se incluye como región de
+almacenamiento de datos de cuenta. El aviso registra que Neon y Vercel están en
+São Paulo según la configuración informada por el equipo.
 ([página del aviso](../../apps/web/src/app/privacy/ayni/[version]/page.tsx)).
-Por tanto, se puede preparar y revisar el contenido, pero no cambiar el estado
-a `published` hasta que se confirmen esos hechos y se revise el tratamiento
-completo.
 
 ## Fuentes oficiales
 
 - Congreso de la República, [Ley N.° 29733](https://www.leyes.congreso.gob.pe/documentos/leyes/29733.pdf),
-  arts. 15, 18–22.
+  arts. 6–8, 15, 18–22.
 - Diario Oficial El Peruano, [Reglamento de la Ley N.° 29733, D.S.
   N.° 016-2024-JUS, texto actualizado](https://diariooficial.elperuano.pe/Normas/obtenerDocumento?idNorma=23),
-  arts. 3–9, 12–20 y 42. Reglamento publicado por la ANPD en la
+  arts. 3–9, 12–25 y 42–45. Reglamento publicado por la ANPD en la
   [plataforma oficial del Estado](https://www.gob.pe/institucion/anpd/normas-legales/6554453-16-2024-jus).
 - Autoridad Nacional de Protección de Datos Personales,
   [inscribir un banco de datos personales](https://www.gob.pe/8060-inscribir-banco-de-datos-en-el-registro-nacional-de-proteccion-de-datos-personales).
+- Autoridad Nacional de Protección de Datos Personales,
+  [inscribir el flujo transfronterizo de datos personales](https://www.gob.pe/9253-inscribir-flujo-transfronterizo-de-datos-personales).
+- Vercel, [regiones de infraestructura y valores predeterminados](https://vercel.com/docs/functions/configuring-functions/region).
+- Cloudflare, [ubicación de datos de R2 y límites de las sugerencias de ubicación](https://developers.cloudflare.com/r2/reference/data-location/).
