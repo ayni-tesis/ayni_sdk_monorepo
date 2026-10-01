@@ -1,11 +1,92 @@
 import 'package:ayni_sdk_example/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('resolves and imports the public SDK API', (tester) async {
+  testWidgets('asks for test configuration before enabling SDK actions', (
+    tester,
+  ) async {
     await tester.pumpWidget(const AyniExampleApp());
 
-    expect(find.text('Dependencias resueltas.'), findsOneWidget);
-    expect(find.text('API pública disponible: ready'), findsOneWidget);
+    expect(
+      find.text(
+        'Configura tu credencial y endpoint de prueba antes de ejecutar.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('SDK inicializado'), findsNothing);
+    expect(find.text('Sincronización completada'), findsNothing);
+    expect(find.text('Resultado del workflow'), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('credential-field')))
+          .obscureText,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Ejecutar workflow'),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('never renders a typed test credential', (tester) async {
+    await tester.pumpWidget(const AyniExampleApp());
+    const testCredential = 'ayni_sk_test_not_a_real_secret';
+    await tester.enterText(
+      find.byKey(const Key('credential-field')),
+      testCredential,
+    );
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && widget.data == testCredential,
+      ),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('credential-field')))
+          .obscureText,
+      isTrue,
+    );
+  });
+
+  testWidgets('explains which test configuration is missing', (tester) async {
+    await tester.pumpWidget(const AyniExampleApp());
+    await tester.tap(find.widgetWithText(FilledButton, 'Inicializar SDK'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ingresa una credencial de prueba y el endpoint antes de inicializar.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('SDK inicializado'), findsNothing);
+  });
+
+  testWidgets('requests an endpoint when a test credential is entered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const AyniExampleApp());
+    await tester.enterText(
+      find.byKey(const Key('credential-field')),
+      'test-only-credential',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Inicializar SDK'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ingresa una credencial de prueba y el endpoint antes de inicializar.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('SDK inicializado'), findsNothing);
   });
 }

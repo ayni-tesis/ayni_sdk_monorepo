@@ -206,3 +206,48 @@ jobs:
         run: |
           sed -i '' "s/# platform :ios, '.*'/platform :ios, '11.0'/" ios/Podfile
           flutter build ios --no-codesign --debug
+
+      - name: Create SDK example app platform
+        working-directory: packages/sdk_flutter/example/app
+        run: |
+          flutter create --platforms=${{ matrix.platform }} \
+            --project-name ayni_sdk_example .
+
+      - name: Configure Android example app
+        if: matrix.platform == 'android'
+        working-directory: packages/sdk_flutter/example/app
+        run: |
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' android/app/build.gradle.kts
+          cat >> android/build.gradle.kts <<'EOF'
+          gradle.projectsEvaluated {
+              rootProject.subprojects
+                  .filter { it.name == "tflite_flutter" }
+                  .forEach { plugin ->
+                      plugin.tasks.withType<JavaCompile>().configureEach {
+                          sourceCompatibility = JavaVersion.VERSION_17.toString()
+                          targetCompatibility = JavaVersion.VERSION_17.toString()
+                      }
+                  }
+          }
+          EOF
+
+      - name: Configure iOS example app
+        if: matrix.platform == 'ios'
+        working-directory: packages/sdk_flutter/example/app
+        run: |
+          sed -i '' "s/# platform :ios, '.*'/platform :ios, '13.0'/" ios/Podfile
+          /usr/libexec/PlistBuddy -c 'Add :NSPhotoLibraryUsageDescription string Select an image for the test workflow.' ios/Runner/Info.plist
+
+      - name: Resolve SDK example app dependencies
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter pub get
+
+      - name: Build Android example app
+        if: matrix.platform == 'android'
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter build apk --debug
+
+      - name: Build iOS example app
+        if: matrix.platform == 'ios'
+        working-directory: packages/sdk_flutter/example/app
+        run: flutter build ios --no-codesign --debug

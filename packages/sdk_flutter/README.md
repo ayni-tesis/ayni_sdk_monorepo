@@ -21,11 +21,13 @@ Resuelve las dependencias desde la carpeta de tu aplicación:
 flutter pub get
 ```
 
-Al completarse, verás `Dependencias resueltas.`.
 Si pub.dev no puede resolver la versión solicitada, corrige la restricción antes
 de compilar: `No se pudo resolver la versión solicitada de ayni_sdk.` La app
-consumidora de referencia está en `example/app` y fija la versión resuelta en
-su `pubspec.lock`.
+de ejemplo está en `example/app`: solicita una credencial de prueba, inicializa
+el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
+instrucciones están en el
+[README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
+y fija la versión resuelta en su `pubspec.lock`.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).

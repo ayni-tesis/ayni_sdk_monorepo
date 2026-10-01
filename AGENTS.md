@@ -277,6 +277,11 @@ Run `create-better-fullstack context --json` for bounded roles, capabilities, ev
 
 User code outside an explicit Better Fullstack managed region is not generator-owned. Missing or changed managed-region hashes stop recipe planning for manual review.
 
+### Flutter SDK integration example
+
+- `packages/sdk_flutter/example/app` is the public-package integration example. It accepts a test credential and endpoint at runtime, uses only `package:ayni_sdk/ayni_sdk.dart`, and uses `image_picker` to select an image for a published workflow.
+- The example's native runners are generated in CI and built on Android (API 26+, Java 17 alignment for `tflite_flutter`) and iOS (13.0+, photo-library usage description). The Dart sources remain platform-neutral in the repository.
+
 <!-- <better-fullstack:recipes sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855> -->
 
 <!-- </better-fullstack:recipes> -->

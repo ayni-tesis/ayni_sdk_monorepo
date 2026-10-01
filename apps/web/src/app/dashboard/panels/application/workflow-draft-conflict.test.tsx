@@ -121,14 +121,24 @@ afterEach(() => {
 describe("US-130: editing a draft someone else changed", () => {
   it("bases every change on the revision the previous one left", async () => {
     serve(detail(7));
-    client.patch.mockResolvedValueOnce({ data: { positions: {}, draftRevision: 8 } });
+    let finishLayout: (value: unknown) => void = () => {};
+    client.patch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLayout = resolve;
+      }),
+    );
     client.post.mockResolvedValueOnce({
       data: { draft: { ...draft, connections: [imageToModel] }, draftRevision: 9 },
     });
     await renderDetail();
 
     moveEveryNodeRight();
-    // The canvas takes no other change while positions are saving.
+    expect(await screen.findByText("Guardando posiciones…")).toBeTruthy();
+    expect(client.patch).toHaveBeenCalledWith(layoutUrl, {
+      positions: { "image-node": { x: 64, y: 48 }, "model-node": { x: 416, y: 48 } },
+      draftRevision: 7,
+    });
+    await act(async () => finishLayout({ data: { positions: {}, draftRevision: 8 } }));
     await waitFor(() => expect(screen.queryByText("Guardando posiciones…")).toBeNull());
     connectImageToModel();
 

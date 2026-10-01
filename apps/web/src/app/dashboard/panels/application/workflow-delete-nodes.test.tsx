@@ -143,11 +143,13 @@ describe("US-132: deleting several nodes at once", () => {
     });
     answer({ data: { draft: afterDeletion, draftRevision: 5 } });
 
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Nodos eliminados."));
+    await waitFor(() => {
+      expect(toastMock.success).toHaveBeenCalledWith("Nodos eliminados.");
+      expect(screen.queryByTestId("workflow-node-model-a")).toBeNull();
+      expect(screen.queryByTestId("workflow-node-model-b")).toBeNull();
+      expect(screen.queryByTestId("workflow-node-condition")).toBeNull();
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.queryByTestId("workflow-node-model-a")).toBeNull();
-    expect(screen.queryByTestId("workflow-node-model-b")).toBeNull();
-    expect(screen.queryByTestId("workflow-node-condition")).toBeNull();
     expect(screen.getByTestId("workflow-node-image")).toBeTruthy();
     expect(deleteNodesButton()).toBeNull();
   });
