@@ -28,8 +28,9 @@ export default async function AyniPrivacyNoticePage({
       <section className="space-y-2">
         <h2 className="font-semibold text-xl">Responsable y contacto</h2>
         <p>
-          Ayni es un proyecto de tesis. Para consultas sobre privacidad o para presentar solicitudes
-          relacionadas con tus datos, puedes escribir al equipo de tesis a{" "}
+          Ayni es un proyecto de tesis en Perú. Las personas responsables del proyecto son Daniel
+          Mamani S. y Diego R. Cisneros T. Para consultas sobre privacidad o para presentar
+          solicitudes relacionadas con tus datos, puedes escribirles a{" "}
           <a className="underline" href="mailto:U202219315@upc.edu.pe">
             U202219315@upc.edu.pe
           </a>{" "}
@@ -37,8 +38,8 @@ export default async function AyniPrivacyNoticePage({
           <a className="underline" href="mailto:U20221A715@upc.edu.pe">
             U20221A715@upc.edu.pe
           </a>
-          . La identidad de la persona responsable del tratamiento aún debe confirmarse; estos
-          correos no implican que la UPC sea responsable del tratamiento.
+          , respectivamente. Estos correos son canales de contacto del equipo de tesis; la UPC no se
+          identifica aquí como responsable del tratamiento.
         </p>
       </section>
 
@@ -46,9 +47,10 @@ export default async function AyniPrivacyNoticePage({
         <h2 className="font-semibold text-xl">Datos y uso observado</h2>
         <p>El registro de una cuenta solicita nombre, correo electrónico y contraseña.</p>
         <p>
-          Para crear y autenticar cuentas, mantener sesiones y conservar la versión de los términos
-          aceptada se usan los datos asociados a esas operaciones. Los registros técnicos de sesión
-          incluyen dirección IP y agente de usuario cuando están disponibles.
+          Ayni ofrece cuentas a desarrolladores para autenticarse y administrar espacios de trabajo,
+          aplicaciones y recursos del SDK. Para crear la cuenta y prestar esas funciones se usan los
+          datos de registro, las sesiones y la versión de los términos aceptada. Los registros
+          técnicos de sesión incluyen dirección IP y agente de usuario cuando están disponibles.
         </p>
         <p>
           La contraseña se almacena como credencial protegida por el proveedor de autenticación; no
@@ -58,12 +60,35 @@ export default async function AyniPrivacyNoticePage({
       </section>
 
       <section className="space-y-2">
+        <h2 className="font-semibold text-xl">Proveedores</h2>
+        <p>
+          El proyecto utiliza Vercel para alojar la aplicación, Neon para la base de datos y
+          Cloudflare R2 para almacenar artefactos de modelos. Ayni puede ser utilizado por
+          desarrolladores desde distintos países; las regiones concretas de almacenamiento y acceso
+          de cada servicio están pendientes de confirmación.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="font-semibold text-xl">Conservación</h2>
+        <p>
+          El criterio definido por el proyecto es conservar la cuenta hasta que la persona solicite
+          su eliminación o transcurra un año desde su último inicio de sesión, lo que ocurra
+          primero. El equipo realizará ambas eliminaciones manualmente mediante la base de datos;
+          no se ejecutarán automáticamente. Antes de presentar este criterio como vigente, falta
+          definir cómo se eliminarán las sesiones, las evidencias de aceptación y las copias de
+          seguridad.
+        </p>
+      </section>
+
+      <section className="space-y-2">
         <h2 className="font-semibold text-xl">Información pendiente de confirmar</h2>
         <p>
-          Antes de publicar este aviso como vigente, el equipo debe confirmar la identidad de la
-          persona responsable, las categorías completas, los campos obligatorios y opcionales, los
-          proveedores y destinatarios, las transferencias, los plazos de conservación y la revisión
-          legal.
+          Antes de publicar este aviso como vigente, el equipo debe confirmar las regiones de
+          almacenamiento y acceso de los proveedores, definir el alcance del borrado manual de
+          cuentas, revisar si corresponde inscribir el banco de datos personales,
+          confirmar si hay decisiones automatizadas que afecten a las cuentas y completar la
+          revisión legal.
         </p>
       </section>
 

@@ -36,8 +36,8 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
       </p>
       <h2 className="font-semibold text-xl">Contacto</h2>
       <p>
-        Ayni es un proyecto de tesis. Para consultas sobre estas condiciones, escribe al equipo de
-        tesis a{" "}
+        Ayni es un proyecto de tesis en Perú, a cargo de Daniel Mamani S. y Diego R. Cisneros T.
+        Para consultas sobre estas condiciones, escribe a{" "}
         <a className="underline" href="mailto:U202219315@upc.edu.pe">
           U202219315@upc.edu.pe
         </a>{" "}
@@ -45,8 +45,9 @@ export default async function TermsPage({ params }: { params: Promise<{ version:
         <a className="underline" href="mailto:U20221A715@upc.edu.pe">
           U20221A715@upc.edu.pe
         </a>
-        . Estos correos son canales de contacto del equipo de tesis y no implican que la UPC sea
-        responsable de la plataforma o del tratamiento de datos.
+        . El primer correo corresponde a Daniel Mamani S. y el segundo a Diego R. Cisneros T. Estos
+        correos son canales de contacto del equipo de tesis y no implican que la UPC sea responsable
+        de la plataforma o del tratamiento de datos.
       </p>
       <p className="border-t pt-4 text-muted-foreground text-sm">
         Borrador sujeto a validación legal antes de su puesta en producción.

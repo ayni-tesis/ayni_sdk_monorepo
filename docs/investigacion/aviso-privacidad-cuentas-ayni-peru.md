@@ -63,16 +63,16 @@ la configuración del servidor habilita registro por correo y contraseña
 ([auth](../../packages/auth/src/index.ts)). Esto solo acredita los campos
 observables en ese flujo, no el inventario completo de datos tratados por Ayni.
 
-El equipo de tesis proporcionó como canales de contacto U202219315@upc.edu.pe y
-U20221A715@upc.edu.pe. Esto permite mostrar un canal de contacto, pero no identifica por sí
-solo a la persona responsable del tratamiento ni significa que la UPC asuma esa responsabilidad.
-La persona responsable de Ayni y su asesoría legal deben confirmar y aportar:
+El equipo indicó que Ayni es una tesis en Perú, a cargo de Daniel Mamani S. y Diego R. Cisneros T.,
+con los correos U202219315@upc.edu.pe y U20221A715@upc.edu.pe, respectivamente. El equipo dijo
+que el banco de datos de cuentas no está inscrito y que revisará si corresponde registrarlo. La
+UPC no se identifica como responsable por el solo uso de correos institucionales. Queda confirmar
+la dirección de contacto que se incluirá y revisar legalmente la asignación de responsabilidades:
 
-1. **Entidad y rol:** razón social o nombre legal exacto que opera Ayni,
-   domicilio o dirección de contacto, jurisdicción, RUC si corresponde, y si
-   actúa como titular del banco, responsable del tratamiento o en algún otro
-   rol para cada actividad. El producto “Ayni” no identifica por sí solo a la
-   persona jurídica. Si aplica, identificar al representante en Perú.
+1. **Entidad y rol:** confirmar quién asume el rol de responsable/titular del
+   banco para cada tratamiento y la dirección de contacto que se publicará.
+   Si la revisión concluye que corresponde una persona jurídica, consignar sus
+   datos y RUC; no inventarlos para una tesis.
 2. **Banco de datos:** nombre exacto del banco que contendrá las cuentas,
    existencia/código de inscripción y responsable titular. Confirmar si el
    deber de inscripción aplica y completar el trámite por separado si aún no
@@ -87,24 +87,25 @@ La persona responsable de Ayni y su asesoría legal deben confirmar y aportar:
    términos— solo si cada uso se verifica en el producto y operación. Asesoría
    legal debe confirmar la base aplicable; no presentar una finalidad futura o
    un consentimiento como si ya estuviera implementado.
-5. **Destinatarios, encargados y transferencias:** nombres y función de los
-   proveedores que realmente reciben o almacenan datos (incluidos
-   autenticación, base de datos, alojamiento, correo, monitoreo/errores y
-   soporte, según aplique), países desde los que acceden o donde almacenan, y
-   mecanismo legal para cualquier flujo internacional. No asumir proveedor o
-   país a partir de dependencias del código.
-6. **Retención y eliminación:** plazo o criterio por categoría; qué pasa al
-   cerrar una cuenta; copias de seguridad, registros de seguridad y evidencia
-   de aceptación; excepciones de conservación que tengan sustento. Evitar un
-   “por el tiempo necesario” sin explicar el criterio real.
-7. **Derechos y contacto:** confirmar que el equipo monitorea los dos correos
-   institucionales indicados, quién atenderá las solicitudes y cómo verificar
-   identidad de forma proporcional. La persona responsable y la entidad a la
-   que se dirigen las solicitudes aún deben identificarse.
-8. **Automatización y población destinataria:** confirmar si hay decisiones
-   automatizadas o perfiles que afecten a titulares y sus consecuencias; y si
-   el servicio se dirige a menores o permite su registro, para definir los
-   requisitos aplicables.
+5. **Destinatarios, encargados y transferencias:** el equipo indicó que usa
+   Vercel (aplicación), Neon (base de datos) y Cloudflare R2 (artefactos de
+   modelos). Confirmar en las cuentas de servicio las regiones de datos,
+   países de acceso, categorías que recibe cada proveedor y mecanismo legal
+   para transferencias internacionales. Las regiones no constan en el repo.
+6. **Retención y eliminación:** el equipo definió conservar la cuenta hasta
+   que la persona solicite eliminarla o cumpla un año sin iniciar sesión, lo
+   que ocurra primero. El equipo precisó que ejecutará ambas eliminaciones
+   manualmente mediante la base de datos; el repo no contiene un proceso
+   automático. Antes de describirlo como práctica vigente, acordar el alcance
+   sobre workspaces/recursos y definir el tratamiento de sesiones, copias de
+   seguridad, registros técnicos y evidencia de aceptación.
+7. **Derechos y contacto:** las personas y correos de contacto ya fueron
+   proporcionados. Confirmar que el equipo los monitorea y cómo verificará
+   identidad de forma proporcional al atender solicitudes.
+8. **Automatización y población destinataria:** el equipo indicó que las
+   cuentas se dirigen a desarrolladores. Confirmar si existe edad mínima y si
+   hay decisiones automatizadas o perfiles que afecten a titulares y sus
+   consecuencias.
 9. **Publicación:** versión, fecha de vigencia, ubicación pública estable y
    revisión legal del texto final frente a los flujos reales.
 
@@ -115,8 +116,10 @@ El repositorio mantiene `AYNI_PRIVACY_NOTICE` en versión `1.0.0` con estado
 registro y el hook del servidor bloquean altas mientras el aviso no se marque
 publicado ([registro](../../apps/web/src/app/auth/auth-diptych.tsx),
 [servidor de autenticación](../../packages/auth/src/index.ts)). La página
-visible actualmente indica que siguen pendientes entidad responsable,
-proveedores/destinatarios, transferencias, conservación y revisión legal
+visible actualmente indica que siguen pendientes la confirmación legal del
+responsable, regiones/destinatarios, transferencias, el procedimiento y
+alcance de la retención manual definida, la inscripción aplicable y la
+revisión legal
 ([página del aviso](../../apps/web/src/app/privacy/ayni/[version]/page.tsx)).
 Por tanto, se puede preparar y revisar el contenido, pero no cambiar el estado
 a `published` hasta que se confirmen esos hechos y se revise el tratamiento
