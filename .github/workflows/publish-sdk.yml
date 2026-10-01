@@ -83,7 +83,8 @@ jobs:
 
       - name: Add SDK from this release commit
         working-directory: release-check-app
-        run: flutter pub add "ayni_sdk@{path: $GITHUB_WORKSPACE/packages/sdk_flutter}"
+        run: |
+          flutter pub add "ayni_sdk@{path: $GITHUB_WORKSPACE/packages/sdk_flutter}"
 
       - name: Build Android app
         if: matrix.platform == 'android'
