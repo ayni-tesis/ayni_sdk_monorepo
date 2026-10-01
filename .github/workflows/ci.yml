@@ -91,6 +91,10 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart pub get
 
+      - name: Verify SDK publish archive
+        working-directory: packages/sdk_flutter
+        run: dart pub publish --dry-run
+
       - name: Resolve SDK example app dependencies
         working-directory: packages/sdk_flutter/example/app
         run: flutter pub get
@@ -102,10 +106,6 @@ jobs:
       - name: Test SDK package
         working-directory: packages/sdk_flutter
         run: dart test
-
-      - name: Verify SDK publish archive
-        working-directory: packages/sdk_flutter
-        run: dart pub publish --dry-run
 
       - name: Analyze SDK example app
         working-directory: packages/sdk_flutter/example/app
@@ -175,6 +175,14 @@ jobs:
         working-directory: release-check-app
         run: |
           flutter pub add "ayni_sdk@{path: $GITHUB_WORKSPACE/packages/sdk_flutter}"
+
+      # tflite_flutter 0.12.x targets Java 11 while Flutter 3.44 targets Kotlin 17.
+      - name: Align tflite_flutter Android JVM targets
+        if: matrix.platform == 'android'
+        run: |
+          plugin_gradle="$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*/tflite_flutter-*/android/build.gradle' -print -quit)"
+          test -n "$plugin_gradle"
+          sed -i 's/JavaVersion.VERSION_11/JavaVersion.VERSION_17/g' "$plugin_gradle"
 
       - name: Build Android app
         if: matrix.platform == 'android'
