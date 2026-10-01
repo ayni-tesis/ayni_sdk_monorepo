@@ -43,6 +43,10 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart pub get
 
+      - name: Verify publish archive
+        working-directory: packages/sdk_flutter
+        run: dart pub publish --dry-run
+
       - name: Resolve SDK example app dependencies
         working-directory: packages/sdk_flutter/example/app
         run: flutter pub get
@@ -54,10 +58,6 @@ jobs:
       - name: Test package
         working-directory: packages/sdk_flutter
         run: dart test
-
-      - name: Verify publish archive
-        working-directory: packages/sdk_flutter
-        run: dart pub publish --dry-run
 
   verify-platforms:
     name: Verify ${{ matrix.platform }} build
