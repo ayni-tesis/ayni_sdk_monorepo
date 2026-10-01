@@ -17,7 +17,7 @@ type Destination = { label: string; description: string } & (
 );
 
 const destinations: readonly Destination[] = [
-  { label: "Create your workspace", href: "/register", description: "Set up Ayni for your team" },
+  { label: "Create your workspace", href: "/sign-up", description: "Set up Ayni for your team" },
   {
     label: "Go to dashboard",
     href: "/dashboard",
@@ -101,7 +101,7 @@ export default function Home() {
             <DocsLink className={styles.navLink} page="home">
               Documentación
             </DocsLink>
-            <Link className={styles.navAction} href="/register">
+            <Link className={styles.navAction} href="/sign-up">
               Get started <span aria-hidden="true">↗</span>
             </Link>
           </nav>
@@ -121,7 +121,7 @@ export default function Home() {
             the network is gone.
           </p>
           <div className={styles.heroActions}>
-            <Link className={styles.primaryButton} href="/register">
+            <Link className={styles.primaryButton} href="/sign-up">
               Create your workspace <span aria-hidden="true">↗</span>
             </Link>
             <Link className={styles.textAction} href="/dashboard">
@@ -261,7 +261,7 @@ export default function Home() {
           </Link>
           <span>Offline-first model workflows</span>
           <div>
-            <Link href="/register">Create workspace</Link>
+            <Link href="/sign-up">Create workspace</Link>
             <Link href="/dashboard">Dashboard</Link>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POST_AUTH_PATH, getSafePostAuthRedirect, joinLoginRedirect } from "./post-auth";
+import { DEFAULT_POST_AUTH_PATH, getSafePostAuthRedirect, joinSignInRedirect } from "./post-auth";
 
 describe("getSafePostAuthRedirect", () => {
   it("returns the encoded next path when it is a same-origin route", () => {
@@ -18,12 +18,12 @@ describe("getSafePostAuthRedirect", () => {
   });
 });
 
-describe("joinLoginRedirect", () => {
+describe("joinSignInRedirect", () => {
   it("preserves the invitation token through the login redirect", () => {
-    expect(joinLoginRedirect("tok-1")).toBe("/login?next=%2Fjoin%3Ftoken%3Dtok-1");
+    expect(joinSignInRedirect("tok-1")).toBe("/sign-in?next=%2Fjoin%3Ftoken%3Dtok-1");
   });
 
   it("points back to the join page when the token is missing", () => {
-    expect(joinLoginRedirect(undefined)).toBe("/login?next=%2Fjoin");
+    expect(joinSignInRedirect(undefined)).toBe("/sign-in?next=%2Fjoin");
   });
 });

@@ -209,7 +209,8 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
                       rel="noreferrer"
                     >
                       Términos y condiciones de Ayni
-                    </a>
+                    </a>{" "}
+                    y declaro tener 18 años o más.
                   </span>
                 </label>
                 {field.state.meta.errors.map((error) => (

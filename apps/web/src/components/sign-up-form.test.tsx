@@ -13,10 +13,10 @@ import SignUpForm from "./sign-up-form";
 describe("SignUpForm", () => {
   afterEach(cleanup);
 
-  it("does not collect account data while Ayni's privacy notice is a draft", () => {
+  it("collects registration details and requires terms acceptance after publication", () => {
     render(<SignUpForm onSwitchToSignIn={vi.fn()} />);
 
-    expect(screen.getByText("Registro temporalmente no disponible")).toBeTruthy();
-    expect(screen.queryByLabelText("Correo electrónico")).toBeNull();
+    expect(screen.getByLabelText("Correo electrónico")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /términos y condiciones/i })).toBeTruthy();
   });
 });

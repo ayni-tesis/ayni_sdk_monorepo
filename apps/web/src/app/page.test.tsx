@@ -44,7 +44,7 @@ describe("home landing page", () => {
       screen.getByRole("heading", { name: /workflows that keep working offline/i }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: /create your workspace/i }).getAttribute("href")).toBe(
-      "/register",
+      "/sign-up",
     );
     expect(screen.getByRole("link", { name: /go to dashboard/i }).getAttribute("href")).toBe(
       "/dashboard",

@@ -16,7 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!isPending && (!session || !hasAcceptedCurrentTerms(acceptedVersion))) {
-      router.replace("/login");
+      router.replace("/sign-in");
     }
   }, [acceptedVersion, isPending, router, session]);
 
