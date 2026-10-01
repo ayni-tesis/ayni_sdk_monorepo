@@ -193,6 +193,26 @@ Requisitos de Android en `android/app/build.gradle`:
 - **Versión mínima admitida:** Android 8.0 (API 26) o posterior. Configurar `minSdkVersion 26` (o `minSdk = 26`) es una decisión de tu aplicación: si tu app no exige `minSdkVersion 26` a nivel global para admitir dispositivos antiguos en otras funciones, la inicialización del SDK se encarga de rechazar la ejecución de modelos en ellos; si decides excluir directamente esos dispositivos con `minSdkVersion 26`, el sistema operativo impedirá su instalación y `unsupportedPlatform` no será alcanzable en instalaciones normales.
 - **Versión de compilación:** Compila con `compileSdkVersion 36` (o `compileSdk = 36`), requerida por `tflite_flutter`.
 
+Con Flutter 3.44 y `tflite_flutter` 0.12.1, el subproyecto del plugin declara
+Java 11 mientras Kotlin compila a Java 17. Alinea sus tareas Java en
+`android/build.gradle.kts` para que Gradle pueda compilar la app:
+
+```kotlin
+gradle.projectsEvaluated {
+    rootProject.subprojects
+        .filter { it.name == "tflite_flutter" }
+        .forEach { plugin ->
+            plugin.tasks.withType<JavaCompile>().configureEach {
+                sourceCompatibility = JavaVersion.VERSION_17.toString()
+                targetCompatibility = JavaVersion.VERSION_17.toString()
+            }
+        }
+}
+```
+
+Este ajuste deja de ser necesario cuando `tflite_flutter` alinee ambos
+targets.
+
 Al compilar la app para una versión Android compatible, el runtime nativo queda disponible para el SDK: `Runtime Android listo.`.
 
 Si la app se ejecuta en un dispositivo Android con una versión inferior al mínimo admitido (API < 26), la inicialización falla antes de cargar o ejecutar cualquier modelo: `AyniSdk.initialize(config)` devuelve `InitializationStatus.unsupportedPlatform` con el mensaje `Este dispositivo Android no cumple el requisito mínimo del SDK.` y no ejecuta ninguna inferencia.

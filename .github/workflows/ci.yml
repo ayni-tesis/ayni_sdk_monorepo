@@ -181,13 +181,15 @@ jobs:
         working-directory: release-check-app
         run: |
           cat >> android/build.gradle.kts <<'EOF'
-          subprojects {
-              if (name == "tflite_flutter") {
-                  tasks.withType<JavaCompile>().configureEach {
-                      sourceCompatibility = JavaVersion.VERSION_17.toString()
-                      targetCompatibility = JavaVersion.VERSION_17.toString()
+          gradle.projectsEvaluated {
+              rootProject.subprojects
+                  .filter { it.name == "tflite_flutter" }
+                  .forEach { plugin ->
+                      plugin.tasks.withType<JavaCompile>().configureEach {
+                          sourceCompatibility = JavaVersion.VERSION_17.toString()
+                          targetCompatibility = JavaVersion.VERSION_17.toString()
+                      }
                   }
-              }
           }
           EOF
 
