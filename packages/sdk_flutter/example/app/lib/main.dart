@@ -47,7 +47,13 @@ class _AyniIntegrationPageState extends State<AyniIntegrationPage> {
   Future<void> _initialize() async {
     final serverUrl = Uri.tryParse(_serverUrl.text.trim());
     final credential = _credential.text.trim();
-    if (serverUrl == null || credential.isEmpty) return;
+    if (serverUrl == null || serverUrl.host.isEmpty || credential.isEmpty) {
+      setState(() {
+        _message =
+            'Ingresa una credencial de prueba y el endpoint antes de inicializar.';
+      });
+      return;
+    }
 
     setState(() {
       _working = true;
@@ -141,7 +147,13 @@ class _AyniIntegrationPageState extends State<AyniIntegrationPage> {
     final sdk = _sdk;
     final image = _image;
     final workflowId = _workflowId.text.trim();
-    if (sdk == null || image == null || !_synced || workflowId.isEmpty) return;
+    if (workflowId.isEmpty) {
+      setState(() {
+        _message = 'Ingresa el ID de un workflow publicado antes de ejecutar.';
+      });
+      return;
+    }
+    if (sdk == null || image == null || !_synced) return;
 
     setState(() {
       _working = true;
@@ -228,6 +240,10 @@ class _AyniIntegrationPageState extends State<AyniIntegrationPage> {
             icon: const Icon(Icons.power_settings_new),
             label: const Text('Inicializar SDK'),
           ),
+          if (_message != null) ...[
+            const SizedBox(height: 16),
+            Text(_message!, key: const Key('status-message')),
+          ],
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _working || _sdk == null ? null : _sync,
@@ -272,10 +288,6 @@ class _AyniIntegrationPageState extends State<AyniIntegrationPage> {
           if (_working) ...[
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
-          ],
-          if (_message != null) ...[
-            const SizedBox(height: 16),
-            Text(_message!, key: const Key('status-message')),
           ],
           if (_outputs.isNotEmpty) ...[
             const SizedBox(height: 16),

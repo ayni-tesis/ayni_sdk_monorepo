@@ -55,4 +55,38 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('explains which test configuration is missing', (tester) async {
+    await tester.pumpWidget(const AyniExampleApp());
+    await tester.tap(find.widgetWithText(FilledButton, 'Inicializar SDK'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ingresa una credencial de prueba y el endpoint antes de inicializar.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('SDK inicializado'), findsNothing);
+  });
+
+  testWidgets('requests an endpoint when a test credential is entered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const AyniExampleApp());
+    await tester.enterText(
+      find.byKey(const Key('credential-field')),
+      'test-only-credential',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Inicializar SDK'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ingresa una credencial de prueba y el endpoint antes de inicializar.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('SDK inicializado'), findsNothing);
+  });
 }
