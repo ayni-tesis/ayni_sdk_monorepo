@@ -1,8 +1,6 @@
 name: Publish Flutter SDK
 
 on:
-  pull_request:
-    branches: [main, master, "codex/**"]
   push:
     tags:
       - "ayni_sdk-v*"
