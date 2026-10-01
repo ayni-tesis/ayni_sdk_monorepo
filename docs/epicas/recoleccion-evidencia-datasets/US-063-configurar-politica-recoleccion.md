@@ -8,7 +8,7 @@ Como administrador, quiero habilitar y configurar la recolección de evidencia d
 
 ## Interfaz
 
-Dashboard → Aplicación → `Privacidad y recolección`. Título `Recolección de evidencia`; interruptor `Permitir captura de imágenes para datasets`, selector `Red permitida` y campos `Tamaño máximo`/`Calidad`. Aviso obligatorio: `Las imágenes se subirán solo desde workflows que incluyan dataset.capture y con consentimiento.` Botones `Guardar política` y `Cancelar`; éxito `Política de recolección actualizada.`
+Dashboard → Aplicación → `Recolección de evidencia`. Interruptor `Permitir captura de imágenes para datasets`, selector `Red permitida` y campos `Tamaño máximo`/`Calidad`. Aviso obligatorio: `Las imágenes se subirán solo desde workflows que incluyan dataset.capture y con consentimiento.` Botones `Guardar política` y `Cancelar`; éxito `Política de recolección actualizada.`
 
 ## Happy path
 

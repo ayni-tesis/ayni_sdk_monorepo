@@ -642,7 +642,7 @@ app.use(
   "/*",
   cors({
     origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
@@ -652,7 +652,8 @@ app.use("/api/auth/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
   if (
     (c.req.method === "GET" && path === "/api/auth/get-session") ||
-    (c.req.method === "POST" && ["/api/auth/sign-in/email", "/api/auth/sign-out"].includes(path))
+    (c.req.method === "POST" &&
+      ["/api/auth/sign-in/email", "/api/auth/sign-up/email", "/api/auth/sign-out"].includes(path))
   ) {
     return next();
   }

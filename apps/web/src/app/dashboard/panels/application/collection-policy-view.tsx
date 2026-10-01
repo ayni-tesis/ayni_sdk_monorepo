@@ -51,7 +51,7 @@ export type CollectionPolicyViewProps = {
   canManage?: boolean;
 };
 
-/** Application → `Privacidad y recolección` (US-063). */
+/** Application → `Recolección de evidencia` (US-063). */
 export function CollectionPolicyView({
   application,
   canManage = false,
@@ -136,7 +136,7 @@ export function CollectionPolicyView({
     <section className="space-y-6">
       <div className="flex items-center gap-2">
         <IconPhotoShield className="size-5 text-primary" />
-        <h2 className="font-semibold text-lg">Privacidad y recolección</h2>
+        <h2 className="font-semibold text-lg">Recolección de evidencia</h2>
       </div>
 
       {loading ? (
@@ -151,7 +151,7 @@ export function CollectionPolicyView({
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="max-w-xl space-y-5 rounded-lg border p-4">
-          <h3 className="font-medium">Recolección de evidencia</h3>
+          <h3 className="font-medium">Política de captura</h3>
 
           <label className="flex items-center justify-between gap-4">
             <span className="font-medium text-sm">Permitir captura de imágenes para datasets</span>

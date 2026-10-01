@@ -89,8 +89,17 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
             router.push(getBrowserPostAuthRedirect());
             toast.success("Términos aceptados. Cuenta creada correctamente.");
           },
-          onError: () => {
-            const message = "No pudimos registrar tu aceptación. Inténtalo nuevamente.";
+          onError: (ctx) => {
+            let message = "No pudimos registrar tu aceptación. Inténtalo nuevamente.";
+            if (
+              ctx.error?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" ||
+              ctx.error?.message?.toLowerCase().includes("already exists")
+            ) {
+              message =
+                "Ya existe una cuenta con este correo electrónico. Inicia sesión en su lugar.";
+            } else if (ctx.error?.message) {
+              message = ctx.error.message;
+            }
             setSubmitError(message);
             toast.error(message);
           },

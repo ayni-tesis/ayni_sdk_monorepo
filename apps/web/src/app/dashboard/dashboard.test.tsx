@@ -148,7 +148,7 @@ describe("parseDashboardRoute", () => {
     });
   });
 
-  it("reads the Privacidad y recolección section route (US-063)", () => {
+  it("reads the Recolección de evidencia section route (US-063)", () => {
     expect(parseDashboardRoute("/dashboard/applications/app-1/collection")).toEqual({
       kind: "app",
       id: "app-1",

@@ -109,10 +109,13 @@ export const auth = betterAuth({
       if (
         ctx.path === "/sign-in/email" &&
         hasAcceptedCurrentTerms(ctx.body?.termsAcceptedVersion) &&
-        typeof ctx.body?.email === "string" &&
-        ctx.context.newSession
+        typeof ctx.body?.email === "string"
       ) {
-        await recordCurrentTermsAcceptance(ctx.context.newSession.user.id);
+        const returnedUser = (ctx.context.returned as { user?: { id?: string } } | undefined)?.user;
+        const userId = returnedUser?.id ?? ctx.context.newSession?.user?.id;
+        if (userId) {
+          await recordCurrentTermsAcceptance(userId);
+        }
       }
     }),
   },

@@ -109,4 +109,77 @@ describe("AuthDiptych", () => {
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith(next));
   });
+
+  it("shows helpful error message when email is already registered", async () => {
+    signUpEmailMock.mockImplementation(
+      async (
+        _credentials: unknown,
+        callbacks: { onError?: (ctx: { error: { code: string; message: string } }) => void },
+      ) => {
+        callbacks.onError?.({
+          error: {
+            code: "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
+            message: "User already exists. Use another email.",
+          },
+        });
+      },
+    );
+
+    render(<AuthDiptych initialMode="sign-up" />);
+    fireEvent.change(screen.getByLabelText("Nombre completo"), {
+      target: { value: "Test User" },
+    });
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /crear cuenta/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Ya existe una cuenta con este correo electrónico. Inicia sesión en su lugar.",
+        ),
+      ).toBeTruthy();
+    });
+    expect(toastMock.error).toHaveBeenCalledWith(
+      "Ya existe una cuenta con este correo electrónico. Inicia sesión en su lugar.",
+    );
+  });
+
+  it("shows fallback error when terms acceptance registration fails", async () => {
+    signUpEmailMock.mockImplementation(
+      async (
+        _credentials: unknown,
+        callbacks: { onError?: (ctx: { error?: { message?: string } }) => void },
+      ) => {
+        callbacks.onError?.({ error: undefined });
+      },
+    );
+
+    render(<AuthDiptych initialMode="sign-up" />);
+    fireEvent.change(screen.getByLabelText("Nombre completo"), {
+      target: { value: "Test User" },
+    });
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /crear cuenta/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No pudimos registrar tu aceptación. Inténtalo nuevamente."),
+      ).toBeTruthy();
+    });
+    expect(toastMock.error).toHaveBeenCalledWith(
+      "No pudimos registrar tu aceptación. Inténtalo nuevamente.",
+    );
+  });
 });

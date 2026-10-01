@@ -68,6 +68,6 @@ export const DASHBOARD_VIEWS: Record<DashboardView, DashboardViewDescriptor> = {
   models: { id: "models", label: "Modelos", segment: "models" },
   credentials: { id: "credentials", label: "Credenciales SDK", segment: "credentials" },
   privacy: { id: "privacy", label: "Privacidad y datos", segment: "privacy" },
-  collection: { id: "collection", label: "Privacidad y recolección", segment: "collection" },
+  collection: { id: "collection", label: "Recolección de evidencia", segment: "collection" },
   settings: { id: "settings", label: "Configuración", segment: "settings" },
 };
