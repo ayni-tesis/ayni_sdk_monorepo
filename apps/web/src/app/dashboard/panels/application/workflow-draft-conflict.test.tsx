@@ -138,9 +138,7 @@ describe("US-130: editing a draft someone else changed", () => {
       positions: { "image-node": { x: 64, y: 48 }, "model-node": { x: 416, y: 48 } },
       draftRevision: 7,
     });
-    await act(async () =>
-      finishLayout({ data: { positions: {}, draftRevision: 8 } }),
-    );
+    await act(async () => finishLayout({ data: { positions: {}, draftRevision: 8 } }));
     await waitFor(() => expect(screen.queryByText("Guardando posiciones…")).toBeNull());
     connectImageToModel();
 
