@@ -5,7 +5,7 @@ on:
     branches: [main, master, "codex/**"]
   push:
     tags:
-      - "ayni_sdk-v[0-9]+.[0-9]+.[0-9]+"
+      - "ayni_sdk-v*"
 
 permissions:
   contents: read
@@ -27,7 +27,15 @@ jobs:
         working-directory: packages/sdk_flutter
         run: |
           version="$(sed -n 's/^version: //p' pubspec.yaml | tr -d '\"')"
-          grep -Fq "## $version - " CHANGELOG.md
+          awk -v heading="## $version - " '
+            /^## / {
+              if (found) exit
+              if (index($0, heading) == 1) found = 1
+              next
+            }
+            found && $0 !~ /^$/ && $0 !~ /^### / { has_notes = 1 }
+            END { exit !(found && has_notes) }
+          ' CHANGELOG.md
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             tag_version="${GITHUB_REF_NAME#ayni_sdk-v}"
             test "$version" = "$tag_version"
