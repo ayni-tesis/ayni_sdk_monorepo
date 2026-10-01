@@ -1,0 +1,105 @@
+name: Publish Flutter SDK
+
+on:
+  pull_request:
+    branches: [main, master, "codex/**"]
+  push:
+    tags:
+      - "ayni_sdk-v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-package:
+    name: Verify package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Verify tag, version, and changelog
+        working-directory: packages/sdk_flutter
+        run: |
+          version="$(sed -n 's/^version: //p' pubspec.yaml | tr -d '\"')"
+          grep -Fq "## $version - " CHANGELOG.md
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            tag_version="${GITHUB_REF_NAME#ayni_sdk-v}"
+            test "$version" = "$tag_version"
+          fi
+
+      - name: Resolve dependencies
+        working-directory: packages/sdk_flutter
+        run: dart pub get
+
+      - name: Analyze package
+        working-directory: packages/sdk_flutter
+        run: dart analyze
+
+      - name: Test package
+        working-directory: packages/sdk_flutter
+        run: dart test
+
+      - name: Verify publish archive
+        working-directory: packages/sdk_flutter
+        run: dart pub publish --dry-run
+
+  verify-platforms:
+    name: Verify ${{ matrix.platform }} build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-latest
+          - platform: ios
+            os: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Create SDK consumer app
+        run: |
+          flutter create --platforms=${{ matrix.platform }} \
+            --project-name ayni_sdk_release_check \
+            release-check-app
+
+      - name: Add SDK from this release commit
+        working-directory: release-check-app
+        run: flutter pub add "ayni_sdk@{path: $GITHUB_WORKSPACE/packages/sdk_flutter}"
+
+      - name: Build Android app
+        if: matrix.platform == 'android'
+        working-directory: release-check-app
+        run: |
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' android/app/build.gradle.kts
+          flutter build apk --debug
+
+      - name: Build iOS app
+        if: matrix.platform == 'ios'
+        working-directory: release-check-app
+        run: |
+          sed -i '' "s/# platform :ios, '.*'/platform :ios, '11.0'/" ios/Podfile
+          flutter build ios --no-codesign --debug
+
+  publish:
+    name: Publish verified version
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ayni_sdk-v')
+    needs: [verify-package, verify-platforms]
+    permissions:
+      contents: read
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: packages/sdk_flutter

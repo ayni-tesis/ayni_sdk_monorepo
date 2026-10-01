@@ -12,7 +12,7 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.1.0-beta.1
+  ayni_sdk: ^0.1.0
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -27,7 +27,8 @@ de compilar: `No se pudo resolver la versión solicitada de ayni_sdk.` La app
 consumidora de referencia está en `example/app` y fija la versión resuelta en
 su `pubspec.lock`.
 
-Esta versión es para pruebas piloto y puede cambiar.
+Consulta las notas de cada versión en el
+[changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
 
 ## API Pública
 
@@ -186,7 +187,7 @@ La cancelación detiene los nodos pendientes después de que termine una inferen
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.1.0-beta.1: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.
