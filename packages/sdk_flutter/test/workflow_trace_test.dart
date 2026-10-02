@@ -2,6 +2,28 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('omits duration for a node that was not executed', () {
+    final skipped = TraceNodeExecution(
+      nodeId: 'model-2',
+      type: 'model.tflite',
+      status: 'skipped',
+    );
+    final completed = TraceNodeExecution(
+      nodeId: 'model-1',
+      type: 'model.tflite',
+      status: 'completed',
+      durationMs: 12,
+    );
+
+    expect(skipped.durationMs, isNull);
+    expect(skipped.toJson(), {
+      'nodeId': 'model-2',
+      'type': 'model.tflite',
+      'status': 'skipped',
+    });
+    expect(completed.toJson()['durationMs'], 12);
+  });
+
   test(
     'requires app-declared run identity and finite sourced measurements',
     () {

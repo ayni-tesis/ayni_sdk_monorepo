@@ -215,7 +215,7 @@ class TraceNodeExecution {
     required this.nodeId,
     required this.type,
     required this.status,
-    required this.durationMs,
+    this.durationMs,
     this.modelVersionId,
   });
 
@@ -228,8 +228,8 @@ class TraceNodeExecution {
   /// Node outcome: completed, skipped, or failed.
   final String status;
 
-  /// Elapsed node time in milliseconds.
-  final int durationMs;
+  /// Elapsed node time in milliseconds, or null when the node was not executed.
+  final int? durationMs;
 
   /// Model version attempted by this node, when applicable.
   final String? modelVersionId;
@@ -239,7 +239,7 @@ class TraceNodeExecution {
     'nodeId': nodeId,
     'type': type,
     'status': status,
-    'durationMs': durationMs,
+    if (durationMs != null) 'durationMs': durationMs!,
     if (modelVersionId != null) 'modelVersionId': modelVersionId!,
   };
 }

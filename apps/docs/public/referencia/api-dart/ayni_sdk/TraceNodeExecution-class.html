@@ -64,7 +64,7 @@
     <h2>Constructors</h2>
     <dl class="constructor-summary-list">
         <dt id="TraceNodeExecution.new" class="callable">
-          <span class="name"><a href="../ayni_sdk/TraceNodeExecution/TraceNodeExecution.html">TraceNodeExecution</a></span><span class="signature">({<span class="parameter" id="param-nodeId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">nodeId</span>, </span><span class="parameter" id="param-type"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">type</span>, </span><span class="parameter" id="param-status"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">status</span>, </span><span class="parameter" id="param-durationMs"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a></span> <span class="parameter-name">durationMs</span>, </span><span class="parameter" id="param-modelVersionId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">modelVersionId</span></span>})</span>
+          <span class="name"><a href="../ayni_sdk/TraceNodeExecution/TraceNodeExecution.html">TraceNodeExecution</a></span><span class="signature">({<span class="parameter" id="param-nodeId"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">nodeId</span>, </span><span class="parameter" id="param-type"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">type</span>, </span><span class="parameter" id="param-status"><span>required</span> <span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">status</span>, </span><span class="parameter" id="param-durationMs"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a>?</span> <span class="parameter-name">durationMs</span>, </span><span class="parameter" id="param-modelVersionId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">modelVersionId</span></span>})</span>
         </dt>
         <dd>
           Creates a sanitized node phase outcome.
@@ -80,12 +80,12 @@
     <dl class="properties">
         <dt id="durationMs" class="property">
   <span class="name"><a href="../ayni_sdk/TraceNodeExecution/durationMs.html">durationMs</a></span>
-  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a></span>
+  <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a>?</span>
   
 
 </dt>
 <dd>
-  Elapsed node time in milliseconds.
+  Elapsed node time in milliseconds, or null when the node was not executed.
   <div class="features"><span class="feature">final</span></div>
 
 </dd>
