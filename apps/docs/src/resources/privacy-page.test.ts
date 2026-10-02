@@ -114,7 +114,9 @@ describe("Datos y privacidad (US-147)", () => {
     ).toEqual([]);
     expect(doesNot).toContain("No sube imágenes ni entradas del modelo durante la sincronización.");
     expect(doesNot).toContain("No envía telemetría.");
-    expect(doesNot).toContain("datos técnicos del dispositivo");
+    expect(doesNot).toContain("No recolecta el modelo, el sistema operativo");
+    expect(doesNot).toContain("dentro de `storageDirectory`");
+    expect(doesNot).toContain("no se envía");
   });
 
   it("names Dart's own User-Agent, which the SDK leaves unchanged", () => {
@@ -133,6 +135,7 @@ describe("Datos y privacidad (US-147)", () => {
     expect(
       tableRows(storedSection).filter((row) => row.length !== 3 || row.some((cell) => cell === "")),
     ).toEqual([]);
+    expect(storedSection).toContain("`installation-id`");
   });
 
   it("shows how to delete the data with an example CI analyzes", () => {

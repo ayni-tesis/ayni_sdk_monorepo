@@ -8,8 +8,10 @@ import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
+import 'installation_id_store.dart';
 import 'sdk_consent.dart';
 import 'sdk_internal.dart';
+import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
@@ -590,6 +592,7 @@ class AyniSdk {
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
       );
+      sdk._ensureInstallationId();
       _instance = sdk;
       return AyniInitializationResult(
         status: InitializationStatus.ready,
@@ -670,6 +673,12 @@ class AyniSdk {
   /// Other messages include `Descargando modelos para <nombre>…` during
   /// [sync] and `Usando recursos guardados en este dispositivo.` during [run].
   final void Function(String message)? onProgress;
+
+  /// Installation identity used only by policy-enabled diagnostic traces.
+  String? _installationId;
+
+  String _ensureInstallationId() =>
+      _installationId ??= InstallationIdStore(storageDirectory).loadOrCreate();
 
   final String _credential;
   final Map<String, _ActiveExecution> _activeExecutions = {};
@@ -937,7 +946,7 @@ class AyniSdk {
     required ConsentDecision decision,
     required String noticeVersion,
   }) {
-    if (!_isRandomUuidV4(subjectId)) {
+    if (!isUuidV4(subjectId)) {
       throw ArgumentError.value(
         subjectId,
         'subjectId',
@@ -1008,20 +1017,7 @@ class AyniSdk {
     }, waitUntilComplete: () => receiptWork ?? Future<void>.value());
   }
 
-  bool _isRandomUuidV4(String value) => RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
-  ).hasMatch(value);
-
-  String _newConsentReceiptId() {
-    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
-    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
-        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-  }
+  String _newConsentReceiptId() => createUuidV4();
 
   Future<T> _serializeConsentWork<T>(
     Future<T> Function() operation, {
