@@ -32,8 +32,10 @@ Scenario: Identificador local inválido
 ## Criterios de aceptación
 
 - El identificador es único por instalación y generado localmente.
+- El identificador es un UUID v4 guardado en `storageDirectory/installation-id`; `AyniSdk.initialize()` lo crea si falta y reemplaza un valor local corrupto.
 - El servidor lo trata como único dentro de la aplicación al registrar trazas.
 - No usa IMEI, MAC, identificador publicitario ni otro identificador de hardware.
+- El identificador no se envía por sí solo; se incorpora a registros de ejecución únicamente cuando la telemetría está habilitada.
 - Se restablece al desinstalar o borrar los datos de la app.
 
 ## Criterios para validación técnica
@@ -41,6 +43,7 @@ Scenario: Identificador local inválido
 - El UUID se conserva entre reinicios de la app y es el identificador de instalación que agrupa sus trazas.
 - La unicidad y deduplicación del servidor se limitan al ámbito de la aplicación autenticada.
 - Al restablecerlo, las trazas ya creadas conservan el identificador con que se crearon; solo las trazas futuras usan el nuevo UUID.
+- Si no se puede persistir durante la inicialización, esta falla sin conservar un SDK parcialmente inicializado.
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
   consentimiento requerido y su retención.

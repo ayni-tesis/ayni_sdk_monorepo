@@ -12,16 +12,17 @@ Como SDK, quiero registrar una traza por ejecución para saber qué workflow, mo
 Scenario: Workflow ejecutado
   Given que la telemetría está habilitada
   When termina una ejecución de workflow
-  Then el SDK registra workflow, versiones, estado, duración e identificador de instalación
+  Then el SDK crea localmente una traza con workflow, versiones, estado, duración, perfil e identificador de instalación
+  And la adjunta al resultado o error tipado de esa ejecución
 ```
 
 ## Bad path
 
 ```gherkin
 Scenario: Telemetría deshabilitada
-  Given que la política deshabilita telemetría
+  Given que la política deshabilita telemetría o no existe una política conocida
   When termina una ejecución de workflow
-  Then el SDK no crea ni envía una traza
+  Then el SDK no crea una traza
 ```
 
 ## Criterios de aceptación
@@ -42,3 +43,8 @@ Scenario: Telemetría deshabilitada
 - La validez, condición, contexto experimental y mediciones aportadas por la app se conservan como declaraciones del cliente. El servidor marca su origen como `clientReported`/no verificado.
 - Campos pendientes del protocolo pueden quedar ausentes; no se inventan valores ni se presenta una traza cliente como verificación experimental del servidor.
 - La captura requiere política conocida y habilitada; sin ella, el SDK no captura la traza.
+- `GET /sdk/telemetry-policy` usa la credencial SDK y devuelve solo habilitación y retención; la aplicación se deriva de la credencial. `sync()` guarda la respuesta válida y continúa normalmente si no logra refrescarla.
+- La traza local es `WorkflowTrace` y está disponible como `WorkflowResult.trace` o `WorkflowError.trace`; no inicia solicitudes de red ni queda en una cola durable en esta historia.
+- El esquema incluye `traceSchemaVersion`, `traceId`, `runId`/repetición si se declararon, condición/caso, procedencia, perfil, hashes/modelos, resultado estructurado, tiempos, mediciones externas e incidencias/validez declaradas.
+- Los campos suministrados por la app se identifican como reportados por el cliente; el servidor no certifica su veracidad experimental.
+- Envío, reintentos durables e ingesta de trazas son US-106 y US-107; esta historia no los implementa.
