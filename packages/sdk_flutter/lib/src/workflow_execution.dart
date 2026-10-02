@@ -555,7 +555,9 @@ class WorkflowExecutor {
             nodeId: id,
             type: node['type'] as String,
             status: active.contains(id) ? 'completed' : 'skipped',
-            durationMs: nodeTimer.elapsedMilliseconds,
+            durationMs: active.contains(id)
+                ? nodeTimer.elapsedMilliseconds
+                : null,
             modelVersionId: node['type'] == 'model.tflite'
                 ? node['modelVersionId'] as String
                 : null,
@@ -620,7 +622,7 @@ class WorkflowExecutor {
               nodeId: id,
               type: node['type'] as String,
               status: 'skipped',
-              durationMs: 0,
+              durationMs: null,
             ),
           );
         }

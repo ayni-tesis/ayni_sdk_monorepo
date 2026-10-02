@@ -102,7 +102,9 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 - No sube imágenes ni entradas del modelo durante la sincronización.
 - No envía trazas ni imágenes. Si `sync()` recibió una política válida habilitada
   y la app entrega contexto a `run()`, adjunta una traza tipada a su resultado o
-  error. La traza solo vive en memoria durante esta historia; no hay cola local,
+  error. Incluye duración total y por nodo en milisegundos, estado del nodo y el
+  contexto declarado de corrida, repetición y condición; un nodo omitido no tiene
+  duración. La traza solo vive en memoria durante esta historia; no hay cola local,
   persistencia ni envío al servidor.
 - Lee el perfil técnico cuando la app llama a `AyniSdk.getDeviceProfile()` o
   cuando una ejecución elegible recibe `traceContext`; para la traza lo consulta
@@ -123,7 +125,9 @@ Una política desconocida o deshabilitada no crea trazas. La decisión opcional
 `sdkImprovement` es independiente: la app debe mantener su switch apagado por
 defecto y solo pasar `traceContext` a `run()` cuando la captura y el
 consentimiento aplicable estén habilitados. El SDK no recibe ni interpreta ese
-consentimiento. Esta historia aún no transmite ni persiste las trazas.
+consentimiento. La política indica el periodo permitido de retención; en esta
+fase la traza se descarta cuando deja de estar disponible el resultado o error,
+porque todavía no se persiste ni transmite.
 
 ## Datos que el SDK guarda en el dispositivo
 
