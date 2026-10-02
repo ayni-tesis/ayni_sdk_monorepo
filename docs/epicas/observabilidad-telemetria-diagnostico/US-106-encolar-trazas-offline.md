@@ -21,7 +21,7 @@ Scenario: Ejecución offline
 Scenario: Cola local sin espacio
   Given que no queda espacio para una nueva traza
   When el SDK intenta encolarla
-  Then descarta la traza nueva
+  Then indica que la evidencia de esa ejecución quedó incompleta
   And no falla la ejecución del workflow
 ```
 
@@ -33,3 +33,10 @@ Scenario: Cola local sin espacio
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
   consentimiento requerido y su retención.
+
+## Criterios para validación técnica
+
+- El SDK persiste la traza durablemente antes de devolver el resultado de ejecución, sin esperar red ni respuesta del servidor.
+- La outbox conserva las trazas pendientes a través de reinicios y cada una mantiene su `traceId` para reintentos idempotentes.
+- Si no hay espacio, la inferencia sigue siendo exitosa y el resultado informa que su evidencia no pudo persistirse; no se marca ni reporta como enviada.
+- Si la política se deshabilita, las trazas pendientes se conservan pero no se transmiten mientras siga deshabilitada.

@@ -35,6 +35,12 @@ Scenario: Identificador local inválido
 - El servidor lo trata como único dentro de la aplicación al registrar trazas.
 - No usa IMEI, MAC, identificador publicitario ni otro identificador de hardware.
 - Se restablece al desinstalar o borrar los datos de la app.
+
+## Criterios para validación técnica
+
+- El UUID se conserva entre reinicios de la app y es el identificador de instalación que agrupa sus trazas.
+- La unicidad y deduplicación del servidor se limitan al ámbito de la aplicación autenticada.
+- Al restablecerlo, las trazas ya creadas conservan el identificador con que se crearon; solo las trazas futuras usan el nuevo UUID.
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
   consentimiento requerido y su retención.

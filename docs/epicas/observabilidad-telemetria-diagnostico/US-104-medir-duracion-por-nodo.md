@@ -32,3 +32,9 @@ Scenario: Nodo cancelado antes de iniciar
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
   consentimiento requerido y su retención.
+
+## Criterios para validación técnica
+
+- El registro distingue duración total y duración por fase/nodo, con unidad documentada y estado por nodo.
+- Un nodo no ejecutado o cancelado antes de iniciar no se representa con duración cero como si hubiera corrido.
+- La medición conserva la condición, corrida y repetición de la traza para comparar control y tratamiento.

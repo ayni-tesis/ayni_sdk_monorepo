@@ -63,11 +63,11 @@ Los administradores mantienen los periodos permitidos actualmente por política 
 
 ## Cambios propuestos a la épica
 
-Se mantienen las historias existentes US-100–US-113 y sus responsabilidades, afinando criterios para este diseño. No se añade una historia de app Android. Se incorpora una historia nueva al final de la secuencia de la épica para ingestión/adjuntos de artefactos; se asignará su número de issue al crearla en GitHub (no confundir con issue GitHub #114, que hoy corresponde a US-103).
+Se mantienen las historias existentes US-100–US-113 y sus responsabilidades, afinando criterios para este diseño. No se añade una historia de app Android. Se incorpora US-114 al final de la secuencia de la épica para ingestión/adjuntos de artefactos (GitHub #327; la issue GitHub #114 corresponde a US-103).
 
 | Historia actual | Ajuste propuesto para cubrir el plan |
 | --- | --- |
-| US-100 Política | Default cerrado; configuración por aplicación; servidor aplica estado y retención a captura, entrega y consulta. |
+| US-100 Política (GitHub #109, cerrada) | Se conserva su alcance implementado de configuración por aplicación. Los checks de captura/ingesta se fijan en US-103/107 y la expiración de datos y artifacts en US-112, sin reabrir retroactivamente esta issue. |
 | US-101 Identificador (GitHub #111) | UUID local persistente por instalación, ámbito por aplicación en backend, regeneración y privacidad existentes; se vincula a trazas deduplicables. |
 | US-102 Perfil técnico (GitHub #113) | Perfil versionado con plataforma/API, rango RAM, app/SDK, backend y campos de condiciones disponibles; ausentes se omiten/marcan desconocidos; nunca identificadores hardware. |
 | US-103 Traza de ejecución (GitHub #114) | Sustituir la prohibición de resultado crudo por resultado estructurado decodificado; no enviar imagen ni tensor binario. Añadir schema version, procedencia, contexto experimental, valores externos declarados, calidad/validez y procedencia no verificada. |
@@ -81,7 +81,7 @@ Se mantienen las historias existentes US-100–US-113 y sus responsabilidades, a
 | US-111 Detalle error | Añadir procedencia, contexto de corrida, fases y referencias de evidencia autorizadas, manteniendo la sanitización. |
 | US-112 Retención | Aplicar vencimiento a trazas y artefactos adjuntos; eliminar de consultas/exportaciones posteriores al vencimiento. |
 | US-113 Restablecimiento | Al resetear el identificador, las trazas ya creadas conservan su ID original y las nuevas usan un UUID nuevo; futuras trazas no se vinculan con las anteriores. |
-| Nueva historia, secuencia posterior | Adjuntar, verificar, consultar con autorización y vencer artifacts originales (Perfetto/Macrobenchmark), guardando SHA-256, metadatos y referencia privada R2. |
+| US-114 — artifacts fuente (GitHub #327) | Adjuntar, verificar, consultar con autorización y vencer artifacts originales (Perfetto/Macrobenchmark), guardando SHA-256, metadatos y referencia privada R2. |
 
 ## Secuencia de implementación acordada
 

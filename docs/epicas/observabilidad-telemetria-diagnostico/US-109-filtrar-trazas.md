@@ -30,3 +30,9 @@ Scenario: Usar un filtro no admitido
 - Se filtra por workflow, modelo, versión, estado, fecha y perfil técnico.
 - Los filtros se limitan a la aplicación solicitada.
 - Un filtro inválido no modifica ni elimina trazas.
+
+## Criterios para validación técnica
+
+- Se puede filtrar además por `runId`/repetición, condición, caso/escenario y backend efectivo.
+- Los filtros nuevos se componen con workflow, modelo, versión, estado, fecha y perfil técnico.
+- Los registros de otras aplicaciones o fuera del periodo de retención nunca aparecen por combinar filtros.

@@ -29,7 +29,13 @@ Scenario: Restablecer sin almacenamiento disponible
 
 - El restablecimiento no usa ni revela identificadores de hardware.
 - Las trazas futuras usan el nuevo identificador.
+- Las trazas ya creadas, incluidas las pendientes de envío, conservan el identificador con el que se generaron; restablecer no las reasigna al UUID nuevo.
 - Restablecer no elimina workflows ni modelos locales.
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
   consentimiento requerido y su retención.
+
+## Criterios para validación técnica
+
+- El nuevo UUID se genera y persiste antes de considerarse exitoso el restablecimiento; si falla el almacenamiento, no se envían trazas con un identificador parcial.
+- La nueva identidad solo se aplica a trazas creadas después del restablecimiento y no permite vincularlas con las anteriores mediante el identificador de instalación.
