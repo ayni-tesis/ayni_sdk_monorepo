@@ -243,6 +243,21 @@ void main() {
       expect(sdk.sync, isA<Future<SyncResult> Function()>());
       expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
       expect(
+        const WorkflowResult(
+          executionId: 'execution-1',
+          workflowId: 'workflow-1',
+          workflowVersion: '1.0.0',
+          outputs: {},
+        ).tracePersistenceFailed,
+        isFalse,
+      );
+      expect(
+        const WorkflowError(
+          WorkflowErrorCategory.runtimeError,
+        ).tracePersistenceFailed,
+        isFalse,
+      );
+      expect(
         sdk.createClientExecutionTrace,
         isA<
           Future<WorkflowTrace?> Function({

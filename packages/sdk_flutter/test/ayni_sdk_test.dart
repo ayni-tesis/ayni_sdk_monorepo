@@ -10,6 +10,7 @@ import 'package:ayni_sdk/src/ayni_sdk.dart';
 import 'package:ayni_sdk/src/consent_receipt_store.dart';
 import 'package:ayni_sdk/src/model_artifact_installer.dart';
 import 'package:ayni_sdk/src/sdk_internal.dart';
+import 'package:ayni_sdk/src/trace_outbox_store.dart';
 import 'package:ayni_sdk/src/workflow_version_downloader.dart';
 import 'package:test/test.dart';
 
@@ -391,6 +392,59 @@ void main() {
       expect(result.status, ConsentStatus.synced);
       expect(consentBodies.single['purpose'], 'ayniModelImprovement');
       expect(consentBodies.single['decision'], 'declined');
+    });
+
+    test('declining SDK improvement clears pending traces', () async {
+      final outbox = TraceOutboxStore(storageDirectory);
+      await outbox.enqueue({'traceId': 'trace-1'});
+
+      final result = await sdk().recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.sdkImprovement,
+        decision: ConsentDecision.declined,
+        noticeVersion: '1.0.0',
+      );
+
+      expect(result.status, ConsentStatus.synced);
+      expect(await outbox.pending(), isEmpty);
+      expect(consentBodies.single['purpose'], 'ayniSdkImprovement');
+      expect(consentBodies.single['decision'], 'declined');
+    });
+
+    test(
+      'declining SDK improvement purges even if receipt storage fails',
+      () async {
+        final outbox = TraceOutboxStore(storageDirectory);
+        await outbox.enqueue({'traceId': 'trace-1'});
+        await Directory(
+          '${storageDirectory.path}${Platform.pathSeparator}consent-receipts.json',
+        ).create();
+
+        final result = await sdk().recordConsent(
+          subjectId: subjectId,
+          purpose: ConsentPurpose.sdkImprovement,
+          decision: ConsentDecision.declined,
+          noticeVersion: '1.0.0',
+        );
+
+        expect(result.status, ConsentStatus.error);
+        expect(await outbox.pending(), isEmpty);
+        expect(requests, isEmpty);
+      },
+    );
+
+    test('declining model improvement preserves SDK traces', () async {
+      final outbox = TraceOutboxStore(storageDirectory);
+      await outbox.enqueue({'traceId': 'trace-1'});
+
+      await sdk().recordConsent(
+        subjectId: subjectId,
+        purpose: ConsentPurpose.modelImprovement,
+        decision: ConsentDecision.declined,
+        noticeVersion: '1.0.0',
+      );
+
+      expect((await outbox.pending()).single['traceId'], 'trace-1');
     });
 
     test('rejects a direct identifier before sending anything', () async {

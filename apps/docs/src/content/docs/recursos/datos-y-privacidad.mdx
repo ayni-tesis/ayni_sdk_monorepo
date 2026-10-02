@@ -68,8 +68,11 @@ Para revocar, la app apaga primero ese uso local y registra un rechazo con
 `recordConsent()`. Si el dispositivo está offline, el rechazo queda pendiente y
 la finalidad permanece desactivada; el sync de workflows y modelos puede seguir.
 La app elimina de sus propias colas los datos de esa finalidad que aún no envió.
-Esta versión del SDK no crea esas colas. Los datos que Ayni ya recibió requieren
-una solicitud por el canal de derechos publicado en el aviso correspondiente.
+Para `sdkImprovement`, desactiva la captura, espera a que terminen los `run()` en
+curso y registra después el rechazo: `recordConsent()` purga las trazas pendientes
+de la outbox local del SDK. Deshabilitar la política de telemetría por sí sola
+conserva esas trazas. Esta versión no las transmite. Los datos que Ayni ya recibió
+requieren una solicitud por el canal de derechos publicado en el aviso correspondiente.
 
 La credencial identifica a tu aplicación en Ayni, no al usuario ni al
 dispositivo. El SDK solo la envía a `serverUrl`, por HTTPS o, si activas
@@ -116,20 +119,26 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
   valores declarados por la app se conservan; la app debe usar valores no
   sensibles y quitar secretos y rutas locales antes de pasarlos, tanto en
   `traceContext` de `run()` como en `context` de
-  `createClientExecutionTrace()`. La traza solo vive en memoria durante esta
-  historia; no hay cola local,
-  persistencia ni envío al servidor.
+  `createClientExecutionTrace()`. `run()` guarda la traza antes de devolver el
+  resultado o lanzar el error, en archivos de la outbox local bajo
+  `diagnostics/trace-outbox/`; cada ID de traza se encola una sola vez y los
+  pendientes sobreviven a reinicios. La outbox no envía datos por red. Si la
+  escritura falla, el resultado o error conserva su traza en memoria y expone
+  `tracePersistenceFailed: true`; la inferencia no falla por ese motivo.
 - Lee el perfil técnico cuando la app llama a `AyniSdk.getDeviceProfile()` o
   cuando una ejecución elegible recibe `traceContext`; para la traza lo consulta
-  en segundo plano y no espera esa lectura. El perfil local puede incluir
-  plataforma, versión del SO/API, modelo, rango de RAM y SoC; no se guarda ni se
-  envía. Los campos que el sistema no expone se omiten.
+  en segundo plano y no espera esa lectura. El perfil allowlisted puede incluir
+  plataforma, versión del SO/API, modelo, rango de RAM y SoC; los campos que el
+  sistema no expone se omiten. La respuesta de `getDeviceProfile()` queda en
+  memoria. Si se captura una traza de `run()`, sus campos del perfil se guardan
+  dentro de esa traza local y no se envían por red.
 - No consulta identificadores de hardware como seriales, fingerprints o el ID
   de proveedor de iOS. Al inicializarse, guarda un UUID v4 aleatorio como
   `installation-id` dentro de `storageDirectory`; es local, no se envía y se
   elimina al borrar ese directorio.
-- No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
-  ejecución ocurre por completo en el dispositivo.
+- No envía ni guarda la imagen que recibe `run()`; la inferencia ocurre por
+  completo en el dispositivo. Una traza autorizada puede conservar resultados
+  estructurados públicos, pero no los bytes de entrada ni los tensores.
 
 La política «Permitir telemetría técnica» habilita la captura local de trazas y
 su periodo permitido de retención; el SDK consulta esos dos valores durante
@@ -142,19 +151,27 @@ consentimiento aplicable estén habilitados. El consentimiento opcional
 `sdkImprovement` cubre la mejora del SDK; no autoriza la captura de trazas para
 validar modelos. La app aplica por separado el permiso o consentimiento de
 validación que corresponda. El SDK no recibe ni interpreta ese consentimiento.
-La política indica el periodo permitido de retención; en esta fase la traza se
-descarta cuando deja de estar disponible el resultado o error, porque todavía
-no se persiste ni transmite.
+La política también indica el periodo permitido de retención. En esta historia
+el SDK no transmite las trazas: `run()` las mantiene como pendientes locales
+dentro de `storageDirectory`; la app las descarta al borrar ese directorio.
+Al registrar el rechazo de `sdkImprovement`, `recordConsent()` también elimina
+las trazas pendientes. Desactiva primero la captura en la app y espera a que
+termine cualquier `run()` que ya esté en curso antes de registrar el rechazo.
+Deshabilitar la política conserva las pendientes y evita crear nuevas. Las
+trazas pendientes no vencen localmente por `retentionDays`. Las trazas de
+control devueltas por `createClientExecutionTrace()` siguen en memoria
+y no se agregan a esta outbox.
 
 ## Datos que el SDK guarda en el dispositivo
 
 Válido para `ayni_sdk` 0.1.0.
 
 Todo lo que guarda el SDK está dentro del `storageDirectory` que le pasa tu
-app. Ahí conserva los recursos que tu aplicación publicó en Ayni y los recibos
-seudónimos pendientes de confirmar. Estos recibos incluyen un ID aleatorio de
-persona, finalidad, decisión, versión del aviso y fecha; no incluyen nombre,
-correo, teléfono ni hashes de identificadores directos. La credencial solo se
+app. Ahí conserva los recursos que tu aplicación publicó en Ayni, las trazas
+locales pendientes y los recibos seudónimos pendientes de confirmar. Estos
+recibos incluyen un ID aleatorio de persona, finalidad, decisión, versión del
+aviso y fecha; no incluyen nombre, correo, teléfono ni hashes de identificadores
+directos. La credencial solo se
 mantiene en memoria. `initialize()` también genera un UUID v4 aleatorio para
 esta instalación y lo conserva localmente; no lo envía al servidor.
 `getDeviceProfile()` devuelve bajo solicitud de la app una respuesta técnica
@@ -168,17 +185,18 @@ allowlisted; el SDK la conserva solo en memoria durante esa instancia.
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
 | Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas dentro del almacenamiento local. No incluye identidad directa y esta historia no lo envía. | `installation-id` | Borra `storageDirectory` completo. |
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
+| Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Son pendientes; no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | No se ofrece purga por traza; rechazar `sdkImprovement` elimina toda la outbox. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
-| Archivos temporales de las descargas, verificaciones e instalaciones en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()`, pueden quedar: borra `storageDirectory` completo. |
+| Archivos temporales de las descargas, verificaciones, instalaciones y escrituras de la outbox en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza, pueden quedar: borra `storageDirectory` completo. |
 
 El SDK no borra las versiones anteriores de un workflow o de un modelo al
 instalar una nueva: siguen en `storageDirectory` hasta que lo borres.
 
 ### Borrar los datos del SDK
 
-El SDK no tiene un método para borrar sus datos. Para borrarlos, por ejemplo
-cuando un usuario lo pide, borra el directorio completo mientras no haya un
-`sync()` en curso:
+El SDK no tiene un método para borrar todos sus datos. Para borrarlos, por
+ejemplo cuando un usuario lo pide, borra el directorio completo cuando no haya
+un `sync()` ni un `run()` en curso:
 
 <Code code={privacy.deleteData} lang="dart" />
 

@@ -7,6 +7,7 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
 import 'package:ayni_sdk/src/workflow_execution.dart' show WorkflowExecutor;
 import 'package:ayni_sdk/src/telemetry_policy_store.dart';
+import 'package:ayni_sdk/src/trace_outbox_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
@@ -156,6 +157,96 @@ void main() {
       );
       expect(jsonEncode(json), isNot(contains(base64Encode(pngBytes()))));
       expect(json['traceSchemaVersion'], 1);
+      expect(result.tracePersistenceFailed, isFalse);
+      final queuedTraces = await TraceOutboxStore(storageDirectory).pending();
+      expect(queuedTraces.single['traceId'], trace.traceId);
+      expect(queuedTraces.single.containsKey('sent'), isFalse);
+    });
+
+    test(
+      'reports trace persistence failure without failing local inference',
+      () async {
+        await installWorkflow();
+        await installTraceModelArtifact();
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+        await File(
+          '${storageDirectory.path}/diagnostics/trace-outbox',
+        ).writeAsString('block the outbox directory');
+        final client = createAyniSdkForTesting(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: storageDirectory,
+          workflowInferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async => (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              ),
+        );
+
+        final result = await client.run(
+          'workflow-1',
+          pngBytes(),
+          traceContext: context,
+        );
+
+        expect(result.outputs, contains('Resultado'));
+        expect(result.trace, isNotNull);
+        expect(result.tracePersistenceFailed, isTrue);
+      },
+    );
+
+    test('keeps pending traces when telemetry is disabled', () async {
+      await installWorkflow();
+      await installTraceModelArtifact();
+      final policy = TelemetryPolicyStore(storageDirectory);
+      await policy.write(
+        const TelemetryPolicy(enabled: true, retentionDays: 30),
+      );
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async => (
+              error: null,
+              outputs: [
+                (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+              ],
+            ),
+      );
+      final first = await client.run(
+        'workflow-1',
+        pngBytes(),
+        traceContext: context,
+      );
+      final firstTraceId = first.trace!.traceId;
+
+      await policy.write(
+        const TelemetryPolicy(enabled: false, retentionDays: 30),
+      );
+      final second = await client.run(
+        'workflow-1',
+        pngBytes(),
+        traceContext: context,
+      );
+
+      expect(second.trace, isNull);
+      expect(second.tracePersistenceFailed, isFalse);
+      final pending = await TraceOutboxStore(storageDirectory).pending();
+      expect(pending, hasLength(1));
+      expect(pending.single['traceId'], firstTraceId);
     });
 
     test('attaches a sanitized trace to a typed execution error', () async {
@@ -181,6 +272,9 @@ void main() {
       });
       expect(error?.trace?.models, isEmpty);
       expect(error?.trace?.toJson().containsKey('input'), isFalse);
+      expect(error?.tracePersistenceFailed, isFalse);
+      final queuedTraces = await TraceOutboxStore(storageDirectory).pending();
+      expect(queuedTraces.single['traceId'], error?.trace?.traceId);
     });
 
     test(

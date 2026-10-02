@@ -125,10 +125,10 @@ export const glossary: GlossaryEntry[] = [
     source: "Telemetry Policy",
     term: "Política de telemetría",
     definition:
-      "La configuración de cada aplicación que indica si el SDK puede enviar telemetría técnica y cuántos días se conservan sus trazas. Solo los administradores la cambian. Sin una política guardada, la telemetría está desactivada. Nunca autoriza a recopilar imágenes ni entradas sin procesar.",
+      "La configuración de cada aplicación que indica si el SDK puede capturar trazas técnicas localmente y el periodo permitido de retención. Solo los administradores la cambian. Sin una política guardada, la captura está desactivada. Nunca autoriza a recopilar imágenes ni entradas sin procesar.",
     avoid: ["configuración de seguimiento", "consentimiento de analítica"],
     comingSoon:
-      "El SDK todavía no envía telemetría: la política se guarda en el dashboard, pero aún no tiene efecto en el dispositivo.",
+      "El SDK conserva las trazas pendientes localmente, pero todavía no las envía al servidor.",
   },
   {
     source: "Collection Policy",

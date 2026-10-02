@@ -80,6 +80,7 @@ class WorkflowError implements Exception {
     this.nodeId,
     this.modelVersionId,
     this.trace,
+    this.tracePersistenceFailed = false,
   });
 
   /// Why the workflow could not be executed.
@@ -96,14 +97,24 @@ class WorkflowError implements Exception {
   /// Sanitized local trace, when policy and caller context enabled capture.
   final WorkflowTrace? trace;
 
+  /// Whether the trace could not be persisted to the local outbox.
+  ///
+  /// When true, [trace] remains available in memory, but its evidence is
+  /// incomplete because the SDK could not queue it for later delivery.
+  final bool tracePersistenceFailed;
+
   /// Returns an equivalent typed error carrying [value], when provided.
-  WorkflowError withTrace(WorkflowTrace? value) => value == null
+  WorkflowError withTrace(
+    WorkflowTrace? value, {
+    bool tracePersistenceFailed = false,
+  }) => value == null
       ? this
       : WorkflowError(
           category,
           nodeId: nodeId,
           modelVersionId: modelVersionId,
           trace: value,
+          tracePersistenceFailed: tracePersistenceFailed,
         );
 }
 
@@ -121,6 +132,7 @@ class WorkflowResult {
     required this.outputs,
     this.usingOfflineCache = true,
     this.trace,
+    this.tracePersistenceFailed = false,
   });
 
   /// The identifier assigned to this execution.
@@ -146,14 +158,24 @@ class WorkflowResult {
   /// Sanitized local trace, when policy and caller context enabled capture.
   final WorkflowTrace? trace;
 
+  /// Whether the trace could not be persisted to the local outbox.
+  ///
+  /// When true, [trace] remains available in memory, but its evidence is
+  /// incomplete because the SDK could not queue it for later delivery.
+  final bool tracePersistenceFailed;
+
   /// Returns an equivalent result carrying [value], when provided.
-  WorkflowResult withTrace(WorkflowTrace? value) => WorkflowResult(
+  WorkflowResult withTrace(
+    WorkflowTrace? value, {
+    bool tracePersistenceFailed = false,
+  }) => WorkflowResult(
     executionId: executionId,
     workflowId: workflowId,
     workflowVersion: workflowVersion,
     outputs: outputs,
     usingOfflineCache: usingOfflineCache,
     trace: value,
+    tracePersistenceFailed: tracePersistenceFailed,
   );
 }
 

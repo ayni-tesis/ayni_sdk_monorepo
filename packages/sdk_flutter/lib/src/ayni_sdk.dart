@@ -11,6 +11,7 @@ import 'consent_receipt_store.dart';
 import 'installation_id_store.dart';
 import 'sdk_consent.dart';
 import 'telemetry_policy_store.dart';
+import 'trace_outbox_store.dart';
 import 'sdk_internal.dart';
 import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
@@ -762,6 +763,16 @@ class AyniSdk {
     }
   }
 
+  Future<bool> _persistTrace(WorkflowTrace? trace) async {
+    if (trace == null) return false;
+    try {
+      await _traceOutbox.enqueue(trace.toJson());
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
   Future<WorkflowTrace?> _traceForRun({
     required WorkflowTraceContext? context,
     required bool enabled,
@@ -827,6 +838,33 @@ class AyniSdk {
     }
   }
 
+  Future<WorkflowError> _errorWithExecutionTrace(
+    WorkflowError error, {
+    required WorkflowTraceContext? context,
+    required bool enabled,
+    required _Workflow? workflow,
+    required _Inventory? inventory,
+    required DateTime timestamp,
+    required int durationMs,
+    required List<TraceNodeExecution> nodes,
+  }) async {
+    final trace = await _traceForRun(
+      context: context,
+      enabled: enabled,
+      workflow: workflow,
+      inventory: inventory,
+      timestamp: timestamp,
+      durationMs: durationMs,
+      nodes: nodes,
+      error: error,
+    );
+    final persisted = await _persistTrace(trace);
+    return error.withTrace(
+      trace,
+      tracePersistenceFailed: trace != null && !persisted,
+    );
+  }
+
   WorkflowTrace _createWorkflowTrace({
     required WorkflowTraceContext context,
     required String workflowId,
@@ -886,6 +924,7 @@ class AyniSdk {
   late final TelemetryPolicyStore _telemetryPolicy = TelemetryPolicyStore(
     storageDirectory,
   );
+  late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
   Future<void> _consentWork = Future<void>.value();
 
   /// Requests cancellation of an active execution.
@@ -1070,10 +1109,15 @@ class AyniSdk {
         nodes: traceNodes,
         outputs: result.outputs,
       );
-      return result.withTrace(trace);
+      final persisted = await _persistTrace(trace);
+      return result.withTrace(
+        trace,
+        tracePersistenceFailed: trace != null && !persisted,
+      );
     } on WorkflowError catch (error) {
       stopwatch.stop();
-      final trace = await _traceForRun(
+      throw await _errorWithExecutionTrace(
+        error,
         context: traceContext,
         enabled: captureTrace,
         workflow: workflowForTrace,
@@ -1081,57 +1125,49 @@ class AyniSdk {
         timestamp: startedAt,
         durationMs: stopwatch.elapsedMilliseconds,
         nodes: traceNodes,
-        error: error,
       );
-      throw error.withTrace(trace);
     } on UnsupportedError {
       rethrow;
     } on FormatException {
       stopwatch.stop();
       final error = const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
-      throw error.withTrace(
-        await _traceForRun(
-          context: traceContext,
-          enabled: captureTrace,
-          workflow: workflowForTrace,
-          inventory: inventoryForTrace,
-          timestamp: startedAt,
-          durationMs: stopwatch.elapsedMilliseconds,
-          nodes: traceNodes,
-          error: error,
-        ),
+      throw await _errorWithExecutionTrace(
+        error,
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
       );
     } on FileSystemException {
       stopwatch.stop();
       final error = const WorkflowError(
         WorkflowErrorCategory.workflowNotAvailable,
       );
-      throw error.withTrace(
-        await _traceForRun(
-          context: traceContext,
-          enabled: captureTrace,
-          workflow: workflowForTrace,
-          inventory: inventoryForTrace,
-          timestamp: startedAt,
-          durationMs: stopwatch.elapsedMilliseconds,
-          nodes: traceNodes,
-          error: error,
-        ),
+      throw await _errorWithExecutionTrace(
+        error,
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
       );
     } catch (_) {
       stopwatch.stop();
       final error = const WorkflowError(WorkflowErrorCategory.runtimeError);
-      throw error.withTrace(
-        await _traceForRun(
-          context: traceContext,
-          enabled: captureTrace,
-          workflow: workflowForTrace,
-          inventory: inventoryForTrace,
-          timestamp: startedAt,
-          durationMs: stopwatch.elapsedMilliseconds,
-          nodes: traceNodes,
-          error: error,
-        ),
+      throw await _errorWithExecutionTrace(
+        error,
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
       );
     } finally {
       _activeExecutions.remove(executionId);
@@ -1253,6 +1289,10 @@ class AyniSdk {
         decidedAt: DateTime.now().toUtc(),
       );
       try {
+        if (purpose == ConsentPurpose.sdkImprovement &&
+            decision == ConsentDecision.declined) {
+          await _traceOutbox.clear();
+        }
         await _consentReceipts.enqueue(receipt);
       } on FileSystemException {
         return const ConsentResult(ConsentStatus.error);
@@ -1329,6 +1369,10 @@ class AyniSdk {
   }) async {
     for (final receipt in await _consentReceipts.pending()) {
       if (deadline?.expired ?? false) return false;
+      if (receipt.purpose == ConsentPurpose.sdkImprovement &&
+          receipt.decision == ConsentDecision.declined) {
+        await _traceOutbox.clear();
+      }
       final request = await client.postUrl(serverUrl.resolve('/sdk/consents'));
       request.followRedirects = false;
       request.headers
