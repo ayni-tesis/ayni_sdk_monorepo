@@ -228,9 +228,11 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
                   ? "La política de telemetría no está habilitada."
                   : status === "409"
                     ? "El identificador ya se usó con otros datos."
-                    : status === "503"
-                      ? "El aviso de privacidad de Ayni todavía no está publicado."
-                      : "Recurso no disponible.",
+                    : status === "413"
+                      ? "El cuerpo supera el tamaño máximo permitido."
+                      : status === "503"
+                        ? "El aviso de privacidad de Ayni todavía no está publicado."
+                        : "Recurso no disponible.",
           content: {
             "application/json": {
               schema: z.object({

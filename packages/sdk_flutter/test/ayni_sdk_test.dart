@@ -31,6 +31,7 @@ void main() {
   Completer<void>? traceRequestReceived;
   Completer<void>? releaseTraceResponse;
   int traceStatusCode = HttpStatus.created;
+  String? traceResponseBody;
   var stallConsentResponse = false;
   late String responseBody;
   late String workflowResponseBody;
@@ -63,6 +64,7 @@ void main() {
     releaseTraceResponse = null;
     telemetryPolicyResponses.clear();
     traceStatusCodes.clear();
+    traceResponseBody = null;
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
@@ -150,10 +152,11 @@ void main() {
               );
             }
             request.response.write(
-              jsonEncode({
-                'traceId': trace['traceId'],
-                'receivedAt': '2026-10-02T12:01:00.000Z',
-              }),
+              traceResponseBody ??
+                  jsonEncode({
+                    'traceId': trace['traceId'],
+                    'receivedAt': '2026-10-02T12:01:00.000Z',
+                  }),
             );
             final release = releaseTraceResponse;
             if (release != null) {
@@ -593,6 +596,42 @@ void main() {
       expect(traceBodies, [trace]);
       expect((await outbox.pending()).single['traceId'], trace['traceId']);
     });
+
+    for (final (name, acknowledgement) in [
+      ('invalid JSON', 'not JSON'),
+      (
+        'mismatched trace ID',
+        '{"traceId":"550e8400-e29b-41d4-a716-446655440099",'
+            '"receivedAt":"2026-10-02T12:01:00.000Z"}',
+      ),
+    ]) {
+      test(
+        'stops the batch after a malformed 201 acknowledgement ($name)',
+        () async {
+          responseBody = '{"workflows":[],"models":[]}';
+          telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+          traceResponseBody = acknowledgement;
+          final outbox = TraceOutboxStore(storageDirectory);
+          await outbox.enqueue(
+            _traceEntry('550e8400-e29b-41d4-a716-446655440012'),
+          );
+          await outbox.enqueue(
+            _traceEntry('550e8400-e29b-41d4-a716-446655440013'),
+          );
+
+          await sdk().sync();
+
+          expect(traceBodies, hasLength(1));
+          expect(await outbox.pending(), hasLength(2));
+          expect(requests.map((request) => request.uri.path), [
+            '/sdk/telemetry-policy',
+            '/sdk/telemetry-policy',
+            '/sdk/traces',
+            '/sdk/sync',
+          ]);
+        },
+      );
+    }
 
     test(
       'keeps an oversized trace local without retrying a permanent 413',

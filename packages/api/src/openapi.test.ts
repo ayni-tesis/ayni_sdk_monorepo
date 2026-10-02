@@ -111,6 +111,14 @@ describe.each(sdkOperations)("$method $path errors", ({ method, path, notFound, 
   });
 });
 
+describe("POST /sdk/traces", () => {
+  it("describes a rejected oversized body", () => {
+    const responses = operation("/sdk/traces", "post").responses as Record<string, JsonObject>;
+
+    expect(responses["413"]?.description).toBe("El cuerpo supera el tamaño máximo permitido.");
+  });
+});
+
 describe("POST /sdk/consents", () => {
   it("requires a strict receipt and returns the server acknowledgement", () => {
     const requestBody = operation("/sdk/consents", "post").requestBody as JsonObject;

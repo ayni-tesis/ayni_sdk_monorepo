@@ -1282,7 +1282,7 @@
             }
           },
           "413": {
-            "description": "Recurso no disponible.",
+            "description": "El cuerpo supera el tamaño máximo permitido.",
             "content": {
               "application/json": {
                 "schema": {

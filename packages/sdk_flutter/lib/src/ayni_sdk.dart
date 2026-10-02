@@ -1517,15 +1517,16 @@ class AyniSdk {
         try {
           decoded = jsonDecode(body);
         } on FormatException {
-          continue;
+          return false;
         }
         if (decoded is Map &&
             decoded['traceId'] == traceId &&
             decoded['receivedAt'] is String &&
             DateTime.tryParse(decoded['receivedAt'] as String) != null) {
           await _traceOutbox.remove(traceId);
+          continue;
         }
-        continue;
+        return false;
       }
       if (![
         HttpStatus.badRequest,
