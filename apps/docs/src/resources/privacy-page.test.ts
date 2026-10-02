@@ -114,9 +114,12 @@ describe("Datos y privacidad (US-147)", () => {
     ).toEqual([]);
     expect(doesNot).toContain("No sube imágenes ni entradas del modelo durante la sincronización.");
     expect(doesNot).toContain("No envía trazas ni imágenes.");
-    expect(doesNot).toContain("no hay cola local");
+    expect(doesNot).toContain("`diagnostics/trace-outbox/`");
     expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
-    expect(doesNot.replace(/\s+/g, " ")).toContain("no se guarda ni se envía");
+    expect(doesNot).toContain("La respuesta de `getDeviceProfile()` queda en");
+    expect(doesNot.replace(/\s+/g, " ")).toContain(
+      "sus campos del perfil se guardan dentro de esa traza local",
+    );
     expect(doesNot).toContain("seriales, fingerprints");
     expect(doesNot.replace(/\s+/g, " ")).toContain("rango de RAM y SoC;");
     expect(doesNot).toContain("dentro de `storageDirectory`");

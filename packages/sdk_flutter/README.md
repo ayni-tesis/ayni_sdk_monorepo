@@ -82,8 +82,10 @@ final Map<String, Object> fields = profile.toJson();
 El perfil versionado solo incluye plataforma, SO/API, modelo, rango de RAM y
 SoC cuando la plataforma los expone. No incluye el nombre asignado al
 dispositivo, seriales, identificadores de proveedor ni otros datos del plugin.
-El SDK no persiste ni envía el perfil; los campos ausentes se omiten. La
-consulta se resuelve localmente y queda cacheada en esa instancia.
+La respuesta de `getDeviceProfile()` no se persiste ni se envía; si esos campos
+se incluyen en una traza habilitada de `run()`, quedan guardados dentro de la
+outbox local y no se transmiten. Los campos ausentes se omiten. La consulta se
+resuelve localmente y queda cacheada en esa instancia.
 
 ## Sincronización
 
@@ -166,14 +168,24 @@ aporta la app quedan marcados como `clientReported`; el SDK no inventa datos
 experimentales. La traza solo incluye resultados públicos ya decodificados
 (clasificaciones, detecciones y booleanos), metadatos de versiones, perfil
 allowlisted y errores tipados sanitizados. Nunca serializa bytes de imagen ni
-tensores arbitrarios. En esta versión la traza queda en memoria y no se guarda
-ni se envía.
+tensores arbitrarios. `run()` guarda la traza, antes de devolver el resultado o
+lanzar el error, en una outbox local durable dentro de
+`storageDirectory/diagnostics/trace-outbox/`. Cada `traceId` queda pendiente una
+sola vez y sobrevive a reinicios; el SDK no la transmite en esta versión. Si la
+escritura falla, la ejecución conserva su resultado o error original y
+`WorkflowResult.tracePersistenceFailed` o
+`WorkflowError.tracePersistenceFailed` indica que la evidencia no quedó
+encolada; la traza sigue disponible en `trace` mientras vive el resultado o
+error. Deshabilitar la política impide crear nuevas trazas, pero conserva las
+pendientes. `retentionDays` no vence los archivos locales de la outbox; la app
+puede descartarlos al borrar `storageDirectory`.
 
 Para una ejecución de control hecha fuera de `AyniSdk.run()`, la misma instancia
 puede construir el mismo tipo de registro con
 `sdk.createClientExecutionTrace(...)`. Pasa el contexto, workflow, versiones,
 duración y resultados tipados. Devuelve `null` si no hay una política válida
-habilitada y no hace inferencia, red ni cola durable.
+habilitada y no hace inferencia ni red; estas trazas de control siguen en
+memoria y no se añaden a la outbox de `run()`.
 
 ## Preferencias de privacidad
 
@@ -207,7 +219,10 @@ a `recordConsent` con `ConsentDecision.declined` y la misma versión del aviso
 guardada al otorgarlo; conserva la preferencia aunque el recibo quede pendiente.
 No envíes datos asociados a una finalidad hasta que el recibo esté sincronizado.
 La app debe ofrecer revocación por finalidad y el canal de derechos publicado
-en su aviso.
+en su aviso. Para revocar `sdkImprovement`, desactiva primero la captura, espera
+a que terminen los `run()` activos y después registra el rechazo; `recordConsent()`
+purga las trazas pendientes de la outbox local. Deshabilitar solo la política de
+telemetría conserva las trazas ya pendientes. Esta versión del SDK no las transmite.
 
 ## Ejecución local de workflows
 
