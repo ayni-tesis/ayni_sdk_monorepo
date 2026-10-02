@@ -109,12 +109,15 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
   incidentes y errores tipados. Incluye duración total y por nodo en
   milisegundos y estado del nodo; un nodo omitido no tiene duración. Si falla,
   registra la categoría tipada, el estado, el nodo y la versión del modelo cuando
-  están disponibles; si aún no hay nodo, incluye una fase fija. La traza se
+  están disponibles; si el error no tiene un nodo asociado, incluye una fase
+  fija. La traza se
   relaciona con el ID de traza, corrida, workflow, versión e instalación. Omite
   mensajes arbitrarios del runtime, imágenes, tensores y bytes de entrada. Los
-  valores declarados por la app en `traceContext` se conservan; la app debe usar
-  valores no sensibles y quitar secretos y rutas locales antes de pasarlos. La
-  traza solo vive en memoria durante esta historia; no hay cola local,
+  valores declarados por la app se conservan; la app debe usar valores no
+  sensibles y quitar secretos y rutas locales antes de pasarlos, tanto en
+  `traceContext` de `run()` como en `context` de
+  `createClientExecutionTrace()`. La traza solo vive en memoria durante esta
+  historia; no hay cola local,
   persistencia ni envío al servidor.
 - Lee el perfil técnico cuando la app llama a `AyniSdk.getDeviceProfile()` o
   cuando una ejecución elegible recibe `traceContext`; para la traza lo consulta
@@ -133,7 +136,8 @@ su periodo permitido de retención; el SDK consulta esos dos valores durante
 `sync()` y guarda la última respuesta válida en `diagnostics/telemetry-policy.json`.
 Una política desconocida o deshabilitada no crea trazas. La decisión opcional
 `sdkImprovement` es independiente: la app debe mantener su switch apagado por
-defecto y solo pasar `traceContext` a `run()` cuando la captura y el
+defecto y solo pasar `traceContext` a `run()` o `context` a
+`createClientExecutionTrace()` cuando la política de captura y el permiso o
 consentimiento aplicable estén habilitados. El consentimiento opcional
 `sdkImprovement` cubre la mejora del SDK; no autoriza la captura de trazas para
 validar modelos. La app aplica por separado el permiso o consentimiento de
