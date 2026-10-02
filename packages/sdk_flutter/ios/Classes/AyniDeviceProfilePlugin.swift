@@ -23,10 +23,11 @@ public class AyniDeviceProfilePlugin: NSObject, FlutterPlugin {
     #else
       var systemInfo = utsname()
       uname(&systemInfo)
+      let machineSize = MemoryLayout.size(ofValue: systemInfo.machine)
       model = withUnsafePointer(to: &systemInfo.machine) {
         $0.withMemoryRebound(
           to: CChar.self,
-          capacity: MemoryLayout.size(ofValue: systemInfo.machine)
+          capacity: machineSize
         ) { String(cString: $0) }
       }
     #endif
