@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'workflow_tflite_stub.dart'
     if (dart.library.ui) 'workflow_tflite_flutter.dart'
     as tflite;
+import 'workflow_trace.dart';
 
 /// Internal model runner seam used to test execution without loading TFLite.
 typedef WorkflowInferenceRunner =
@@ -74,7 +75,12 @@ class WorkflowError implements Exception {
   /// version involved.
   ///
   /// The SDK throws these errors; apps only catch and read them.
-  const WorkflowError(this.category, {this.nodeId, this.modelVersionId});
+  const WorkflowError(
+    this.category, {
+    this.nodeId,
+    this.modelVersionId,
+    this.trace,
+  });
 
   /// Why the workflow could not be executed.
   final WorkflowErrorCategory category;
@@ -86,6 +92,19 @@ class WorkflowError implements Exception {
   /// The model version involved in the failure, or `null` when no model is
   /// involved.
   final String? modelVersionId;
+
+  /// Sanitized local trace, when policy and caller context enabled capture.
+  final WorkflowTrace? trace;
+
+  /// Returns an equivalent typed error carrying [value], when provided.
+  WorkflowError withTrace(WorkflowTrace? value) => value == null
+      ? this
+      : WorkflowError(
+          category,
+          nodeId: nodeId,
+          modelVersionId: modelVersionId,
+          trace: value,
+        );
 }
 
 /// The outputs of a successful [AyniSdk.run].
@@ -101,6 +120,7 @@ class WorkflowResult {
     required this.workflowVersion,
     required this.outputs,
     this.usingOfflineCache = true,
+    this.trace,
   });
 
   /// The identifier assigned to this execution.
@@ -122,6 +142,19 @@ class WorkflowResult {
   /// Whether the workflow ran from the resources stored on the device, which
   /// [AyniSdk.run] always does.
   final bool usingOfflineCache;
+
+  /// Sanitized local trace, when policy and caller context enabled capture.
+  final WorkflowTrace? trace;
+
+  /// Returns an equivalent result carrying [value], when provided.
+  WorkflowResult withTrace(WorkflowTrace? value) => WorkflowResult(
+    executionId: executionId,
+    workflowId: workflowId,
+    workflowVersion: workflowVersion,
+    outputs: outputs,
+    usingOfflineCache: usingOfflineCache,
+    trace: value,
+  );
 }
 
 /// A value a workflow node produced: a [ClassificationResult], a
@@ -336,12 +369,37 @@ class WorkflowExecutor {
     required Map<String, dynamic> definition,
     required Uint8List imageBytes,
     bool Function()? isCancelled,
+    void Function(TraceNodeExecution node)? onNodeFinished,
   }) async {
+    String? activeNodeId;
+    String? activeNodeType;
+    Stopwatch? activeNodeTimer;
+    Map<String, Map> byIdForTrace = const {};
+    void recordFailedNode() {
+      final id = activeNodeId;
+      final type = activeNodeType;
+      final timer = activeNodeTimer;
+      if (id == null || type == null || timer == null) return;
+      timer.stop();
+      onNodeFinished?.call(
+        TraceNodeExecution(
+          nodeId: id,
+          type: type,
+          status: 'failed',
+          durationMs: timer.elapsedMilliseconds,
+          modelVersionId: type == 'model.tflite'
+              ? (byIdForTrace[id]?['modelVersionId'] as String?)
+              : null,
+        ),
+      );
+    }
+
     try {
       final nodes = (definition['nodes'] as List).cast<Map>();
       final connections = ((definition['connections'] as List?) ?? const [])
           .cast<Map>();
       final byId = {for (final node in nodes) node['id'] as String: node};
+      byIdForTrace = byId;
       final incoming = <String, List<String>>{};
       final outgoing = <String, List<String>>{};
       void edge(String from, String to) {
@@ -399,6 +457,7 @@ class WorkflowExecutor {
       };
       final outputs = <String, WorkflowValue>{};
       var completed = 0;
+      final recordedNodes = <String>{};
       while (ready.isNotEmpty) {
         if (isCancelled?.call() ?? false) {
           throw const WorkflowError(WorkflowErrorCategory.cancelled);
@@ -412,7 +471,11 @@ class WorkflowExecutor {
           return priority(left).compareTo(priority(right));
         });
         final id = ready.removeAt(0), node = byId[id]!;
+        activeNodeId = id;
+        activeNodeType = node['type'] as String;
         completed++;
+        final nodeTimer = Stopwatch()..start();
+        activeNodeTimer = nodeTimer;
         if (active.contains(id))
           switch (node['type']) {
             case 'input.image':
@@ -485,6 +548,22 @@ class WorkflowExecutor {
                     : CombinedWorkflowResult(id, resultValues);
               }
           }
+        nodeTimer.stop();
+        recordedNodes.add(id);
+        onNodeFinished?.call(
+          TraceNodeExecution(
+            nodeId: id,
+            type: node['type'] as String,
+            status: active.contains(id) ? 'completed' : 'skipped',
+            durationMs: nodeTimer.elapsedMilliseconds,
+            modelVersionId: node['type'] == 'model.tflite'
+                ? node['modelVersionId'] as String
+                : null,
+          ),
+        );
+        activeNodeId = null;
+        activeNodeType = null;
+        activeNodeTimer = null;
         for (final to in outgoing[id] ?? const <String>[]) {
           final unneededModel =
               byId[id]!['type'] == 'input.image' &&
@@ -533,6 +612,19 @@ class WorkflowExecutor {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       if (outputs.isEmpty)
         throw const WorkflowError(WorkflowErrorCategory.outputNotReached);
+      for (final node in nodes) {
+        final id = node['id'] as String;
+        if (!recordedNodes.contains(id)) {
+          onNodeFinished?.call(
+            TraceNodeExecution(
+              nodeId: id,
+              type: node['type'] as String,
+              status: 'skipped',
+              durationMs: 0,
+            ),
+          );
+        }
+      }
       return WorkflowResult(
         executionId: executionId,
         workflowId: workflowId,
@@ -540,8 +632,10 @@ class WorkflowExecutor {
         outputs: outputs,
       );
     } on WorkflowError {
+      recordFailedNode();
       rethrow;
     } catch (_) {
+      recordFailedNode();
       throw const WorkflowError(WorkflowErrorCategory.runtimeError);
     }
   }

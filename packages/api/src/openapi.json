@@ -536,6 +536,99 @@
         }
       }
     },
+    "/sdk/telemetry-policy": {
+      "get": {
+        "tags": ["Endpoints"],
+        "operationId": "obtener-politica-de-telemetria",
+        "summary": "Obtener la política de captura de trazas",
+        "description": "Devuelve si la aplicación de la credencial tiene habilitada la captura local de trazas y su periodo de retención. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/telemetry-policy \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Política de telemetría de la aplicación autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "retentionDays": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [7]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [30]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [90]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["enabled", "retentionDays"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sdk/sync": {
       "post": {
         "tags": ["Endpoints"],

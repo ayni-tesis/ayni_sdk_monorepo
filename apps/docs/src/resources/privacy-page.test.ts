@@ -113,11 +113,12 @@ describe("Datos y privacidad (US-147)", () => {
       ),
     ).toEqual([]);
     expect(doesNot).toContain("No sube imágenes ni entradas del modelo durante la sincronización.");
-    expect(doesNot).toContain("No envía telemetría.");
+    expect(doesNot).toContain("No envía trazas ni imágenes.");
+    expect(doesNot).toContain("no hay cola local");
     expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
     expect(doesNot.replace(/\s+/g, " ")).toContain("no se guarda ni se envía");
     expect(doesNot).toContain("seriales, fingerprints");
-    expect(doesNot).toContain("rango de RAM y SoC cuando esté disponible");
+    expect(doesNot.replace(/\s+/g, " ")).toContain("rango de RAM y SoC;");
     expect(doesNot).toContain("dentro de `storageDirectory`");
     expect(doesNot).toContain("no se envía");
   });
@@ -139,6 +140,7 @@ describe("Datos y privacidad (US-147)", () => {
       tableRows(storedSection).filter((row) => row.length !== 3 || row.some((cell) => cell === "")),
     ).toEqual([]);
     expect(storedSection).toContain("`installation-id`");
+    expect(storedSection).toContain("`diagnostics/telemetry-policy.json`");
   });
 
   it("shows how to delete the data with an example CI analyzes", () => {

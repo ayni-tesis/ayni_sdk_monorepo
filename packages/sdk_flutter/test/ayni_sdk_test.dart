@@ -23,6 +23,8 @@ void main() {
   int? workflowStatusCode;
   int? modelManifestStatusCode;
   late int consentStatusCode;
+  late String telemetryPolicyResponseBody;
+  int? telemetryPolicyStatusCode;
   var stallConsentResponse = false;
   late String responseBody;
   late String workflowResponseBody;
@@ -44,6 +46,7 @@ void main() {
 
   setUp(() async {
     AyniSdk.resetForTesting();
+    AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
     requests.clear();
     consentBodies.clear();
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
@@ -51,6 +54,8 @@ void main() {
     workflowStatusCode = null;
     modelManifestStatusCode = null;
     consentStatusCode = HttpStatus.created;
+    telemetryPolicyResponseBody = '{"enabled":false,"retentionDays":30}';
+    telemetryPolicyStatusCode = null;
     stallConsentResponse = false;
     modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
@@ -84,7 +89,11 @@ void main() {
           final isModelManifest = request.uri.path.startsWith(
             '/sdk/model-versions/',
           );
-          if (request.uri.path == '/sdk/consents') {
+          if (request.uri.path == '/sdk/telemetry-policy') {
+            request.response.statusCode =
+                telemetryPolicyStatusCode ?? statusCode;
+            request.response.write(telemetryPolicyResponseBody);
+          } else if (request.uri.path == '/sdk/consents') {
             final body =
                 jsonDecode(await utf8.decoder.bind(request).join()) as Map;
             consentBodies.add(Map<String, Object?>.from(body));
@@ -230,6 +239,7 @@ void main() {
 
         expect(await syncStatus(sdk()), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
           '/sdk/consents',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
@@ -253,6 +263,7 @@ void main() {
 
         expect(await syncStatus(client), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
           '/sdk/consents',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
@@ -557,9 +568,11 @@ void main() {
       });
 
       expect(requests.map((request) => request.uri.path), [
+        '/sdk/telemetry-policy',
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1.0.0',
         '/sdk/model-versions/model-version-1/manifest',
+        '/sdk/telemetry-policy',
         '/sdk/sync',
       ]);
     },
@@ -647,7 +660,7 @@ void main() {
         SyncResourceStatus.invalidRemoteResource,
       ]);
       expect(downloads, isEmpty);
-      expect(requests.single.uri.path, '/sdk/sync');
+      expect(requests.last.uri.path, '/sdk/sync');
     },
   );
 
@@ -724,7 +737,7 @@ void main() {
         SyncResourceStatus.invalidRemoteResource,
       ]);
       expect(await inventory.readAsString(), before);
-      expect(requests.length, requestsBeforeSync + 2);
+      expect(requests.length, requestsBeforeSync + 4);
     },
   );
 
@@ -1072,10 +1085,17 @@ void main() {
     statusCode = HttpStatus.found;
 
     expect(await syncStatus(sdk()), SyncStatus.error);
-    expect(requests, hasLength(1));
+    expect(requests.map((request) => request.uri.path), [
+      '/sdk/telemetry-policy',
+      '/sdk/sync',
+    ]);
     expect(
-      requests.single.headers.value(HttpHeaders.authorizationHeader),
-      'Bearer ayni_sk_test',
+      requests.every(
+        (request) =>
+            request.headers.value(HttpHeaders.authorizationHeader) ==
+            'Bearer ayni_sk_test',
+      ),
+      isTrue,
     );
   });
 
@@ -1184,12 +1204,10 @@ void main() {
       InternetAddress.loopbackIPv4,
       0,
     );
-    unawaited(
-      invalidServer.first.then((socket) async {
-        socket.add('not an HTTP response'.codeUnits);
-        await socket.close();
-      }),
-    );
+    invalidServer.listen((socket) async {
+      socket.add('not an HTTP response'.codeUnits);
+      await socket.close();
+    });
     final client = AyniSdk(
       serverUrl: Uri.parse(
         'http://${InternetAddress.loopbackIPv4.address}:${invalidServer.port}',
@@ -1926,6 +1944,7 @@ void main() {
         expect(result.isSuccess, isTrue);
         expect(AyniSdk.isInitialized, isTrue);
         AyniSdk.resetForTesting();
+        AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
       }
     });
 
@@ -2604,6 +2623,7 @@ void main() {
       final firstId = idFile.readAsStringSync();
 
       AyniSdk.resetForTesting();
+      AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
       final result = AyniSdk.initialize(configFor(storageDirectory));
 
       expect(result.status, equals(InitializationStatus.ready));

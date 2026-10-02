@@ -10,11 +10,13 @@ import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
 import 'installation_id_store.dart';
 import 'sdk_consent.dart';
+import 'telemetry_policy_store.dart';
 import 'sdk_internal.dart';
 import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'workflow_trace.dart';
 import 'supported_platform_stub.dart'
     if (dart.library.ui) 'supported_platform_flutter.dart'
     as platform;
@@ -684,6 +686,7 @@ class AyniSdk {
       _installationId ??= InstallationIdStore(storageDirectory).loadOrCreate();
 
   Future<DeviceProfile>? _deviceProfileFuture;
+  DeviceProfile? _deviceProfile;
 
   /// Reads the allowlisted device and operating-system profile on this device.
   ///
@@ -693,11 +696,194 @@ class AyniSdk {
   /// device names, serial numbers, build identifiers, vendor IDs or plugin-wide
   /// device data.
   Future<DeviceProfile> getDeviceProfile() =>
-      _deviceProfileFuture ??= device_profile_reader.readDeviceProfile();
+      _deviceProfileFuture ??= () async {
+        final profile = await device_profile_reader.readDeviceProfile();
+        _deviceProfile = profile;
+        return profile;
+      }();
+
+  /// Builds an in-memory trace for a control execution performed by the host.
+  ///
+  /// Returns `null` unless a valid enabled policy was cached by [sync]. The
+  /// host must call this only when its applicable off-by-default capture
+  /// consent is enabled. This method performs no inference or network request.
+  Future<WorkflowTrace?> createClientExecutionTrace({
+    required WorkflowTraceContext context,
+    required String workflowId,
+    required String workflowVersionId,
+    required String workflowVersion,
+    required DateTime timestamp,
+    required int durationMs,
+    Map<String, WorkflowValue> outputs = const {},
+    List<TraceModel> models = const [],
+    List<TraceNodeExecution> nodes = const [],
+    WorkflowError? error,
+  }) async {
+    if (durationMs < 0 || !await _captureEnabled()) return null;
+    try {
+      final readProfile = await getDeviceProfile();
+      final clientReportedRamRange =
+          readProfile.ramRange == null && context.ramRange != null;
+      final clientReportedSocModel =
+          readProfile.socModel == null && context.socModel != null;
+      final profile = DeviceProfile(
+        platform: readProfile.platform,
+        osVersion: readProfile.osVersion,
+        apiLevel: readProfile.apiLevel,
+        model: readProfile.model,
+        ramRange: readProfile.ramRange ?? context.ramRange,
+        socModel: readProfile.socModel ?? context.socModel,
+      );
+      return _createWorkflowTrace(
+        context: context,
+        workflowId: workflowId,
+        workflowVersionId: workflowVersionId,
+        workflowVersion: workflowVersion,
+        models: models,
+        profile: profile,
+        timestamp: timestamp,
+        durationMs: durationMs,
+        nodes: nodes,
+        outputs: outputs,
+        error: error,
+        clientReportedRamRange: clientReportedRamRange,
+        clientReportedSocModel: clientReportedSocModel,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<bool> _captureEnabled() async {
+    try {
+      return (await _telemetryPolicy.read())?.enabled == true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<WorkflowTrace?> _traceForRun({
+    required WorkflowTraceContext? context,
+    required bool enabled,
+    required _Workflow? workflow,
+    required _Inventory? inventory,
+    required DateTime timestamp,
+    required int durationMs,
+    required List<TraceNodeExecution> nodes,
+    Map<String, WorkflowValue> outputs = const {},
+    WorkflowError? error,
+  }) async {
+    if (!enabled || context == null || workflow == null || inventory == null) {
+      return null;
+    }
+    try {
+      final profile =
+          _deviceProfile ?? const DeviceProfile(platform: 'unknown');
+      final clientReportedRamRange =
+          profile.ramRange == null && context.ramRange != null;
+      final clientReportedSocModel =
+          profile.socModel == null && context.socModel != null;
+      final enrichedProfile = DeviceProfile(
+        platform: profile.platform,
+        osVersion: profile.osVersion,
+        apiLevel: profile.apiLevel,
+        model: profile.model,
+        ramRange: profile.ramRange ?? context.ramRange,
+        socModel: profile.socModel ?? context.socModel,
+      );
+      return _createWorkflowTrace(
+        context: context,
+        workflowId: workflow.id,
+        workflowVersionId: workflow.workflowVersionId,
+        workflowVersion: workflow.version,
+        models: [
+          for (final id
+              in nodes
+                  .where(
+                    (node) =>
+                        node.type == 'model.tflite' && node.status != 'skipped',
+                  )
+                  .map((node) => node.modelVersionId)
+                  .whereType<String>()
+                  .toSet())
+            if (inventory.models[id] case final model?)
+              TraceModel(
+                modelVersionId: id,
+                version: model.version,
+                sha256: model.sha256,
+              ),
+        ],
+        profile: enrichedProfile,
+        timestamp: timestamp,
+        durationMs: durationMs,
+        nodes: nodes,
+        outputs: outputs,
+        error: error,
+        clientReportedRamRange: clientReportedRamRange,
+        clientReportedSocModel: clientReportedSocModel,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  WorkflowTrace _createWorkflowTrace({
+    required WorkflowTraceContext context,
+    required String workflowId,
+    required String workflowVersionId,
+    required String workflowVersion,
+    required List<TraceModel> models,
+    required DeviceProfile profile,
+    required DateTime timestamp,
+    required int durationMs,
+    required List<TraceNodeExecution> nodes,
+    required Map<String, WorkflowValue> outputs,
+    WorkflowError? error,
+    bool clientReportedRamRange = false,
+    bool clientReportedSocModel = false,
+  }) {
+    final clientFields = <String>[
+      'runId',
+      'repetition',
+      for (final entry in context.toJson().entries)
+        if (entry.key != 'runId' &&
+            entry.key != 'repetition' &&
+            entry.key != 'ramRange' &&
+            entry.key != 'socModel' &&
+            entry.key != 'measurements' &&
+            entry.key != 'incidents' &&
+            entry.key != 'validity')
+          entry.key,
+      if (clientReportedRamRange) 'ramRange',
+      if (clientReportedSocModel) 'socModel',
+      if (context.measurements.isNotEmpty) 'measurements',
+      if (context.incidents.isNotEmpty) 'incidents',
+      if (context.validity != null) 'validity',
+    ];
+    return createWorkflowTrace(
+      traceId: createUuidV4(),
+      installationId: _ensureInstallationId(),
+      context: context,
+      timestamp: timestamp,
+      workflowId: workflowId,
+      workflowVersionId: workflowVersionId,
+      workflowVersion: workflowVersion,
+      models: models,
+      profile: profile,
+      durationMs: durationMs,
+      nodes: nodes,
+      clientReportedFields: clientFields.toSet().toList(),
+      outputs: outputs,
+      error: error,
+    );
+  }
 
   final String _credential;
   final Map<String, _ActiveExecution> _activeExecutions = {};
   late final ConsentReceiptStore _consentReceipts = ConsentReceiptStore(
+    storageDirectory,
+  );
+  late final TelemetryPolicyStore _telemetryPolicy = TelemetryPolicyStore(
     storageDirectory,
   );
   Future<void> _consentWork = Future<void>.value();
@@ -778,6 +964,7 @@ class AyniSdk {
     String workflowId,
     Uint8List input, {
     void Function(String executionId)? onExecutionStarted,
+    WorkflowTraceContext? traceContext,
   }) async {
     if (platform.isUnsupportedAndroid) {
       throw UnsupportedError(
@@ -792,6 +979,19 @@ class AyniSdk {
     if (!platform.isSupported) {
       throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
+    final startedAt = DateTime.now().toUtc();
+    final stopwatch = Stopwatch()..start();
+    final captureTrace = traceContext != null && await _captureEnabled();
+    if (captureTrace) {
+      unawaited(
+        getDeviceProfile().catchError(
+          (Object _) => const DeviceProfile(platform: 'unknown'),
+        ),
+      );
+    }
+    _Workflow? workflowForTrace;
+    _Inventory? inventoryForTrace;
+    final traceNodes = <TraceNodeExecution>[];
     final executionId = _newExecutionId();
     final execution = _ActiveExecution();
     _activeExecutions[executionId] = execution;
@@ -802,10 +1002,12 @@ class AyniSdk {
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       );
       final inventory = await _readInventory(inventoryFile);
+      inventoryForTrace = inventory;
       final workflow = inventory.workflows[workflowId];
       if (workflow == null) {
         throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
       }
+      workflowForTrace = workflow;
       final definitionFile = installedWorkflowDefinitionFile(
         storageDirectory,
         workflow.workflowVersionId,
@@ -854,19 +1056,83 @@ class AyniSdk {
         definition: decoded,
         imageBytes: input,
         isCancelled: () => execution.cancelled,
+        onNodeFinished: captureTrace ? traceNodes.add : null,
       );
       _throwIfCancelled(execution);
-      return result;
-    } on WorkflowError {
-      rethrow;
+      stopwatch.stop();
+      final trace = await _traceForRun(
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
+        outputs: result.outputs,
+      );
+      return result.withTrace(trace);
+    } on WorkflowError catch (error) {
+      stopwatch.stop();
+      final trace = await _traceForRun(
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
+        error: error,
+      );
+      throw error.withTrace(trace);
     } on UnsupportedError {
       rethrow;
     } on FormatException {
-      throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+      stopwatch.stop();
+      final error = const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+      throw error.withTrace(
+        await _traceForRun(
+          context: traceContext,
+          enabled: captureTrace,
+          workflow: workflowForTrace,
+          inventory: inventoryForTrace,
+          timestamp: startedAt,
+          durationMs: stopwatch.elapsedMilliseconds,
+          nodes: traceNodes,
+          error: error,
+        ),
+      );
     } on FileSystemException {
-      throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
+      stopwatch.stop();
+      final error = const WorkflowError(
+        WorkflowErrorCategory.workflowNotAvailable,
+      );
+      throw error.withTrace(
+        await _traceForRun(
+          context: traceContext,
+          enabled: captureTrace,
+          workflow: workflowForTrace,
+          inventory: inventoryForTrace,
+          timestamp: startedAt,
+          durationMs: stopwatch.elapsedMilliseconds,
+          nodes: traceNodes,
+          error: error,
+        ),
+      );
     } catch (_) {
-      throw const WorkflowError(WorkflowErrorCategory.runtimeError);
+      stopwatch.stop();
+      final error = const WorkflowError(WorkflowErrorCategory.runtimeError);
+      throw error.withTrace(
+        await _traceForRun(
+          context: traceContext,
+          enabled: captureTrace,
+          workflow: workflowForTrace,
+          inventory: inventoryForTrace,
+          timestamp: startedAt,
+          durationMs: stopwatch.elapsedMilliseconds,
+          nodes: traceNodes,
+          error: error,
+        ),
+      );
     } finally {
       _activeExecutions.remove(executionId);
     }
@@ -1070,7 +1336,7 @@ class AyniSdk {
         ..contentType = ContentType.json;
       request.write(jsonEncode(receipt.toJson()));
       final response = await request.close().timeout(
-        _consentAttemptTimeout,
+        _optionalRequestAttemptTimeout,
         onTimeout: () {
           request.abort();
           throw TimeoutException('Consent receipt request timed out');
@@ -1080,7 +1346,7 @@ class AyniSdk {
           .bind(response)
           .join()
           .timeout(
-            _consentAttemptTimeout,
+            _optionalRequestAttemptTimeout,
             onTimeout: () {
               request.abort();
               throw TimeoutException('Consent receipt response timed out');
@@ -1099,7 +1365,35 @@ class AyniSdk {
     return true;
   }
 
-  Duration get _consentAttemptTimeout {
+  Future<void> _refreshTelemetryPolicy(HttpClient client) async {
+    final request = await client.getUrl(
+      serverUrl.resolve('/sdk/telemetry-policy'),
+    );
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final response = await request.close().timeout(
+      _optionalRequestAttemptTimeout,
+      onTimeout: () {
+        request.abort();
+        throw TimeoutException('Telemetry policy request timed out');
+      },
+    );
+    final body = await utf8.decoder
+        .bind(response)
+        .join()
+        .timeout(
+          _optionalRequestAttemptTimeout,
+          onTimeout: () {
+            request.abort();
+            throw TimeoutException('Telemetry policy response timed out');
+          },
+        );
+    if (response.statusCode != HttpStatus.ok) return;
+    final policy = TelemetryPolicy.fromJson(jsonDecode(body));
+    if (policy != null) await _telemetryPolicy.write(policy);
+  }
+
+  Duration get _optionalRequestAttemptTimeout {
     final share = syncTimeout ~/ 3;
     if (share <= Duration.zero) return const Duration(microseconds: 1);
     return share > const Duration(seconds: 3)
@@ -1157,6 +1451,11 @@ class AyniSdk {
   }
 
   Future<SyncResult> _sync(HttpClient client, _SyncDeadline deadline) async {
+    try {
+      await _refreshTelemetryPolicy(client);
+    } on Exception {
+      // Policy refresh is optional; a failed refresh keeps the last valid cache.
+    }
     try {
       await _syncConsentReceipts(client, deadline: deadline);
     } on Exception {

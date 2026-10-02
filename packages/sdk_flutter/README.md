@@ -123,6 +123,58 @@ for (final resource in result.resources) {
 
 `result.resources` contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/sync.dart`.
 
+## Trazas técnicas locales
+
+Cada `sync()` intenta actualizar la política de captura técnica de la
+aplicación. Una respuesta válida se guarda en
+`storageDirectory/diagnostics/telemetry-policy.json`; una falla mantiene la
+última política válida. Sin una política válida habilitada, el SDK no crea
+trazas. La política de telemetría y el consentimiento opcional `sdkImprovement`
+son controles separados: la app debe mantener su switch apagado por defecto y
+pasar `traceContext` solo cuando su preferencia y el consentimiento aplicable
+permitan capturar datos.
+
+Cuando está habilitada la captura, `run()` adjunta una traza tipada a
+`WorkflowResult.trace` o `WorkflowError.trace`:
+
+```dart
+final result = await sdk.run(
+  workflowId,
+  imageBytes,
+  traceContext: WorkflowTraceContext(
+    runId: experimentRunId,
+    repetition: repetition,
+    condition: 'tratamiento',
+    caseId: 'caso-01',
+    measurements: [
+      TraceMeasurement(
+        name: 'latency',
+        value: elapsedMs,
+        unit: 'ms',
+        method: 'stopwatch',
+        source: 'host-app',
+        phase: 'workflow',
+      ),
+    ],
+  ),
+);
+final Map<String, Object?>? trace = result.trace?.toJson();
+```
+
+`runId` y `repetition` los declara la app. Las mediciones y el contexto que
+aporta la app quedan marcados como `clientReported`; el SDK no inventa datos
+experimentales. La traza solo incluye resultados públicos ya decodificados
+(clasificaciones, detecciones y booleanos), metadatos de versiones, perfil
+allowlisted y errores tipados sanitizados. Nunca serializa bytes de imagen ni
+tensores arbitrarios. En esta versión la traza queda en memoria y no se guarda
+ni se envía.
+
+Para una ejecución de control hecha fuera de `AyniSdk.run()`, la misma instancia
+puede construir el mismo tipo de registro con
+`sdk.createClientExecutionTrace(...)`. Pasa el contexto, workflow, versiones,
+duración y resultados tipados. Devuelve `null` si no hay una política válida
+habilitada y no hace inferencia, red ni cola durable.
+
 ## Preferencias de privacidad
 
 La app integradora debe mostrar el aviso a sus usuarios y construir dos

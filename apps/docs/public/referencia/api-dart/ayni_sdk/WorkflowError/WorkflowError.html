@@ -57,6 +57,7 @@
       <span class="name ">WorkflowError</span>(<wbr><ol class="parameter-list"> <li><span class="parameter" id="param-category"><span class="type-annotation"><a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErrorCategory</a></span> <span class="parameter-name">category</span>, {</span></li>
 <li><span class="parameter" id="param-nodeId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">nodeId</span>, </span></li>
 <li><span class="parameter" id="param-modelVersionId"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a>?</span> <span class="parameter-name">modelVersionId</span>, </span></li>
+<li><span class="parameter" id="param-trace"><span class="type-annotation"><a href="../../ayni_sdk/WorkflowTrace-class.html">WorkflowTrace</a>?</span> <span class="parameter-name">trace</span>, </span></li>
 </ol>})
     </section>
     
@@ -70,7 +71,12 @@ version involved.</p>
     
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">const WorkflowError(this.category, {this.nodeId, this.modelVersionId});</code></pre>
+  <pre class="language-dart"><code class="language-dart">const WorkflowError(
+  this.category, {
+  this.nodeId,
+  this.modelVersionId,
+  this.trace,
+});</code></pre>
 </section>
 
 

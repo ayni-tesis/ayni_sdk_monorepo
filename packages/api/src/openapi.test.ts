@@ -37,6 +37,7 @@ function jsonContent(path: string, method: string, status: string) {
 
 const sdkOperations = [
   { method: "post", path: "/sdk/sync", notFound: undefined, extraErrors: [] },
+  { method: "get", path: "/sdk/telemetry-policy", notFound: undefined, extraErrors: [] },
   {
     method: "post",
     path: "/sdk/consents",
@@ -140,6 +141,22 @@ it("never answers POST /sdk/sync with 404", () => {
   expect(document.paths["/sdk/sync"]?.post?.responses).not.toHaveProperty("404");
 });
 
+describe("GET /sdk/telemetry-policy", () => {
+  it("returns only the enabled flag and an allowed retention period", () => {
+    const response = resolve(jsonContent("/sdk/telemetry-policy", "get", "200").schema);
+    const properties = response.properties as Record<string, JsonObject>;
+
+    expect(Object.keys(properties).sort()).toEqual(["enabled", "retentionDays"]);
+    expect(properties.enabled?.type).toBe("boolean");
+    expect(properties.retentionDays?.anyOf).toEqual([
+      { type: "number", enum: [7] },
+      { type: "number", enum: [30] },
+      { type: "number", enum: [90] },
+    ]);
+    expect(response.additionalProperties).toBe(false);
+  });
+});
+
 describe("GET /sdk/model-versions/{modelVersionId}/manifest", () => {
   it("allows a null contract for a version that has none yet", () => {
     const manifest = resolve(
@@ -162,6 +179,7 @@ describe("GET /sdk/model-versions/{modelVersionId}/manifest", () => {
 describe("curl request samples", () => {
   it.each([
     ["/sdk/sync", "post", "curl -X POST https://tu-servidor-ayni.example/sdk/sync"],
+    ["/sdk/telemetry-policy", "get", "curl https://tu-servidor-ayni.example/sdk/telemetry-policy"],
     [
       "/sdk/workflow-versions/{workflowVersionId}",
       "get",

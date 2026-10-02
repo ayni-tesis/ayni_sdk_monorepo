@@ -9,6 +9,7 @@ describe("sdkContract", () => {
 
     expect(Object.keys(sdkContract(document).paths)).toEqual([
       "/sdk/consents",
+      "/sdk/telemetry-policy",
       "/sdk/sync",
       "/sdk/workflow-versions/{workflowVersionId}",
       "/sdk/model-versions/{modelVersionId}/manifest",
