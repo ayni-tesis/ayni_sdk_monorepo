@@ -112,23 +112,26 @@ void main() {
       expect(profile.toJson().containsKey('fingerprint'), isFalse);
     });
 
-    test('returns a partial profile and caches native plugin failures', () async {
-      var failedCalls = 0;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_channel, (call) async {
-            failedCalls++;
-            throw PlatformException(code: 'unavailable');
-          });
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      final sdk = createSdk();
+    test(
+      'returns a partial profile and caches native plugin failures',
+      () async {
+        var failedCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(_channel, (call) async {
+              failedCalls++;
+              throw PlatformException(code: 'unavailable');
+            });
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final sdk = createSdk();
 
-      final first = await sdk.getDeviceProfile();
-      final second = await sdk.getDeviceProfile();
+        final first = await sdk.getDeviceProfile();
+        final second = await sdk.getDeviceProfile();
 
-      expect(first.toJson(), {'schemaVersion': 1, 'platform': 'android'});
-      expect(second, same(first));
-      expect(failedCalls, equals(1));
-    });
+        expect(first.toJson(), {'schemaVersion': 1, 'platform': 'android'});
+        expect(second, same(first));
+        expect(failedCalls, equals(1));
+      },
+    );
 
     test('does not make network requests or persist the profile', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -149,14 +152,17 @@ void main() {
       expect(storageDirectory.listSync(), isEmpty);
     });
 
-    test('returns unknown on unsupported targets without querying the plugin', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    test(
+      'returns unknown on unsupported targets without querying the plugin',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
-      final profile = await createSdk().getDeviceProfile();
+        final profile = await createSdk().getDeviceProfile();
 
-      expect(profile.toJson(), {'schemaVersion': 1, 'platform': 'unknown'});
-      expect(calls, equals(0));
-    });
+        expect(profile.toJson(), {'schemaVersion': 1, 'platform': 'unknown'});
+        expect(calls, equals(0));
+      },
+    );
   });
 }
 
