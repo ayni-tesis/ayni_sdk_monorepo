@@ -146,6 +146,7 @@ return AyniSdk.instance;
       allowInsecureLoopback: config.allowInsecureLoopback,
       onProgress: config.onProgress,
     );
+    sdk._ensureInstallationId();
     _instance = sdk;
     return AyniInitializationResult(
       status: InitializationStatus.ready,

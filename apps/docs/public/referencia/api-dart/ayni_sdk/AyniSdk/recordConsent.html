@@ -85,7 +85,7 @@ before calling this method. Ayni does not provide the host app's switch.</p>
   required ConsentDecision decision,
   required String noticeVersion,
 }) {
-  if (!_isRandomUuidV4(subjectId)) {
+  if (!isUuidV4(subjectId)) {
     throw ArgumentError.value(
       subjectId,
       &#39;subjectId&#39;,
