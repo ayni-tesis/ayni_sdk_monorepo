@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
 import 'package:ayni_sdk/src/workflow_execution.dart' show WorkflowExecutor;
+import 'package:ayni_sdk/src/telemetry_policy_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
@@ -17,6 +18,7 @@ void main() {
 
   setUp(() {
     AyniSdk.resetForTesting();
+    AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
     storageDirectory = Directory.systemTemp.createTempSync(
       'ayni-typed-results-',
     );
@@ -42,6 +44,219 @@ void main() {
 
   Uint8List pngBytes() =>
       Uint8List.fromList(img.encodePng(img.Image(width: 1, height: 1)));
+
+  Future<void> installTraceModelArtifact() async {
+    const bytes = 'deterministic test model';
+    final hash = crypto.sha256.convert(utf8.encode(bytes)).toString();
+    final modelDirectory = Directory(
+      '${storageDirectory.path}/model-version-1',
+    );
+    await modelDirectory.create(recursive: true);
+    await File(
+      '${modelDirectory.path}/model-version-1.tflite',
+    ).writeAsString(bytes);
+    await File('${modelDirectory.path}/model-version-1.json').writeAsString(
+      jsonEncode({
+        'modelId': 'model-version-1',
+        'modelVersionId': 'model-version-1',
+        'sha256': hash,
+      }),
+    );
+  }
+
+  group('policy-gated workflow traces', () {
+    final context = WorkflowTraceContext(
+      runId: 'validation-run-7',
+      repetition: 3,
+      condition: 'treatment',
+      caseId: 'leaf-healthy-1',
+      ramRange: '4–<8 GB',
+      socModel: 'Client SoC',
+      measurements: [
+        TraceMeasurement(
+          name: 'latency',
+          value: 14.5,
+          unit: 'ms',
+          method: 'stopwatch',
+          source: 'host-app',
+          phase: 'workflow',
+        ),
+      ],
+    );
+
+    test('attaches a typed local trace to a successful run', () async {
+      AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
+      await installWorkflow();
+      await installTraceModelArtifact();
+      await TelemetryPolicyStore(
+        storageDirectory,
+      ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+      final client = createAyniSdkForTesting(
+        serverUrl: Uri.parse('https://sdk.example.test'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storageDirectory,
+        workflowInferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async => (
+              error: null,
+              outputs: [
+                (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+              ],
+            ),
+      );
+
+      final result = await client.run(
+        'workflow-1',
+        pngBytes(),
+        traceContext: context,
+      );
+      final trace = result.trace!;
+      final json = trace.toJson();
+
+      expect(trace.runId, 'validation-run-7');
+      expect(trace.repetition, 3);
+      expect(
+        trace.traceId,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+      expect(
+        trace.installationId,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+      expect(trace.workflowVersionId, 'workflow-version-1.0.0');
+      expect(
+        trace.outputs['Resultado'],
+        containsPair('type', 'classification'),
+      );
+      expect(trace.models.single.sha256, 'a' * 64);
+      expect(trace.profile.ramRange, '4–<8 GB');
+      expect(trace.nodes.map((node) => node.status), everyElement('completed'));
+      expect(
+        trace.clientReportedFields,
+        containsAll([
+          'condition',
+          'runId',
+          'repetition',
+          'caseId',
+          'ramRange',
+          'socModel',
+          'measurements',
+        ]),
+      );
+      expect(jsonEncode(json), isNot(contains(base64Encode(pngBytes()))));
+      expect(json['traceSchemaVersion'], 1);
+    });
+
+    test('attaches a sanitized trace to a typed execution error', () async {
+      AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
+      await installWorkflow();
+      await TelemetryPolicyStore(
+        storageDirectory,
+      ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+
+      final error = await sdk()
+          .run('workflow-1', pngBytes(), traceContext: context)
+          .then<WorkflowError?>(
+            (_) => null,
+            onError: (Object error) => error is WorkflowError ? error : null,
+          );
+
+      expect(error?.category, WorkflowErrorCategory.modelNotAvailable);
+      expect(error?.trace?.status, 'error');
+      expect(error?.trace?.error, {
+        'category': 'modelNotAvailable',
+        'modelVersionId': 'model-version-1',
+      });
+      expect(error?.trace?.models, isEmpty);
+      expect(error?.trace?.toJson().containsKey('input'), isFalse);
+    });
+
+    test(
+      'builds a control trace only with a cached enabled policy and makes no request',
+      () async {
+        final client = sdk();
+        final disabled = await client.createClientExecutionTrace(
+          context: context,
+          workflowId: 'workflow-1',
+          workflowVersionId: 'control-1',
+          workflowVersion: '1.0.0',
+          timestamp: DateTime.utc(2026, 10, 2),
+          durationMs: 12,
+          outputs: const {'Resultado': BooleanResult('condition-1', true)},
+        );
+        expect(disabled, isNull);
+
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 90));
+        final trace = await client.createClientExecutionTrace(
+          context: context,
+          workflowId: 'workflow-1',
+          workflowVersionId: 'control-1',
+          workflowVersion: '1.0.0',
+          timestamp: DateTime.utc(2026, 10, 2),
+          durationMs: 12,
+          outputs: const {'Resultado': BooleanResult('condition-1', true)},
+          models: [
+            TraceModel(
+              modelVersionId: 'model-1',
+              version: '1.0.0',
+              sha256: 'b' * 64,
+            ),
+          ],
+        );
+
+        expect(trace?.runId, 'validation-run-7');
+        expect(trace?.outputs['Resultado'], {
+          'type': 'boolean',
+          'nodeId': 'condition-1',
+          'value': true,
+        });
+        expect(trace?.profile.socModel, 'Client SoC');
+        expect(trace?.toJson()['traceSchemaVersion'], 1);
+      },
+    );
+
+    test(
+      'represents a typed control failure without raw exception details',
+      () async {
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 7));
+
+        final trace = await sdk().createClientExecutionTrace(
+          context: context,
+          workflowId: 'workflow-1',
+          workflowVersionId: 'control-1',
+          workflowVersion: '1.0.0',
+          timestamp: DateTime.utc(2026, 10, 2),
+          durationMs: 3,
+          error: const WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: 'model-1',
+          ),
+        );
+
+        expect(trace?.status, 'error');
+        expect(trace?.error, {
+          'category': 'modelOutputInvalid',
+          'nodeId': 'model-1',
+        });
+        expect(trace?.toJson().containsKey('message'), isFalse);
+      },
+    );
+  });
 
   Future<void> installModelArtifact({
     String versionId = 'model-version-1',

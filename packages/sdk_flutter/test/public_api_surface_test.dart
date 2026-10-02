@@ -36,6 +36,13 @@ const Map<String, Set<String>> expectedExports = {
     'ConsentStatus',
   },
   'src/device_profile.dart': {'DeviceProfile'},
+  'src/workflow_trace.dart': {
+    'TraceMeasurement',
+    'TraceModel',
+    'TraceNodeExecution',
+    'WorkflowTrace',
+    'WorkflowTraceContext',
+  },
 };
 
 String stripComments(String source) {
@@ -203,6 +210,11 @@ void main() {
         'ConsentResult': ConsentResult,
         'ConsentStatus': ConsentStatus,
         'DeviceProfile': DeviceProfile,
+        'TraceMeasurement': TraceMeasurement,
+        'TraceModel': TraceModel,
+        'TraceNodeExecution': TraceNodeExecution,
+        'WorkflowTrace': WorkflowTrace,
+        'WorkflowTraceContext': WorkflowTraceContext,
       };
       final expectedNames = expectedExports.values
           .expand((names) => names)
@@ -231,8 +243,32 @@ void main() {
       expect(sdk.sync, isA<Future<SyncResult> Function()>());
       expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
       expect(
+        sdk.createClientExecutionTrace,
+        isA<
+          Future<WorkflowTrace?> Function({
+            required WorkflowTraceContext context,
+            required String workflowId,
+            required String workflowVersionId,
+            required String workflowVersion,
+            required DateTime timestamp,
+            required int durationMs,
+            Map<String, WorkflowValue> outputs,
+            List<TraceModel> models,
+            List<TraceNodeExecution> nodes,
+            WorkflowError? error,
+          })
+        >(),
+      );
+      expect(
         sdk.run,
-        isA<Future<WorkflowResult> Function(String, Uint8List)>(),
+        isA<
+          Future<WorkflowResult> Function(
+            String,
+            Uint8List, {
+            void Function(String)? onExecutionStarted,
+            WorkflowTraceContext? traceContext,
+          })
+        >(),
       );
     });
   });
@@ -291,6 +327,7 @@ void main() {
         final pubGet = await Process.run(Platform.resolvedExecutable, [
           'pub',
           'get',
+          '--offline',
         ], workingDirectory: fixture.path);
         expect(
           pubGet.exitCode,

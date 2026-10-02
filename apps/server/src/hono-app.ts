@@ -73,6 +73,7 @@ import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
+import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";
 import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
@@ -335,6 +336,15 @@ const sdkWorkflowVersions = {
   },
   getDefinition(applicationId: string, workflowVersionId: string) {
     return getSdkWorkflowVersionDefinition(db, applicationId, workflowVersionId);
+  },
+};
+
+const sdkTelemetryPolicies = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  get(applicationId: string) {
+    return getTelemetryPolicy(db, applicationId);
   },
 };
 
@@ -791,6 +801,13 @@ app.route(
   createSdkWorkflowVersionsApp({
     credentials: sdkWorkflowVersions,
     workflowVersions: sdkWorkflowVersions,
+  }),
+);
+app.route(
+  "/",
+  createSdkTelemetryPolicyApp({
+    credentials: sdkTelemetryPolicies,
+    policies: sdkTelemetryPolicies,
   }),
 );
 

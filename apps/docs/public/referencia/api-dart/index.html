@@ -134,6 +134,51 @@ for (final resource in result.resources) {
 }
 </code></pre>
 <p><code>result.resources</code> contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/sync.dart</code>.</p>
+<h2 id="trazas-tcnicas-locales">Trazas técnicas locales</h2>
+<p>Cada <code>sync()</code> intenta actualizar la política de captura técnica de la
+aplicación. Una respuesta válida se guarda en
+<code>storageDirectory/diagnostics/telemetry-policy.json</code>; una falla mantiene la
+última política válida. Sin una política válida habilitada, el SDK no crea
+trazas. La política de telemetría y el consentimiento opcional <code>sdkImprovement</code>
+son controles separados: la app debe mantener su switch apagado por defecto y
+pasar <code>traceContext</code> solo cuando su preferencia y el consentimiento aplicable
+permitan capturar datos.</p>
+<p>Cuando está habilitada la captura, <code>run()</code> adjunta una traza tipada a
+<code>WorkflowResult.trace</code> o <code>WorkflowError.trace</code>:</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.run(
+  workflowId,
+  imageBytes,
+  traceContext: WorkflowTraceContext(
+    runId: experimentRunId,
+    repetition: repetition,
+    condition: 'tratamiento',
+    caseId: 'caso-01',
+    measurements: [
+      TraceMeasurement(
+        name: 'latency',
+        value: elapsedMs,
+        unit: 'ms',
+        method: 'stopwatch',
+        source: 'host-app',
+        phase: 'workflow',
+      ),
+    ],
+  ),
+);
+final Map&lt;String, Object?&gt;? trace = result.trace?.toJson();
+</code></pre>
+<p><code>runId</code> y <code>repetition</code> los declara la app. Las mediciones y el contexto que
+aporta la app quedan marcados como <code>clientReported</code>; el SDK no inventa datos
+experimentales. La traza solo incluye resultados públicos ya decodificados
+(clasificaciones, detecciones y booleanos), metadatos de versiones, perfil
+allowlisted y errores tipados sanitizados. Nunca serializa bytes de imagen ni
+tensores arbitrarios. En esta versión la traza queda en memoria y no se guarda
+ni se envía.</p>
+<p>Para una ejecución de control hecha fuera de <code>AyniSdk.run()</code>, la misma instancia
+puede construir el mismo tipo de registro con
+<code>sdk.createClientExecutionTrace(...)</code>. Pasa el contexto, workflow, versiones,
+duración y resultados tipados. Devuelve <code>null</code> si no hay una política válida
+habilitada y no hace inferencia, red ni cola durable.</p>
 <h2 id="preferencias-de-privacidad">Preferencias de privacidad</h2>
 <p>La app integradora debe mostrar el aviso a sus usuarios y construir dos
 switches independientes, apagados por defecto: contribuir imágenes y etiquetas

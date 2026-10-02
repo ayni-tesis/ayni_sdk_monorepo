@@ -59,6 +59,7 @@
 <li><span class="parameter" id="run-param-input"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-typed_data/Uint8List-class.html">Uint8List</a></span> <span class="parameter-name">input</span>, {</span></li>
 <li><span class="parameter" id="run-param-onExecutionStarted"><span class="type-annotation">void</span> <span class="parameter-name">onExecutionStarted</span>(<ol class="parameter-list single-line"> <li><span class="parameter" id="param-message"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span> <span class="parameter-name">message</span></span></li>
 </ol>)?, </span></li>
+<li><span class="parameter" id="run-param-traceContext"><span class="type-annotation"><a href="../../ayni_sdk/WorkflowTraceContext-class.html">WorkflowTraceContext</a>?</span> <span class="parameter-name">traceContext</span>, </span></li>
 </ol>})
 
       
@@ -112,6 +113,7 @@ nodes after any currently running inference finishes.</p>
   String workflowId,
   Uint8List input, {
   void Function(String executionId)? onExecutionStarted,
+  WorkflowTraceContext? traceContext,
 }) async {
   if (platform.isUnsupportedAndroid) {
     throw UnsupportedError(
@@ -126,6 +128,19 @@ nodes after any currently running inference finishes.</p>
   if (!platform.isSupported) {
     throw UnsupportedError(&#39;Esta plataforma no es compatible con ayni_sdk.&#39;);
   }
+  final startedAt = DateTime.now().toUtc();
+  final stopwatch = Stopwatch()..start();
+  final captureTrace = traceContext != null &amp;&amp; await _captureEnabled();
+  if (captureTrace) {
+    unawaited(
+      getDeviceProfile().catchError(
+        (Object _) =&gt; const DeviceProfile(platform: &#39;unknown&#39;),
+      ),
+    );
+  }
+  _Workflow? workflowForTrace;
+  _Inventory? inventoryForTrace;
+  final traceNodes = &lt;TraceNodeExecution&gt;[];
   final executionId = _newExecutionId();
   final execution = _ActiveExecution();
   _activeExecutions[executionId] = execution;
@@ -136,10 +151,12 @@ nodes after any currently running inference finishes.</p>
       &#39;${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json&#39;,
     );
     final inventory = await _readInventory(inventoryFile);
+    inventoryForTrace = inventory;
     final workflow = inventory.workflows[workflowId];
     if (workflow == null) {
       throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
     }
+    workflowForTrace = workflow;
     final definitionFile = installedWorkflowDefinitionFile(
       storageDirectory,
       workflow.workflowVersionId,
@@ -188,19 +205,83 @@ nodes after any currently running inference finishes.</p>
       definition: decoded,
       imageBytes: input,
       isCancelled: () =&gt; execution.cancelled,
+      onNodeFinished: captureTrace ? traceNodes.add : null,
     );
     _throwIfCancelled(execution);
-    return result;
-  } on WorkflowError {
-    rethrow;
+    stopwatch.stop();
+    final trace = await _traceForRun(
+      context: traceContext,
+      enabled: captureTrace,
+      workflow: workflowForTrace,
+      inventory: inventoryForTrace,
+      timestamp: startedAt,
+      durationMs: stopwatch.elapsedMilliseconds,
+      nodes: traceNodes,
+      outputs: result.outputs,
+    );
+    return result.withTrace(trace);
+  } on WorkflowError catch (error) {
+    stopwatch.stop();
+    final trace = await _traceForRun(
+      context: traceContext,
+      enabled: captureTrace,
+      workflow: workflowForTrace,
+      inventory: inventoryForTrace,
+      timestamp: startedAt,
+      durationMs: stopwatch.elapsedMilliseconds,
+      nodes: traceNodes,
+      error: error,
+    );
+    throw error.withTrace(trace);
   } on UnsupportedError {
     rethrow;
   } on FormatException {
-    throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+    stopwatch.stop();
+    final error = const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
+    throw error.withTrace(
+      await _traceForRun(
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
+        error: error,
+      ),
+    );
   } on FileSystemException {
-    throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
+    stopwatch.stop();
+    final error = const WorkflowError(
+      WorkflowErrorCategory.workflowNotAvailable,
+    );
+    throw error.withTrace(
+      await _traceForRun(
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
+        error: error,
+      ),
+    );
   } catch (_) {
-    throw const WorkflowError(WorkflowErrorCategory.runtimeError);
+    stopwatch.stop();
+    final error = const WorkflowError(WorkflowErrorCategory.runtimeError);
+    throw error.withTrace(
+      await _traceForRun(
+        context: traceContext,
+        enabled: captureTrace,
+        workflow: workflowForTrace,
+        inventory: inventoryForTrace,
+        timestamp: startedAt,
+        durationMs: stopwatch.elapsedMilliseconds,
+        nodes: traceNodes,
+        error: error,
+      ),
+    );
   } finally {
     _activeExecutions.remove(executionId);
   }

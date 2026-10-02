@@ -34,5 +34,12 @@ export 'src/workflow_execution.dart'
         WorkflowResult,
         WorkflowValue;
 export 'src/device_profile.dart' show DeviceProfile;
+export 'src/workflow_trace.dart'
+    show
+        TraceMeasurement,
+        TraceModel,
+        TraceNodeExecution,
+        WorkflowTrace,
+        WorkflowTraceContext;
 export 'src/sdk_consent.dart'
     show ConsentDecision, ConsentPurpose, ConsentResult, ConsentStatus;

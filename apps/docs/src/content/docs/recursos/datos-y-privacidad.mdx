@@ -49,6 +49,7 @@ ni trazas.
 | Dato | Cuándo se envía | A dónde | Opcional |
 | --- | --- | --- | --- |
 | La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()`. | `POST /sdk/sync`, en el servidor de Ayni (`serverUrl`). | No |
+| La credencial del SDK, en el encabezado `Authorization` | Durante cada `sync()`, para actualizar la política de captura local de la aplicación. | `GET /sdk/telemetry-policy`, en el servidor de Ayni (`serverUrl`). | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de workflow, en la ruta | Durante `sync()`, por cada versión de workflow publicada que aún no está en el dispositivo. | `GET /sdk/workflow-versions/<workflowVersionId>`, en el servidor de Ayni. | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de modelo, en la ruta | Durante `sync()`, por cada modelo que necesita un workflow nuevo y que aún no está en el dispositivo. | `GET /sdk/model-versions/<modelVersionId>/manifest`, en el servidor de Ayni. | No |
 | Solo la solicitud de descarga del archivo del modelo, sin credencial | Justo después de recibir el manifiesto de ese modelo. | `GET <downloadUrl>`: la URL firmada del almacenamiento de objetos que indica el manifiesto, un host distinto del servidor. | No |
@@ -99,11 +100,15 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 ## Lo que el SDK no hace
 
 - No sube imágenes ni entradas del modelo durante la sincronización.
-- No envía telemetría.
-- No obtiene el perfil técnico hasta que la app llama a
-  `AyniSdk.getDeviceProfile()`. La respuesta local puede incluir plataforma,
-  versión del SO/API, modelo, rango de RAM y SoC cuando esté disponible; no se
-  guarda ni se envía. Los campos que el sistema no expone se omiten.
+- No envía trazas ni imágenes. Si `sync()` recibió una política válida habilitada
+  y la app entrega contexto a `run()`, adjunta una traza tipada a su resultado o
+  error. La traza solo vive en memoria durante esta historia; no hay cola local,
+  persistencia ni envío al servidor.
+- Lee el perfil técnico cuando la app llama a `AyniSdk.getDeviceProfile()` o
+  cuando una ejecución elegible recibe `traceContext`; para la traza lo consulta
+  en segundo plano y no espera esa lectura. El perfil local puede incluir
+  plataforma, versión del SO/API, modelo, rango de RAM y SoC; no se guarda ni se
+  envía. Los campos que el sistema no expone se omiten.
 - No consulta identificadores de hardware como seriales, fingerprints o el ID
   de proveedor de iOS. Al inicializarse, guarda un UUID v4 aleatorio como
   `installation-id` dentro de `storageDirectory`; es local, no se envía y se
@@ -111,14 +116,14 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 - No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
   ejecución ocurre por completo en el dispositivo.
 
-Estas afirmaciones valen para `ayni_sdk` 0.1.0. En el dashboard, las
-secciones «Privacidad y telemetría» y «Recolección de evidencia» de una
-aplicación guardan su política de telemetría y de captura de imágenes, pero
-esta versión del SDK no las descarga ni las aplica: activar «Permitir
-telemetría técnica» o «Permitir captura de imágenes para datasets» no cambia lo
-que envía. Cuando una versión del SDK empiece a enviar alguno de estos datos,
-esta página describirá qué envía, qué política lo habilita, el consentimiento
-que requiere y cuánto tiempo se conserva.
+La política «Permitir telemetría técnica» habilita la captura local de trazas y
+su periodo permitido de retención; el SDK consulta esos dos valores durante
+`sync()` y guarda la última respuesta válida en `diagnostics/telemetry-policy.json`.
+Una política desconocida o deshabilitada no crea trazas. La decisión opcional
+`sdkImprovement` es independiente: la app debe mantener su switch apagado por
+defecto y solo pasar `traceContext` a `run()` cuando la captura y el
+consentimiento aplicable estén habilitados. El SDK no recibe ni interpreta ese
+consentimiento. Esta historia aún no transmite ni persiste las trazas.
 
 ## Datos que el SDK guarda en el dispositivo
 
@@ -140,7 +145,8 @@ allowlisted; el SDK la conserva solo en memoria durante esa instancia.
 | Definición de cada versión de workflow instalada. | `workflow-definitions/<ID codificado>.json` | Borra `storageDirectory` completo. |
 | Archivo de cada versión de modelo instalada, sus metadatos (ID de la versión y SHA-256) y un archivo vacío que bloquea la instalación mientras ocurre. | `<modelVersionId>/<modelVersionId>.tflite`, `<modelVersionId>/<modelVersionId>.json` y `<modelVersionId>/<modelVersionId>.lock` | Borra `storageDirectory` completo. |
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
-| Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar futuras trazas técnicas con el mismo almacenamiento local. No incluye identidad directa y esta versión no lo envía. | `installation-id` | Borra `storageDirectory` completo. |
+| Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas dentro del almacenamiento local. No incluye identidad directa y esta historia no lo envía. | `installation-id` | Borra `storageDirectory` completo. |
+| Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
 | Archivos temporales de las descargas, verificaciones e instalaciones en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()`, pueden quedar: borra `storageDirectory` completo. |
 

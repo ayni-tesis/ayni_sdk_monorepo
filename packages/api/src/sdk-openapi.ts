@@ -6,6 +6,7 @@ import {
 import { z } from "zod";
 
 import { sdkConsentReceiptSchema } from "./sdk-consent";
+import { sdkTelemetryPolicySchema } from "./sdk-telemetry-policy";
 
 extendZodWithOpenApi(z);
 
@@ -372,6 +373,27 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         },
       },
       ...errorResponses(consentErrors),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/sdk/telemetry-policy",
+    tags: ["Endpoints"],
+    operationId: "obtener-politica-de-telemetria",
+    summary: "Obtener la política de captura de trazas",
+    description: describeWithErrors(
+      "Devuelve si la aplicación de la credencial tiene habilitada la captura local de trazas y su periodo de retención. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.",
+      credentialErrors(revokedMessage),
+    ),
+    security,
+    "x-codeSamples": curlSample("get", "/sdk/telemetry-policy"),
+    responses: {
+      "200": {
+        description: "Política de telemetría de la aplicación autenticada.",
+        content: { "application/json": { schema: sdkTelemetryPolicySchema } },
+      },
+      ...errorResponses(credentialErrors(revokedMessage)),
     },
   });
 
