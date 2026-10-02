@@ -146,8 +146,9 @@ dashboard.
   this node, telemetry contains only permitted execution metadata, never images.
 - Telemetry uses a locally generated, per-installation UUID rather than hardware
   identifiers. It may include only permitted technical metadata (device model,
-  platform, OS/app/SDK versions, RAM range, execution timings, and sanitized
-  errors) and must be governed by an application-level policy and retention.
+   platform, OS/app/SDK versions, RAM range, SoC model when exposed, execution
+   timings, and sanitized errors) and must be governed by an application-level
+   policy and retention.
 - TensorFlow Lite is the first on-device runtime. The coffee-leaf flow
   (validate leaf, then diagnose disease or pest) is an example workflow, not a
   product limitation.

@@ -100,10 +100,14 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 
 - No sube imágenes ni entradas del modelo durante la sincronización.
 - No envía telemetría.
-- No recolecta el modelo, el sistema operativo, la ubicación ni identificadores
-  de hardware del dispositivo. Al inicializarse, guarda un UUID v4 aleatorio
-  como `installation-id` dentro de `storageDirectory`; es local, no se envía y
-  se elimina al borrar ese directorio.
+- No obtiene el perfil técnico hasta que la app llama a
+  `AyniSdk.getDeviceProfile()`. La respuesta local puede incluir plataforma,
+  versión del SO/API, modelo, rango de RAM y SoC cuando esté disponible; no se
+  guarda ni se envía. Los campos que el sistema no expone se omiten.
+- No consulta identificadores de hardware como seriales, fingerprints o el ID
+  de proveedor de iOS. Al inicializarse, guarda un UUID v4 aleatorio como
+  `installation-id` dentro de `storageDirectory`; es local, no se envía y se
+  elimina al borrar ese directorio.
 - No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
   ejecución ocurre por completo en el dispositivo.
 
@@ -127,6 +131,8 @@ persona, finalidad, decisión, versión del aviso y fecha; no incluyen nombre,
 correo, teléfono ni hashes de identificadores directos. La credencial solo se
 mantiene en memoria. `initialize()` también genera un UUID v4 aleatorio para
 esta instalación y lo conserva localmente; no lo envía al servidor.
+`getDeviceProfile()` devuelve bajo solicitud de la app una respuesta técnica
+allowlisted; el SDK la conserva solo en memoria durante esa instancia.
 
 | Dato | Ubicación en `storageDirectory` | Cómo eliminarlo |
 | --- | --- | --- |

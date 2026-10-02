@@ -5,9 +5,11 @@ repository: https://github.com/ayni-tesis/ayni_sdk_monorepo/tree/main/packages/s
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
+  flutter: ">=3.32.0"
 
 dependencies:
   crypto: ^3.0.6
+  device_info_plus: ^9.1.2
   ffi: ^2.1.3
   flutter:
     sdk: flutter
@@ -15,4 +17,15 @@ dependencies:
   tflite_flutter: ^0.12.1
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   test: ^1.25.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.ayni.ayni_sdk
+        pluginClass: AyniDeviceProfilePlugin
+      ios:
+        pluginClass: AyniDeviceProfilePlugin

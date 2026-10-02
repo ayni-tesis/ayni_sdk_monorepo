@@ -91,12 +91,12 @@ Commit: `feat(sdk): persist installation diagnostic id`.
 
 **Interfaces:**
 - Produces public `Future<DeviceProfile> AyniSdk.getDeviceProfile()` and `DeviceProfile.toJson()` with an explicit allowlist. The method performs no network request or persistence; US-103 reuses the same profile when constructing a trace.
-- The profile carries platform, OS/API, manufacturer/model where available, and optional RAM range. RAM/SoC unavailable to the SDK are supplied later through the typed run context or remain unknown.
-- The SDK uses `device_info_plus: ^9.1.2`; [that release line supports iOS 11](https://pub.dev/packages/device_info_plus/versions/9.1.2/changelog), while newer releases raise the minimum iOS version. It provides model/platform/OS data; RAM/SoC remain optional context because the iOS-11-compatible release does not expose the later RAM fields. Read only required fields; never serialize the plugin's whole `data` map.
+- The profile carries platform, OS/API, model, a coarse RAM range, and SoC when the platform exposes it. RAM unavailable to the SDK is supplied later through typed run context or remains unknown.
+- The SDK uses `device_info_plus: ^9.1.2` for model/platform/OS and a small native channel for RAM and Android SoC. Read only required fields; never serialize the plugin's whole `data` map.
 
 - [ ] **Step 1: Pin allowlisted profile fields and fallbacks**
 
-Add tests for Android and iOS profile mapping, RAM range bucketing when present, unknown/failed platform fields, exclusion of serial/device/vendor identifiers from JSON, and `getDeviceProfile()` performing no HTTP requests or writes to `storageDirectory`.
+Add tests for Android and iOS profile mapping, RAM range bucketing, optional SoC, unknown/failed platform fields, exclusion of serial/device/vendor identifiers from JSON, and `getDeviceProfile()` performing no HTTP requests or writes to `storageDirectory`.
 
 - [ ] **Step 2: Run the focused profile test and confirm it fails**
 
@@ -109,7 +109,7 @@ Resolve `device_info_plus` within the 9.x line and implement the allowlisted map
 
 - [ ] **Step 4: Attach the profile to trace construction**
 
-Implement `AyniSdk.getDeviceProfile()` as an explicit local read and cache one profile read per SDK instance. On unavailable platform metadata, return an unknown/partial profile without failing app execution. Update the public barrel and API surface test; document the explicit read and the fact that it is not transmitted by this story. Explain how host context supplies or omits unavailable RAM/SoC values in the privacy page.
+Implement `AyniSdk.getDeviceProfile()` as an explicit local read and cache one profile read per SDK instance. On unavailable platform metadata, return an unknown/partial profile without failing app execution. Update the public barrel and API surface test; document the explicit read and the fact that it is not transmitted by this story. Explain how host context supplies or omits fields unavailable from the platform in the privacy page.
 
 - [ ] **Step 5: Run focused Flutter checks and commit the story**
 
