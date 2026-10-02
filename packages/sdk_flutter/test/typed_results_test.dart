@@ -1092,7 +1092,7 @@ void main() {
     expect(branchResult.value, isTrue);
   });
 
-  test('evaluates every declared condition operator', () async {
+  test('evaluates condition operators and traces skipped nodes', () async {
     await installModelArtifact();
     final definition = jsonDecode(_definition()) as Map<String, dynamic>;
     final nodes = (definition['nodes'] as List).cast<Map>();
@@ -1116,6 +1116,13 @@ void main() {
       inventoryJson: _inventory(),
       workflowVersionId: 'workflow-version-1.0.0',
       definitionJson: jsonEncode(definition),
+    );
+    await TelemetryPolicyStore(
+      storageDirectory,
+    ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+    final traceContext = WorkflowTraceContext(
+      runId: 'validation-run-10',
+      repetition: 1,
     );
     final client = createAyniSdkForTesting(
       serverUrl: Uri.parse('https://sdk.example.test'),
@@ -1156,10 +1163,24 @@ void main() {
         definitionJson: jsonEncode(definition),
       );
 
-      final result = await client.run('workflow-1', pngBytes());
+      final result = await client.run(
+        'workflow-1',
+        pngBytes(),
+        traceContext: traceContext,
+      );
       final selectedName = expected ? 'Resultado' : 'No apto';
       expect(result.outputs.keys, {selectedName});
       expect((result.outputs[selectedName]! as BooleanResult).value, expected);
+      final skippedNode = result.trace!.nodes.singleWhere(
+        (node) => node.nodeId == (expected ? 'output-false' : 'output-1'),
+      );
+      expect(skippedNode.status, 'skipped');
+      expect(skippedNode.durationMs, isNull);
+      final executedNode = result.trace!.nodes.singleWhere(
+        (node) => node.nodeId == (expected ? 'output-1' : 'output-false'),
+      );
+      expect(executedNode.status, 'completed');
+      expect(executedNode.durationMs, isNotNull);
     }
   });
 

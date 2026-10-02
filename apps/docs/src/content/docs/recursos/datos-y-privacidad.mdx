@@ -102,10 +102,14 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 - No sube imágenes ni entradas del modelo durante la sincronización.
 - No envía trazas ni imágenes. Si `sync()` recibió una política válida habilitada
   y la app entrega contexto a `run()`, adjunta una traza tipada a su resultado o
-  error. Incluye duración total y por nodo en milisegundos, estado del nodo y el
-  contexto declarado de corrida, repetición y condición; un nodo omitido no tiene
-  duración. La traza solo vive en memoria durante esta historia; no hay cola local,
-  persistencia ni envío al servidor.
+  error; la app también puede solicitar una traza de control con
+  `createClientExecutionTrace()`. Puede incluir los identificadores de traza,
+  corrida, repetición e instalación; referencias de workflow y modelos; perfil
+  del dispositivo; contexto opcional; salidas estructuradas; mediciones,
+  incidentes y errores tipados. Incluye duración total y por nodo en
+  milisegundos y estado del nodo; un nodo omitido no tiene duración. La traza
+  solo vive en memoria durante esta historia; no hay cola local, persistencia ni
+  envío al servidor.
 - Lee el perfil técnico cuando la app llama a `AyniSdk.getDeviceProfile()` o
   cuando una ejecución elegible recibe `traceContext`; para la traza lo consulta
   en segundo plano y no espera esa lectura. El perfil local puede incluir
