@@ -90,6 +90,17 @@ return AyniSdk.instance;
 </code></pre>
 <p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/initialize.dart</code>.</p>
 <p>Una vez completada la inicialización de forma exitosa (<code>result.isReady</code>), se accede a la instancia compartida a través de <code>AyniSdk.instance</code>. Revisa <code>result.status</code> si necesitas distinguir <code>ready</code>, <code>incompleteConfiguration</code>, <code>error</code> o <code>unsupportedPlatform</code>; en cualquier estado distinto de <code>ready</code>, muestra <code>result.message</code> y no uses la instancia. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.</p>
+<h2 id="perfil-tcnico-del-dispositivo">Perfil técnico del dispositivo</h2>
+<p>La app puede consultar el perfil técnico disponible para describir el dispositivo
+en sus propios reportes de prueba o en una traza:</p>
+<pre class="language-dart"><code class="language-dart">final DeviceProfile profile = await sdk.getDeviceProfile();
+final Map&lt;String, Object&gt; fields = profile.toJson();
+</code></pre>
+<p>El perfil versionado solo incluye plataforma, SO/API, modelo, rango de RAM y
+SoC cuando la plataforma los expone. No incluye el nombre asignado al
+dispositivo, seriales, identificadores de proveedor ni otros datos del plugin.
+El SDK no persiste ni envía el perfil; los campos ausentes se omiten. La
+consulta se resuelve localmente y queda cacheada en esa instancia.</p>
 <h2 id="sincronizacin">Sincronización</h2>
 <p>Después de inicializar, sincroniza para instalar nuevas versiones publicadas. <code>SyncResult.status</code> indica el resultado general: <code>updated</code>, <code>upToDate</code>, <code>offline</code> o <code>error</code>. Ante <code>offline</code>, conserva y usa los workflows ya instalados. Ante <code>error</code>, no des por descartados todos los cambios: puede haber recursos actualizados junto con recursos fallidos. Recorre <code>result.resources</code> y maneja el <code>status</code> de cada recurso; la lista puede estar vacía si el fallo ocurrió antes de compararlos con el servidor.</p>
 <pre class="language-dart"><code class="language-dart">final result = await sdk.sync();

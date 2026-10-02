@@ -70,6 +70,13 @@ La app elimina de sus propias colas los datos de esa finalidad que aún no envi�
 Esta versión del SDK no crea esas colas. Los datos que Ayni ya recibió requieren
 una solicitud por el canal de derechos publicado en el aviso correspondiente.
 
+Cuando una versión futura del SDK envíe trazas técnicas, solo las enviará si la
+política de la aplicación permite telemetría y la persona activó `sdkImprovement`;
+el servidor las conservará durante el `retentionDays` de esa política. Ese
+consentimiento es para la mejora del SDK: no sustituye el consentimiento ni las
+salvaguardas que correspondan a la validación académica. `ayni_sdk` 0.1.0 no
+descarga esta política ni envía el perfil o trazas.
+
 La credencial identifica a tu aplicación en Ayni, no al usuario ni al
 dispositivo. El SDK solo la envía a `serverUrl`, por HTTPS o, si activas
 `allowInsecureLoopback` para desarrollo local, por HTTP hacia el propio
@@ -100,10 +107,14 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 
 - No sube imágenes ni entradas del modelo durante la sincronización.
 - No envía telemetría.
-- No recolecta el modelo, el sistema operativo, la ubicación ni identificadores
-  de hardware del dispositivo. Al inicializarse, guarda un UUID v4 aleatorio
-  como `installation-id` dentro de `storageDirectory`; es local, no se envía y
-  se elimina al borrar ese directorio.
+- No obtiene el perfil técnico hasta que la app llama a
+  `AyniSdk.getDeviceProfile()`. La respuesta local puede incluir plataforma,
+  versión del SO/API, modelo, rango de RAM y SoC cuando esté disponible; no se
+  guarda ni se envía. Los campos que el sistema no expone se omiten.
+- No consulta identificadores de hardware como seriales, fingerprints o el ID
+  de proveedor de iOS. Al inicializarse, guarda un UUID v4 aleatorio como
+  `installation-id` dentro de `storageDirectory`; es local, no se envía y se
+  elimina al borrar ese directorio.
 - No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
   ejecución ocurre por completo en el dispositivo.
 
@@ -127,6 +138,8 @@ persona, finalidad, decisión, versión del aviso y fecha; no incluyen nombre,
 correo, teléfono ni hashes de identificadores directos. La credencial solo se
 mantiene en memoria. `initialize()` también genera un UUID v4 aleatorio para
 esta instalación y lo conserva localmente; no lo envía al servidor.
+`getDeviceProfile()` devuelve bajo solicitud de la app una respuesta técnica
+allowlisted; el SDK la conserva solo en memoria durante esa instancia.
 
 | Dato | Ubicación en `storageDirectory` | Cómo eliminarlo |
 | --- | --- | --- |

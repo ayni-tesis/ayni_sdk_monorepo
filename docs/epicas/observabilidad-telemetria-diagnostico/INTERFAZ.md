@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | US-100 | Aplicación → `Privacidad y telemetría` → `Guardar política` | `Permitir telemetría técnica`; `La telemetría no incluye imágenes ni entradas crudas.`; `Política de telemetría actualizada.` |
 | US-101 | Configuración de diagnóstico → `Restablecer identificador` | `Las trazas futuras no se vincularán con las anteriores.` |
-| US-102 | Panel de trazas → detalle de instalación | `Dispositivo`, `Sistema operativo`, `RAM (rango)` y procedencia `App`/`SDK`; versiones de software no forman parte de `DeviceProfile`; nunca IMEI/MAC. |
+| US-102 | Panel de trazas → detalle de instalación | `Dispositivo`, `Sistema operativo`, `RAM (rango)`, SoC disponible y procedencia `App`/`SDK`; versiones de software no forman parte de `DeviceProfile`; nunca IMEI/MAC. |
 | US-103 | Panel de trazas → fila de ejecución | `Workflow`, `Versión`, `Estado`, `Duración`, `Instalación` y resultado estructurado disponible; vacío: `Aún no hay trazas.` |
 | US-104 | Detalle de traza → `Duración por nodo` | `Nodo`, `Estado` y `Duración`; los no ejecutados muestran `No ejecutado`. |
 | US-105 | Detalle de traza con fallo | `Error de ejecución`, categoría y nodo; `No se muestran datos sensibles.` |

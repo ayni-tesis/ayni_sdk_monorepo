@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
-
+import 'device_profile.dart';
 import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
@@ -18,6 +18,9 @@ import 'workflow_execution.dart';
 import 'supported_platform_stub.dart'
     if (dart.library.ui) 'supported_platform_flutter.dart'
     as platform;
+import 'device_profile_reader_stub.dart'
+    if (dart.library.ui) 'device_profile_reader_flutter.dart'
+    as device_profile_reader;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -679,6 +682,18 @@ class AyniSdk {
 
   String _ensureInstallationId() =>
       _installationId ??= InstallationIdStore(storageDirectory).loadOrCreate();
+
+  Future<DeviceProfile>? _deviceProfileFuture;
+
+  /// Reads the allowlisted device and operating-system profile on this device.
+  ///
+  /// The profile stays in memory and is cached for this [AyniSdk] instance.
+  /// This method does not send a request or write to [storageDirectory].
+  /// Fields unavailable on the current platform are omitted. It never includes
+  /// device names, serial numbers, build identifiers, vendor IDs or plugin-wide
+  /// device data.
+  Future<DeviceProfile> getDeviceProfile() =>
+      _deviceProfileFuture ??= device_profile_reader.readDeviceProfile();
 
   final String _credential;
   final Map<String, _ActiveExecution> _activeExecutions = {};

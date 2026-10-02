@@ -35,6 +35,7 @@ const Map<String, Set<String>> expectedExports = {
     'ConsentResult',
     'ConsentStatus',
   },
+  'src/device_profile.dart': {'DeviceProfile'},
 };
 
 String stripComments(String source) {
@@ -201,6 +202,7 @@ void main() {
         'ConsentPurpose': ConsentPurpose,
         'ConsentResult': ConsentResult,
         'ConsentStatus': ConsentStatus,
+        'DeviceProfile': DeviceProfile,
       };
       final expectedNames = expectedExports.values
           .expand((names) => names)
@@ -227,6 +229,7 @@ void main() {
         storageDirectory: Directory.systemTemp,
       );
       expect(sdk.sync, isA<Future<SyncResult> Function()>());
+      expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
       expect(
         sdk.run,
         isA<Future<WorkflowResult> Function(String, Uint8List)>(),
