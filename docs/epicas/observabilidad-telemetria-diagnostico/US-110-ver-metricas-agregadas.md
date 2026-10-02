@@ -30,3 +30,9 @@ Scenario: Periodo sin trazas
 - Las métricas se calculan solo con trazas de la aplicación.
 - La vista distingue workflow, versión y modelo cuando hay datos.
 - Las métricas no exponen imágenes ni entradas crudas.
+
+## Criterios para validación técnica
+
+- Los agregados de duración y tasas muestran periodo, cantidad de muestras, unidad, población y método de cálculo.
+- Cuando se calculen percentiles (p50/p90/p95/p99), el panel identifica el conjunto de trazas considerado; no se presenta un agregado como medición fuente.
+- El JSONL de US-108 permanece disponible como fuente para análisis estadístico reproducible; una métrica del panel no declara validada una hipótesis de tesis.

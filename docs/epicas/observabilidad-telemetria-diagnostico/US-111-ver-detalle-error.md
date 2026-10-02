@@ -30,3 +30,9 @@ Scenario: Consultar un error ajeno
 - El detalle muestra solo campos sanitizados.
 - El error identifica el recurso afectado cuando está disponible.
 - No se muestran secretos, rutas locales ni imágenes.
+
+## Criterios para validación técnica
+
+- El detalle autorizado relaciona el error con corrida/repetición, condición, procedencia declarada, fase/nodo y perfil técnico disponibles.
+- Puede mostrar hashes y metadatos de artifacts fuente; la descarga sigue los permisos de la aplicación y la retención.
+- Distingue los valores medidos/aportados por cliente de los calculados por Ayni y no los etiqueta como verificados.

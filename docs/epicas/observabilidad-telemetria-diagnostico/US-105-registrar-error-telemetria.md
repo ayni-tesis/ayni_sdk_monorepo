@@ -32,4 +32,10 @@ Scenario: Excepción con datos sensibles
 - El error se asocia a la instalación sin identificar físicamente el dispositivo.
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
-  consentimiento requerido y su retención.
+  consentimiento que resulte aplicable (sin tratar `sdkImprovement` como consentimiento para la validación) y su retención.
+
+## Criterios para validación técnica
+
+- El error se relaciona con `traceId`, corrida/repetición, fase o nodo, workflow, modelo y versiones cuando estén disponibles.
+- Se conserva la categoría tipada y el estado de la ejecución; mensajes arbitrarios del runtime se sanitizan antes de persistirse o transmitirse.
+- El diagnóstico no incluye imagen, tensor, secreto, ruta local ni contenido no decodificado de la entrada.

@@ -29,4 +29,11 @@ Scenario: Consultar trazas de otra aplicación
 
 - Las trazas están aisladas por aplicación y workspace.
 - La vista no muestra imágenes ni información sensible.
-- Los miembros autorizados pueden ver solo metadatos permitidos.
+- Los miembros autorizados pueden consultar el registro técnico y los resultados estructurados permitidos; imágenes, secretos y tensores arbitrarios no se exponen.
+
+## Criterios para validación técnica
+
+- La consulta permite paginar resultados y abrir el registro versionado completo autorizado.
+- La exportación JSONL conserva un registro por línea, los valores reportados por el cliente, las marcas de procedencia y las referencias/hash de artifacts.
+- La consulta y exportación se limitan a miembros de la aplicación; los artifacts binarios requieren autorización equivalente.
+- Los registros vencidos y los artifacts eliminados por retención no aparecen ni se descargan.
