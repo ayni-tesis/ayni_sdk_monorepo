@@ -23,8 +23,8 @@ El alcance de privacidad de la captura mantiene estas fronteras: nunca se transm
 Cada ejecución elegible produce un registro estructurado versionado, con `traceId` estable e idempotente. El payload agrupa:
 
 - Identidad operacional: `traceSchemaVersion`, `traceId`, `runId`, repetición, `installationId`, fecha, condición, caso y escenario.
-- Procedencia declarada: commit de la app, versión de SDK, aplicación, workflow y versión; cada modelo usado con versión y SHA-256; dataset, partición y SHA-256 del input/dataset cuando aplique.
-- Perfil técnico: modelo de dispositivo, plataforma/SO/API, rango de RAM, versiones de app y SDK, backend efectivo, red y condiciones disponibles de batería/temperatura. Campos no expuestos por el sistema se omiten o se declaran desconocidos.
+- Procedencia declarada: commit y versión de la app, versión del SDK, aplicación, workflow y versión; cada modelo usado con versión y SHA-256; dataset, partición y SHA-256 del input/dataset cuando aplique.
+- Perfil técnico: modelo de dispositivo, plataforma/SO/API, rango de RAM y SoC si está disponible. Backend efectivo, red y condiciones de batería/temperatura se declaran en el contexto de traza. Campos no expuestos por el sistema se omiten o se declaran desconocidos; las versiones de app/SDK pertenecen solo a procedencia y no se duplican en el perfil.
 - Ejecución del SDK: resultado/status, timestamps y duración total, fases/nodos y sus estados/duraciones, modelos realmente ejecutados, resultado estructurado decodificado, y error tipado/sanitizado si corresponde.
 - Medición externa: valores reportados por la app/herramientas de benchmark (por ejemplo PSS/RSS, energía/proxy, startup, throughput, tamaño del paquete y contadores de sincronización), con unidad, método, fuente, fase y referencia a artifact cuando corresponda.
 - Calidad de evidencia: campos faltantes, incidencias, validez declarada por el cliente, y estado de captura/entrega. El servidor marca cada valor de origen cliente como `clientReported`/no verificado; autenticación identifica la aplicación, no certifica el dispositivo, condición, instrumento o veracidad experimental.
@@ -39,9 +39,9 @@ El endpoint deriva `applicationId` de la credencial SDK y no confía en un ID de
 
 ### Captura, política y consentimiento
 
-La captura técnica permanece deshabilitada por defecto. La política de telemetría existente por aplicación (activación y retención permitida) es el control administrativo y el servidor vuelve a comprobarla en la ingesta. El SDK obtiene/cachea su configuración durante `sync()`; sin política conocida y habilitada no captura ni transmite. El comportamiento ante una política revocada se aplica también a elementos ya encolados: no se envían mientras esté deshabilitada.
+La captura técnica permanece deshabilitada por defecto. La política de telemetría existente por aplicación (activación y retención permitida) es el control administrativo y el servidor vuelve a comprobarla en la ingesta. El SDK obtiene/cachea su configuración durante `sync()` para decidir la captura, y la refresca antes de cada intento de transmisión; si está deshabilitada o no puede obtenerse una política vigente, no transmite y conserva lo encolado. Las solicitudes que usan una credencial SDK rechazan redirecciones a otro origen y nunca reenvían esa credencial. El comportamiento ante una política revocada se aplica también a elementos ya encolados.
 
-El consentimiento opcional existente `sdkImprovement` es distinto de la política operativa de telemetría y no se reutiliza ni se interpreta como consentimiento para recolectar automáticamente datos de la validación. La captura/retención/exportación se documenta en `Recursos` → `Datos y privacidad` (US-147), indicando clases de datos, propósito, controles, destinatarios, retención y canal de derechos. No se hace afirmación automática de cumplimiento legal; el texto legal requiere la revisión ya indicada por el repositorio.
+El consentimiento opcional existente `sdkImprovement` es distinto de la política operativa de telemetría y no se reutiliza ni se interpreta como consentimiento para recolectar automáticamente datos de la validación. La captura/retención/exportación se documenta en `Recursos` → `Datos y privacidad` (US-147), indicando clases de datos, propósito, controles, destinatarios, si existe consentimiento aplicable, retención y canal de derechos. No se hace afirmación automática de cumplimiento legal; el texto legal requiere la revisión ya indicada por el repositorio.
 
 ### Persistencia y entrega offline
 
@@ -53,7 +53,7 @@ La API aplica unicidad por `(applicationId, traceId)`: reintentar el mismo conte
 
 Perfetto, Macrobenchmark y otros artefactos binarios grandes se suben a almacenamiento R2 siguiendo el patrón ya usado por el repositorio para artefactos de versiones de modelos. El flujo entrega una carga directa/firmada en lugar de transportar binarios por el API JSON. La traza almacena nombre/tipo, tamaño, SHA-256, referencia privada y metadatos de herramienta/versión; el servidor verifica la carga y la vinculación con la aplicación/traza. No se publican claves de almacenamiento. El tamaño máximo y los formatos aceptados se fijarán desde las restricciones reales de API y R2 durante la especificación de implementación, sin inventar un límite aquí.
 
-Los archivos se sirven solo a miembros autorizados de la aplicación y se eliminan cuando vence la traza asociada. Los artifacts originales quedan disponibles para su análisis antes de vencimiento; por ello la exportación/copia de evidencia necesaria para la tesis forma parte del procedimiento experimental del cliente.
+Los archivos se sirven solo a miembros autorizados de la aplicación y se eliminan cuando vence la traza asociada. Los formatos admitidos se limitan a una allowlist de binarios no ejecutables, que excluye HTML, SVG y JavaScript. El servidor determina el formato por el contenido, no por el nombre o headers del cliente. Las descargas se sirven como `application/octet-stream`, como adjunto y con `X-Content-Type-Options: nosniff`; cualquier vista previa futura usa un origen aislado sin credenciales de la aplicación. El cliente rechaza redirecciones a otro origen al usar URLs firmadas de R2 y no reenvía la URL firmada ni sus parámetros. Los artifacts originales quedan disponibles para su análisis antes de vencimiento; por ello la exportación/copia de evidencia necesaria para la tesis forma parte del procedimiento experimental del cliente.
 
 ### Consulta, exportación y retención
 
@@ -68,20 +68,20 @@ Se mantienen las historias existentes US-100–US-113 y sus responsabilidades, a
 | Historia actual | Ajuste propuesto para cubrir el plan |
 | --- | --- |
 | US-100 Política (GitHub #109, cerrada) | Se conserva su alcance implementado de configuración por aplicación. Los checks de captura/ingesta se fijan en US-103/107 y la expiración de datos y artifacts en US-112, sin reabrir retroactivamente esta issue. |
-| US-101 Identificador (GitHub #111) | UUID local persistente por instalación, ámbito por aplicación en backend, regeneración y privacidad existentes; se vincula a trazas deduplicables. |
-| US-102 Perfil técnico (GitHub #113) | Exponer `AyniSdk.getDeviceProfile()` como tipo público tipado y sin red/persistencia para que la app reutilice el perfil en control; US-103 lo adjunta a la traza. Incluir plataforma/API, modelo, rango RAM y versiones cuando estén disponibles; ausentes quedan desconocidos y se excluyen identificadores hardware. |
-| US-103 Traza de ejecución (GitHub #114) | Sustituir la prohibición de resultado crudo por resultado estructurado decodificado; no enviar imagen ni tensor binario. Añadir schema version, procedencia, contexto experimental, valores externos declarados, calidad/validez y procedencia no verificada. |
+| US-101 Identificador (GitHub #111) | UUID local persistente por instalación, ámbito por aplicación en backend, regeneración y privacidad existentes; se usa para agrupar trazas, cuya deduplicación usa `traceId`. |
+| US-102 Perfil técnico (GitHub #113) | Exponer `AyniSdk.getDeviceProfile()` como tipo público tipado y sin red/persistencia para que la app reutilice el perfil en control; US-103 lo adjunta a la traza. Incluir plataforma/API, modelo, rango RAM y SoC cuando esté disponible; versiones de app/SDK se registran una sola vez como procedencia de software y las condiciones de entorno se quedan en el contexto de traza. Los datos ausentes quedan desconocidos y se excluyen identificadores hardware. |
+| US-103 Traza de ejecución (GitHub #114) | Sustituir la prohibición de resultado crudo por resultado estructurado decodificado; no enviar imagen ni tensor binario. Añadir schema version, procedencia, contexto experimental obligatorio, valores externos declarados, calidad/validez y procedencia no verificada; permitir que la app construya el mismo registro local para ejecuciones de control fuera de `AyniSdk.run`. |
 | US-104 Duración por nodo | Registrar estados y tiempos por fase/nodo y distinguir no ejecutado de cero milisegundos. |
 | US-105 Error | Error tipado y sanitizado, conservando fase/nodo y relación con incidencia; sin secretos, input ni rutas internas. |
 | US-106 Outbox offline | Escritura durable antes del retorno, reintento tras reinicio, dedupe estable; falta de espacio marca evidencia incompleta y nunca falla inferencia. |
-| US-107 Entrega | ACK idempotente, rechazo de conflictos, credential/application scope y política activa en cada envío; lotes solo si el límite real lo requiere. |
+| US-107 Entrega | ACK idempotente, rechazo de conflictos, credential/application scope, actualización de la política antes de cada intento y bloqueo de redirecciones a otro origen; lotes solo si el límite real lo requiere. |
 | US-108 Consulta | Paginación, detalle de esquema y exportación JSONL sin pérdida de campos declarados. |
 | US-109 Filtros | Añadir corrida/repetición, condición, caso y backend a los filtros existentes. |
 | US-110 Métricas | Agregados describen muestra, unidad, periodo y origen; no se presentan como mediciones de fuente cuando son calculados. La exportación JSONL sustenta análisis estadístico completo. |
 | US-111 Detalle error | Añadir procedencia, contexto de corrida, fases y referencias de evidencia autorizadas, manteniendo la sanitización. |
 | US-112 Retención | Aplicar vencimiento a trazas y artefactos adjuntos; eliminar de consultas/exportaciones posteriores al vencimiento. |
 | US-113 Restablecimiento | Al resetear el identificador, las trazas ya creadas conservan su ID original y las nuevas usan un UUID nuevo; futuras trazas no se vinculan con las anteriores. |
-| US-114 — artifacts fuente (GitHub #327) | Adjuntar, verificar, consultar con autorización y vencer artifacts originales (Perfetto/Macrobenchmark), guardando SHA-256, metadatos y referencia privada R2. |
+| US-114 — artifacts fuente (GitHub #327) | Adjuntar, verificar, consultar con autorización y vencer artifacts originales (Perfetto/Macrobenchmark), guardando SHA-256, metadatos y referencia privada R2; validar allowlist, detectar tipo por contenido y servir descargas como adjuntos opacos seguros. |
 
 ## Secuencia de implementación acordada
 
@@ -96,6 +96,8 @@ El trabajo inicial implementará en orden las issues existentes #111 (US-101), #
 - El servicio identifica el origen declarado, pero no certifica valores o condiciones enviados por el cliente.
 - Los elementos incompletos, ausentes o vencidos son visibles/explicables; no se fabrican parámetros pendientes del plan ni conclusiones experimentales.
 - No se construye la aplicación Android de pruebas dentro de esta épica.
+
+Para una ejecución de control hecha fuera de `AyniSdk.run`, US-103 define la construcción local de una traza con el mismo esquema, sin añadir una app de prueba al SDK.
 
 ## Fuera de alcance
 

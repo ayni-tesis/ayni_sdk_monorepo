@@ -31,7 +31,7 @@ Scenario: Nodo cancelado antes de iniciar
 - Las métricas no incluyen entradas ni imágenes.
 - `Recursos` → `Datos y privacidad` (US-147) describe, en el mismo cambio, los
   datos que esta historia agrega o cambia, la política que los habilita, el
-  consentimiento requerido y su retención.
+  consentimiento que resulte aplicable (sin tratar `sdkImprovement` como consentimiento para la validación) y su retención.
 
 ## Criterios para validación técnica
 
