@@ -55,8 +55,9 @@
     <section class="multi-line-signature">
       
 <span class="returntype"><a href="../../ayni_sdk/WorkflowError-class.html">WorkflowError</a></span>
-<span class="name ">withTrace</span>(<wbr><ol class="parameter-list single-line"> <li><span class="parameter" id="withTrace-param-value"><span class="type-annotation"><a href="../../ayni_sdk/WorkflowTrace-class.html">WorkflowTrace</a>?</span> <span class="parameter-name">value</span></span></li>
-</ol>)
+<span class="name ">withTrace</span>(<wbr><ol class="parameter-list"> <li><span class="parameter" id="withTrace-param-value"><span class="type-annotation"><a href="../../ayni_sdk/WorkflowTrace-class.html">WorkflowTrace</a>?</span> <span class="parameter-name">value</span>, {</span></li>
+<li><span class="parameter" id="withTrace-param-tracePersistenceFailed"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span> <span class="parameter-name">tracePersistenceFailed</span> = <span class="default-value">false</span>, </span></li>
+</ol>})
 
       
 
@@ -70,13 +71,17 @@
     
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">WorkflowError withTrace(WorkflowTrace? value) =&gt; value == null
+  <pre class="language-dart"><code class="language-dart">WorkflowError withTrace(
+  WorkflowTrace? value, {
+  bool tracePersistenceFailed = false,
+}) =&gt; value == null
     ? this
     : WorkflowError(
         category,
         nodeId: nodeId,
         modelVersionId: modelVersionId,
         trace: value,
+        tracePersistenceFailed: tracePersistenceFailed,
       );</code></pre>
 </section>
 

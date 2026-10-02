@@ -219,10 +219,15 @@ nodes after any currently running inference finishes.</p>
       nodes: traceNodes,
       outputs: result.outputs,
     );
-    return result.withTrace(trace);
+    final persisted = await _persistTrace(trace);
+    return result.withTrace(
+      trace,
+      tracePersistenceFailed: trace != null &amp;&amp; !persisted,
+    );
   } on WorkflowError catch (error) {
     stopwatch.stop();
-    final trace = await _traceForRun(
+    throw await _errorWithExecutionTrace(
+      error,
       context: traceContext,
       enabled: captureTrace,
       workflow: workflowForTrace,
@@ -230,57 +235,49 @@ nodes after any currently running inference finishes.</p>
       timestamp: startedAt,
       durationMs: stopwatch.elapsedMilliseconds,
       nodes: traceNodes,
-      error: error,
     );
-    throw error.withTrace(trace);
   } on UnsupportedError {
     rethrow;
   } on FormatException {
     stopwatch.stop();
     final error = const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
-    throw error.withTrace(
-      await _traceForRun(
-        context: traceContext,
-        enabled: captureTrace,
-        workflow: workflowForTrace,
-        inventory: inventoryForTrace,
-        timestamp: startedAt,
-        durationMs: stopwatch.elapsedMilliseconds,
-        nodes: traceNodes,
-        error: error,
-      ),
+    throw await _errorWithExecutionTrace(
+      error,
+      context: traceContext,
+      enabled: captureTrace,
+      workflow: workflowForTrace,
+      inventory: inventoryForTrace,
+      timestamp: startedAt,
+      durationMs: stopwatch.elapsedMilliseconds,
+      nodes: traceNodes,
     );
   } on FileSystemException {
     stopwatch.stop();
     final error = const WorkflowError(
       WorkflowErrorCategory.workflowNotAvailable,
     );
-    throw error.withTrace(
-      await _traceForRun(
-        context: traceContext,
-        enabled: captureTrace,
-        workflow: workflowForTrace,
-        inventory: inventoryForTrace,
-        timestamp: startedAt,
-        durationMs: stopwatch.elapsedMilliseconds,
-        nodes: traceNodes,
-        error: error,
-      ),
+    throw await _errorWithExecutionTrace(
+      error,
+      context: traceContext,
+      enabled: captureTrace,
+      workflow: workflowForTrace,
+      inventory: inventoryForTrace,
+      timestamp: startedAt,
+      durationMs: stopwatch.elapsedMilliseconds,
+      nodes: traceNodes,
     );
   } catch (_) {
     stopwatch.stop();
     final error = const WorkflowError(WorkflowErrorCategory.runtimeError);
-    throw error.withTrace(
-      await _traceForRun(
-        context: traceContext,
-        enabled: captureTrace,
-        workflow: workflowForTrace,
-        inventory: inventoryForTrace,
-        timestamp: startedAt,
-        durationMs: stopwatch.elapsedMilliseconds,
-        nodes: traceNodes,
-        error: error,
-      ),
+    throw await _errorWithExecutionTrace(
+      error,
+      context: traceContext,
+      enabled: captureTrace,
+      workflow: workflowForTrace,
+      inventory: inventoryForTrace,
+      timestamp: startedAt,
+      durationMs: stopwatch.elapsedMilliseconds,
+      nodes: traceNodes,
     );
   } finally {
     _activeExecutions.remove(executionId);
