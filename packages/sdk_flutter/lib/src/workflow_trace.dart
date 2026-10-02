@@ -432,8 +432,27 @@ WorkflowTrace createWorkflowTrace({
       ? null
       : {
           'category': error.category.name,
+          if (error.nodeId == null)
+            'phase': _workflowErrorPhase(error.category),
           if (error.nodeId != null) 'nodeId': error.nodeId,
           if (error.modelVersionId != null)
             'modelVersionId': error.modelVersionId,
         },
 );
+
+String _workflowErrorPhase(WorkflowErrorCategory category) =>
+    switch (category) {
+      WorkflowErrorCategory.workflowNotAvailable => 'workflowResolution',
+      WorkflowErrorCategory.modelNotAvailable => 'modelResolution',
+      WorkflowErrorCategory.invalidInput => 'inputValidation',
+      WorkflowErrorCategory.unsupportedInputContract =>
+        'modelContractValidation',
+      WorkflowErrorCategory.invalidWorkflow => 'workflowValidation',
+      WorkflowErrorCategory.modelOutputInvalid => 'modelOutputValidation',
+      WorkflowErrorCategory.conditionInputMissing => 'conditionEvaluation',
+      WorkflowErrorCategory.outputInputMissing => 'outputEvaluation',
+      WorkflowErrorCategory.outputNotReached => 'workflowCompletion',
+      WorkflowErrorCategory.cancelled => 'executionControl',
+      WorkflowErrorCategory.executionNotFound => 'executionControl',
+      WorkflowErrorCategory.runtimeError => 'workflowExecution',
+    };

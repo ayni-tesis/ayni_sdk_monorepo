@@ -176,6 +176,7 @@ void main() {
       expect(error?.trace?.status, 'error');
       expect(error?.trace?.error, {
         'category': 'modelNotAvailable',
+        'phase': 'modelResolution',
         'modelVersionId': 'model-version-1',
       });
       expect(error?.trace?.models, isEmpty);
@@ -837,7 +838,14 @@ void main() {
       () async {
         await installWorkflow();
         await installModelArtifact();
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
         const privateDetail = 'C:\\private\\secret-token';
+        final context = WorkflowTraceContext(
+          runId: 'validation-run-9',
+          repetition: 2,
+        );
         final client = createAyniSdkForTesting(
           serverUrl: Uri.parse('https://sdk.example.test'),
           credential: 'ayni_sk_test',
@@ -851,7 +859,7 @@ void main() {
         );
 
         final error = await client
-            .run('workflow-1', pngBytes())
+            .run('workflow-1', pngBytes(), traceContext: context)
             .then<WorkflowError?>(
               (_) => null,
               onError: (Object exception) =>
@@ -863,6 +871,27 @@ void main() {
         expect(error.nodeId, 'model-1');
         expect(error.modelVersionId, 'model-version-1');
         expect(error.toString(), isNot(contains(privateDetail)));
+        final trace = error.trace!;
+        expect(trace.status, 'error');
+        expect(trace.runId, 'validation-run-9');
+        expect(trace.repetition, 2);
+        expect(trace.workflowId, 'workflow-1');
+        expect(trace.workflowVersionId, 'workflow-version-1.0.0');
+        expect(trace.error, {
+          'category': 'runtimeError',
+          'nodeId': 'model-1',
+          'modelVersionId': 'model-version-1',
+        });
+        final failedNode = trace.nodes.singleWhere(
+          (node) => node.nodeId == 'model-1',
+        );
+        expect(failedNode.status, 'failed');
+        expect(failedNode.modelVersionId, 'model-version-1');
+        expect(trace.models.single.modelVersionId, 'model-version-1');
+        final serialized = jsonEncode(trace.toJson());
+        expect(serialized, isNot(contains(privateDetail)));
+        expect(serialized, isNot(contains('model-version-1.tflite')));
+        expect(serialized, isNot(contains(base64Encode(pngBytes()))));
       },
     );
 
