@@ -113,7 +113,7 @@ Implement `AyniSdk.getDeviceProfile()` as an explicit local read and cache one p
 
 - [ ] **Step 5: Run focused Flutter checks and commit the story**
 
-Run from `packages/sdk_flutter`: `dart analyze`, `dart test`, and `flutter test --no-test-assets flutter_test/device_profile_test.dart`.
+Run from `packages/sdk_flutter`: `dart format .`, `dart analyze`, `dart test`, `flutter analyze`, and `flutter test --no-test-assets flutter_test/device_profile_test.dart`.
 Run from `apps/docs`: `bun run verify`.
 Expected: PASS with no analyzer diagnostics.
 Commit: `feat(sdk): capture safe device profile`.
@@ -144,7 +144,7 @@ Commit: `feat(sdk): capture safe device profile`.
 **Interfaces:**
 - `GET /sdk/telemetry-policy` accepts only a Bearer SDK credential and returns `{ enabled, retentionDays }`; `applicationId` comes from the verified credential. Missing policy uses the existing disabled default.
 - `AyniSdk.sync()` refreshes and persists policy at `<storageDirectory>/diagnostics/telemetry-policy.json` without changing the existing sync result or failing resource synchronization when the policy request is unavailable. A failed refresh preserves the last valid cache; with no valid cache, policy is disabled.
-- `AyniSdk.run(workflowId, input, {onExecutionStarted, traceContext})` may attach `WorkflowTrace` to `WorkflowResult.trace` or `WorkflowError.trace`. `WorkflowTraceContext` requires caller-declared `runId` and `repetition`; its other fields are `condition`, `caseId`, `scenario`, `commit`, `datasetId`, `datasetPartition`, `datasetSha256`, `backend`, `network`, `batteryPercent`, `temperatureC`, `ramRange`, `appVersion`, `sdkVersion`, `measurements`, `incidents`, and `validity`. The SDK never fabricates validation context. `TraceMeasurement` has `name`, finite numeric `value`, `unit`, `method`, `source`, and optional `phase`.
+- `AyniSdk.run(workflowId, input, {onExecutionStarted, traceContext})` may attach `WorkflowTrace` to `WorkflowResult.trace` or `WorkflowError.trace`. `WorkflowTraceContext` requires caller-declared `runId` and `repetition`; its other fields are `condition`, `caseId`, `scenario`, `commit`, `datasetId`, `datasetPartition`, `datasetSha256`, `backend`, `network`, `batteryPercent`, `temperatureC`, `ramRange`, `socModel`, `appVersion`, `sdkVersion`, `measurements`, `incidents`, and `validity`. App-supplied `ramRange` and `socModel` fill only values unavailable in the device profile and remain marked `clientReported`/unverified. The SDK never fabricates validation context. `TraceMeasurement` has `name`, finite numeric `value`, `unit`, `method`, `source`, and optional `phase`.
 - `WorkflowTrace` includes schema version, a generated UUID v4 `traceId`, caller-declared `runId` and `repetition`, installation ID, UTC timestamp, workflow/model versions and hashes, device-only profile, app/SDK version provenance, typed decoded outputs, duration/status, and typed sanitized error. Keep trace types on the public API only through the explicit export list.
 - Credentialed policy requests and trace uploads reject cross-origin redirects; signed R2 artifact URLs are never forwarded to another origin (US-107/114).
 - A public typed `WorkflowTrace.fromClientExecution(...)` factory creates that same local schema for a control execution performed outside `AyniSdk.run`; it runs no inference, makes no network request, and creates no durable queue. Upload/outbox behavior remains US-106/107.
@@ -169,7 +169,7 @@ Add a policy request through the existing server URL/credential handling and per
 
 - [ ] **Step 5: Add typed trace context and serialization tests**
 
-Test control/treatment sharing one schema; exact trace/workflow/model IDs and hashes; classification, detection boxes, boolean and combined outputs; finite measurement values/units; client-reported provenance; and exclusion of image bytes and arbitrary tensor data.
+Test control/treatment sharing one schema; exact trace/workflow/model IDs and hashes; classification, detection boxes, boolean and combined outputs; finite measurement values/units; app-reported `ramRange`/`socModel` fallbacks and `clientReported` provenance; and exclusion of image bytes and arbitrary tensor data.
 
 - [ ] **Step 6: Attach traces to success and typed failure outcomes**
 
@@ -181,7 +181,7 @@ Export only the trace and context types required by callers, update the exact ex
 
 - [ ] **Step 8: Run every affected project check and commit the story**
 
-Run from `packages/sdk_flutter`: `flutter test`, `flutter analyze`.
+Run from `packages/sdk_flutter`: `dart format .`, `dart analyze`, `dart test`, `flutter analyze`, and `flutter test`.
 Run from repository root: `bun run --filter @ayni/api test`, `bun run --filter @ayni/api check-types`, `bun run --filter @ayni/api openapi:verify`, `bun run --filter server test`, `bun run --filter server check-types`, `bun run --filter docs test`, `bun run --filter docs check-types`, and `bun run --filter docs build`.
 Expected: all commands pass. Commit: `feat(sdk): capture policy-gated workflow traces`.
 
