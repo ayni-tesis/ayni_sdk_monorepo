@@ -100,8 +100,10 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
 
 - No sube imágenes ni entradas del modelo durante la sincronización.
 - No envía telemetría.
-- No recolecta datos técnicos del dispositivo, como su modelo, su sistema
-  operativo, su ubicación o identificadores de hardware o de instalación.
+- No recolecta el modelo, el sistema operativo, la ubicación ni identificadores
+  de hardware del dispositivo. Al inicializarse, guarda un UUID v4 aleatorio
+  como `installation-id` dentro de `storageDirectory`; es local, no se envía y
+  se elimina al borrar ese directorio.
 - No envía ni guarda la imagen que recibe `run()`, ni sus resultados: la
   ejecución ocurre por completo en el dispositivo.
 
@@ -123,7 +125,8 @@ app. Ahí conserva los recursos que tu aplicación publicó en Ayni y los recibo
 seudónimos pendientes de confirmar. Estos recibos incluyen un ID aleatorio de
 persona, finalidad, decisión, versión del aviso y fecha; no incluyen nombre,
 correo, teléfono ni hashes de identificadores directos. La credencial solo se
-mantiene en memoria.
+mantiene en memoria. `initialize()` también genera un UUID v4 aleatorio para
+esta instalación y lo conserva localmente; no lo envía al servidor.
 
 | Dato | Ubicación en `storageDirectory` | Cómo eliminarlo |
 | --- | --- | --- |
@@ -131,6 +134,7 @@ mantiene en memoria.
 | Definición de cada versión de workflow instalada. | `workflow-definitions/<ID codificado>.json` | Borra `storageDirectory` completo. |
 | Archivo de cada versión de modelo instalada, sus metadatos (ID de la versión y SHA-256) y un archivo vacío que bloquea la instalación mientras ocurre. | `<modelVersionId>/<modelVersionId>.tflite`, `<modelVersionId>/<modelVersionId>.json` y `<modelVersionId>/<modelVersionId>.lock` | Borra `storageDirectory` completo. |
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
+| Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar futuras trazas técnicas con el mismo almacenamiento local. No incluye identidad directa y esta versión no lo envía. | `installation-id` | Borra `storageDirectory` completo. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
 | Archivos temporales de las descargas, verificaciones e instalaciones en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()`, pueden quedar: borra `storageDirectory` completo. |
 

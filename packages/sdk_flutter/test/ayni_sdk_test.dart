@@ -2574,6 +2574,76 @@ void main() {
       expect(AyniSdk.supportedWorkflowSchemaVersions, equals({'1', '2'}));
     });
   });
+
+  group('US-101: installation identity', () {
+    AyniConfig configFor(Directory directory) => AyniConfig(
+      serverUrl: Uri.parse('https://api.ayni.dev'),
+      credential: 'ayni_sk_valid_secret_123',
+      storageDirectory: directory,
+    );
+
+    test('initialization creates a persisted UUID v4', () {
+      final result = AyniSdk.initialize(configFor(storageDirectory));
+      final idFile = File('${storageDirectory.path}/installation-id');
+
+      expect(result.status, equals(InitializationStatus.ready));
+      expect(idFile.existsSync(), isTrue);
+      expect(
+        idFile.readAsStringSync(),
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
+
+    test('initialization reuses the installation UUID after reset', () {
+      final idFile = File('${storageDirectory.path}/installation-id');
+      AyniSdk.initialize(configFor(storageDirectory));
+      final firstId = idFile.readAsStringSync();
+
+      AyniSdk.resetForTesting();
+      final result = AyniSdk.initialize(configFor(storageDirectory));
+
+      expect(result.status, equals(InitializationStatus.ready));
+      expect(idFile.readAsStringSync(), equals(firstId));
+    });
+
+    test('initialization replaces a corrupt installation UUID', () {
+      final idFile = File('${storageDirectory.path}/installation-id')
+        ..writeAsStringSync('not-a-uuid');
+
+      final result = AyniSdk.initialize(configFor(storageDirectory));
+
+      expect(result.status, equals(InitializationStatus.ready));
+      expect(idFile.readAsStringSync(), isNot(equals('not-a-uuid')));
+      expect(
+        idFile.readAsStringSync(),
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'initialization fails and resets the singleton when storage is a file',
+      () {
+        final storageBlocker = File('${storageDirectory.path}/storage-blocker')
+          ..writeAsStringSync('not a directory');
+
+        final result = AyniSdk.initialize(
+          configFor(Directory(storageBlocker.path)),
+        );
+
+        expect(result.status, equals(InitializationStatus.error));
+        expect(AyniSdk.isInitialized, isFalse);
+        expect(() => AyniSdk.instance, throwsStateError);
+      },
+    );
+  });
 }
 
 String _manifest({required String workflowVersion}) => jsonEncode({
