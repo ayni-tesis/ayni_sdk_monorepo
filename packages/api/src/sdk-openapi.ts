@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { sdkConsentReceiptSchema } from "./sdk-consent";
 import { sdkTelemetryPolicySchema } from "./sdk-telemetry-policy";
+import { SDK_TRACE_MAX_BYTES, sdkTraceSchema } from "./sdk-trace";
 
 extendZodWithOpenApi(z);
 
@@ -14,6 +15,10 @@ const SdkConsentReceiptSchema = sdkConsentReceiptSchema.extend({}).openapi("SdkC
 const SdkConsentAcknowledgementSchema = z
   .object({ receiptId: z.uuid(), receivedAt: z.iso.datetime() })
   .openapi("SdkConsentAcknowledgement");
+const SdkTraceAcknowledgementSchema = z
+  .object({ traceId: z.uuid(), receivedAt: z.iso.datetime() })
+  .openapi("SdkTraceAcknowledgement");
+const SdkWorkflowTraceSchema = sdkTraceSchema.extend({}).openapi("SdkWorkflowTrace");
 
 export const SdkSyncWorkflowSchema = z
   .object({
@@ -180,7 +185,7 @@ const modelManifestExample = {
 
 /** An error an SDK endpoint answers with: its status, `code`, `message`, and cause. */
 type SdkError = {
-  status: "400" | "401" | "404" | "409" | "503";
+  status: "400" | "401" | "403" | "404" | "409" | "413" | "503";
   code: string;
   message: string;
   cause: string;
@@ -218,12 +223,14 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
             status === "401"
               ? "Credencial no válida o revocada."
               : status === "400"
-                ? "Solicitud de consentimiento no válida."
-                : status === "409"
-                  ? "El identificador de recibo ya se usó con otros datos."
-                  : status === "503"
-                    ? "El aviso de privacidad de Ayni todavía no está publicado."
-                    : "Recurso no disponible.",
+                ? "Solicitud no válida."
+                : status === "403"
+                  ? "La política de telemetría no está habilitada."
+                  : status === "409"
+                    ? "El identificador ya se usó con otros datos."
+                    : status === "503"
+                      ? "El aviso de privacidad de Ayni todavía no está publicado."
+                      : "Recurso no disponible.",
           content: {
             "application/json": {
               schema: z.object({
@@ -376,14 +383,85 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     },
   });
 
+  const traceErrors: SdkError[] = [
+    ...credentialErrors(revokedMessage),
+    {
+      status: "400",
+      code: "invalidTrace",
+      message: "La traza no tiene un formato válido.",
+      cause: "Debe seguir el esquema tipado del SDK y no puede incluir campos adicionales.",
+    },
+    {
+      status: "413",
+      code: "traceTooLarge",
+      message: "La traza supera el tamaño máximo permitido.",
+      cause: `El cuerpo puede ocupar hasta ${SDK_TRACE_MAX_BYTES / 1024} KiB.`,
+    },
+    {
+      status: "403",
+      code: "telemetryDisabled",
+      message: "La política de telemetría de esta aplicación está deshabilitada.",
+      cause: "La aplicación puede recibir trazas solo cuando habilita la política de telemetría.",
+    },
+    {
+      status: "409",
+      code: "traceConflict",
+      message: "El ID de traza ya se usó con otros datos.",
+      cause: "Un mismo ID solo puede confirmar contenido idéntico para la misma aplicación.",
+    },
+  ];
+  registry.registerPath({
+    method: "post",
+    path: "/sdk/traces",
+    tags: ["Endpoints"],
+    operationId: "enviar-traza-de-ejecucion",
+    summary: "Enviar una traza de ejecución pendiente",
+    description: describeWithErrors(
+      "Recibe una traza tipada y sanitizada para la aplicación de la credencial, únicamente " +
+        "cuando su política de telemetría está habilitada. Los valores y el perfil informados " +
+        "por el cliente se conservan como `clientReported` y no se verifican de forma " +
+        `independiente. El cuerpo admite hasta ${SDK_TRACE_MAX_BYTES / 1024} KiB. ` +
+        "La retención sigue los días configurados para la aplicación.",
+      traceErrors,
+    ),
+    security,
+    "x-codeSamples": curlSample("post", "/sdk/traces"),
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: SdkWorkflowTraceSchema } },
+      },
+    },
+    responses: {
+      "201": {
+        description: "La traza quedó guardada o ya había sido recibida con el mismo contenido.",
+        content: {
+          "application/json": {
+            schema: SdkTraceAcknowledgementSchema,
+            examples: {
+              recibido: {
+                summary: "Traza confirmada",
+                value: {
+                  traceId: "550e8400-e29b-41d4-a716-446655440001",
+                  receivedAt: "2026-10-02T12:00:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+      ...errorResponses(traceErrors),
+    },
+  });
+
   registry.registerPath({
     method: "get",
     path: "/sdk/telemetry-policy",
     tags: ["Endpoints"],
     operationId: "obtener-politica-de-telemetria",
-    summary: "Obtener la política de captura de trazas",
+    summary: "Obtener la política de captura y envío de trazas",
     description: describeWithErrors(
-      "Devuelve si la aplicación de la credencial tiene habilitada la captura local de trazas y su periodo de retención. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.",
+      "Devuelve si la aplicación de la credencial tiene habilitados la captura local y el envío de trazas, además de su periodo de retención. El SDK refresca esta política antes de cada envío. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.",
       credentialErrors(revokedMessage),
     ),
     security,

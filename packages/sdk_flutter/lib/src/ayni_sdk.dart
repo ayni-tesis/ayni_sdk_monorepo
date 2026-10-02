@@ -763,10 +763,18 @@ class AyniSdk {
     }
   }
 
-  Future<bool> _persistTrace(WorkflowTrace? trace) async {
+  Future<bool> _persistTrace(WorkflowTrace? trace, int generation) async {
     if (trace == null) return false;
     try {
-      await _traceOutbox.enqueue(trace.toJson());
+      final payload = trace.toJson();
+      if (utf8.encode(jsonEncode(payload)).length >
+          TraceOutboxStore.maxPayloadBytes) {
+        return false;
+      }
+      if (generation != _traceOutboxGeneration || _traceUploadsPaused) {
+        return false;
+      }
+      await _traceOutbox.enqueue(payload);
       return true;
     } on Object {
       return false;
@@ -842,6 +850,7 @@ class AyniSdk {
     WorkflowError error, {
     required WorkflowTraceContext? context,
     required bool enabled,
+    required int generation,
     required _Workflow? workflow,
     required _Inventory? inventory,
     required DateTime timestamp,
@@ -858,7 +867,7 @@ class AyniSdk {
       nodes: nodes,
       error: error,
     );
-    final persisted = await _persistTrace(trace);
+    final persisted = await _persistTrace(trace, generation);
     return error.withTrace(
       trace,
       tracePersistenceFailed: trace != null && !persisted,
@@ -926,6 +935,9 @@ class AyniSdk {
   );
   late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
   Future<void> _consentWork = Future<void>.value();
+  var _traceOutboxGeneration = 0;
+  var _traceUploadsPaused = false;
+  var _traceClearsInProgress = 0;
 
   /// Requests cancellation of an active execution.
   ///
@@ -940,6 +952,27 @@ class AyniSdk {
       throw const WorkflowError(WorkflowErrorCategory.executionNotFound);
     }
     execution.cancelled = true;
+  }
+
+  /// Deletes pending validation traces after the host revokes that permission.
+  ///
+  /// Disable capture and wait for active [run] calls before calling this
+  /// method. It pauses trace uploads immediately and clears the outbox before
+  /// waiting for an active [sync] to finish. Passing [WorkflowTraceContext] to
+  /// a later [run] resumes trace capture and uploads when the host has enabled
+  /// the applicable permission again. This does not affect the separate
+  /// `sdkImprovement` consent.
+  Future<void> clearPendingTraces() async {
+    _traceUploadsPaused = true;
+    _traceClearsInProgress++;
+    _traceOutboxGeneration++;
+    final syncInProgress = _syncQueue;
+    try {
+      await _traceOutbox.clear();
+      await syncInProgress;
+    } finally {
+      _traceClearsInProgress--;
+    }
   }
 
   /// Receives each downloaded or unavailable workflow definition during sync.
@@ -1018,10 +1051,16 @@ class AyniSdk {
     if (!platform.isSupported) {
       throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
+    final traceGeneration = _traceOutboxGeneration;
     final startedAt = DateTime.now().toUtc();
     final stopwatch = Stopwatch()..start();
-    final captureTrace = traceContext != null && await _captureEnabled();
+    final captureTrace =
+        traceContext != null &&
+        await _captureEnabled() &&
+        _traceClearsInProgress == 0 &&
+        traceGeneration == _traceOutboxGeneration;
     if (captureTrace) {
+      _traceUploadsPaused = false;
       unawaited(
         getDeviceProfile().catchError(
           (Object _) => const DeviceProfile(platform: 'unknown'),
@@ -1109,7 +1148,7 @@ class AyniSdk {
         nodes: traceNodes,
         outputs: result.outputs,
       );
-      final persisted = await _persistTrace(trace);
+      final persisted = await _persistTrace(trace, traceGeneration);
       return result.withTrace(
         trace,
         tracePersistenceFailed: trace != null && !persisted,
@@ -1120,6 +1159,7 @@ class AyniSdk {
         error,
         context: traceContext,
         enabled: captureTrace,
+        generation: traceGeneration,
         workflow: workflowForTrace,
         inventory: inventoryForTrace,
         timestamp: startedAt,
@@ -1135,6 +1175,7 @@ class AyniSdk {
         error,
         context: traceContext,
         enabled: captureTrace,
+        generation: traceGeneration,
         workflow: workflowForTrace,
         inventory: inventoryForTrace,
         timestamp: startedAt,
@@ -1150,6 +1191,7 @@ class AyniSdk {
         error,
         context: traceContext,
         enabled: captureTrace,
+        generation: traceGeneration,
         workflow: workflowForTrace,
         inventory: inventoryForTrace,
         timestamp: startedAt,
@@ -1163,6 +1205,7 @@ class AyniSdk {
         error,
         context: traceContext,
         enabled: captureTrace,
+        generation: traceGeneration,
         workflow: workflowForTrace,
         inventory: inventoryForTrace,
         timestamp: startedAt,
@@ -1289,10 +1332,6 @@ class AyniSdk {
         decidedAt: DateTime.now().toUtc(),
       );
       try {
-        if (purpose == ConsentPurpose.sdkImprovement &&
-            decision == ConsentDecision.declined) {
-          await _traceOutbox.clear();
-        }
         await _consentReceipts.enqueue(receipt);
       } on FileSystemException {
         return const ConsentResult(ConsentStatus.error);
@@ -1369,10 +1408,6 @@ class AyniSdk {
   }) async {
     for (final receipt in await _consentReceipts.pending()) {
       if (deadline?.expired ?? false) return false;
-      if (receipt.purpose == ConsentPurpose.sdkImprovement &&
-          receipt.decision == ConsentDecision.declined) {
-        await _traceOutbox.clear();
-      }
       final request = await client.postUrl(serverUrl.resolve('/sdk/consents'));
       request.followRedirects = false;
       request.headers
@@ -1409,32 +1444,138 @@ class AyniSdk {
     return true;
   }
 
-  Future<void> _refreshTelemetryPolicy(HttpClient client) async {
+  Future<bool> _sendPendingTraces(
+    HttpClient client, {
+    _SyncDeadline? deadline,
+  }) async {
+    final budget =
+        deadline?.traceUploadBudget ?? _optionalRequestAttemptTimeout;
+    if (budget <= Duration.zero) return false;
+
+    // ponytail: cap by this reserve; tune it for throughput while preserving required sync.
+    final stopwatch = Stopwatch()..start();
+    final generation = _traceOutboxGeneration;
+    Duration remainingBudget() => budget - stopwatch.elapsed;
+    await for (final trace in _traceOutbox.pendingStream()) {
+      if (_traceUploadsPaused || generation != _traceOutboxGeneration) {
+        return false;
+      }
+      if (remainingBudget() <= Duration.zero) return false;
+      final payload = jsonEncode(trace);
+      if (utf8.encode(payload).length > TraceOutboxStore.maxPayloadBytes) {
+        continue;
+      }
+      final policy = await _refreshTelemetryPolicy(
+        client,
+        timeout: remainingBudget,
+      );
+      if (policy?.enabled != true ||
+          _traceUploadsPaused ||
+          generation != _traceOutboxGeneration) {
+        return false;
+      }
+
+      final traceId = trace['traceId'];
+      if (traceId is! String) continue;
+      final request = await client.postUrl(serverUrl.resolve('/sdk/traces'));
+      if (_traceUploadsPaused || generation != _traceOutboxGeneration) {
+        request.abort();
+        return false;
+      }
+      request.followRedirects = false;
+      request.headers
+        ..set(HttpHeaders.authorizationHeader, 'Bearer $_credential')
+        ..contentType = ContentType.json;
+      request.write(payload);
+      final requestTimeout = remainingBudget();
+      if (requestTimeout <= Duration.zero) {
+        request.abort();
+        return false;
+      }
+      final response = await request.close().timeout(
+        requestTimeout,
+        onTimeout: () {
+          request.abort();
+          throw TimeoutException('Workflow trace request timed out');
+        },
+      );
+      final responseTimeout = remainingBudget();
+      if (responseTimeout <= Duration.zero) return false;
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(
+            responseTimeout,
+            onTimeout: () {
+              request.abort();
+              throw TimeoutException('Workflow trace response timed out');
+            },
+          );
+
+      if (response.statusCode == HttpStatus.created) {
+        Object? decoded;
+        try {
+          decoded = jsonDecode(body);
+        } on FormatException {
+          continue;
+        }
+        if (decoded is Map &&
+            decoded['traceId'] == traceId &&
+            decoded['receivedAt'] is String &&
+            DateTime.tryParse(decoded['receivedAt'] as String) != null) {
+          await _traceOutbox.remove(traceId);
+        }
+        continue;
+      }
+      if (![
+        HttpStatus.badRequest,
+        HttpStatus.conflict,
+        HttpStatus.requestEntityTooLarge,
+      ].contains(response.statusCode)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<TelemetryPolicy?> _refreshTelemetryPolicy(
+    HttpClient client, {
+    Duration Function()? timeout,
+  }) async {
     final request = await client.getUrl(
       serverUrl.resolve('/sdk/telemetry-policy'),
     );
     request.followRedirects = false;
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final requestTimeout = timeout?.call() ?? _optionalRequestAttemptTimeout;
+    if (requestTimeout <= Duration.zero) {
+      request.abort();
+      return null;
+    }
     final response = await request.close().timeout(
-      _optionalRequestAttemptTimeout,
+      requestTimeout,
       onTimeout: () {
         request.abort();
         throw TimeoutException('Telemetry policy request timed out');
       },
     );
+    final responseTimeout = timeout?.call() ?? _optionalRequestAttemptTimeout;
+    if (responseTimeout <= Duration.zero) return null;
     final body = await utf8.decoder
         .bind(response)
         .join()
         .timeout(
-          _optionalRequestAttemptTimeout,
+          responseTimeout,
           onTimeout: () {
             request.abort();
             throw TimeoutException('Telemetry policy response timed out');
           },
         );
-    if (response.statusCode != HttpStatus.ok) return;
+    if (response.statusCode != HttpStatus.ok) return null;
     final policy = TelemetryPolicy.fromJson(jsonDecode(body));
-    if (policy != null) await _telemetryPolicy.write(policy);
+    if (policy == null) return null;
+    await _telemetryPolicy.write(policy);
+    return policy;
   }
 
   Duration get _optionalRequestAttemptTimeout {
@@ -1451,7 +1592,7 @@ class AyniSdk {
   ) async {
     await previousSync;
     final client = HttpClient();
-    final deadline = _SyncDeadline();
+    final deadline = _SyncDeadline(syncTimeout);
     var timedOut = false;
     try {
       if (!_canSendCredentialTo(
@@ -1504,7 +1645,12 @@ class AyniSdk {
       await _syncConsentReceipts(client, deadline: deadline);
     } on Exception {
       // A pending optional-use receipt must not block required resource sync.
-      // Future optional-data uploads must gate their own purpose on receipt ack.
+      // Validation traces use a separate host-managed permission.
+    }
+    try {
+      await _sendPendingTraces(client, deadline: deadline);
+    } on Exception {
+      // A failed optional upload keeps traces local.
     }
     if (deadline.expired) return const SyncResult(SyncStatus.error);
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
@@ -2433,7 +2579,19 @@ class _WorkflowRejection {
 }
 
 class _SyncDeadline {
+  _SyncDeadline(this.timeout) : _stopwatch = Stopwatch()..start();
+
+  final Duration timeout;
+  final Stopwatch _stopwatch;
   var expired = false;
+
+  Duration get traceUploadBudget {
+    final reserve = timeout ~/ 3;
+    final available = timeout - _stopwatch.elapsed - reserve;
+    if (available <= Duration.zero) return Duration.zero;
+    final maximum = timeout ~/ 4;
+    return available < maximum ? available : maximum;
+  }
 
   void expire() => expired = true;
 }

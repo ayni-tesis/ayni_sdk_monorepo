@@ -126,6 +126,10 @@ describe("Estados y errores (US-146)", () => {
       "credentialRevoked",
       "consentReceiptConflict",
       "privacyNoticeUnavailable",
+      "invalidTrace",
+      "telemetryDisabled",
+      "traceConflict",
+      "traceTooLarge",
       "workflowVersionNotFound",
       "modelVersionNotFound",
     ]);
@@ -134,7 +138,9 @@ describe("Estados y errores (US-146)", () => {
       expect(row.at(-1), row[0]).toContain(
         ["invalidConsent", "consentReceiptConflict", "privacyNoticeUnavailable"].includes(code)
           ? "`ConsentStatus.pending`"
-          : "`SyncStatus.error`",
+          : ["invalidTrace", "traceTooLarge", "telemetryDisabled", "traceConflict"].includes(code)
+            ? "outbox"
+            : "`SyncStatus.error`",
       );
     }
   });

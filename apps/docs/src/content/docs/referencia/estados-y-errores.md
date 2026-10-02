@@ -87,6 +87,10 @@ lo recibe: ve el resultado de la última columna.
 | `credentialRevoked` | `401` | Un administrador revocó o regeneró la credencial. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. Si se revoca a mitad de una sincronización, mientras se descarga un modelo, el workflow que lo usa trae `dependencyFailed`. |
 | `consentReceiptConflict` | `409` | El `receiptId` ya existe con otros datos. | `recordConsent()` devuelve `ConsentStatus.pending` y conserva el recibo local. |
 | `privacyNoticeUnavailable` | `503` | El aviso de privacidad de Ayni todavía está en borrador. | `recordConsent()` devuelve `ConsentStatus.pending`; `sync()` puede continuar con workflows y modelos. |
+| `invalidTrace` | `400` | La traza enviada a `POST /sdk/traces` no cumple el esquema tipado estricto. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
+| `telemetryDisabled` | `403` | La política vigente de la aplicación no permite recibir trazas. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
+| `traceConflict` | `409` | El mismo ID de traza de esta aplicación ya se confirmó con otros datos. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
+| `traceTooLarge` | `413` | El cuerpo de `POST /sdk/traces` supera 2 MiB. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `workflowVersionNotFound` | `404` | La versión de workflow que listó el servidor ya no se puede descargar, por ejemplo porque su workflow se archivó durante la sincronización. | El workflow trae `workflowUnavailable` y `sync()` devuelve `SyncStatus.error`. |
 | `modelVersionNotFound` | `404` | La versión de modelo que usa un workflow ya no se puede descargar. | El workflow trae `dependencyFailed` con esa versión en `<modelo>`, y `sync()` devuelve `SyncStatus.error`. |
 

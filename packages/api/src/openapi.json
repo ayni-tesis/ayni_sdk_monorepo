@@ -77,6 +77,572 @@
         "required": ["receiptId", "subjectId", "purpose", "decision", "noticeVersion", "decidedAt"],
         "additionalProperties": false
       },
+      "SdkTraceAcknowledgement": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["traceId", "receivedAt"]
+      },
+      "SdkWorkflowTrace": {
+        "type": "object",
+        "properties": {
+          "traceSchemaVersion": {
+            "type": "number",
+            "enum": [1]
+          },
+          "traceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repetition": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "installationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "caseId": {
+            "type": "string"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "appCommit": {
+            "type": "string"
+          },
+          "sdkCommit": {
+            "type": "string"
+          },
+          "datasetId": {
+            "type": "string"
+          },
+          "datasetPartition": {
+            "type": "string"
+          },
+          "datasetSha256": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "batteryPercent": {
+            "type": "number"
+          },
+          "temperatureC": {
+            "type": "number"
+          },
+          "appVersion": {
+            "type": "string"
+          },
+          "sdkVersion": {
+            "type": "string"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "provenance": {
+                  "type": "string",
+                  "enum": ["clientReported"]
+                }
+              },
+              "required": ["name", "value", "unit", "method", "source", "provenance"],
+              "additionalProperties": false
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "validity": {
+            "type": "string"
+          },
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "workflowVersionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "workflowVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "modelVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": ["modelVersionId", "version", "sha256"],
+              "additionalProperties": false
+            }
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "enum": [1]
+              },
+              "platform": {
+                "type": "string",
+                "enum": ["android", "ios", "unknown"]
+              },
+              "osVersion": {
+                "type": "string"
+              },
+              "apiLevel": {
+                "type": "integer"
+              },
+              "model": {
+                "type": "string"
+              },
+              "ramRange": {
+                "type": "string"
+              },
+              "socModel": {
+                "type": "string"
+              }
+            },
+            "required": ["schemaVersion", "platform"],
+            "additionalProperties": false
+          },
+          "status": {
+            "type": "string",
+            "enum": ["success", "error"]
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nodeId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["input.image", "model.tflite", "condition", "output"]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["completed", "skipped", "failed"]
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "modelVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "required": ["nodeId", "type", "status"],
+              "additionalProperties": false
+            }
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["classification"]
+                        },
+                        "nodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "confidences": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "required": ["type", "nodeId", "label", "confidence", "confidences"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["detection"]
+                        },
+                        "nodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "detections": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string"
+                              },
+                              "confidence": {
+                                "type": "number"
+                              },
+                              "box": {
+                                "type": "object",
+                                "properties": {
+                                  "xMin": {
+                                    "type": "number"
+                                  },
+                                  "yMin": {
+                                    "type": "number"
+                                  },
+                                  "xMax": {
+                                    "type": "number"
+                                  },
+                                  "yMax": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["xMin", "yMin", "xMax", "yMax"],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": ["label", "confidence", "box"],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": ["type", "nodeId", "detections"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["boolean"]
+                        },
+                        "nodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["type", "nodeId", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": ["combined"]
+                    },
+                    "nodeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["classification"]
+                              },
+                              "nodeId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "confidence": {
+                                "type": "number"
+                              },
+                              "confidences": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "required": ["type", "nodeId", "label", "confidence", "confidences"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["detection"]
+                              },
+                              "nodeId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "detections": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "confidence": {
+                                      "type": "number"
+                                    },
+                                    "box": {
+                                      "type": "object",
+                                      "properties": {
+                                        "xMin": {
+                                          "type": "number"
+                                        },
+                                        "yMin": {
+                                          "type": "number"
+                                        },
+                                        "xMax": {
+                                          "type": "number"
+                                        },
+                                        "yMax": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": ["xMin", "yMin", "xMax", "yMax"],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": ["label", "confidence", "box"],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": ["type", "nodeId", "detections"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["boolean"]
+                              },
+                              "nodeId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "value": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["type", "nodeId", "value"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["type", "nodeId", "values"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "clientReportedFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "runId",
+                "repetition",
+                "condition",
+                "caseId",
+                "scenario",
+                "appCommit",
+                "sdkCommit",
+                "datasetId",
+                "datasetPartition",
+                "datasetSha256",
+                "backend",
+                "network",
+                "batteryPercent",
+                "temperatureC",
+                "ramRange",
+                "socModel",
+                "appVersion",
+                "sdkVersion",
+                "measurements",
+                "incidents",
+                "validity"
+              ]
+            },
+            "maxItems": 21
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "category": {
+                "type": "string",
+                "enum": [
+                  "workflowNotAvailable",
+                  "modelNotAvailable",
+                  "invalidInput",
+                  "unsupportedInputContract",
+                  "invalidWorkflow",
+                  "modelOutputInvalid",
+                  "conditionInputMissing",
+                  "outputInputMissing",
+                  "outputNotReached",
+                  "cancelled",
+                  "executionNotFound",
+                  "runtimeError"
+                ]
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "workflowResolution",
+                  "modelResolution",
+                  "inputValidation",
+                  "modelContractValidation",
+                  "workflowValidation",
+                  "modelOutputValidation",
+                  "conditionEvaluation",
+                  "outputEvaluation",
+                  "workflowCompletion",
+                  "executionControl",
+                  "workflowExecution"
+                ]
+              },
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "modelVersionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": ["category"],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "traceSchemaVersion",
+          "traceId",
+          "runId",
+          "repetition",
+          "installationId",
+          "timestamp",
+          "measurements",
+          "incidents",
+          "workflowId",
+          "workflowVersionId",
+          "workflowVersion",
+          "models",
+          "profile",
+          "status",
+          "durationMs",
+          "nodes",
+          "outputs",
+          "clientReportedFields"
+        ],
+        "additionalProperties": false
+      },
       "SdkSyncManifest": {
         "type": "object",
         "properties": {
@@ -403,7 +969,7 @@
             }
           },
           "400": {
-            "description": "Solicitud de consentimiento no válida.",
+            "description": "Solicitud no válida.",
             "content": {
               "application/json": {
                 "schema": {
@@ -472,7 +1038,7 @@
             }
           },
           "409": {
-            "description": "El identificador de recibo ya se usó con otros datos.",
+            "description": "El identificador ya se usó con otros datos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -536,12 +1102,225 @@
         }
       }
     },
+    "/sdk/traces": {
+      "post": {
+        "tags": ["Endpoints"],
+        "operationId": "enviar-traza-de-ejecucion",
+        "summary": "Enviar una traza de ejecución pendiente",
+        "description": "Recibe una traza tipada y sanitizada para la aplicación de la credencial, únicamente cuando su política de telemetría está habilitada. Los valores y el perfil informados por el cliente se conservan como `clientReported` y no se verifican de forma independiente. El cuerpo admite hasta 2048 KiB. La retención sigue los días configurados para la aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidTrace` | La traza no tiene un formato válido. | Debe seguir el esquema tipado del SDK y no puede incluir campos adicionales. |\n| `413` | `traceTooLarge` | La traza supera el tamaño máximo permitido. | El cuerpo puede ocupar hasta 2048 KiB. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La aplicación puede recibir trazas solo cuando habilita la política de telemetría. |\n| `409` | `traceConflict` | El ID de traza ya se usó con otros datos. | Un mismo ID solo puede confirmar contenido idéntico para la misma aplicación. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl -X POST https://tu-servidor-ayni.example/sdk/traces \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SdkWorkflowTrace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "La traza quedó guardada o ya había sido recibida con el mismo contenido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkTraceAcknowledgement"
+                },
+                "examples": {
+                  "recibido": {
+                    "summary": "Traza confirmada",
+                    "value": {
+                      "traceId": "550e8400-e29b-41d4-a716-446655440001",
+                      "receivedAt": "2026-10-02T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud no válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidTrace"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidTrace": {
+                    "description": "Debe seguir el esquema tipado del SDK y no puede incluir campos adicionales.",
+                    "value": {
+                      "message": "La traza no tiene un formato válido.",
+                      "code": "invalidTrace"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La política de telemetría no está habilitada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["telemetryDisabled"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "telemetryDisabled": {
+                    "description": "La aplicación puede recibir trazas solo cuando habilita la política de telemetría.",
+                    "value": {
+                      "message": "La política de telemetría de esta aplicación está deshabilitada.",
+                      "code": "telemetryDisabled"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El identificador ya se usó con otros datos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["traceConflict"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "traceConflict": {
+                    "description": "Un mismo ID solo puede confirmar contenido idéntico para la misma aplicación.",
+                    "value": {
+                      "message": "El ID de traza ya se usó con otros datos.",
+                      "code": "traceConflict"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["traceTooLarge"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "traceTooLarge": {
+                    "description": "El cuerpo puede ocupar hasta 2048 KiB.",
+                    "value": {
+                      "message": "La traza supera el tamaño máximo permitido.",
+                      "code": "traceTooLarge"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sdk/telemetry-policy": {
       "get": {
         "tags": ["Endpoints"],
         "operationId": "obtener-politica-de-telemetria",
-        "summary": "Obtener la política de captura de trazas",
-        "description": "Devuelve si la aplicación de la credencial tiene habilitada la captura local de trazas y su periodo de retención. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
+        "summary": "Obtener la política de captura y envío de trazas",
+        "description": "Devuelve si la aplicación de la credencial tiene habilitados la captura local y el envío de trazas, además de su periodo de retención. El SDK refresca esta política antes de cada envío. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
         "security": [
           {
             "sdkCredential": []

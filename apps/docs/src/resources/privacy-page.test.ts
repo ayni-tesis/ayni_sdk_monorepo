@@ -101,29 +101,31 @@ describe("Datos y privacidad (US-147)", () => {
     expect(page.includes("\n## Datos opcionales\n")).toBe(optional.length > 0);
   });
 
-  it("states what the SDK does not do while only consent receipts carry a body", () => {
+  it("excludes raw inference inputs and documents policy-gated trace upload", () => {
     const doesNot = section("## Lo que el SDK no hace");
 
     expect(
       requests.filter((request) => request.sendsBody).map((request) => request.target),
-    ).toEqual(["/sdk/consents"]);
+    ).toEqual(["/sdk/consents", "/sdk/traces"]);
     expect(
       requests.flatMap(({ headers }) =>
         headers.filter((header) => header !== "HttpHeaders.authorizationHeader"),
       ),
     ).toEqual([]);
-    expect(doesNot).toContain("No sube imágenes ni entradas del modelo durante la sincronización.");
-    expect(doesNot).toContain("No envía trazas ni imágenes.");
+    expect(doesNot).toContain("No sube imágenes ni entradas del modelo.");
+    expect(doesNot).toContain("`POST /sdk/traces`");
     expect(doesNot).toContain("`diagnostics/trace-outbox/`");
     expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
     expect(doesNot).toContain("La respuesta de `getDeviceProfile()` queda en");
     expect(doesNot.replace(/\s+/g, " ")).toContain(
-      "sus campos del perfil se guardan dentro de esa traza local",
+      "sus campos del perfil se guardan dentro de esa traza y se envían junto con ella",
     );
     expect(doesNot).toContain("seriales, fingerprints");
     expect(doesNot.replace(/\s+/g, " ")).toContain("rango de RAM y SoC;");
     expect(doesNot).toContain("dentro de `storageDirectory`");
-    expect(doesNot).toContain("no se envía");
+    expect(doesNot.replace(/\s+/g, " ")).toContain(
+      "Omite mensajes arbitrarios del runtime, imágenes, tensores y bytes de entrada.",
+    );
   });
 
   it("names Dart's own User-Agent, which the SDK leaves unchanged", () => {
