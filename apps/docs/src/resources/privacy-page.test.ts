@@ -127,12 +127,6 @@ describe("Datos y privacidad (US-147)", () => {
     expect(page).toContain("`Dart/<versión> (dart:io)`");
   });
 
-  it("documents telemetry consent and retention separately from research consent", () => {
-    expect(page).toContain("`sdkImprovement`");
-    expect(page).toContain("`retentionDays`");
-    expect(page).toContain("0.1.0 no");
-  });
-
   it("lists every file and directory the SDK creates in storageDirectory", () => {
     const spans = codeSpans(storedSection);
     const { names, extensions } = storagePathParts(source);

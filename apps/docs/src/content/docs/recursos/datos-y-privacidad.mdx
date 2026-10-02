@@ -70,13 +70,6 @@ La app elimina de sus propias colas los datos de esa finalidad que aún no envi�
 Esta versión del SDK no crea esas colas. Los datos que Ayni ya recibió requieren
 una solicitud por el canal de derechos publicado en el aviso correspondiente.
 
-Cuando una versión futura del SDK envíe trazas técnicas, solo las enviará si la
-política de la aplicación permite telemetría y la persona activó `sdkImprovement`;
-el servidor las conservará durante el `retentionDays` de esa política. Ese
-consentimiento es para la mejora del SDK: no sustituye el consentimiento ni las
-salvaguardas que correspondan a la validación académica. `ayni_sdk` 0.1.0 no
-descarga esta política ni envía el perfil o trazas.
-
 La credencial identifica a tu aplicación en Ayni, no al usuario ni al
 dispositivo. El SDK solo la envía a `serverUrl`, por HTTPS o, si activas
 `allowInsecureLoopback` para desarrollo local, por HTTP hacia el propio
