@@ -69,7 +69,7 @@ Se mantienen las historias existentes US-100–US-113 y sus responsabilidades, a
 | --- | --- |
 | US-100 Política (GitHub #109, cerrada) | Se conserva su alcance implementado de configuración por aplicación. Los checks de captura/ingesta se fijan en US-103/107 y la expiración de datos y artifacts en US-112, sin reabrir retroactivamente esta issue. |
 | US-101 Identificador (GitHub #111) | UUID local persistente por instalación, ámbito por aplicación en backend, regeneración y privacidad existentes; se vincula a trazas deduplicables. |
-| US-102 Perfil técnico (GitHub #113) | Perfil versionado con plataforma/API, rango RAM, app/SDK, backend y campos de condiciones disponibles; ausentes se omiten/marcan desconocidos; nunca identificadores hardware. |
+| US-102 Perfil técnico (GitHub #113) | Exponer `AyniSdk.getDeviceProfile()` como tipo público tipado y sin red/persistencia para que la app reutilice el perfil en control; US-103 lo adjunta a la traza. Incluir plataforma/API, modelo, rango RAM y versiones cuando estén disponibles; ausentes quedan desconocidos y se excluyen identificadores hardware. |
 | US-103 Traza de ejecución (GitHub #114) | Sustituir la prohibición de resultado crudo por resultado estructurado decodificado; no enviar imagen ni tensor binario. Añadir schema version, procedencia, contexto experimental, valores externos declarados, calidad/validez y procedencia no verificada. |
 | US-104 Duración por nodo | Registrar estados y tiempos por fase/nodo y distinguir no ejecutado de cero milisegundos. |
 | US-105 Error | Error tipado y sanitizado, conservando fase/nodo y relación con incidencia; sin secretos, input ni rutas internas. |
