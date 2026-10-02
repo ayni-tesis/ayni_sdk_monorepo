@@ -176,6 +176,7 @@ void main() {
       expect(error?.trace?.status, 'error');
       expect(error?.trace?.error, {
         'category': 'modelNotAvailable',
+        'phase': 'modelResolution',
         'modelVersionId': 'model-version-1',
       });
       expect(error?.trace?.models, isEmpty);

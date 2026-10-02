@@ -134,10 +134,13 @@ su periodo permitido de retención; el SDK consulta esos dos valores durante
 Una política desconocida o deshabilitada no crea trazas. La decisión opcional
 `sdkImprovement` es independiente: la app debe mantener su switch apagado por
 defecto y solo pasar `traceContext` a `run()` cuando la captura y el
-consentimiento aplicable estén habilitados. El SDK no recibe ni interpreta ese
-consentimiento. La política indica el periodo permitido de retención; en esta
-fase la traza se descarta cuando deja de estar disponible el resultado o error,
-porque todavía no se persiste ni transmite.
+consentimiento aplicable estén habilitados. El consentimiento opcional
+`sdkImprovement` cubre la mejora del SDK; no autoriza la captura de trazas para
+validar modelos. La app aplica por separado el permiso o consentimiento de
+validación que corresponda. El SDK no recibe ni interpreta ese consentimiento.
+La política indica el periodo permitido de retención; en esta fase la traza se
+descarta cuando deja de estar disponible el resultado o error, porque todavía
+no se persiste ni transmite.
 
 ## Datos que el SDK guarda en el dispositivo
 
