@@ -69,6 +69,22 @@ El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/i
 
 Una vez completada la inicialización de forma exitosa (`result.isReady`), se accede a la instancia compartida a través de `AyniSdk.instance`. Revisa `result.status` si necesitas distinguir `ready`, `incompleteConfiguration`, `error` o `unsupportedPlatform`; en cualquier estado distinto de `ready`, muestra `result.message` y no uses la instancia. Si la configuración es incompleta o inválida, el SDK no queda en un estado parcialmente operativo.
 
+## Perfil técnico del dispositivo
+
+La app puede consultar el perfil técnico disponible para describir el dispositivo
+en sus propios reportes de prueba o en una traza:
+
+```dart
+final DeviceProfile profile = await sdk.getDeviceProfile();
+final Map<String, Object> fields = profile.toJson();
+```
+
+El perfil versionado solo incluye plataforma, SO/API, modelo, rango de RAM y
+SoC cuando la plataforma los expone. No incluye el nombre asignado al
+dispositivo, seriales, identificadores de proveedor ni otros datos del plugin.
+El SDK no persiste ni envía el perfil; los campos ausentes se omiten. La
+consulta se resuelve localmente y queda cacheada en esa instancia.
+
 ## Sincronización
 
 Después de inicializar, sincroniza para instalar nuevas versiones publicadas. `SyncResult.status` indica el resultado general: `updated`, `upToDate`, `offline` o `error`. Ante `offline`, conserva y usa los workflows ya instalados. Ante `error`, no des por descartados todos los cambios: puede haber recursos actualizados junto con recursos fallidos. Recorre `result.resources` y maneja el `status` de cada recurso; la lista puede estar vacía si el fallo ocurrió antes de compararlos con el servidor.

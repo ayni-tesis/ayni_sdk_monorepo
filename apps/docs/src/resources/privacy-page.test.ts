@@ -114,7 +114,10 @@ describe("Datos y privacidad (US-147)", () => {
     ).toEqual([]);
     expect(doesNot).toContain("No sube imágenes ni entradas del modelo durante la sincronización.");
     expect(doesNot).toContain("No envía telemetría.");
-    expect(doesNot).toContain("No recolecta el modelo, el sistema operativo");
+    expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
+    expect(doesNot.replace(/\s+/g, " ")).toContain("no se guarda ni se envía");
+    expect(doesNot).toContain("seriales, fingerprints");
+    expect(doesNot).toContain("rango de RAM y SoC cuando esté disponible");
     expect(doesNot).toContain("dentro de `storageDirectory`");
     expect(doesNot).toContain("no se envía");
   });
