@@ -43,6 +43,7 @@ export type DashboardView =
   | "credentials"
   | "privacy"
   | "collection"
+  | "traces"
   | "settings";
 
 export type ApplicationSection =
@@ -52,6 +53,7 @@ export type ApplicationSection =
   | "credentials"
   | "privacy"
   | "collection"
+  | "traces"
   | "settings";
 
 export type DashboardViewDescriptor = {
@@ -69,5 +71,6 @@ export const DASHBOARD_VIEWS: Record<DashboardView, DashboardViewDescriptor> = {
   credentials: { id: "credentials", label: "Credenciales SDK", segment: "credentials" },
   privacy: { id: "privacy", label: "Privacidad y datos", segment: "privacy" },
   collection: { id: "collection", label: "Recolección de evidencia", segment: "collection" },
+  traces: { id: "traces", label: "Trazas", segment: "traces" },
   settings: { id: "settings", label: "Configuración", segment: "settings" },
 };

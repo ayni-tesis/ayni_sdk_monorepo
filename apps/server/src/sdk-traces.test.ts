@@ -107,6 +107,41 @@ describe("POST /sdk/traces", () => {
     },
   );
 
+  it("accepts SemVer values and HTTP routes without their query strings", async () => {
+    const { app, storeMock } = makeApp();
+    const received = {
+      ...trace,
+      workflowVersion: "1.0.0-20261002",
+      appVersion: "10.123.4567",
+      sdkVersion: "2.1.0",
+      datasetPartition: "2026-10-02",
+      scenario: "GET /api/v1, GET /users/123, GET /app/v1, GET /api/items?sortKey=createdAt",
+      condition: "session: expired",
+      validity: "cookie: disabled",
+      network: "password: unset.",
+      incidents: ["session: active", "cookie: present"],
+    };
+    const response = await app.request("/sdk/traces", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
+      body: JSON.stringify(received),
+    });
+
+    expect(response.status).toBe(201);
+    expect(storeMock).toHaveBeenCalledWith("app-1", received, 90);
+  });
+
+  it("validates adversarial version text without regex backtracking", async () => {
+    const { app } = makeApp();
+    const response = await app.request("/sdk/traces", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...trace, appVersion: `0.0.0-0.${"--.".repeat(1_000)}` }),
+    });
+
+    expect(response.status).toBe(201);
+  });
+
   it("accepts a full classification confidence map within the body cap", async () => {
     const { app, storeMock } = makeApp();
     const confidences = Object.fromEntries(
@@ -167,6 +202,85 @@ describe("POST /sdk/traces", () => {
       method: "POST",
       headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
       body: JSON.stringify({ ...trace, image: "base64" }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "invalidTrace" });
+    expect(storeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { condition: "contacto: diego@example.com" },
+    { scenario: "Authorization: Bearer abc.def.ghi" },
+    { scenario: "Authorization: Basic YWxpY2U6cGFzcw==" },
+    { scenario: "Authorization: Token opaque-value" },
+    { scenario: "Cookie: session=opaque-value" },
+    { scenario: "Set-Cookie: session=opaque-value; HttpOnly" },
+    { scenario: "password: active" },
+    { scenario: '{"sessionId":"opaque-value"}' },
+    { scenario: '{"sessionCookie":"opaque-value"}' },
+    { scenario: "dbPassword=opaque-value" },
+    { scenario: '{"dbPassword":"opaque-value"}' },
+    { scenario: "password=unset not-a-placeholder" },
+    { scenario: "password=unset,not-a-placeholder" },
+    { scenario: "password=unset;not-a-placeholder" },
+    { scenario: "password=unset}not-a-placeholder" },
+    { scenario: "session: expired secret-value" },
+    { scenario: '{"password":"unset,not-a-placeholder"}' },
+    { scenario: '{"password":"unset;not-a-placeholder"}' },
+    { scenario: "ENCRYPTION_KEY=opaque-value" },
+    { scenario: '{"encryptionKey":"opaque-value"}' },
+    { scenario: '{"Authorization":"Basic YWxpY2U6cGFzcw=="}' },
+    { scenario: `GET /api/v1?token=${SECRET}` },
+    { scenario: "GET /blob?sv=2022&sig=opaque-value" },
+    { scenario: "GET /api/v1?client_secret=opaque-value" },
+    { scenario: "GET /api/v1?token=opaque-value" },
+    { scenario: "GET /api/v1?clientSecret=opaque-value" },
+    { scenario: "GET /api/v1?accessToken=opaque-value" },
+    { scenario: "GET /api/v1?AWSSecret=opaque-value" },
+    { scenario: "GET /api/v1?AWS_SECRET_ACCESS_KEY=opaque-value" },
+    { scenario: "GET /api/v1?clientApiKey=opaque-value" },
+    { scenario: '{"clientSecret":"opaque-value"}' },
+    { scenario: '{"AWS_SECRET_ACCESS_KEY":"opaque-value"}' },
+    { scenario: '{"clientApiKey":"opaque-value"}' },
+    { scenario: "postgres://alice:opaque-value@127.0.0.1:5432/app" },
+    { scenario: "redis://:opaque-value@127.0.0.1:6379" },
+    { scenario: `GET /reset/${SECRET}` },
+    { scenario: "212.555.0123" },
+    { appVersion: "212.555.0123" },
+    { workflowVersion: "1.0.0-212.555.0123" },
+    {
+      models: [
+        { modelVersionId: "model-version-1", version: "212.555.0123", sha256: "a".repeat(64) },
+      ],
+    },
+    { incidents: ["password=secret-value"] },
+    { scenario: "C:\\Users\\diego\\client-secrets.json" },
+    { scenario: "/etc/ssl/private/sdk.env" },
+    { scenario: "artifact=/etc/ssl/private/sdk.env" },
+    { scenario: "artifact=../../var/lib/ayni/state.json" },
+    { scenario: "failed opening ../secrets/sdk.env" },
+    { scenario: "file:///etc/ssl/private/sdk.env" },
+    { scenario: "failed opening /run/secrets/db" },
+    { validity: "ayni_sk_abcd1234rest-of-secret" },
+    { validity: "sk_live_abc123secretvalue" },
+    {
+      outputs: {
+        result: {
+          type: "classification",
+          nodeId: "node-1",
+          label: "+51 987 654 321",
+          confidence: 0.9,
+          confidences: { cat: 0.9 },
+        },
+      },
+    },
+  ])("rejects sensitive client text without storing it", async (fields) => {
+    const { app, storeMock } = makeApp();
+    const response = await app.request("/sdk/traces", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...trace, ...fields }),
     });
 
     expect(response.status).toBe(400);

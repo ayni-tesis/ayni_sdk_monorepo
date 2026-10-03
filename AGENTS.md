@@ -214,6 +214,7 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
   by click for members (US-121), but the canvas arrows select a neighbor for them so
   `Enter` opens `Detalles del nodo` read-only. `Ctrl`/`Cmd` + `A` stays
   administrator-only, like `Seleccionar todo`.
+- US-108 application trace consultation: workspace members can list and open only unexpired traces for their application. Keyset pagination uses received time and trace id; list rows expose status, workflow/model versions, and the technical device profile. The shared SDK trace schema rejects recognizable credential, contact, and local-path patterns in free-text fields; the versioned detail and JSONL export preserve accepted values, structured outputs, client-reported provenance, and artifact references/hashes. No binary artifact route or image/tensor fields are exposed. The dashboard's Application → `Trazas` section is available to members and offers paginated consultation, full-record detail, and JSONL download.
 - **Telemetry retention cleanup (US-107 → US-112)**: trace ingestion rechecks
   `getTelemetryPolicy` and refuses disabled applications. Each record expires after
   the configured 7/30/90 days; expired rows are purged during later trace ingestion,

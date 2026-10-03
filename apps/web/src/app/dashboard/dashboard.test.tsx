@@ -156,6 +156,14 @@ describe("parseDashboardRoute", () => {
     });
   });
 
+  it("reads the Trazas application section route (US-108)", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/traces")).toEqual({
+      kind: "app",
+      id: "app-1",
+      section: "traces",
+    });
+  });
+
   it("falls back to the list route instead of throwing on a malformed workflow id", () => {
     expect(parseDashboardRoute("/dashboard/applications/app-1/workflows/wf%zz")).toEqual({
       kind: "list",

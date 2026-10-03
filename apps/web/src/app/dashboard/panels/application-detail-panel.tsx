@@ -1,6 +1,7 @@
 "use client";
 
 import type { Application, ApplicationSection } from "../types";
+import { ApplicationTracesView } from "./application/application-traces-view";
 import { CollectionPolicyView } from "./application/collection-policy-view";
 import { CredentialsView } from "./application/credentials-view";
 import { ModelDetailView } from "./application/model-detail-view";
@@ -171,6 +172,10 @@ export function ApplicationDetailPanel({
           application={application}
           canManage={canManage}
         />
+      )}
+
+      {activeSection === "traces" && (
+        <ApplicationTracesView key={application.id} application={application} />
       )}
     </section>
   );
