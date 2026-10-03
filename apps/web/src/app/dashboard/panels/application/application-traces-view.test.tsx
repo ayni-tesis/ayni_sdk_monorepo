@@ -212,6 +212,35 @@ describe("ApplicationTracesView", () => {
     );
   });
 
+  it("distinguishes an empty application from filters with no matches", async () => {
+    get.mockResolvedValue({ data: { traces: [], nextCursor: null } });
+    render(<ApplicationTracesView application={application} />);
+
+    expect(
+      await screen.findByText("Aún no hay trazas disponibles para esta aplicación."),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Workflow ID"), {
+      target: { value: "missing-workflow" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+
+    expect(await screen.findByText("No hay trazas que coincidan con los filtros.")).toBeTruthy();
+    expect(screen.queryByText("Aún no hay trazas disponibles para esta aplicación.")).toBeNull();
+  });
+
+  it("does not show an empty-state message when loading filtered traces fails", async () => {
+    render(<ApplicationTracesView application={application} />);
+    await screen.findByText("Workflow 1.0.0 · workflow-1");
+    get.mockRejectedValue(new Error("request failed"));
+    fireEvent.change(screen.getByLabelText("Workflow ID"), {
+      target: { value: "missing-workflow" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("No hay trazas que coincidan con los filtros.")).toBeNull();
+  });
+
   it("preserves exact text in context and device-profile filters", async () => {
     render(<ApplicationTracesView application={application} />);
     await screen.findByText("Workflow 1.0.0 · workflow-1");

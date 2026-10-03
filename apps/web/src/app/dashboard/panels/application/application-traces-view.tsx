@@ -48,6 +48,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
   const [pageIndex, setPageIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [traceLoadFailed, setTraceLoadFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
     setPage({ traces: [], nextCursor: null });
     setLoading(true);
     setError("");
+    setTraceLoadFailed(false);
     const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
     new URLSearchParams(filterQuery).forEach((value, key) => {
       query.set(key, value);
@@ -74,8 +76,10 @@ export function ApplicationTracesView({ application }: { application: Applicatio
       )
       .then(({ data }) => setPage(data))
       .catch((loadError: unknown) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
           setError(errorMessage(loadError, "No pudimos cargar las trazas."));
+          setTraceLoadFailed(true);
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -332,9 +336,11 @@ export function ApplicationTracesView({ application }: { application: Applicatio
 
       {loading ? (
         <p role="status">Cargando trazas…</p>
-      ) : page.traces.length === 0 ? (
+      ) : traceLoadFailed ? null : page.traces.length === 0 ? (
         <p className="rounded-md border p-4 text-muted-foreground text-sm">
-          Aún no hay trazas disponibles para esta aplicación.
+          {filterQuery
+            ? "No hay trazas que coincidan con los filtros."
+            : "Aún no hay trazas disponibles para esta aplicación."}
         </p>
       ) : (
         <ul className="divide-y rounded-md border" aria-label="Trazas de la aplicación">
