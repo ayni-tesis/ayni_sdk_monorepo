@@ -50,6 +50,7 @@ export async function uploadModelVersion(input: {
       { version: input.version, uploadId: upload.uploadId },
       {
         signal: input.signal,
+        timeout: 0,
       },
     );
     input.onProgress(100);
