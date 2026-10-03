@@ -160,11 +160,34 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
   dentro de esa traza y se envían junto con ella si la política vigente lo permite.
 - No consulta identificadores de hardware como seriales, fingerprints o el ID
   de proveedor de iOS. Al inicializarse, guarda un UUID v4 aleatorio como
-  `installation-id` dentro de `storageDirectory`; se incluye en las trazas
-  enviadas y se elimina al borrar ese directorio.
+  `installation-id` dentro de `storageDirectory`; `resetInstallationId()` lo
+  reemplaza solo después de persistir el nuevo UUID. Las trazas que ya existían
+  mantienen su identificador y las futuras usan el nuevo. La operación no
+  cambia el consentimiento ni la política de trazas.
 - No envía ni guarda la imagen que recibe `run()`; la inferencia ocurre por
   completo en el dispositivo. Una traza autorizada puede conservar resultados
   estructurados públicos, pero no los bytes de entrada ni los tensores.
+
+## Restablecer el identificador de instalación
+
+La app puede reemplazar el identificador usado por las trazas futuras:
+
+<Code code={privacy.resetInstallationId} lang="dart" />
+
+El SDK genera y persiste el UUID v4 nuevo antes de activar esa identidad. Si no
+puede escribirlo, el `Future` falla con `FileSystemException`; la identidad
+nueva no se considera activa y ninguna traza recibe un identificador parcial.
+El restablecimiento solo cambia `installation-id`: no elimina workflows,
+modelos ni trazas pendientes y no hace solicitudes de red.
+
+Las trazas ya creadas, incluidas las pendientes, conservan el UUID anterior.
+`sync()` puede enviarlas mientras la política vigente y la autorización de
+validación de la app lo permitan; el permiso debe gestionarse por separado y
+`sdkImprovement` no autoriza la validación. Los archivos pendientes no vencen
+localmente: se conservan hasta el acuse del servidor o hasta que la app llame a
+`clearPendingTraces()`. En el servidor se aplica la retención elegida por la
+aplicación (7, 30 o 90 días) desde la recepción. Restablecer el ID no modifica
+esa política ni registra o revoca consentimiento.
 
 La política «Permitir telemetría técnica» habilita la captura local y el envío
 de trazas, y establece su retención (7, 30 o 90 días). El SDK consulta la política
@@ -200,8 +223,9 @@ recibos incluyen un ID aleatorio de persona, finalidad, decisión, versión del
 aviso y fecha; no incluyen nombre, correo, teléfono ni hashes de identificadores
 directos. La credencial solo se
 mantiene en memoria. `initialize()` también genera un UUID v4 aleatorio para
-esta instalación y lo conserva localmente; lo incluye solo dentro de trazas
-enviadas cuando la política vigente lo permite.
+esta instalación y lo conserva localmente. `resetInstallationId()` lo cambia
+por otro UUID persistido; las trazas creadas después de un restablecimiento
+exitoso usan ese nuevo valor y las ya creadas conservan el anterior.
 `getDeviceProfile()` devuelve bajo solicitud de la app una respuesta técnica
 allowlisted; el SDK la conserva en memoria durante esa instancia y puede copiar
 sus campos permitidos a una traza.
@@ -212,7 +236,7 @@ sus campos permitidos a una traza.
 | Definición de cada versión de workflow instalada. | `workflow-definitions/<ID codificado>.json` | Borra `storageDirectory` completo. |
 | Archivo de cada versión de modelo instalada, sus metadatos (ID de la versión y SHA-256) y un archivo vacío que bloquea la instalación mientras ocurre. | `<modelVersionId>/<modelVersionId>.tflite`, `<modelVersionId>/<modelVersionId>.json` y `<modelVersionId>/<modelVersionId>.lock` | Borra `storageDirectory` completo. |
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
-| Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas. No incluye identidad directa; se envía dentro de una traza cuando la política lo permite. | `installation-id` | Borra `storageDirectory` completo. |
+| Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas. No incluye identidad directa; se envía dentro de una traza cuando la política lo permite. | `installation-id` | `await sdk.resetInstallationId()` lo reemplaza; borrar `storageDirectory` elimina todos los datos del SDK. Las trazas ya en la outbox conservan el ID anterior hasta su acuse o hasta que `clearPendingTraces()` las elimine. |
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |

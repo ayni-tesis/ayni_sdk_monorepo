@@ -13,9 +13,7 @@ class InstallationIdStore {
   /// Returns the valid persisted ID, replacing absent or malformed data.
   String loadOrCreate() {
     storageDirectory.createSync(recursive: true);
-    final file = File(
-      '${storageDirectory.path}${Platform.pathSeparator}installation-id',
-    );
+    final file = _file;
     if (file.existsSync()) {
       final existingId = file.readAsStringSync();
       if (isUuidV4(existingId)) return existingId;
@@ -25,4 +23,24 @@ class InstallationIdStore {
     file.writeAsStringSync(installationId, flush: true);
     return installationId;
   }
+
+  /// Persists and returns a fresh UUID v4 without exposing an incomplete file.
+  String reset() {
+    storageDirectory.createSync(recursive: true);
+    final file = _file;
+    final installationId = createUuidV4();
+    final temporary = File(
+      '${file.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+    );
+    try {
+      temporary.writeAsStringSync(installationId, flush: true);
+      temporary.renameSync(file.path);
+    } finally {
+      if (temporary.existsSync()) temporary.deleteSync();
+    }
+    return installationId;
+  }
+
+  File get _file =>
+      File('${storageDirectory.path}${Platform.pathSeparator}installation-id');
 }
