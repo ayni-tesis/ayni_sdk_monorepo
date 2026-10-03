@@ -13,3 +13,23 @@ export function createHttpClient(baseURL = serverBaseURL) {
 }
 
 export const httpClient = createHttpClient();
+
+let redirectingToForbidden = false;
+
+httpClient.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (
+      axios.isAxiosError(error) &&
+      error.response?.status === 403 &&
+      typeof window !== "undefined" &&
+      (window.location.pathname === "/dashboard" ||
+        window.location.pathname.startsWith("/dashboard/")) &&
+      !redirectingToForbidden
+    ) {
+      redirectingToForbidden = true;
+      window.location.replace("/forbidden");
+    }
+    return Promise.reject(error);
+  },
+);

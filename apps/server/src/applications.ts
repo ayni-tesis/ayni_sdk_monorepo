@@ -115,11 +115,14 @@ export function createApp({ getSession, applications }: Dependencies) {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
 
-    const role = await applications.getMembership(session.user.id, application.organizationId);
-    if (role !== "admin" && role !== "owner") {
+    if (application.role !== "admin" && application.role !== "owner") {
       return c.json({ message: "No tienes permiso para editar esta aplicación." }, 403);
     }
 
@@ -140,11 +143,14 @@ export function createApp({ getSession, applications }: Dependencies) {
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
 
-    const role = await applications.getMembership(session.user.id, application.organizationId);
-    if (role !== "admin" && role !== "owner") {
+    if (application.role !== "admin" && application.role !== "owner") {
       return c.json({ message: "No tienes permiso para archivar esta aplicación." }, 403);
     }
 
