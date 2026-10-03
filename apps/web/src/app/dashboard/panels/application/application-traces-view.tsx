@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { type TraceValueSource, traceErrorDetail } from "./trace-error-detail";
 
 const PAGE_SIZE = 50;
 
@@ -171,8 +172,11 @@ export function ApplicationTracesView({ application }: { application: Applicatio
                     {deviceLabel(trace.profile)}
                   </span>
                 </span>
-                <span className="text-muted-foreground text-sm">
-                  Recibida {formatDate(receivedAt)}
+                <span className="space-y-1 text-right text-muted-foreground text-sm">
+                  <span className="block">Recibida {formatDate(receivedAt)}</span>
+                  {trace.status === "error" && (
+                    <span className="block font-medium text-foreground underline">Ver detalle</span>
+                  )}
                 </span>
               </button>
             </li>
@@ -217,6 +221,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
           </div>
           {detailLoading && <p role="status">Cargando registro…</p>}
           {detailError && <p role="alert">{detailError}</p>}
+          {record && <TraceErrorSection record={record} />}
           {record && (
             <dl className="grid gap-2 text-sm sm:grid-cols-2">
               <div>
@@ -248,6 +253,44 @@ export function ApplicationTracesView({ application }: { application: Applicatio
           {record && <TraceJson title="Registro versionado completo" value={record} />}
         </section>
       )}
+    </section>
+  );
+}
+
+const SOURCE_LABELS: Record<TraceValueSource, string> = { app: "App", sdk: "SDK", ayni: "Ayni" };
+
+function TraceErrorSection({ record }: { record: ApplicationTraceRecord }) {
+  const detail = traceErrorDetail(record);
+  if (!detail) return null;
+  return (
+    <section aria-labelledby="trace-error-title" className="space-y-4 rounded-md border p-4">
+      <div className="space-y-1">
+        <h4 id="trace-error-title" className="font-semibold">
+          Error de ejecución
+        </h4>
+        <p className="text-muted-foreground text-sm">No se muestran secretos ni rutas internas.</p>
+        <p className="text-muted-foreground text-sm">
+          Los valores de App y SDK son reportados por el cliente y no están verificados por Ayni.
+        </p>
+      </div>
+      {detail.sections.map((section) => (
+        <div key={section.title} className="space-y-2">
+          <h5 className="font-medium text-sm">{section.title}</h5>
+          <dl className="grid gap-2 text-sm sm:grid-cols-2">
+            {section.fields.map((field) => (
+              <div key={field.label}>
+                <dt className="flex items-center gap-2 font-medium">
+                  {field.label}
+                  <span className="rounded border px-1 font-normal text-muted-foreground text-xs">
+                    {SOURCE_LABELS[field.source]}
+                  </span>
+                </dt>
+                <dd className="break-all">{field.date ? formatDate(field.value) : field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
     </section>
   );
 }

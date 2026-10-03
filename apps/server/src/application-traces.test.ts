@@ -150,6 +150,29 @@ describe("application traces routes", () => {
     );
   });
 
+  it("rejects opening an execution error from another workspace without revealing it", async () => {
+    const errorRecord: ApplicationTraceRecord = {
+      ...record,
+      trace: {
+        ...record.trace,
+        status: "error",
+        error: { category: "runtimeError", phase: "workflowExecution", nodeId: "node-1" },
+      },
+    };
+    const outsider = makeApp({ isMember: false, get: async () => errorRecord });
+    const response = await outsider.app.request(`/applications/app-1/traces/${traceId}`);
+    const unknown = makeApp({ getApplication: async () => undefined });
+    const unknownResponse = await unknown.app.request(`/applications/app-9/traces/${traceId}`);
+
+    expect(response.status).toBe(404);
+    const body = await response.text();
+    expect(body).not.toContain("runtimeError");
+    expect(body).not.toContain(traceId);
+    expect(unknownResponse.status).toBe(404);
+    expect(await unknownResponse.text()).toBe(body);
+    expect(outsider.getTrace).not.toHaveBeenCalled();
+  });
+
   it("streams JSONL pages and preserves client values, provenance, and artifact hashes", async () => {
     const secondRecord = { ...record, trace: { ...record.trace, traceId: otherTraceId } };
     const listRecords = vi.fn(async ({ cursor }: { cursor?: string }) =>
