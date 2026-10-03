@@ -8,17 +8,17 @@ export default function ForbiddenPage() {
     <main className="flex min-h-svh items-center justify-center bg-background px-6 py-16 text-foreground">
       <section
         aria-labelledby="forbidden-title"
-        className="w-full max-w-lg rounded-xl border border-border bg-card p-8 shadow-sm sm:p-10"
+        className="w-full max-w-lg rounded-lg border border-border bg-card p-6 sm:p-8"
       >
-        <p className="font-mono text-sm text-muted-foreground">403 · ACCESO DENEGADO</p>
-        <h1 id="forbidden-title" className="mt-5 text-3xl font-semibold tracking-tight">
+        <p className="font-mono text-sm text-muted-foreground">403 · Acceso denegado</p>
+        <h1 id="forbidden-title" className="mt-4 text-3xl font-semibold tracking-tight">
           No tienes permisos
         </h1>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground sm:text-base">
+        <p className="mt-4 text-sm leading-6 text-muted-foreground sm:text-base">
           No puedes ver esta pantalla. Si necesitas acceso, consulta a un administrador de tu
           workspace.
         </p>
-        <Button asChild className="mt-7">
+        <Button asChild className="mt-6">
           <Link href="/dashboard">Volver al panel</Link>
         </Button>
       </section>
