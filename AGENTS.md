@@ -222,9 +222,13 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
 - US-113 installation identity reset: `AyniSdk.resetInstallationId()` atomically persists a fresh UUID v4 before applying it to future traces and reports `FileSystemException` when storage fails. Each queued trace retains the installation ID captured when it was created; reset changes only `installation-id`, leaves pending traces and installed workflows/models intact, and does not change trace policy or host-managed validation permission (`sdkImprovement` is separate). `Recursos → Datos y privacidad` documents the identifier, permission, and retention behavior.
 - **Telemetry retention (US-107 → US-112)**: trace ingestion rechecks
   `getTelemetryPolicy` and refuses disabled applications. Each record expires the
-  configured 7/30/90 days after the server received it; `storeSdkTrace` reads the
-  period from the policy row `FOR SHARE` inside its insert, so a retention change
-  saved while a trace is in flight is never missed. Saving a period
+  configured 7/30/90 days after the server received it. `storeSdkTrace` inserts in
+  a transaction that first locks the application row `FOR KEY SHARE` and reads the
+  period from the policy row inside the insert. A retention change locks the same
+  row `FOR UPDATE` before the policy, so both take locks in one order: the change
+  commits first and the insert reads its period, or it waits for the insert and
+  then recomputes it. (Locking the policy row first deadlocked against the foreign
+  key's application lock; verified on Postgres in both orders.) Saving a period
   (`PATCH .../telemetry-policy` with `retentionDays`) runs `applyTraceRetention` in
   the same transaction: live traces get `receivedAt` + the new period, rows already
   at that expiry are not rewritten, and expired traces stay expired (a longer period

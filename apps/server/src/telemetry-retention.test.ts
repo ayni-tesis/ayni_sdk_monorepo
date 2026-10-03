@@ -4,7 +4,7 @@ import { createTelemetryRetentionApp } from "./telemetry-retention";
 
 const SECRET = "cron-secret-with-enough-length";
 
-function makeApp(cronSecret: string | undefined = SECRET) {
+function makeApp(cronSecret: string | undefined) {
   const purgeExpired = vi.fn(async () => ({ deletedTraces: 3 }));
   return {
     purgeExpired,
@@ -20,7 +20,7 @@ function run(app: ReturnType<typeof makeApp>["app"], authorization?: string) {
 
 describe("GET /cron/telemetry-retention (US-112)", () => {
   it("deletes the expired traces when the scheduler presents the secret", async () => {
-    const { app, purgeExpired } = makeApp();
+    const { app, purgeExpired } = makeApp(SECRET);
 
     const response = await run(app, `Bearer ${SECRET}`);
 
@@ -35,7 +35,7 @@ describe("GET /cron/telemetry-retention (US-112)", () => {
     ["the secret without the Bearer prefix", SECRET],
     ["a shorter secret", "Bearer cron"],
   ])("refuses a request with %s without deleting anything", async (_case, authorization) => {
-    const { app, purgeExpired } = makeApp();
+    const { app, purgeExpired } = makeApp(SECRET);
 
     const response = await run(app, authorization);
 

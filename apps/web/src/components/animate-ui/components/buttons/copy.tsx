@@ -71,9 +71,17 @@ function CopyButton({
     onChange: onCopiedChange,
   });
 
-  // The pending reset is cleared on unmount so it never updates a removed button.
+  // A removed button ignores a copy that finishes late and cancels its pending
+  // reset, so neither updates it nor calls onCopiedChange after unmount.
+  const mountedRef = React.useRef(false);
   const resetTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  React.useEffect(() => () => clearTimeout(resetTimeoutRef.current), []);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(resetTimeoutRef.current);
+    };
+  }, []);
 
   const handleCopy = React.useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -83,6 +91,7 @@ function CopyButton({
         navigator.clipboard
           .writeText(content)
           .then(() => {
+            if (!mountedRef.current) return;
             setIsCopied(true, content);
             clearTimeout(resetTimeoutRef.current);
             resetTimeoutRef.current = setTimeout(() => {

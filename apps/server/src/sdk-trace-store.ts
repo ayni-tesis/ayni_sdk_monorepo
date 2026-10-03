@@ -10,7 +10,13 @@ import {
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import type { TelemetryRetentionDays } from "@ayni/api/telemetry-policy";
 import type * as schema from "@ayni/db/schema/index";
-import { applicationTelemetryPolicy, model, modelVersion, sdkTrace } from "@ayni/db/schema/index";
+import {
+  application,
+  applicationTelemetryPolicy,
+  model,
+  modelVersion,
+  sdkTrace,
+} from "@ayni/db/schema/index";
 import { and, desc, eq, gt, gte, inArray, lt, lte, ne, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
@@ -192,23 +198,32 @@ export async function storeSdkTrace(
   // The daily retention task (US-112) also purges applications that stop sending traces.
   await purgeExpiredSdkTraces(database, now);
 
-  const [inserted] = await database
-    .insert(sdkTrace)
-    .values({
-      applicationId,
-      traceId: trace.traceId,
-      contentSha256,
-      trace,
-      modelReferences,
-      source: "clientReported",
-      receivedAt: now,
-      // Read again from the policy row, locked FOR SHARE: a retention change
-      // saved while this request was in flight either commits first and sets
-      // this period, or waits for this insert and then recomputes it (US-112).
-      expiresAt: sql`${now.toISOString()}::timestamp + make_interval(days => coalesce((select ${applicationTelemetryPolicy.retentionDays} from ${applicationTelemetryPolicy} where ${eq(applicationTelemetryPolicy.applicationId, applicationId)} for share), ${retentionDays})::integer)`,
-    })
-    .onConflictDoNothing()
-    .returning({ receivedAt: sdkTrace.receivedAt });
+  // A retention change (US-112) locks the application FOR UPDATE, then the
+  // policy. Locking the application first, FOR KEY SHARE as the foreign key
+  // needs anyway, serializes this insert with it in the same order: the change
+  // either commits first and this insert reads its period, or waits for this
+  // insert and then recomputes its expiry.
+  const [inserted] = await database.transaction(async (tx) => {
+    await tx
+      .select({ id: application.id })
+      .from(application)
+      .where(eq(application.id, applicationId))
+      .for("key share");
+    return tx
+      .insert(sdkTrace)
+      .values({
+        applicationId,
+        traceId: trace.traceId,
+        contentSha256,
+        trace,
+        modelReferences,
+        source: "clientReported",
+        receivedAt: now,
+        expiresAt: sql`${now.toISOString()}::timestamp + make_interval(days => coalesce((select ${applicationTelemetryPolicy.retentionDays} from ${applicationTelemetryPolicy} where ${eq(applicationTelemetryPolicy.applicationId, applicationId)}), ${retentionDays})::integer)`,
+      })
+      .onConflictDoNothing()
+      .returning({ receivedAt: sdkTrace.receivedAt });
+  });
 
   if (inserted) {
     return { ok: true, traceId: trace.traceId, receivedAt: iso(inserted.receivedAt) };

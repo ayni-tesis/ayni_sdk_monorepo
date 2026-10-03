@@ -105,6 +105,34 @@ describe("CopyButton", () => {
     expect(onCopiedChange).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores a copy that finishes after it unmounts", async () => {
+    let finishCopy: () => void = () => {};
+    writeTextMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCopy = resolve;
+        }),
+    );
+    const onCopiedChange = vi.fn();
+    const { unmount } = render(
+      <CopyButton
+        content="late-secret"
+        delay={1000}
+        onCopiedChange={onCopiedChange}
+        data-testid="copy-btn"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("copy-btn"));
+    unmount();
+    await act(async () => {
+      finishCopy();
+    });
+
+    expect(onCopiedChange).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("renders children alongside the animated icon when provided", () => {
     render(
       <CopyButton content="secret-with-label" data-testid="copy-btn">
