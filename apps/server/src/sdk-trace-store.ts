@@ -8,9 +8,16 @@ import {
   applicationTraceSummarySchema,
 } from "@ayni/api/application-traces";
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
+import type { TelemetryRetentionDays } from "@ayni/api/telemetry-policy";
 import type * as schema from "@ayni/db/schema/index";
-import { model, modelVersion, sdkTrace } from "@ayni/db/schema/index";
-import { and, desc, eq, gt, gte, inArray, lt, lte, or, type SQL, sql } from "drizzle-orm";
+import {
+  application,
+  applicationTelemetryPolicy,
+  model,
+  modelVersion,
+  sdkTrace,
+} from "@ayni/db/schema/index";
+import { and, desc, eq, gt, gte, inArray, lt, lte, ne, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -164,7 +171,7 @@ export async function storeSdkTrace(
     applicationId,
     trace,
     retentionDays,
-  }: { applicationId: string; trace: SdkWorkflowTrace; retentionDays: 7 | 30 | 90 },
+  }: { applicationId: string; trace: SdkWorkflowTrace; retentionDays: TelemetryRetentionDays },
 ): Promise<StoreSdkTraceResult> {
   const now = new Date();
   const contentSha256 = createHash("sha256").update(canonicalJson(trace)).digest("hex");
@@ -188,23 +195,35 @@ export async function storeSdkTrace(
       : [];
   });
 
-  // ponytail: purge expired rows on ingestion; add scheduled cleanup if idle applications need timed physical deletion.
-  await database.delete(sdkTrace).where(lte(sdkTrace.expiresAt, now));
+  // The daily retention task (US-112) also purges applications that stop sending traces.
+  await purgeExpiredSdkTraces(database, now);
 
-  const [inserted] = await database
-    .insert(sdkTrace)
-    .values({
-      applicationId,
-      traceId: trace.traceId,
-      contentSha256,
-      trace,
-      modelReferences,
-      source: "clientReported",
-      receivedAt: now,
-      expiresAt: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000),
-    })
-    .onConflictDoNothing()
-    .returning({ receivedAt: sdkTrace.receivedAt });
+  // A retention change (US-112) locks the application FOR UPDATE, then the
+  // policy. Locking the application first, FOR KEY SHARE as the foreign key
+  // needs anyway, serializes this insert with it in the same order: the change
+  // either commits first and this insert reads its period, or waits for this
+  // insert and then recomputes its expiry.
+  const [inserted] = await database.transaction(async (tx) => {
+    await tx
+      .select({ id: application.id })
+      .from(application)
+      .where(eq(application.id, applicationId))
+      .for("key share");
+    return tx
+      .insert(sdkTrace)
+      .values({
+        applicationId,
+        traceId: trace.traceId,
+        contentSha256,
+        trace,
+        modelReferences,
+        source: "clientReported",
+        receivedAt: now,
+        expiresAt: sql`${now.toISOString()}::timestamp + make_interval(days => coalesce((select ${applicationTelemetryPolicy.retentionDays} from ${applicationTelemetryPolicy} where ${eq(applicationTelemetryPolicy.applicationId, applicationId)}), ${retentionDays})::integer)`,
+      })
+      .onConflictDoNothing()
+      .returning({ receivedAt: sdkTrace.receivedAt });
+  });
 
   if (inserted) {
     return { ok: true, traceId: trace.traceId, receivedAt: iso(inserted.receivedAt) };
@@ -219,6 +238,46 @@ export async function storeSdkTrace(
   if (!existing || existing.contentSha256 !== contentSha256)
     return { ok: false, reason: "conflict" };
   return { ok: true, traceId: trace.traceId, receivedAt: iso(existing.receivedAt) };
+}
+
+/**
+ * Deletes every trace whose expiry has passed, of any application (US-112).
+ * Queries already hide them; this removes them from the database. Deleting the
+ * same expired rows twice is harmless, so a repeated scheduled run is safe.
+ */
+export async function purgeExpiredSdkTraces(
+  database: Pick<SdkTraceDatabase, "delete">,
+  now = new Date(),
+): Promise<{ deletedTraces: number }> {
+  const deleted = await database.delete(sdkTrace).where(lte(sdkTrace.expiresAt, now));
+  return { deletedTraces: deleted.count };
+}
+
+/**
+ * Sets the expiry of the application's live traces to their server receipt plus
+ * the new retention period (US-112). Traces that already expired stay expired:
+ * a longer period never brings them back. Rows that already have that expiry,
+ * such as all of them when the period did not change, are not rewritten.
+ */
+export async function applyTraceRetention(
+  database: Pick<SdkTraceDatabase, "update">,
+  {
+    applicationId,
+    retentionDays,
+    now = new Date(),
+  }: { applicationId: string; retentionDays: TelemetryRetentionDays; now?: Date },
+): Promise<void> {
+  const expiresAt = sql`${sdkTrace.receivedAt} + make_interval(days => ${retentionDays}::integer)`;
+  await database
+    .update(sdkTrace)
+    .set({ expiresAt })
+    .where(
+      and(
+        eq(sdkTrace.applicationId, applicationId),
+        gt(sdkTrace.expiresAt, now),
+        ne(sdkTrace.expiresAt, expiresAt),
+      ),
+    );
 }
 
 export async function listApplicationTraceSummaries(

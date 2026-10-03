@@ -9,6 +9,8 @@ const server = {
   UPSTASH_REDIS_REST_URL: z.url(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
   CORS_ORIGIN: z.url(),
+  // Vercel Cron sends it to the telemetry retention task; without it the task refuses to run.
+  CRON_SECRET: z.string().min(16).optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 };
 

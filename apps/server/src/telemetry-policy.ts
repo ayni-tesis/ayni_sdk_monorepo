@@ -1,4 +1,4 @@
-import { isTelemetryRetentionDays } from "@ayni/api/telemetry-policy";
+import { isTelemetryRetentionDays, type TelemetryRetentionDays } from "@ayni/api/telemetry-policy";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -16,13 +16,19 @@ const ENABLED_MESSAGE = "Indica si se permite la telemetría técnica.";
 const EXTRA_FIELD_MESSAGE = "La política de telemetría solo define la habilitación y la retención.";
 
 // Strict: the policy only enables telemetry and sets its retention, so any
-// other field (such as one asking for images or raw inputs) is refused.
-const telemetryPolicySchema = z.strictObject({
-  enabled: z.boolean({ error: ENABLED_MESSAGE }),
-  retentionDays: z.custom<UpdateTelemetryPolicyInput["retentionDays"]>(isTelemetryRetentionDays, {
-    error: RETENTION_MESSAGE,
-  }),
-});
+// other field (such as one asking for images or raw inputs) is refused. Each
+// field is optional so `Retención` (US-112) saves the period without
+// overwriting the switch, but a change must carry at least one of them.
+const telemetryPolicySchema = z
+  .strictObject({
+    enabled: z.boolean({ error: ENABLED_MESSAGE }).optional(),
+    retentionDays: z
+      .custom<TelemetryRetentionDays>(isTelemetryRetentionDays, { error: RETENTION_MESSAGE })
+      .optional(),
+  })
+  .refine((policy) => policy.enabled !== undefined || policy.retentionDays !== undefined, {
+    error: INVALID_POLICY_MESSAGE,
+  });
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -86,15 +92,16 @@ export function createTelemetryPolicyApp({
       const message =
         issue?.code === "unrecognized_keys"
           ? EXTRA_FIELD_MESSAGE
-          : (issue?.message ?? INVALID_POLICY_MESSAGE);
+          : issue?.path.length
+            ? issue.message
+            : INVALID_POLICY_MESSAGE;
       return c.json({ message }, 400);
     }
 
     const result = await telemetryPolicies.update({
       applicationId: application.id,
       userId: session.user.id,
-      enabled: parsed.data.enabled,
-      retentionDays: parsed.data.retentionDays,
+      ...parsed.data,
     });
 
     if (result.ok === true) return c.json({ policy: result.policy });
