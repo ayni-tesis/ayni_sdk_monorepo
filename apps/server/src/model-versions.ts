@@ -448,8 +448,30 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
       const session = await getSession(c.req.raw.headers);
       if (!session) return c.json({ message: "Authentication required" }, 401);
 
-      const application = await applications.get(c.req.param("applicationId"));
-      if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) {
+        return c.json({ message: "No encontramos esta aplicación.", code: "notFound" }, 404);
+      }
+
+      if (application.role !== "admin" && application.role !== "owner") {
+        return c.json(
+          { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
+          403,
+        );
+      }
+      if (application.status !== "active") {
+        return c.json(
+          {
+            message: "No puedes subir versiones a una aplicación archivada.",
+            code: "applicationArchived",
+          },
+          409,
+        );
+      }
 
       let body: Record<string, string | { arrayBuffer(): Promise<ArrayBuffer> }>;
       try {
