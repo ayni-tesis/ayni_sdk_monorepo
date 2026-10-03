@@ -1,7 +1,9 @@
 import { sdkTraceSchema } from "@ayni/api/sdk-trace";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import type { SdkTraceDatabase } from "./sdk-trace-store";
-import { storeSdkTrace } from "./sdk-trace-store";
+import { listApplicationTraceSummaries, storeSdkTrace } from "./sdk-trace-store";
 
 const trace = sdkTraceSchema.parse({
   traceSchemaVersion: 1,
@@ -111,5 +113,86 @@ describe("storeSdkTrace", () => {
     const expiresAt = storedExpiry instanceof Date ? storedExpiry.getTime() : Number.NaN;
     expect(expiresAt).toBeGreaterThanOrEqual(before + 7 * 24 * 60 * 60 * 1000);
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe("listApplicationTraceSummaries", () => {
+  it("combines trace filters with application scope and retention", async () => {
+    let where: SQL | undefined;
+    const database = {
+      select: () => ({
+        from: () => ({
+          where: (condition: SQL) => {
+            where = condition;
+            return { orderBy: () => ({ limit: async () => [] }) };
+          },
+        }),
+      }),
+    } as unknown as SdkTraceDatabase;
+
+    await listApplicationTraceSummaries(database, {
+      applicationId: "app-1",
+      limit: 10,
+      workflowId: "workflow-1",
+      workflowVersion: "1.2.3",
+      modelId: "model-1",
+      modelVersionId: "model-version-1",
+      modelVersion: "2.0.0",
+      status: "error",
+      receivedFrom: "2026-10-01",
+      receivedTo: "2026-10-02",
+      platform: "android",
+      deviceModel: "Pixel",
+      osVersion: "14",
+      apiLevel: 35,
+      ramRange: "6-8GB",
+      socModel: "Tensor",
+      runId: "run-1",
+      repetition: 2,
+      condition: "night",
+      caseId: "case-1",
+      scenario: "indoors",
+      backend: "tflite",
+    });
+
+    if (!where) throw new Error("Expected the trace query to include a WHERE clause");
+    const query = new PgDialect().sqlToQuery(where);
+    expect(query.sql).toContain("application_id");
+    expect(query.sql).toContain("expires_at");
+    for (const field of [
+      "workflowId",
+      "workflowVersion",
+      "model_id",
+      "model_version",
+      "modelVersionId",
+      "status",
+      "received_at",
+      "profile",
+      "runId",
+      "repetition",
+      "condition",
+      "caseId",
+      "scenario",
+      "backend",
+    ]) {
+      expect(query.sql).toContain(field);
+    }
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        "app-1",
+        "workflow-1",
+        "1.2.3",
+        "model-1",
+        "model-version-1",
+        "2.0.0",
+        "error",
+        "Pixel",
+        "run-1",
+        "night",
+        "case-1",
+        "indoors",
+        "tflite",
+      ]),
+    );
   });
 });

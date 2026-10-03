@@ -5,7 +5,7 @@ import type {
   ApplicationTraceRecord,
   ApplicationTraceSummary,
 } from "@ayni/api/application-traces";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
@@ -38,6 +38,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [record, setRecord] = useState<ApplicationTraceRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -51,6 +52,9 @@ export function ApplicationTracesView({ application }: { application: Applicatio
     setLoading(true);
     setError("");
     const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    new URLSearchParams(filterQuery).forEach((value, key) => {
+      query.set(key, value);
+    });
     if (cursor) query.set("cursor", cursor);
     void httpClient
       .get<ApplicationTraceListResponse>(
@@ -66,7 +70,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [application.id, cursor]);
+  }, [application.id, cursor, filterQuery]);
 
   useEffect(() => () => detailController.current?.abort(), []);
 
@@ -112,6 +116,25 @@ export function ApplicationTracesView({ application }: { application: Applicatio
     }
   }
 
+  function applyFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = new URLSearchParams();
+    new FormData(event.currentTarget).forEach((value, key) => {
+      if (typeof value === "string" && value.trim()) query.set(key, value.trim());
+    });
+    setFilterQuery(query.toString());
+    setCursorHistory([undefined]);
+    setPageIndex(0);
+    setSelectedTraceId(null);
+  }
+
+  function clearFilters() {
+    setFilterQuery("");
+    setCursorHistory([undefined]);
+    setPageIndex(0);
+    setSelectedTraceId(null);
+  }
+
   return (
     <section aria-labelledby="application-traces-title" className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -133,6 +156,160 @@ export function ApplicationTracesView({ application }: { application: Applicatio
           {exporting ? "Exportando…" : "Exportar JSONL"}
         </Button>
       </header>
+
+      <form onSubmit={applyFilters} className="space-y-3 rounded-md border p-4">
+        <h3 className="font-medium">Filtrar trazas</h3>
+        <p className="text-muted-foreground text-sm">
+          Las fechas incluyen ambos días completos y usan la fecha UTC de recepción.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="space-y-1 text-sm">
+            <span>Workflow ID</span>
+            <input name="workflowId" className="h-9 w-full rounded-md border bg-background px-3" />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Versión del workflow</span>
+            <input
+              name="workflowVersion"
+              className="h-9 w-full rounded-md border bg-background px-3"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Modelo ID</span>
+            <input name="modelId" className="h-9 w-full rounded-md border bg-background px-3" />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Versión de modelo ID</span>
+            <input
+              name="modelVersionId"
+              className="h-9 w-full rounded-md border bg-background px-3"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Versión del modelo</span>
+            <input
+              name="modelVersion"
+              className="h-9 w-full rounded-md border bg-background px-3"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Estado</span>
+            <select
+              name="status"
+              defaultValue=""
+              className="h-9 w-full rounded-md border bg-background px-3"
+            >
+              <option value="">Todos</option>
+              <option value="success">Exitosa</option>
+              <option value="error">Error</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Recibida desde</span>
+            <input
+              type="date"
+              name="receivedFrom"
+              className="h-9 w-full rounded-md border bg-background px-3"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span>Recibida hasta</span>
+            <input
+              type="date"
+              name="receivedTo"
+              className="h-9 w-full rounded-md border bg-background px-3"
+            />
+          </label>
+        </div>
+        <details>
+          <summary className="cursor-pointer font-medium text-sm">Perfil técnico</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="space-y-1 text-sm">
+              <span>Plataforma</span>
+              <select
+                name="platform"
+                defaultValue=""
+                className="h-9 w-full rounded-md border bg-background px-3"
+              >
+                <option value="">Todas</option>
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+                <option value="unknown">Desconocida</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Modelo del dispositivo</span>
+              <input
+                name="deviceModel"
+                className="h-9 w-full rounded-md border bg-background px-3"
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Versión del sistema operativo</span>
+              <input name="osVersion" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Nivel de API</span>
+              <input
+                type="number"
+                min="0"
+                name="apiLevel"
+                className="h-9 w-full rounded-md border bg-background px-3"
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Rango de RAM</span>
+              <input name="ramRange" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>SoC</span>
+              <input name="socModel" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+          </div>
+        </details>
+        <details>
+          <summary className="cursor-pointer font-medium text-sm">Repetición y contexto</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="space-y-1 text-sm">
+              <span>Run ID</span>
+              <input name="runId" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Repetición</span>
+              <input
+                type="number"
+                min="1"
+                name="repetition"
+                className="h-9 w-full rounded-md border bg-background px-3"
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Condición</span>
+              <input name="condition" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>ID de caso</span>
+              <input name="caseId" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Escenario</span>
+              <input name="scenario" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span>Backend efectivo</span>
+              <input name="backend" className="h-9 w-full rounded-md border bg-background px-3" />
+            </label>
+          </div>
+        </details>
+        <div className="flex gap-2">
+          <Button type="submit" variant="outline">
+            Aplicar filtros
+          </Button>
+          <Button type="reset" variant="ghost" onClick={clearFilters}>
+            Limpiar filtros
+          </Button>
+        </div>
+      </form>
 
       {error && (
         <p role="alert" className="rounded-md border p-3 text-sm">

@@ -12,6 +12,55 @@ describe("applicationTracePageQuerySchema", () => {
     ).toEqual({ limit: 25, cursor: "eyJyZWNlaXZlZEF0IjoifQ" });
   });
 
+  it("accepts trace filters for execution, versions, dates, and device profile", () => {
+    expect(
+      applicationTracePageQuerySchema.parse({
+        workflowId: "workflow-1",
+        workflowVersion: "1.2.3",
+        modelId: "model-1",
+        modelVersionId: "model-version-1",
+        modelVersion: "2.0.0",
+        status: "error",
+        receivedFrom: "2026-10-01",
+        receivedTo: "2026-10-02",
+        platform: "android",
+        deviceModel: "Pixel",
+        osVersion: "14",
+        apiLevel: "35",
+        ramRange: "6-8GB",
+        socModel: "Tensor",
+        runId: "run-1",
+        repetition: "2",
+        condition: "night",
+        caseId: "case-1",
+        scenario: "indoors",
+        backend: "tflite",
+      }),
+    ).toEqual({
+      limit: 50,
+      workflowId: "workflow-1",
+      workflowVersion: "1.2.3",
+      modelId: "model-1",
+      modelVersionId: "model-version-1",
+      modelVersion: "2.0.0",
+      status: "error",
+      receivedFrom: "2026-10-01",
+      receivedTo: "2026-10-02",
+      platform: "android",
+      deviceModel: "Pixel",
+      osVersion: "14",
+      apiLevel: 35,
+      ramRange: "6-8GB",
+      socModel: "Tensor",
+      runId: "run-1",
+      repetition: 2,
+      condition: "night",
+      caseId: "case-1",
+      scenario: "indoors",
+      backend: "tflite",
+    });
+  });
+
   it.each(["0", "101", "1.5", "NaN"])("rejects invalid page size %s", (limit) => {
     expect(applicationTracePageQuerySchema.safeParse({ limit }).success).toBe(false);
   });
@@ -19,5 +68,16 @@ describe("applicationTracePageQuerySchema", () => {
   it("rejects malformed cursors and unexpected query parameters", () => {
     expect(applicationTracePageQuerySchema.safeParse({ cursor: "not+base64" }).success).toBe(false);
     expect(applicationTracePageQuerySchema.safeParse({ page: "2" }).success).toBe(false);
+  });
+
+  it("rejects invalid filters and date ranges", () => {
+    expect(applicationTracePageQuerySchema.safeParse({ status: "pending" }).success).toBe(false);
+    expect(
+      applicationTracePageQuerySchema.safeParse({
+        receivedFrom: "2026-10-03",
+        receivedTo: "2026-10-02",
+      }).success,
+    ).toBe(false);
+    expect(applicationTracePageQuerySchema.safeParse({ repetition: "0" }).success).toBe(false);
   });
 });

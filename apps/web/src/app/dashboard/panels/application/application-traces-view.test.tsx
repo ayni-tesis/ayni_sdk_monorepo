@@ -172,6 +172,46 @@ describe("ApplicationTracesView", () => {
     );
   });
 
+  it("filters traces by workflow, status, date, profile, and run context", async () => {
+    render(<ApplicationTracesView application={application} />);
+    await screen.findByText("Workflow 1.0.0 · workflow-1");
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        "/applications/app-1/traces?limit=50&cursor=next-page",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Workflow ID"), { target: { value: "workflow-1" } });
+    fireEvent.change(screen.getByLabelText("Modelo ID"), { target: { value: "model-1" } });
+    fireEvent.change(screen.getByLabelText("Versión de modelo ID"), {
+      target: { value: "model-version-1" },
+    });
+    fireEvent.change(screen.getByLabelText("Estado"), { target: { value: "error" } });
+    fireEvent.change(screen.getByLabelText("Recibida desde"), {
+      target: { value: "2026-10-01" },
+    });
+    fireEvent.change(screen.getByLabelText("Recibida hasta"), {
+      target: { value: "2026-10-02" },
+    });
+    fireEvent.click(screen.getByText("Perfil técnico"));
+    fireEvent.change(screen.getByLabelText("Plataforma"), { target: { value: "android" } });
+    fireEvent.click(screen.getByText("Repetición y contexto"));
+    fireEvent.change(screen.getByLabelText("Run ID"), { target: { value: "run-1" } });
+    fireEvent.change(screen.getByLabelText("Repetición"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Backend efectivo"), {
+      target: { value: "tflite" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        "/applications/app-1/traces?limit=50&workflowId=workflow-1&modelId=model-1&modelVersionId=model-version-1&status=error&receivedFrom=2026-10-01&receivedTo=2026-10-02&platform=android&runId=run-1&repetition=2&backend=tflite",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+  });
+
   it("downloads the complete application trace export", async () => {
     render(<ApplicationTracesView application={application} />);
     fireEvent.click(screen.getByRole("button", { name: "Exportar JSONL" }));
