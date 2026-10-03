@@ -307,7 +307,7 @@ describe("storeSdkTrace model references", () => {
     let versionQuery: SQL | undefined;
     let inserted: Record<string, unknown> | undefined;
     const database = {
-      delete: () => ({ where: async () => undefined }),
+      delete: () => ({ where: async () => ({ count: 0 }) }),
       select: () => ({
         from: () => ({
           innerJoin: () => ({
