@@ -62,8 +62,14 @@ export function createTelemetryPolicyApp({
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
+    // Checked before the body so a non-member never learns the application exists.
     const application = await applications.get(c.req.param("applicationId"));
-    if (!application) return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+    if (
+      !application ||
+      !(await applications.getMembership(session.user.id, application.organizationId))
+    ) {
+      return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+    }
 
     let rawBody: unknown;
     try {

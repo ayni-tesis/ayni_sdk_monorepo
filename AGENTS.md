@@ -234,10 +234,6 @@ user story in the commit or PR that closes it. Story IDs refer to `docs/epicas/`
   `Recolección de evidencia` is labeled separately from `Privacidad y datos` in the
   application sidebar so developers can find the capture policy without duplicate
   privacy labels.
-- **Telemetry policy `PATCH` reveals an application to non-members (US-100)**: it
-  validates the body before checking membership, so a non-member sending an invalid
-  body gets 400 instead of the uniform 404. The collection policy route checks
-  membership first; apply the same order in `telemetry-policy.ts`.
 - **Root `CLAUDE.md` is stale**: it still omits workflow creation and listing and
   model listing (last updated around US-012). `AGENTS.md` is the maintained copy;
   decide whether to sync `CLAUDE.md`.
