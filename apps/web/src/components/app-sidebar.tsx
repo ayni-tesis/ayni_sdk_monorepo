@@ -2,6 +2,7 @@
 
 import { AYNI_PRIVACY_NOTICE } from "@ayni/env/privacy-notice";
 import {
+  IconActivity,
   IconApps,
   IconCpu,
   IconGitBranch,
@@ -159,6 +160,16 @@ export function AppSidebar({
                   >
                     <IconPhotoShield />
                     <span>Recolección de evidencia</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeView === "traces"}
+                    tooltip="Trazas"
+                    onClick={() => onViewChange?.("traces")}
+                  >
+                    <IconActivity />
+                    <span>Trazas</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>

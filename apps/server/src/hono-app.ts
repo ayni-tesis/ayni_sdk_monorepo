@@ -20,6 +20,7 @@ import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
@@ -75,7 +76,12 @@ import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
-import { storeSdkTrace } from "./sdk-trace-store";
+import {
+  getApplicationTrace,
+  listApplicationTraceRecords,
+  listApplicationTraceSummaries,
+  storeSdkTrace,
+} from "./sdk-trace-store";
 import { createSdkTracesApp } from "./sdk-traces";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";
@@ -828,6 +834,18 @@ app.route(
     credentials: sdkTraces,
     policies: sdkTraces,
     traces: sdkTraces,
+  }),
+);
+app.route(
+  "/",
+  createApplicationTracesApp({
+    getSession: getCurrentTermsSession,
+    applications,
+    traces: {
+      list: (query) => listApplicationTraceSummaries(db, query),
+      get: (applicationId, traceId) => getApplicationTrace(db, applicationId, traceId),
+      listRecords: (query) => listApplicationTraceRecords(db, query),
+    },
   }),
 );
 
