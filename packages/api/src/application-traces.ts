@@ -6,6 +6,7 @@ export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;
 
 const traceFilterText = z.string().trim().min(1).max(128);
 const traceContextFilterText = z.string().min(1);
+const traceVersionFilterText = safeTraceVersionSchema.trim().min(1).max(128);
 const nonNegativeIntegerQuery = z
   .string()
   .regex(/^\d+$/)
@@ -20,10 +21,10 @@ const positiveIntegerQuery = z
 export const applicationTraceFiltersSchema = z
   .strictObject({
     workflowId: traceFilterText.optional(),
-    workflowVersion: safeTraceVersionSchema.min(1).max(128).optional(),
+    workflowVersion: traceVersionFilterText.optional(),
     modelId: traceFilterText.optional(),
     modelVersionId: traceFilterText.optional(),
-    modelVersion: safeTraceVersionSchema.min(1).max(128).optional(),
+    modelVersion: traceVersionFilterText.optional(),
     status: z.enum(["success", "error"]).optional(),
     receivedFrom: z.iso.date().optional(),
     receivedTo: z.iso.date().optional(),

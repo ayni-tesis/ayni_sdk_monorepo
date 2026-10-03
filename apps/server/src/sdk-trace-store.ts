@@ -10,7 +10,7 @@ import {
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import type * as schema from "@ayni/db/schema/index";
 import { model, modelVersion, sdkTrace } from "@ayni/db/schema/index";
-import { and, desc, eq, gt, gte, lt, lte, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -85,27 +85,26 @@ function applicationTracePageFilter(
           and(eq(sdkTrace.receivedAt, cursorTime), lt(sdkTrace.traceId, cursor.traceId)),
         )
       : undefined;
-  const modelCondition = and(
-    filters.modelId ? eq(model.id, filters.modelId) : undefined,
+  const modelVersionCondition = and(
     traceJsonTextEquals(sql`trace_model.value ->> 'modelVersionId'`, filters.modelVersionId),
     traceJsonTextEquals(sql`trace_model.value ->> 'version'`, filters.modelVersion),
   );
-  const modelFilter = modelCondition
+  const modelVersionFilter = modelVersionCondition
     ? sql`exists (
         select 1
         from jsonb_array_elements(coalesce(${sdkTrace.trace} -> 'models', '[]'::jsonb)) as trace_model(value)
-          ${
-            filters.modelId
-              ? sql`inner join ${modelVersion} on ${modelVersion.id} = trace_model.value ->> 'modelVersionId'
-                inner join ${model} on ${model.id} = ${modelVersion.modelId}`
-              : sql``
-          }
-          where ${and(
-            filters.modelId ? eq(model.applicationId, sdkTrace.applicationId) : undefined,
-            modelCondition,
-          )}
+        where ${modelVersionCondition}
       )`
     : undefined;
+  const modelFilter = filters.modelId
+    ? sql`${sdkTrace.modelReferences} @> ${JSON.stringify([
+        {
+          modelId: filters.modelId,
+          ...(filters.modelVersionId ? { modelVersionId: filters.modelVersionId } : {}),
+          ...(filters.modelVersion ? { version: filters.modelVersion } : {}),
+        },
+      ])}::jsonb`
+    : modelVersionFilter;
 
   return and(
     eq(sdkTrace.applicationId, applicationId),
@@ -169,6 +168,25 @@ export async function storeSdkTrace(
 ): Promise<StoreSdkTraceResult> {
   const now = new Date();
   const contentSha256 = createHash("sha256").update(canonicalJson(trace)).digest("hex");
+  const modelVersionIds = [...new Set(trace.models.map(({ modelVersionId }) => modelVersionId))];
+  const modelIdsByVersionId = new Map<string, string>();
+  if (modelVersionIds.length > 0) {
+    const versions = await database
+      .select({ modelVersionId: modelVersion.id, modelId: modelVersion.modelId })
+      .from(modelVersion)
+      .innerJoin(model, eq(model.id, modelVersion.modelId))
+      .where(
+        and(eq(model.applicationId, applicationId), inArray(modelVersion.id, modelVersionIds)),
+      );
+    for (const version of versions)
+      modelIdsByVersionId.set(version.modelVersionId, version.modelId);
+  }
+  const modelReferences = trace.models.flatMap((traceModel) => {
+    const modelId = modelIdsByVersionId.get(traceModel.modelVersionId);
+    return modelId
+      ? [{ modelId, modelVersionId: traceModel.modelVersionId, version: traceModel.version }]
+      : [];
+  });
 
   // ponytail: purge expired rows on ingestion; add scheduled cleanup if idle applications need timed physical deletion.
   await database.delete(sdkTrace).where(lte(sdkTrace.expiresAt, now));
@@ -180,6 +198,7 @@ export async function storeSdkTrace(
       traceId: trace.traceId,
       contentSha256,
       trace,
+      modelReferences,
       source: "clientReported",
       receivedAt: now,
       expiresAt: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000),

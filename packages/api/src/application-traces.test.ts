@@ -61,6 +61,15 @@ describe("applicationTracePageQuerySchema", () => {
     });
   });
 
+  it("trims workflow and model versions before matching", () => {
+    expect(
+      applicationTracePageQuerySchema.parse({
+        workflowVersion: " 1.2.3 ",
+        modelVersion: " 2.0.0 ",
+      }),
+    ).toMatchObject({ workflowVersion: "1.2.3", modelVersion: "2.0.0" });
+  });
+
   it("preserves long trace-context and technical-profile filter values exactly", () => {
     const context = ` ${"value".repeat(100)} `;
     const filters = {
@@ -95,5 +104,26 @@ describe("applicationTracePageQuerySchema", () => {
       }).success,
     ).toBe(false);
     expect(applicationTracePageQuerySchema.safeParse({ repetition: "0" }).success).toBe(false);
+  });
+
+  it("rejects oversized bounded filters, malformed dates, and nonnumeric API levels", () => {
+    expect(applicationTracePageQuerySchema.safeParse({ workflowId: "w".repeat(129) }).success).toBe(
+      false,
+    );
+    expect(applicationTracePageQuerySchema.safeParse({ receivedFrom: "2026-02-30" }).success).toBe(
+      false,
+    );
+    expect(applicationTracePageQuerySchema.safeParse({ apiLevel: "not-a-number" }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepts a one-day range when the date bounds are equal", () => {
+    expect(
+      applicationTracePageQuerySchema.parse({
+        receivedFrom: "2026-10-02",
+        receivedTo: "2026-10-02",
+      }),
+    ).toMatchObject({ receivedFrom: "2026-10-02", receivedTo: "2026-10-02" });
   });
 });
