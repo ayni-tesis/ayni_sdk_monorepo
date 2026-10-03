@@ -10,6 +10,7 @@ import 'package:ayni_sdk/src/ayni_sdk.dart';
 import 'package:ayni_sdk/src/consent_receipt_store.dart';
 import 'package:ayni_sdk/src/model_artifact_installer.dart';
 import 'package:ayni_sdk/src/sdk_internal.dart';
+import 'package:ayni_sdk/src/telemetry_policy_store.dart';
 import 'package:ayni_sdk/src/trace_outbox_store.dart';
 import 'package:ayni_sdk/src/workflow_version_downloader.dart';
 import 'package:test/test.dart';
@@ -2950,6 +2951,10 @@ void main() {
   });
 
   group('US-101: installation identity', () {
+    final uuidV4Pattern = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    );
+
     AyniConfig configFor(Directory directory) => AyniConfig(
       serverUrl: Uri.parse('https://api.ayni.dev'),
       credential: 'ayni_sk_valid_secret_123',
@@ -2962,14 +2967,7 @@ void main() {
 
       expect(result.status, equals(InitializationStatus.ready));
       expect(idFile.existsSync(), isTrue);
-      expect(
-        idFile.readAsStringSync(),
-        matches(
-          RegExp(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-          ),
-        ),
-      );
+      expect(idFile.readAsStringSync(), matches(uuidV4Pattern));
     });
 
     test('initialization reuses the installation UUID after reset', () {
@@ -2993,15 +2991,119 @@ void main() {
 
       expect(result.status, equals(InitializationStatus.ready));
       expect(idFile.readAsStringSync(), isNot(equals('not-a-uuid')));
-      expect(
-        idFile.readAsStringSync(),
-        matches(
-          RegExp(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-          ),
-        ),
-      );
+      expect(idFile.readAsStringSync(), matches(uuidV4Pattern));
     });
+
+    test(
+      'reset rotates future trace identity and preserves local data',
+      () async {
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+        final sdk = AyniSdk.initialize(configFor(storageDirectory)).sdk!;
+        final idFile = File('${storageDirectory.path}/installation-id');
+        final previousId = idFile.readAsStringSync();
+        final previousTrace = await sdk.createClientExecutionTrace(
+          context: WorkflowTraceContext(
+            runId: 'run-before-reset',
+            repetition: 1,
+          ),
+          workflowId: 'workflow-1',
+          workflowVersionId: 'workflow-version-1',
+          workflowVersion: '1.0.0',
+          timestamp: DateTime.utc(2026, 10, 3),
+          durationMs: 12,
+        );
+        expect(previousTrace, isNotNull);
+        await TraceOutboxStore(
+          storageDirectory,
+        ).enqueue(previousTrace!.toJson());
+
+        final workflow = installedDefinitionFile('workflow-version-local')
+          ..parent.createSync(recursive: true);
+        workflow.writeAsStringSync('installed workflow');
+        final model = File('${storageDirectory.path}/models/local/model.tflite')
+          ..createSync(recursive: true);
+        model.writeAsBytesSync([1, 2, 3]);
+
+        await sdk.resetInstallationId();
+
+        final currentId = idFile.readAsStringSync();
+        expect(currentId, isNot(equals(previousId)));
+        expect(currentId, matches(uuidV4Pattern));
+        final futureTrace = await sdk.createClientExecutionTrace(
+          context: WorkflowTraceContext(
+            runId: 'run-after-reset',
+            repetition: 1,
+          ),
+          workflowId: 'workflow-1',
+          workflowVersionId: 'workflow-version-1',
+          workflowVersion: '1.0.0',
+          timestamp: DateTime.utc(2026, 10, 3, 0, 1),
+          durationMs: 15,
+        );
+        expect(futureTrace?.installationId, equals(currentId));
+        final pending = await TraceOutboxStore(storageDirectory).pending();
+        expect(pending, hasLength(1));
+        expect(pending.single['installationId'], equals(previousId));
+        expect(workflow.readAsStringSync(), equals('installed workflow'));
+        expect(model.readAsBytesSync(), equals([1, 2, 3]));
+        expect(requests, isEmpty);
+      },
+    );
+
+    test(
+      'failed reset reports storage error without using a partial ID',
+      () async {
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+        final sdk = AyniSdk.initialize(configFor(storageDirectory)).sdk!;
+        final idFile = File('${storageDirectory.path}/installation-id');
+        final previousId = idFile.readAsStringSync();
+        final preservedStorage = Directory(
+          '${storageDirectory.path}-preserved',
+        );
+        await storageDirectory.rename(preservedStorage.path);
+        final storageBlocker = File(storageDirectory.path)
+          ..writeAsStringSync('not a directory');
+        try {
+          await expectLater(
+            sdk.resetInstallationId(),
+            throwsA(isA<FileSystemException>()),
+          );
+          expect(
+            File('${preservedStorage.path}/installation-id').readAsStringSync(),
+            equals(previousId),
+          );
+          expect(
+            preservedStorage.listSync().where(
+              (entry) => entry.path.endsWith('.tmp'),
+            ),
+            isEmpty,
+          );
+          final trace = await sdk.createClientExecutionTrace(
+            context: WorkflowTraceContext(
+              runId: 'run-after-failure',
+              repetition: 1,
+            ),
+            workflowId: 'workflow-1',
+            workflowVersionId: 'workflow-version-1',
+            workflowVersion: '1.0.0',
+            timestamp: DateTime.utc(2026, 10, 3),
+            durationMs: 12,
+          );
+          expect(trace, isNull);
+          expect(storageBlocker.readAsStringSync(), equals('not a directory'));
+          expect(requests, isEmpty);
+        } finally {
+          storageBlocker.deleteSync();
+          storageDirectory = await preservedStorage.rename(
+            storageDirectory.path,
+          );
+        }
+      },
+    );
 
     test(
       'initialization fails and resets the singleton when storage is a file',

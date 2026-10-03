@@ -4,4 +4,5 @@ import { exampleRegion } from "./region";
 /** The Dart snippets of `Recursos → Datos y privacidad` (US-147). */
 export const privacy = {
   deleteData: exampleRegion(source, "borrar-datos"),
+  resetInstallationId: exampleRegion(source, "restablecer-identificador-instalacion"),
 };

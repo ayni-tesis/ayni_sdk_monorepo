@@ -975,6 +975,16 @@ class AyniSdk {
     }
   }
 
+  /// Replaces the installation UUID used by traces created from now on.
+  ///
+  /// Traces already in the local outbox keep their original UUID. This does
+  /// not remove pending traces or installed workflows and models. The new ID
+  /// becomes active only after it has been persisted. The returned future
+  /// completes with a [FileSystemException] if storage is unavailable.
+  Future<void> resetInstallationId() => Future<void>.sync(() {
+    _installationId = InstallationIdStore(storageDirectory).reset();
+  });
+
   /// Receives each downloaded or unavailable workflow definition during sync.
   ///
   /// Its type is internal, so it is deliberately not part of the US-090
