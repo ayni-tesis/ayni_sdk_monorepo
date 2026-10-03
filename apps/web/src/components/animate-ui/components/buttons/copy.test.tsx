@@ -84,6 +84,27 @@ describe("CopyButton", () => {
     expect(onCopiedChange).toHaveBeenCalledTimes(2);
   });
 
+  it("cancels the pending reset when it unmounts", async () => {
+    const onCopiedChange = vi.fn();
+    const { unmount } = render(
+      <CopyButton
+        content="unmounted-secret"
+        delay={1000}
+        onCopiedChange={onCopiedChange}
+        data-testid="copy-btn"
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("copy-btn"));
+    });
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(1100);
+    expect(onCopiedChange).toHaveBeenCalledTimes(1);
+  });
+
   it("renders children alongside the animated icon when provided", () => {
     render(
       <CopyButton content="secret-with-label" data-testid="copy-btn">
