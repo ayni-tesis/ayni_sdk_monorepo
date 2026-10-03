@@ -5,6 +5,7 @@ export const APPLICATION_TRACE_PAGE_SIZE = 50;
 export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;
 
 const traceFilterText = z.string().trim().min(1).max(128);
+const traceContextFilterText = z.string().min(1);
 const nonNegativeIntegerQuery = z
   .string()
   .regex(/^\d+$/)
@@ -27,17 +28,17 @@ export const applicationTraceFiltersSchema = z
     receivedFrom: z.iso.date().optional(),
     receivedTo: z.iso.date().optional(),
     platform: z.enum(["android", "ios", "unknown"]).optional(),
-    deviceModel: traceFilterText.optional(),
-    osVersion: traceFilterText.optional(),
+    deviceModel: traceContextFilterText.optional(),
+    osVersion: traceContextFilterText.optional(),
     apiLevel: nonNegativeIntegerQuery.optional(),
-    ramRange: traceFilterText.optional(),
-    socModel: traceFilterText.optional(),
-    runId: traceFilterText.optional(),
+    ramRange: traceContextFilterText.optional(),
+    socModel: traceContextFilterText.optional(),
+    runId: traceContextFilterText.optional(),
     repetition: positiveIntegerQuery.optional(),
-    condition: traceFilterText.optional(),
-    caseId: traceFilterText.optional(),
-    scenario: traceFilterText.optional(),
-    backend: traceFilterText.optional(),
+    condition: traceContextFilterText.optional(),
+    caseId: traceContextFilterText.optional(),
+    scenario: traceContextFilterText.optional(),
+    backend: traceContextFilterText.optional(),
   })
   .refine(
     ({ receivedFrom, receivedTo }) => !receivedFrom || !receivedTo || receivedFrom <= receivedTo,

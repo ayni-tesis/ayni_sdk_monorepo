@@ -61,6 +61,22 @@ describe("applicationTracePageQuerySchema", () => {
     });
   });
 
+  it("preserves long trace-context and technical-profile filter values exactly", () => {
+    const context = ` ${"value".repeat(100)} `;
+    const filters = {
+      runId: context,
+      condition: context,
+      caseId: context,
+      scenario: context,
+      backend: context,
+      deviceModel: context,
+      osVersion: context,
+      ramRange: context,
+      socModel: context,
+    };
+    expect(applicationTracePageQuerySchema.parse(filters)).toMatchObject(filters);
+  });
+
   it.each(["0", "101", "1.5", "NaN"])("rejects invalid page size %s", (limit) => {
     expect(applicationTracePageQuerySchema.safeParse({ limit }).success).toBe(false);
   });

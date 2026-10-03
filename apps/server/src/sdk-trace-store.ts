@@ -10,7 +10,7 @@ import {
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import type * as schema from "@ayni/db/schema/index";
 import { model, modelVersion, sdkTrace } from "@ayni/db/schema/index";
-import { and, desc, eq, gt, gte, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -60,6 +60,10 @@ function decodeCursor(value: string | undefined) {
   }
 }
 
+function traceJsonTextEquals(path: SQL, value: string | number | undefined) {
+  return value === undefined ? undefined : sql`${path} = ${String(value)}`;
+}
+
 function applicationTracePageFilter(
   applicationId: string,
   cursorValue: string | undefined,
@@ -101,41 +105,23 @@ function applicationTracePageFilter(
     eq(sdkTrace.applicationId, applicationId),
     gt(sdkTrace.expiresAt, new Date()),
     afterCursor,
-    filters.workflowId
-      ? sql`${sdkTrace.trace} ->> 'workflowId' = ${filters.workflowId}`
-      : undefined,
-    filters.workflowVersion
-      ? sql`${sdkTrace.trace} ->> 'workflowVersion' = ${filters.workflowVersion}`
-      : undefined,
-    filters.status ? sql`${sdkTrace.trace} ->> 'status' = ${filters.status}` : undefined,
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'workflowId'`, filters.workflowId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'workflowVersion'`, filters.workflowVersion),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'status'`, filters.status),
     receivedFrom ? gte(sdkTrace.receivedAt, receivedFrom) : undefined,
     receivedBefore ? lt(sdkTrace.receivedAt, receivedBefore) : undefined,
-    filters.platform
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'platform' = ${filters.platform}`
-      : undefined,
-    filters.deviceModel
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'model' = ${filters.deviceModel}`
-      : undefined,
-    filters.osVersion
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'osVersion' = ${filters.osVersion}`
-      : undefined,
-    filters.apiLevel !== undefined
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'apiLevel' = ${String(filters.apiLevel)}`
-      : undefined,
-    filters.ramRange
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'ramRange' = ${filters.ramRange}`
-      : undefined,
-    filters.socModel
-      ? sql`${sdkTrace.trace} -> 'profile' ->> 'socModel' = ${filters.socModel}`
-      : undefined,
-    filters.runId ? sql`${sdkTrace.trace} ->> 'runId' = ${filters.runId}` : undefined,
-    filters.repetition !== undefined
-      ? sql`${sdkTrace.trace} ->> 'repetition' = ${String(filters.repetition)}`
-      : undefined,
-    filters.condition ? sql`${sdkTrace.trace} ->> 'condition' = ${filters.condition}` : undefined,
-    filters.caseId ? sql`${sdkTrace.trace} ->> 'caseId' = ${filters.caseId}` : undefined,
-    filters.scenario ? sql`${sdkTrace.trace} ->> 'scenario' = ${filters.scenario}` : undefined,
-    filters.backend ? sql`${sdkTrace.trace} ->> 'backend' = ${filters.backend}` : undefined,
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'platform'`, filters.platform),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'model'`, filters.deviceModel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'osVersion'`, filters.osVersion),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'apiLevel'`, filters.apiLevel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'ramRange'`, filters.ramRange),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'socModel'`, filters.socModel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'runId'`, filters.runId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'repetition'`, filters.repetition),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'condition'`, filters.condition),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'caseId'`, filters.caseId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'scenario'`, filters.scenario),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'backend'`, filters.backend),
     modelFilter,
   );
 }
