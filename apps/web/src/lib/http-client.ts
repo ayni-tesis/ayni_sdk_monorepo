@@ -22,7 +22,6 @@ httpClient.interceptors.response.use(
     if (
       axios.isAxiosError(error) &&
       error.response?.status === 403 &&
-      error.config?.method?.toLowerCase() === "get" &&
       typeof window !== "undefined" &&
       (window.location.pathname === "/dashboard" ||
         window.location.pathname.startsWith("/dashboard/")) &&
