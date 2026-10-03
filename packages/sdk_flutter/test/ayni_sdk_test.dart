@@ -713,7 +713,10 @@ void main() {
         final activeSync = client.sync();
         await traceRequestReceived!.future;
         final revocation = client.clearPendingTraces();
-        await Future<void>.delayed(Duration.zero);
+        // Outbox writes share one queue across stores, so this no-op removal
+        // runs after the purge that clearPendingTraces() queued. A single
+        // event-loop turn was not always enough for the directory deletion.
+        await outbox.remove('550e8400-e29b-41d4-a716-446655449999');
         expect(await outbox.pending(), isEmpty);
         releaseTraceResponse!.complete();
         await activeSync;
