@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applicationTracePageQuerySchema } from "./application-traces";
+import {
+  applicationTraceMetricsQuerySchema,
+  applicationTraceMetricsResponseSchema,
+  applicationTracePageQuerySchema,
+} from "./application-traces";
 
 describe("applicationTracePageQuerySchema", () => {
   it("defaults to the first page", () => {
@@ -125,5 +129,120 @@ describe("applicationTracePageQuerySchema", () => {
         receivedTo: "2026-10-02",
       }),
     ).toMatchObject({ receivedFrom: "2026-10-02", receivedTo: "2026-10-02" });
+  });
+});
+
+describe("applicationTraceMetricsQuerySchema", () => {
+  it("requires an inclusive UTC date range no longer than 90 days", () => {
+    expect(
+      applicationTraceMetricsQuerySchema.parse({
+        receivedFrom: "2026-01-01",
+        receivedTo: "2026-03-31",
+      }),
+    ).toEqual({ receivedFrom: "2026-01-01", receivedTo: "2026-03-31" });
+    expect(
+      applicationTraceMetricsQuerySchema.safeParse({
+        receivedFrom: "2026-01-01",
+        receivedTo: "2026-04-01",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects missing, invalid, reversed, and unexpected period fields", () => {
+    expect(applicationTraceMetricsQuerySchema.safeParse({}).success).toBe(false);
+    expect(
+      applicationTraceMetricsQuerySchema.safeParse({
+        receivedFrom: "2026-02-30",
+        receivedTo: "2026-03-01",
+      }).success,
+    ).toBe(false);
+    expect(
+      applicationTraceMetricsQuerySchema.safeParse({
+        receivedFrom: "2026-03-02",
+        receivedTo: "2026-03-01",
+      }).success,
+    ).toBe(false);
+    expect(
+      applicationTraceMetricsQuerySchema.safeParse({
+        receivedFrom: "2026-03-01",
+        receivedTo: "2026-03-02",
+        status: "error",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("applicationTraceMetricsResponseSchema", () => {
+  it("accepts aggregates with explicit populations and permits no duration samples", () => {
+    expect(
+      applicationTraceMetricsResponseSchema.parse({
+        period: { from: "2026-10-01", to: "2026-10-02", timeZone: "UTC" },
+        methodology: {
+          workflows: {
+            population: "one retained client-reported trace per workflow execution",
+            errorRate: "error executions divided by executions times 100",
+            duration: "arithmetic mean of reported durationMs values",
+            durationUnit: "ms",
+          },
+          models: {
+            population: "completed or failed model node attempts; skipped nodes excluded",
+            errorRate: "failed model node attempts divided by attempts times 100",
+            duration: "arithmetic mean of reported model node durationMs values",
+            durationUnit: "ms",
+          },
+        },
+        workflows: [
+          {
+            workflowId: "workflow-1",
+            workflowVersionId: "workflow-version-1",
+            workflowVersion: "1.0.0",
+            executionCount: 2,
+            errorCount: 1,
+            errorRatePercent: 50,
+            durationSampleCount: 2,
+            meanDurationMs: 12.5,
+          },
+        ],
+        models: [
+          {
+            modelId: "model-1",
+            modelName: "Clasificador",
+            modelVersionId: "model-version-1",
+            modelVersion: "2.0.0",
+            executionCount: 1,
+            errorCount: 0,
+            errorRatePercent: 0,
+            durationSampleCount: 0,
+            meanDurationMs: null,
+          },
+        ],
+      }),
+    ).toMatchObject({ workflows: [{ errorRatePercent: 50 }], models: [{ meanDurationMs: null }] });
+  });
+
+  it("rejects raw trace payloads in aggregate rows", () => {
+    expect(
+      applicationTraceMetricsResponseSchema.safeParse({
+        period: { from: "2026-10-01", to: "2026-10-02", timeZone: "UTC" },
+        methodology: {
+          workflows: { population: "x", errorRate: "x", duration: "x", durationUnit: "ms" },
+          models: { population: "x", errorRate: "x", duration: "x", durationUnit: "ms" },
+        },
+        workflows: [
+          {
+            workflowId: "workflow-1",
+            workflowVersionId: "workflow-version-1",
+            workflowVersion: "1.0.0",
+            executionCount: 1,
+            errorCount: 0,
+            errorRatePercent: 0,
+            durationSampleCount: 1,
+            meanDurationMs: 10,
+            trace: { outputs: { secret: "image payload" } },
+          },
+        ],
+        models: [],
+      }).success,
+    ).toBe(false);
   });
 });

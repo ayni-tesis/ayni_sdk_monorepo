@@ -3,6 +3,7 @@ import { safeTraceVersionSchema, sdkTraceSchema } from "./sdk-trace";
 
 export const APPLICATION_TRACE_PAGE_SIZE = 50;
 export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;
+export const APPLICATION_TRACE_METRICS_MAX_PERIOD_DAYS = 90;
 
 const traceFilterText = z.string().trim().min(1).max(128);
 const traceContextFilterText = z.string().min(1);
@@ -61,6 +62,25 @@ export const applicationTracePageQuerySchema = applicationTraceFiltersSchema.ext
     .default(APPLICATION_TRACE_PAGE_SIZE),
 });
 
+export const applicationTraceMetricsQuerySchema = z
+  .strictObject({
+    receivedFrom: z.iso.date(),
+    receivedTo: z.iso.date(),
+  })
+  .refine(({ receivedFrom, receivedTo }) => receivedFrom <= receivedTo, {
+    path: ["receivedTo"],
+    error: "The end date must not be before the start date.",
+  })
+  .refine(
+    ({ receivedFrom, receivedTo }) =>
+      Date.parse(`${receivedTo}T00:00:00.000Z`) - Date.parse(`${receivedFrom}T00:00:00.000Z`) <
+      APPLICATION_TRACE_METRICS_MAX_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+    {
+      path: ["receivedTo"],
+      error: `The selected period must not exceed ${APPLICATION_TRACE_METRICS_MAX_PERIOD_DAYS} days.`,
+    },
+  );
+
 const traceSummarySchema = sdkTraceSchema
   .pick({
     traceId: true,
@@ -94,8 +114,55 @@ export const applicationTraceListResponseSchema = z.strictObject({
   nextCursor: z.string().nullable(),
 });
 
+const applicationTraceAggregateSchema = z.strictObject({
+  executionCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  errorRatePercent: z.number().min(0).max(100),
+  durationSampleCount: z.number().int().nonnegative(),
+  meanDurationMs: z.number().nonnegative().nullable(),
+});
+
+export const applicationTraceMetricsResponseSchema = z.strictObject({
+  period: z.strictObject({
+    from: z.iso.date(),
+    to: z.iso.date(),
+    timeZone: z.literal("UTC"),
+  }),
+  methodology: z.strictObject({
+    workflows: z.strictObject({
+      population: z.string().min(1),
+      errorRate: z.string().min(1),
+      duration: z.string().min(1),
+      durationUnit: z.literal("ms"),
+    }),
+    models: z.strictObject({
+      population: z.string().min(1),
+      errorRate: z.string().min(1),
+      duration: z.string().min(1),
+      durationUnit: z.literal("ms"),
+    }),
+  }),
+  workflows: z.array(
+    applicationTraceAggregateSchema.extend({
+      workflowId: z.string().min(1),
+      workflowVersionId: z.string().min(1),
+      workflowVersion: z.string().min(1),
+    }),
+  ),
+  models: z.array(
+    applicationTraceAggregateSchema.extend({
+      modelId: z.string().nullable(),
+      modelName: z.string().nullable(),
+      modelVersionId: z.string().min(1),
+      modelVersion: z.string().nullable(),
+    }),
+  ),
+});
+
 export type ApplicationTracePageQuery = z.infer<typeof applicationTracePageQuerySchema>;
+export type ApplicationTraceMetricsQuery = z.infer<typeof applicationTraceMetricsQuerySchema>;
 export type ApplicationTraceFilters = z.infer<typeof applicationTraceFiltersSchema>;
 export type ApplicationTraceSummary = z.infer<typeof applicationTraceSummarySchema>;
 export type ApplicationTraceRecord = z.infer<typeof applicationTraceRecordSchema>;
 export type ApplicationTraceListResponse = z.infer<typeof applicationTraceListResponseSchema>;
+export type ApplicationTraceMetricsResponse = z.infer<typeof applicationTraceMetricsResponseSchema>;

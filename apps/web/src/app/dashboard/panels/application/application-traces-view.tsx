@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { ApplicationTraceMetricsView } from "./application-trace-metrics-view";
 import { type TraceValueSource, traceErrorDetail } from "./trace-error-detail";
 
 const PAGE_SIZE = 50;
@@ -50,6 +51,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
   const [error, setError] = useState("");
   const [traceLoadFailed, setTraceLoadFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [metricsVisible, setMetricsVisible] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [record, setRecord] = useState<ApplicationTraceRecord | null>(null);
@@ -167,12 +169,22 @@ export function ApplicationTracesView({ application }: { application: Applicatio
         <Button
           type="button"
           variant="outline"
+          aria-expanded={metricsVisible}
+          onClick={() => setMetricsVisible((visible) => !visible)}
+        >
+          {metricsVisible ? "Ocultar métricas" : "Ver métricas"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
           disabled={exporting}
           onClick={() => void exportTraces()}
         >
           {exporting ? "Exportando…" : "Exportar JSONL"}
         </Button>
       </header>
+
+      {metricsVisible ? <ApplicationTraceMetricsView applicationId={application.id} /> : null}
 
       <form onSubmit={applyFilters} className="space-y-3 rounded-md border p-4">
         <h3 className="font-medium">Filtrar trazas</h3>
