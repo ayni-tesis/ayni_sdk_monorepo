@@ -1,4 +1,7 @@
-import type { ApplicationTraceRecord } from "@ayni/api/application-traces";
+import type {
+  ApplicationTraceMetricsResponse,
+  ApplicationTraceRecord,
+} from "@ayni/api/application-traces";
 import { describe, expect, it, vi } from "vitest";
 import { createApplicationTracesApp } from "./application-traces";
 import {
@@ -50,6 +53,25 @@ const record: ApplicationTraceRecord = {
     clientReportedFields: ["runId", "repetition", "datasetSha256"],
   },
 };
+const emptyMetrics: ApplicationTraceMetricsResponse = {
+  period: { from: "2026-10-01", to: "2026-10-02", timeZone: "UTC" },
+  methodology: {
+    workflows: {
+      population: "retained workflow traces",
+      errorRate: "errors divided by executions",
+      duration: "arithmetic mean",
+      durationUnit: "ms",
+    },
+    models: {
+      population: "attempted model nodes",
+      errorRate: "failed nodes divided by attempted nodes",
+      duration: "arithmetic mean",
+      durationUnit: "ms",
+    },
+  },
+  workflows: [],
+  models: [],
+};
 
 function makeApp({
   userId = "user-1",
@@ -57,6 +79,7 @@ function makeApp({
   getApplication = async () => application,
   list = async (): Promise<ApplicationTracePage> => ({ traces: [], nextCursor: null }),
   get = async (): Promise<ApplicationTraceRecord | undefined> => record,
+  getMetrics = async (): Promise<ApplicationTraceMetricsResponse> => emptyMetrics,
   listRecords = async (): Promise<ApplicationTraceRecordPage> => ({
     records: [record],
     nextCursor: null,
@@ -71,6 +94,11 @@ function makeApp({
     limit: number;
   }) => Promise<ApplicationTracePage>;
   get?: (applicationId: string, traceId: string) => Promise<ApplicationTraceRecord | undefined>;
+  getMetrics?: (query: {
+    applicationId: string;
+    receivedFrom: string;
+    receivedTo: string;
+  }) => Promise<ApplicationTraceMetricsResponse>;
   listRecords?: (query: {
     applicationId: string;
     cursor?: string;
@@ -81,17 +109,24 @@ function makeApp({
   const membershipGet = vi.fn(async () => (isMember ? "member" : undefined));
   const listTraces = vi.fn(list);
   const getTrace = vi.fn(get);
+  const getTraceMetrics = vi.fn(getMetrics);
   const listTraceRecords = vi.fn(listRecords);
   return {
     app: createApplicationTracesApp({
       getSession: async () => (userId ? { user: { id: userId } } : null),
       applications: { get: applicationGet, getMembership: membershipGet },
-      traces: { list: listTraces, get: getTrace, listRecords: listTraceRecords },
+      traces: {
+        getMetrics: getTraceMetrics,
+        list: listTraces,
+        get: getTrace,
+        listRecords: listTraceRecords,
+      },
     }),
     applicationGet,
     membershipGet,
     listTraces,
     getTrace,
+    getTraceMetrics,
     listTraceRecords,
   };
 }
@@ -125,6 +160,57 @@ describe("application traces routes", () => {
 
     const invalid = await app.request("/applications/app-1/traces?limit=101");
     expect(invalid.status).toBe(400);
+  });
+
+  it("returns period metrics only to application members", async () => {
+    const metrics: ApplicationTraceMetricsResponse = {
+      ...emptyMetrics,
+      workflows: [
+        {
+          workflowId: "workflow-1",
+          workflowVersionId: "workflow-version-1",
+          workflowVersion: "1.2.0",
+          executionCount: 4,
+          errorCount: 1,
+          errorRatePercent: 25,
+          durationSampleCount: 4,
+          meanDurationMs: 12.5,
+        },
+      ],
+    };
+    const { app, getTraceMetrics } = makeApp({ getMetrics: async () => metrics });
+    const response = await app.request(
+      "/applications/app-1/traces/metrics?receivedFrom=2026-10-01&receivedTo=2026-10-02",
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(metrics);
+    expect(getTraceMetrics).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      receivedFrom: "2026-10-01",
+      receivedTo: "2026-10-02",
+    });
+
+    const nonMember = makeApp({ isMember: false });
+    const hidden = await nonMember.app.request(
+      "/applications/app-1/traces/metrics?receivedFrom=2026-10-01&receivedTo=2026-10-02",
+    );
+    expect(hidden.status).toBe(404);
+    expect(nonMember.getTraceMetrics).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid or overlong metrics periods without querying the store", async () => {
+    const { app, getTraceMetrics } = makeApp();
+    const reversed = await app.request(
+      "/applications/app-1/traces/metrics?receivedFrom=2026-10-03&receivedTo=2026-10-02",
+    );
+    const overlong = await app.request(
+      "/applications/app-1/traces/metrics?receivedFrom=2026-01-01&receivedTo=2026-04-01",
+    );
+
+    expect(reversed.status).toBe(400);
+    expect(overlong.status).toBe(400);
+    expect(getTraceMetrics).not.toHaveBeenCalled();
   });
 
   it("passes validated trace filters to the application-scoped query", async () => {

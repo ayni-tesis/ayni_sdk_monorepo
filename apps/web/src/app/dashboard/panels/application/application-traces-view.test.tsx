@@ -84,6 +84,54 @@ describe("ApplicationTracesView", () => {
 
   afterEach(() => cleanup());
 
+  it("opens application-scoped metrics from the traces panel", async () => {
+    const metrics = {
+      period: { from: "2026-10-01", to: "2026-10-02", timeZone: "UTC" as const },
+      methodology: {
+        workflows: {
+          population: "Retained client-reported traces.",
+          errorRate: "Errors divided by executions.",
+          duration: "Arithmetic mean.",
+          durationUnit: "ms" as const,
+        },
+        models: {
+          population: "Completed or failed model nodes.",
+          errorRate: "Failed attempts divided by attempts.",
+          duration: "Arithmetic mean.",
+          durationUnit: "ms" as const,
+        },
+      },
+      workflows: [
+        {
+          workflowId: "workflow-1",
+          workflowVersionId: "workflow-version-1",
+          workflowVersion: "1.0.0",
+          executionCount: 1,
+          errorCount: 0,
+          errorRatePercent: 0,
+          durationSampleCount: 1,
+          meanDurationMs: 12,
+        },
+      ],
+      models: [],
+    };
+    get.mockImplementation(async (url: string) =>
+      url.includes("/traces/metrics?")
+        ? { data: metrics }
+        : { data: { traces: [summary], nextCursor: null } },
+    );
+    render(<ApplicationTracesView application={application} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver métricas" }));
+
+    expect(await screen.findByText("Por workflow y versión")).toBeTruthy();
+    expect(
+      get.mock.calls.some(
+        ([url]) => typeof url === "string" && /^\/applications\/app-1\/traces\/metrics\?/.test(url),
+      ),
+    ).toBe(true);
+  });
+
   it("lets a workspace member inspect the full trace and paginate", async () => {
     render(<ApplicationTracesView application={application} />);
     expect(await screen.findByText("Workflow 1.0.0 · workflow-1")).toBeTruthy();
