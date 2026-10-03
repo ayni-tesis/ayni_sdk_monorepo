@@ -15,3 +15,10 @@ Future<void> deleteAyniData(AyniSdk sdk) async {
   }
   // #endregion borrar-datos
 }
+
+/// Generates a new local installation identity for future traces.
+Future<void> resetAyniInstallationId(AyniSdk sdk) async {
+  // #region restablecer-identificador-instalacion
+  await sdk.resetInstallationId();
+  // #endregion restablecer-identificador-instalacion
+}

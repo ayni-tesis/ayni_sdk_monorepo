@@ -152,6 +152,21 @@ describe("Datos y privacidad (US-147)", () => {
     expect(storedSection).toContain('<Code code={privacy.deleteData} lang="dart" />');
   });
 
+  it("documents installation ID rotation and the identity of pending traces", () => {
+    const resetSection = section("## Restablecer el identificador de instalación").replace(
+      /\s+/g,
+      " ",
+    );
+
+    expect(resetSection).toContain("`FileSystemException`");
+    expect(resetSection).toContain("trazas ya creadas, incluidas las pendientes");
+    expect(resetSection).toContain("`sdkImprovement` no autoriza la validación");
+    expect(resetSection).toContain("no vencen localmente");
+    expect(resetSection).toContain("7, 30 o 90 días");
+    expect(resetSection).toContain('<Code code={privacy.resetInstallationId} lang="dart" />');
+    expect(resetSection).toContain("no elimina workflows, modelos ni trazas pendientes");
+  });
+
   it("quotes the dashboard exactly", () => {
     const texts = dashboardTexts();
     const quotes = quotedTexts(page);

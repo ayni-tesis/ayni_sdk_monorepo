@@ -96,7 +96,12 @@ type Dependencies = {
 };
 
 export function createModelVersionsApp({ getSession, applications, modelVersions }: Dependencies) {
-  const app = new Hono();
+  const app = new Hono<{
+    Variables: {
+      modelVersionUpload: { applicationId: string; userId: string };
+      modelVersionContract: { applicationId: string; userId: string };
+    };
+  }>();
 
   app.post("/applications/:applicationId/models/:modelId/versions/upload-url", async (c) => {
     const session = await getSession(c.req.raw.headers);
@@ -277,6 +282,41 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
 
   app.patch(
     "/applications/:applicationId/models/:modelId/versions/:modelVersionId/contract",
+    async (c, next) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) {
+        return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
+      }
+
+      if (application.role !== "admin" && application.role !== "owner") {
+        return c.json(
+          {
+            message: "No tienes permiso para editar el contrato de esta versión.",
+            code: "forbidden",
+          },
+          403,
+        );
+      }
+      if (application.status !== "active") {
+        return c.json(
+          {
+            message: "No puedes editar contratos de una aplicación archivada.",
+            code: "applicationArchived",
+          },
+          409,
+        );
+      }
+
+      c.set("modelVersionContract", { applicationId: application.id, userId: session.user.id });
+      await next();
+    },
     bodyLimit({
       maxSize: MAX_MODEL_CONTRACT_BYTES,
       onError: (c) =>
@@ -286,26 +326,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
         ),
     }),
     async (c) => {
-      const session = await getSession(c.req.raw.headers);
-      if (!session) return c.json({ message: "Authentication required" }, 401);
-
-      const application = await getApplicationForMember(
-        applications,
-        c.req.param("applicationId"),
-        session.user.id,
-      );
-      if (!application)
-        return c.json({ message: "No encontramos esta versión de modelo.", code: "notFound" }, 404);
-      const role = application.role;
-      if (role !== "admin" && role !== "owner") {
-        return c.json(
-          {
-            message: "No tienes permiso para editar el contrato de esta versión.",
-            code: "forbidden",
-          },
-          403,
-        );
-      }
+      const { applicationId, userId } = c.get("modelVersionContract");
 
       let body: unknown;
       try {
@@ -325,10 +346,10 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
       }
 
       const result = await modelVersions.setContract({
-        applicationId: application.id,
+        applicationId,
         modelId: c.req.param("modelId"),
         modelVersionId: c.req.param("modelVersionId"),
-        userId: session.user.id,
+        userId,
         contract: parsed.data,
       });
       if (result.ok) return c.json({ contract: result.contract });
@@ -436,6 +457,38 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
 
   app.post(
     "/applications/:applicationId/models/:modelId/versions",
+    async (c, next) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) {
+        return c.json({ message: "No encontramos esta aplicación.", code: "notFound" }, 404);
+      }
+
+      if (application.role !== "admin" && application.role !== "owner") {
+        return c.json(
+          { message: "No tienes permiso para subir versiones de modelo.", code: "forbidden" },
+          403,
+        );
+      }
+      if (application.status !== "active") {
+        return c.json(
+          {
+            message: "No puedes subir versiones a una aplicación archivada.",
+            code: "applicationArchived",
+          },
+          409,
+        );
+      }
+
+      c.set("modelVersionUpload", { applicationId: application.id, userId: session.user.id });
+      await next();
+    },
     bodyLimit({
       maxSize: MAX_MODEL_VERSION_BYTES,
       onError: (c) =>
@@ -445,11 +498,7 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
         ),
     }),
     async (c) => {
-      const session = await getSession(c.req.raw.headers);
-      if (!session) return c.json({ message: "Authentication required" }, 401);
-
-      const application = await applications.get(c.req.param("applicationId"));
-      if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+      const { applicationId, userId } = c.get("modelVersionUpload");
 
       let body: Record<string, string | { arrayBuffer(): Promise<ArrayBuffer> }>;
       try {
@@ -476,9 +525,9 @@ export function createModelVersionsApp({ getSession, applications, modelVersions
 
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = await modelVersions.create({
-        applicationId: application.id,
+        applicationId,
         modelId: c.req.param("modelId"),
-        userId: session.user.id,
+        userId,
         version: parsedVersion.data,
         bytes,
         maxBytes: MAX_MODEL_VERSION_BYTES,

@@ -2,7 +2,7 @@ import { isTelemetryRetentionDays, type TelemetryRetentionDays } from "@ayni/api
 import { Hono } from "hono";
 import { z } from "zod";
 
-import type { Application } from "./applications";
+import { type Application, getApplicationForMember } from "./applications";
 import type {
   TelemetryPolicy,
   UpdateTelemetryPolicyInput,
@@ -53,11 +53,12 @@ export function createTelemetryPolicyApp({
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (
-      !application ||
-      !(await applications.getMembership(session.user.id, application.organizationId))
-    ) {
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
       return c.json({ message: NOT_FOUND_MESSAGE }, 404);
     }
 
@@ -68,8 +69,15 @@ export function createTelemetryPolicyApp({
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
-    if (!application) return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+    // Checked before the body so a non-member never learns the application exists.
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) {
+      return c.json({ message: NOT_FOUND_MESSAGE }, 404);
+    }
 
     let rawBody: unknown;
     try {

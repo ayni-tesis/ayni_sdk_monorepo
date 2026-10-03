@@ -58,8 +58,19 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
     const session = await getSession(c.req.raw.headers);
     if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await applications.get(c.req.param("applicationId"));
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
     if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json({ message: "No tienes permiso para registrar modelos." }, 403);
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
 
     let rawBody: unknown;
     try {

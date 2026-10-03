@@ -1,5 +1,5 @@
-import { env } from "@ayni/env/web";
 import axios from "axios";
+import { httpClient } from "@/lib/http-client";
 
 export type ModelVersionDto = {
   id: string;
@@ -30,11 +30,11 @@ export async function uploadModelVersion(input: {
   signal?: AbortSignal;
 }): Promise<ModelVersionUploadResult> {
   try {
-    const baseUrl = `${env.NEXT_PUBLIC_SERVER_URL}/applications/${input.applicationId}/models/${input.modelId}/versions`;
-    const { data: upload } = await axios.post<{ uploadId: string; uploadUrl: string }>(
-      `${baseUrl}/upload-url`,
+    const basePath = `/applications/${input.applicationId}/models/${input.modelId}/versions`;
+    const { data: upload } = await httpClient.post<{ uploadId: string; uploadUrl: string }>(
+      `${basePath}/upload-url`,
       { version: input.version },
-      { withCredentials: true, signal: input.signal },
+      { signal: input.signal },
     );
     await axios.put(upload.uploadUrl, input.file, {
       headers: { "Content-Type": "application/octet-stream" },
@@ -45,12 +45,12 @@ export async function uploadModelVersion(input: {
         if (total > 0) input.onProgress(Math.min(99, Math.round((event.loaded / total) * 99)));
       },
     });
-    const response = await axios.post<{ modelVersion: ModelVersionDto }>(
-      `${baseUrl}/complete`,
+    const response = await httpClient.post<{ modelVersion: ModelVersionDto }>(
+      `${basePath}/complete`,
       { version: input.version, uploadId: upload.uploadId },
       {
-        withCredentials: true,
         signal: input.signal,
+        timeout: 0,
       },
     );
     input.onProgress(100);

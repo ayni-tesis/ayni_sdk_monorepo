@@ -20,6 +20,7 @@ import { and, asc, eq, gt, inArray, ne, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { getApplicationTraceMetrics } from "./application-trace-metrics-store";
 import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
@@ -844,6 +845,7 @@ app.route(
     getSession: getCurrentTermsSession,
     applications,
     traces: {
+      getMetrics: (query) => getApplicationTraceMetrics(db, query),
       list: (query) => listApplicationTraceSummaries(db, query),
       get: (applicationId, traceId) => getApplicationTrace(db, applicationId, traceId),
       listRecords: (query) => listApplicationTraceRecords(db, query),

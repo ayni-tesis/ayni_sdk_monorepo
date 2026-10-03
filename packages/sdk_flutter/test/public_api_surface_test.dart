@@ -230,7 +230,7 @@ void main() {
     });
 
     test(
-      'initialize, sync, run and trace revocation keep their published signatures',
+      'initialize, sync, run, trace revocation and installation reset keep published signatures',
       () {
         expect(
           AyniSdk.initialize,
@@ -244,6 +244,7 @@ void main() {
         );
         expect(sdk.sync, isA<Future<SyncResult> Function()>());
         expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
+        expect(sdk.resetInstallationId, isA<Future<void> Function()>());
         expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
         expect(
           const WorkflowResult(

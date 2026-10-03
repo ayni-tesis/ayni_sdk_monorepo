@@ -1,6 +1,9 @@
 import {
+  type ApplicationTraceMetricsQuery,
+  type ApplicationTraceMetricsResponse,
   type ApplicationTracePageQuery,
   type ApplicationTraceRecord,
+  applicationTraceMetricsQuerySchema,
   applicationTracePageQuerySchema,
 } from "@ayni/api/application-traces";
 import { type Context, Hono } from "hono";
@@ -18,6 +21,9 @@ type Dependencies = {
     getMembership: (userId: string, organizationId: string) => Promise<string | undefined>;
   };
   traces: {
+    getMetrics: (
+      query: ApplicationTraceMetricsQuery & { applicationId: string },
+    ) => Promise<ApplicationTraceMetricsResponse>;
     list: (
       query: ApplicationTracePageQuery & { applicationId: string },
     ) => Promise<ApplicationTracePage>;
@@ -78,6 +84,16 @@ export function createApplicationTracesApp({ getSession, applications, traces }:
         "Cache-Control": "no-store",
       },
     });
+  });
+
+  app.get("/applications/:applicationId/traces/metrics", async (c) => {
+    const access = await authorize(c);
+    if ("response" in access) return access.response;
+    const parsed = applicationTraceMetricsQuerySchema.safeParse(c.req.query());
+    if (!parsed.success) return c.json({ message: BAD_QUERY }, 400);
+    return c.json(
+      await traces.getMetrics({ applicationId: access.application.id, ...parsed.data }),
+    );
   });
 
   app.get("/applications/:applicationId/traces/:traceId", async (c) => {

@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { postMock, putMock, axiosMock } = vi.hoisted(() => {
-  const postMock = vi.fn();
+const { httpPostMock, putMock, axiosMock } = vi.hoisted(() => {
+  const httpPostMock = vi.fn();
   const putMock = vi.fn();
   return {
-    postMock,
+    httpPostMock,
     putMock,
     axiosMock: {
-      post: postMock,
       put: putMock,
       isAxiosError: (error: unknown): boolean =>
         typeof error === "object" && error !== null && "isAxiosError" in error,
@@ -17,8 +16,8 @@ const { postMock, putMock, axiosMock } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@ayni/env/web", () => ({ env: { NEXT_PUBLIC_SERVER_URL: "http://localhost:3000" } }));
 vi.mock("axios", () => ({ default: axiosMock }));
+vi.mock("@/lib/http-client", () => ({ httpClient: { post: httpPostMock } }));
 
 const { uploadModelVersion } = await import("./upload-model-version");
 
@@ -35,7 +34,7 @@ const baseInput = {
 
 describe("uploadModelVersion", () => {
   afterEach(() => {
-    postMock.mockReset();
+    httpPostMock.mockReset();
     putMock.mockReset();
   });
 
@@ -50,7 +49,7 @@ describe("uploadModelVersion", () => {
       createdAt: "2026-09-20T00:00:00.000Z",
       uploadedById: "admin",
     };
-    postMock
+    httpPostMock
       .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
       .mockResolvedValueOnce({ data: { modelVersion } });
     putMock.mockResolvedValue({ status: 200 });
@@ -59,10 +58,10 @@ describe("uploadModelVersion", () => {
     const result = await uploadModelVersion({ ...baseInput, onProgress });
 
     expect(result).toEqual({ ok: true, modelVersion });
-    expect(postMock.mock.calls[0]?.[0]).toBe(
-      "http://localhost:3000/applications/app-1/models/model-1/versions/upload-url",
+    expect(httpPostMock.mock.calls[0]?.[0]).toBe(
+      "/applications/app-1/models/model-1/versions/upload-url",
     );
-    expect(postMock.mock.calls[0]?.[1]).toEqual({ version: "1.0.0" });
+    expect(httpPostMock.mock.calls[0]?.[1]).toEqual({ version: "1.0.0" });
     expect(putMock).toHaveBeenCalledWith(
       "https://r2.test/put",
       baseInput.file,
@@ -71,17 +70,14 @@ describe("uploadModelVersion", () => {
         timeout: 0,
       }),
     );
-    expect(postMock.mock.calls[1]?.[0]).toBe(
-      "http://localhost:3000/applications/app-1/models/model-1/versions/complete",
+    expect(httpPostMock.mock.calls[1]?.[0]).toBe(
+      "/applications/app-1/models/model-1/versions/complete",
     );
-    expect(postMock.mock.calls[1]?.[1]).toEqual({ version: "1.0.0", uploadId: "upload-1" });
-    expect(
-      (postMock.mock.calls[0]?.[2] as Record<string, unknown> | undefined)?.withCredentials,
-    ).toBe(true);
+    expect(httpPostMock.mock.calls[1]?.[1]).toEqual({ version: "1.0.0", uploadId: "upload-1" });
   });
 
   it("reports upload progress as a percentage of transferred bytes", async () => {
-    postMock
+    httpPostMock
       .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
       .mockResolvedValueOnce({ data: { modelVersion: {} } });
     putMock.mockImplementation((_url: string, _file: File, config: unknown) => {
@@ -100,7 +96,7 @@ describe("uploadModelVersion", () => {
   });
 
   it("falls back to the file size when the request total is unknown", async () => {
-    postMock
+    httpPostMock
       .mockResolvedValueOnce({ data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" } })
       .mockResolvedValueOnce({ data: { modelVersion: {} } });
     putMock.mockImplementation((_url: string, _file: File, config: unknown) => {
@@ -118,7 +114,7 @@ describe("uploadModelVersion", () => {
   });
 
   it("maps typed API errors to code and message", async () => {
-    postMock.mockRejectedValue(
+    httpPostMock.mockRejectedValue(
       axiosError({ data: { code: "modelVersionExists", message: "Esa versión ya existe." } }),
     );
 
@@ -132,7 +128,7 @@ describe("uploadModelVersion", () => {
   });
 
   it("falls back when the server replies without a typed body", async () => {
-    postMock.mockRejectedValue(axiosError(undefined));
+    httpPostMock.mockRejectedValue(axiosError(undefined));
 
     const result = await uploadModelVersion({ ...baseInput, onProgress: vi.fn() });
 
@@ -144,7 +140,7 @@ describe("uploadModelVersion", () => {
   });
 
   it("maps canceled uploads to a dedicated code without a message", async () => {
-    postMock.mockRejectedValue(
+    httpPostMock.mockRejectedValue(
       Object.assign(new Error("canceled"), { __CANCEL__: true, response: {} }),
     );
 
@@ -154,7 +150,7 @@ describe("uploadModelVersion", () => {
   });
 
   it("treats network failures as retryable upload failures", async () => {
-    postMock.mockRejectedValue(new Error("offline"));
+    httpPostMock.mockRejectedValue(new Error("offline"));
 
     const result = await uploadModelVersion({ ...baseInput, onProgress: vi.fn() });
 
