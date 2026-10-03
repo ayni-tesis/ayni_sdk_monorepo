@@ -2951,6 +2951,10 @@ void main() {
   });
 
   group('US-101: installation identity', () {
+    final uuidV4Pattern = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    );
+
     AyniConfig configFor(Directory directory) => AyniConfig(
       serverUrl: Uri.parse('https://api.ayni.dev'),
       credential: 'ayni_sk_valid_secret_123',
@@ -2963,14 +2967,7 @@ void main() {
 
       expect(result.status, equals(InitializationStatus.ready));
       expect(idFile.existsSync(), isTrue);
-      expect(
-        idFile.readAsStringSync(),
-        matches(
-          RegExp(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-          ),
-        ),
-      );
+      expect(idFile.readAsStringSync(), matches(uuidV4Pattern));
     });
 
     test('initialization reuses the installation UUID after reset', () {
@@ -2994,14 +2991,7 @@ void main() {
 
       expect(result.status, equals(InitializationStatus.ready));
       expect(idFile.readAsStringSync(), isNot(equals('not-a-uuid')));
-      expect(
-        idFile.readAsStringSync(),
-        matches(
-          RegExp(
-            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-          ),
-        ),
-      );
+      expect(idFile.readAsStringSync(), matches(uuidV4Pattern));
     });
 
     test(
@@ -3040,14 +3030,7 @@ void main() {
 
         final currentId = idFile.readAsStringSync();
         expect(currentId, isNot(equals(previousId)));
-        expect(
-          currentId,
-          matches(
-            RegExp(
-              r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
-            ),
-          ),
-        );
+        expect(currentId, matches(uuidV4Pattern));
         final futureTrace = await sdk.createClientExecutionTrace(
           context: WorkflowTraceContext(
             runId: 'run-after-reset',
