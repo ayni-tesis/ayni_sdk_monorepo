@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'dart:io';
 
 class TraceOutboxStore {
+  static const maxPayloadBytes = 2 * 1024 * 1024;
+
   TraceOutboxStore(Directory storageDirectory)
     : _directory = Directory(
         '${storageDirectory.path}${Platform.pathSeparator}diagnostics${Platform.pathSeparator}trace-outbox',
@@ -16,12 +18,7 @@ class TraceOutboxStore {
   final Directory _directory;
 
   Future<List<Map<String, Object?>>> pending() async {
-    if (!await _directory.exists()) return [];
-    final traces = <Map<String, Object?>>[];
-    await for (final entity in _directory.list(followLinks: false)) {
-      if (entity is! File || !entity.path.endsWith('.json')) continue;
-      traces.add(await _read(entity));
-    }
+    final traces = await pendingStream().toList();
     traces.sort((left, right) {
       final byTimestamp = '${left['timestamp'] ?? ''}'.compareTo(
         '${right['timestamp'] ?? ''}',
@@ -31,6 +28,18 @@ class TraceOutboxStore {
           : '${left['traceId']}'.compareTo('${right['traceId']}');
     });
     return traces;
+  }
+
+  Stream<Map<String, Object?>> pendingStream() async* {
+    if (!await _directory.exists()) return;
+    await for (final entity in _directory.list(followLinks: false)) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      try {
+        yield await _read(entity);
+      } on FileSystemException {
+        if (await entity.exists()) rethrow;
+      }
+    }
   }
 
   Future<void> enqueue(Map<String, Object?> trace) async {
@@ -61,6 +70,11 @@ class TraceOutboxStore {
 
   Future<void> clear() => _serialize(() async {
     if (await _directory.exists()) await _directory.delete(recursive: true);
+  });
+
+  Future<void> remove(String traceId) => _serialize(() async {
+    final file = _fileFor(traceId);
+    if (await file.exists()) await file.delete();
   });
 
   Future<Map<String, Object?>> _read(File file) async {

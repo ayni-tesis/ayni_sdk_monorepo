@@ -229,63 +229,67 @@ void main() {
       );
     });
 
-    test('initialize, sync and run keep their published signatures', () {
-      expect(
-        AyniSdk.initialize,
-        isA<AyniInitializationResult Function(AyniConfig)>(),
-      );
+    test(
+      'initialize, sync, run and trace revocation keep their published signatures',
+      () {
+        expect(
+          AyniSdk.initialize,
+          isA<AyniInitializationResult Function(AyniConfig)>(),
+        );
 
-      final sdk = AyniSdk(
-        serverUrl: Uri.parse('https://sdk.example.test'),
-        credential: 'ayni_sk_test',
-        storageDirectory: Directory.systemTemp,
-      );
-      expect(sdk.sync, isA<Future<SyncResult> Function()>());
-      expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
-      expect(
-        const WorkflowResult(
-          executionId: 'execution-1',
-          workflowId: 'workflow-1',
-          workflowVersion: '1.0.0',
-          outputs: {},
-        ).tracePersistenceFailed,
-        isFalse,
-      );
-      expect(
-        const WorkflowError(
-          WorkflowErrorCategory.runtimeError,
-        ).tracePersistenceFailed,
-        isFalse,
-      );
-      expect(
-        sdk.createClientExecutionTrace,
-        isA<
-          Future<WorkflowTrace?> Function({
-            required WorkflowTraceContext context,
-            required String workflowId,
-            required String workflowVersionId,
-            required String workflowVersion,
-            required DateTime timestamp,
-            required int durationMs,
-            Map<String, WorkflowValue> outputs,
-            List<TraceModel> models,
-            List<TraceNodeExecution> nodes,
-            WorkflowError? error,
-          })
-        >(),
-      );
-      expect(
-        sdk.run,
-        isA<
-          Future<WorkflowResult> Function(
-            String,
-            Uint8List, {
-            void Function(String)? onExecutionStarted,
-            WorkflowTraceContext? traceContext,
-          })
-        >(),
-      );
-    });
+        final sdk = AyniSdk(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: Directory.systemTemp,
+        );
+        expect(sdk.sync, isA<Future<SyncResult> Function()>());
+        expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
+        expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
+        expect(
+          const WorkflowResult(
+            executionId: 'execution-1',
+            workflowId: 'workflow-1',
+            workflowVersion: '1.0.0',
+            outputs: {},
+          ).tracePersistenceFailed,
+          isFalse,
+        );
+        expect(
+          const WorkflowError(
+            WorkflowErrorCategory.runtimeError,
+          ).tracePersistenceFailed,
+          isFalse,
+        );
+        expect(
+          sdk.createClientExecutionTrace,
+          isA<
+            Future<WorkflowTrace?> Function({
+              required WorkflowTraceContext context,
+              required String workflowId,
+              required String workflowVersionId,
+              required String workflowVersion,
+              required DateTime timestamp,
+              required int durationMs,
+              Map<String, WorkflowValue> outputs,
+              List<TraceModel> models,
+              List<TraceNodeExecution> nodes,
+              WorkflowError? error,
+            })
+          >(),
+        );
+        expect(
+          sdk.run,
+          isA<
+            Future<WorkflowResult> Function(
+              String,
+              Uint8List, {
+              void Function(String)? onExecutionStarted,
+              WorkflowTraceContext? traceContext,
+            })
+          >(),
+        );
+      },
+    );
   });
 
   group('README documents the public API contract', () {

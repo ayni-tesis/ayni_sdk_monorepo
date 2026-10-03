@@ -8,7 +8,7 @@ Como desarrollador Flutter, quiero una API pública pequeña y estable para inic
 
 ## Interfaz
 
-Import: `package:ayni_sdk/ayni_sdk.dart`; API visible `AyniSdk.initialize`, `sync`, `run` y tipos `WorkflowResult`/`WorkflowError`. El README dice `No importes archivos src internos.`
+Import: `package:ayni_sdk/ayni_sdk.dart`; API visible `AyniSdk.initialize`, `sync`, `run`, `clearPendingTraces` y tipos `WorkflowResult`/`WorkflowError`. `clearPendingTraces()` elimina la outbox local de validación al revocar su permiso, sin exponer el almacenamiento interno. El README dice `No importes archivos src internos.`
 
 ## Happy path
 
@@ -31,5 +31,6 @@ Scenario: Importar una API interna
 ## Criterios de aceptación
 
 - La API pública incluye inicialización, sincronización, ejecución y tipos de resultado/error.
+- `clearPendingTraces(): Future<void>` permite purgar las trazas de validación pendientes al revocar su permiso.
 - Las clases internas no forman parte del contrato de integración.
 - La API no requiere que la app interprete el JSON del DAG.

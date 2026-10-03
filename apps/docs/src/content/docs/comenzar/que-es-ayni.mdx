@@ -55,5 +55,7 @@ La versión 0.1.0 del SDK es estable:
 - No ejecuta nada en el servidor ni en el dashboard.
 - No sincroniza por su cuenta: la app decide cuándo llamar a `sync()`.
 - No descarga ni ejecuta borradores: solo versiones publicadas.
-- No envía telemetría ni captura imágenes para datasets.
+- No sube imágenes de entrada, tensores ni datos para datasets. `sync()` sí puede
+  enviar trazas tipadas y sanitizadas cuando la política de telemetría está
+  habilitada y la app tiene el permiso o consentimiento aplicable.
 - No entrena ni modifica modelos.

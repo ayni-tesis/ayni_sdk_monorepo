@@ -42,4 +42,16 @@ void main() {
 
     expect(await store.pending(), isEmpty);
   });
+
+  test('removes one trace only after its server acknowledgement', () async {
+    final store = TraceOutboxStore(directory);
+    await store.enqueue({'traceId': 'trace-1'});
+    await store.enqueue({'traceId': 'trace-2'});
+
+    await store.remove('trace-1');
+
+    expect((await store.pending()).map((trace) => trace['traceId']), [
+      'trace-2',
+    ]);
+  });
 }

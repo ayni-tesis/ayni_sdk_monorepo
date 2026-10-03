@@ -42,7 +42,7 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 
 > **Nota:** No importes archivos src internos. La interfaz pública se expone a través de `package:ayni_sdk/ayni_sdk.dart`.
 
-La API pública estable que consume tu aplicación se compone de `AyniSdk.initialize` para configurar el SDK, `sync()` para actualizar workflows y modelos, `run()` para ejecutarlos localmente, `SyncResult` para consultar la sincronización y `WorkflowResult` y `WorkflowError` para la ejecución. Las clases internas de `lib/src/` no forman parte del contrato de integración y pueden cambiar sin previo aviso.
+La API pública estable que consume tu aplicación se compone de `AyniSdk.initialize` para configurar el SDK, `sync()` para actualizar workflows y modelos y enviar trazas técnicas pendientes cuando la política vigente lo permite, `run()` para ejecutar localmente, `SyncResult` para consultar la sincronización y `WorkflowResult` y `WorkflowError` para la ejecución. Las clases internas de `lib/src/` no forman parte del contrato de integración y pueden cambiar sin previo aviso.
 
 ## Configuración genérica e inicialización
 
@@ -125,7 +125,7 @@ for (final resource in result.resources) {
 
 `result.resources` contiene los resultados por recurso cuando la sincronización alcanza la comparación con el servidor. El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/sync.dart`.
 
-## Trazas técnicas locales
+## Trazas técnicas locales y envío
 
 Cada `sync()` intenta actualizar la política de captura técnica de la
 aplicación. Una respuesta válida se guarda en
@@ -133,8 +133,9 @@ aplicación. Una respuesta válida se guarda en
 última política válida. Sin una política válida habilitada, el SDK no crea
 trazas. La política de telemetría y el consentimiento opcional `sdkImprovement`
 son controles separados: la app debe mantener su switch apagado por defecto y
-pasar `traceContext` solo cuando su preferencia y el consentimiento aplicable
-permitan capturar datos.
+pasar `traceContext` solo cuando la política y el permiso o consentimiento que
+aplique al uso de esa traza permitan capturar datos. `sdkImprovement` no autoriza
+usar trazas para validar modelos.
 
 Cuando está habilitada la captura, `run()` adjunta una traza tipada a
 `WorkflowResult.trace` o `WorkflowError.trace`:
@@ -171,14 +172,31 @@ allowlisted y errores tipados sanitizados. Nunca serializa bytes de imagen ni
 tensores arbitrarios. `run()` guarda la traza, antes de devolver el resultado o
 lanzar el error, en una outbox local durable dentro de
 `storageDirectory/diagnostics/trace-outbox/`. Cada `traceId` queda pendiente una
-sola vez y sobrevive a reinicios; el SDK no la transmite en esta versión. Si la
-escritura falla, la ejecución conserva su resultado o error original y
+sola vez y sobrevive a reinicios. En `sync()`, el SDK consulta la política vigente
+antes de cada `POST /sdk/traces` y elimina la traza local solo tras validar el
+acuse del servidor. Si la política no se obtiene, está deshabilitada, la red
+falla o el servidor rechaza el contenido, queda pendiente para otro intento. Si
+la escritura falla, la ejecución conserva su resultado o error original y
 `WorkflowResult.tracePersistenceFailed` o
 `WorkflowError.tracePersistenceFailed` indica que la evidencia no quedó
 encolada; la traza sigue disponible en `trace` mientras vive el resultado o
 error. Deshabilitar la política impide crear nuevas trazas, pero conserva las
 pendientes. `retentionDays` no vence los archivos locales de la outbox; la app
-puede descartarlos al borrar `storageDirectory`.
+puede descartarlos al borrar `storageDirectory`. En el servidor, cada traza vence
+según `retentionDays` (7, 30 o 90 días); los datos reportados por el cliente se
+guardan como `clientReported` y no se verifican de forma independiente. El
+servidor acepta cuerpos de hasta 2 MiB. `sync()` procesa la outbox dentro de
+un presupuesto opcional que reserva tiempo para actualizar workflows y modelos;
+si una traza individual se rechaza, conserva esa entrada y continúa con las
+siguientes mientras quede presupuesto.
+
+La outbox contiene trazas de validación autorizadas por la app; no son datos de
+la finalidad `sdkImprovement`. Al retirar el permiso o consentimiento de
+validación, desactiva primero la captura, espera a que terminen los `run()` en
+curso y llama a `await sdk.clearPendingTraces()`. El SDK pausa los envíos y
+elimina la outbox inmediatamente; la llamada termina cuando acaba un `sync()`
+activo. Una ejecución posterior con `traceContext` reanuda la captura cuando la
+app vuelva a autorizarla.
 
 Para una ejecución de control hecha fuera de `AyniSdk.run()`, la misma instancia
 puede construir el mismo tipo de registro con
@@ -211,18 +229,18 @@ showMessage(result.message);
 
 El ejemplo comprobado está en `example/reference/consent.dart`.
 
-Usa `ConsentPurpose.sdkImprovement` para el switch de trazas. `synced` confirma
-que Ayni recibió el recibo; `pending` significa que quedó guardado localmente y
-se enviará antes del próximo manifiesto de sync; ante `error`, deja esa finalidad
-desactivada. Para revocar, cambia primero el estado local a desactivado y llama
-a `recordConsent` con `ConsentDecision.declined` y la misma versión del aviso
-guardada al otorgarlo; conserva la preferencia aunque el recibo quede pendiente.
-No envíes datos asociados a una finalidad hasta que el recibo esté sincronizado.
-La app debe ofrecer revocación por finalidad y el canal de derechos publicado
-en su aviso. Para revocar `sdkImprovement`, desactiva primero la captura, espera
-a que terminen los `run()` activos y después registra el rechazo; `recordConsent()`
-purga las trazas pendientes de la outbox local. Deshabilitar solo la política de
-telemetría conserva las trazas ya pendientes. Esta versión del SDK no las transmite.
+Usa `ConsentPurpose.sdkImprovement` solo para la finalidad de mejora del SDK;
+no representa el permiso de validación ni controla sus trazas.
+`synced` confirma que Ayni recibió el recibo; `pending` significa que quedó
+guardado localmente y se enviará antes del próximo manifiesto de sync; ante
+`error`, deja esa finalidad desactivada. Para revocar, cambia primero el estado
+local a desactivado y llama a `recordConsent` con
+`ConsentDecision.declined` y la misma versión del aviso guardada al otorgarlo;
+conserva la preferencia aunque el recibo quede pendiente. Una traza de
+validación requiere el permiso o consentimiento separado que corresponda. Su
+envío no espera el recibo `sdkImprovement`, y `recordConsent()` no purga ni
+controla esa outbox; usa `clearPendingTraces()` al revocar la autorización de
+validación.
 
 ## Ejecución local de workflows
 

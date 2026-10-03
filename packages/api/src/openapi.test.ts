@@ -49,6 +49,17 @@ const sdkOperations = [
     ],
   },
   {
+    method: "post",
+    path: "/sdk/traces",
+    notFound: undefined,
+    extraErrors: [
+      { status: "400", code: "invalidTrace" },
+      { status: "413", code: "traceTooLarge" },
+      { status: "403", code: "telemetryDisabled" },
+      { status: "409", code: "traceConflict" },
+    ],
+  },
+  {
     method: "get",
     path: "/sdk/workflow-versions/{workflowVersionId}",
     notFound: "workflowVersionNotFound",
@@ -97,6 +108,14 @@ describe.each(sdkOperations)("$method $path errors", ({ method, path, notFound, 
       ...(notFound ? [["`404`", `\`${notFound}\``]] : []),
       ...extraErrors.map(({ status, code }) => [`\`${status}\``, `\`${code}\``]),
     ]);
+  });
+});
+
+describe("POST /sdk/traces", () => {
+  it("describes a rejected oversized body", () => {
+    const responses = operation("/sdk/traces", "post").responses as Record<string, JsonObject>;
+
+    expect(responses["413"]?.description).toBe("El cuerpo supera el tamaño máximo permitido.");
   });
 });
 
@@ -179,6 +198,7 @@ describe("GET /sdk/model-versions/{modelVersionId}/manifest", () => {
 describe("curl request samples", () => {
   it.each([
     ["/sdk/sync", "post", "curl -X POST https://tu-servidor-ayni.example/sdk/sync"],
+    ["/sdk/traces", "post", "curl -X POST https://tu-servidor-ayni.example/sdk/traces"],
     ["/sdk/telemetry-policy", "get", "curl https://tu-servidor-ayni.example/sdk/telemetry-policy"],
     [
       "/sdk/workflow-versions/{workflowVersionId}",

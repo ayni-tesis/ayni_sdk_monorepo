@@ -128,10 +128,16 @@ nodes after any currently running inference finishes.</p>
   if (!platform.isSupported) {
     throw UnsupportedError(&#39;Esta plataforma no es compatible con ayni_sdk.&#39;);
   }
+  final traceGeneration = _traceOutboxGeneration;
   final startedAt = DateTime.now().toUtc();
   final stopwatch = Stopwatch()..start();
-  final captureTrace = traceContext != null &amp;&amp; await _captureEnabled();
+  final captureTrace =
+      traceContext != null &amp;&amp;
+      await _captureEnabled() &amp;&amp;
+      _traceClearsInProgress == 0 &amp;&amp;
+      traceGeneration == _traceOutboxGeneration;
   if (captureTrace) {
+    _traceUploadsPaused = false;
     unawaited(
       getDeviceProfile().catchError(
         (Object _) =&gt; const DeviceProfile(platform: &#39;unknown&#39;),
@@ -219,7 +225,7 @@ nodes after any currently running inference finishes.</p>
       nodes: traceNodes,
       outputs: result.outputs,
     );
-    final persisted = await _persistTrace(trace);
+    final persisted = await _persistTrace(trace, traceGeneration);
     return result.withTrace(
       trace,
       tracePersistenceFailed: trace != null &amp;&amp; !persisted,
@@ -230,6 +236,7 @@ nodes after any currently running inference finishes.</p>
       error,
       context: traceContext,
       enabled: captureTrace,
+      generation: traceGeneration,
       workflow: workflowForTrace,
       inventory: inventoryForTrace,
       timestamp: startedAt,
@@ -245,6 +252,7 @@ nodes after any currently running inference finishes.</p>
       error,
       context: traceContext,
       enabled: captureTrace,
+      generation: traceGeneration,
       workflow: workflowForTrace,
       inventory: inventoryForTrace,
       timestamp: startedAt,
@@ -260,6 +268,7 @@ nodes after any currently running inference finishes.</p>
       error,
       context: traceContext,
       enabled: captureTrace,
+      generation: traceGeneration,
       workflow: workflowForTrace,
       inventory: inventoryForTrace,
       timestamp: startedAt,
@@ -273,6 +282,7 @@ nodes after any currently running inference finishes.</p>
       error,
       context: traceContext,
       enabled: captureTrace,
+      generation: traceGeneration,
       workflow: workflowForTrace,
       inventory: inventoryForTrace,
       timestamp: startedAt,

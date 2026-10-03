@@ -111,10 +111,6 @@ before calling this method. Ayni does not provide the host app's switch.</p>
       decidedAt: DateTime.now().toUtc(),
     );
     try {
-      if (purpose == ConsentPurpose.sdkImprovement &amp;&amp;
-          decision == ConsentDecision.declined) {
-        await _traceOutbox.clear();
-      }
       await _consentReceipts.enqueue(receipt);
     } on FileSystemException {
       return const ConsentResult(ConsentStatus.error);

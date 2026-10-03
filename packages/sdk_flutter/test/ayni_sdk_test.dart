@@ -26,6 +26,12 @@ void main() {
   late int consentStatusCode;
   late String telemetryPolicyResponseBody;
   int? telemetryPolicyStatusCode;
+  final telemetryPolicyResponses = <String>[];
+  final traceStatusCodes = <int>[];
+  Completer<void>? traceRequestReceived;
+  Completer<void>? releaseTraceResponse;
+  int traceStatusCode = HttpStatus.created;
+  String? traceResponseBody;
   var stallConsentResponse = false;
   late String responseBody;
   late String workflowResponseBody;
@@ -35,7 +41,9 @@ void main() {
   Uri? redirectUrl;
   Duration? responseDelay;
   final requests = <HttpRequest>[];
+  final artifactRequests = <HttpRequest>[];
   final consentBodies = <Map<String, Object?>>[];
+  final traceBodies = <Map<String, Object?>>[];
 
   // Two files per download: the downloader streams the definition into its
   // own `.part` attempt file (reported as `temporaryDefinition` and validated
@@ -49,7 +57,14 @@ void main() {
     AyniSdk.resetForTesting();
     AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
     requests.clear();
+    artifactRequests.clear();
     consentBodies.clear();
+    traceBodies.clear();
+    traceRequestReceived = null;
+    releaseTraceResponse = null;
+    telemetryPolicyResponses.clear();
+    traceStatusCodes.clear();
+    traceResponseBody = null;
     storageDirectory = await Directory.systemTemp.createTemp('ayni-sdk-test-');
     statusCode = HttpStatus.ok;
     workflowStatusCode = null;
@@ -57,6 +72,7 @@ void main() {
     consentStatusCode = HttpStatus.created;
     telemetryPolicyResponseBody = '{"enabled":false,"retentionDays":30}';
     telemetryPolicyStatusCode = null;
+    traceStatusCode = HttpStatus.created;
     stallConsentResponse = false;
     modelManifestResponses = {};
     responseBody = _manifest(workflowVersion: '1.0.0');
@@ -93,7 +109,11 @@ void main() {
           if (request.uri.path == '/sdk/telemetry-policy') {
             request.response.statusCode =
                 telemetryPolicyStatusCode ?? statusCode;
-            request.response.write(telemetryPolicyResponseBody);
+            request.response.write(
+              telemetryPolicyResponses.isEmpty
+                  ? telemetryPolicyResponseBody
+                  : telemetryPolicyResponses.removeAt(0),
+            );
           } else if (request.uri.path == '/sdk/consents') {
             final body =
                 jsonDecode(await utf8.decoder.bind(request).join()) as Map;
@@ -116,6 +136,34 @@ void main() {
                 }),
               );
               return;
+            }
+          } else if (request.uri.path == '/sdk/traces') {
+            final body =
+                jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+            final trace = Map<String, Object?>.from(body);
+            traceBodies.add(trace);
+            request.response.statusCode = traceStatusCodes.isEmpty
+                ? traceStatusCode
+                : traceStatusCodes.removeAt(0);
+            if (redirectUrl != null) {
+              request.response.headers.set(
+                HttpHeaders.locationHeader,
+                redirectUrl!.toString(),
+              );
+            }
+            request.response.write(
+              traceResponseBody ??
+                  jsonEncode({
+                    'traceId': trace['traceId'],
+                    'receivedAt': '2026-10-02T12:01:00.000Z',
+                  }),
+            );
+            final release = releaseTraceResponse;
+            if (release != null) {
+              if (!(traceRequestReceived?.isCompleted ?? true)) {
+                traceRequestReceived!.complete();
+              }
+              await release.future;
             }
           } else if (isWorkflow) {
             request.response.statusCode = workflowStatusCode ?? statusCode;
@@ -150,6 +198,7 @@ void main() {
     );
     unawaited(
       artifactServer.forEach((request) async {
+        artifactRequests.add(request);
         try {
           request.response.statusCode = HttpStatus.ok;
           request.response.headers.set(
@@ -394,7 +443,7 @@ void main() {
       expect(consentBodies.single['decision'], 'declined');
     });
 
-    test('declining SDK improvement clears pending traces', () async {
+    test('declining SDK improvement preserves validation traces', () async {
       final outbox = TraceOutboxStore(storageDirectory);
       await outbox.enqueue({'traceId': 'trace-1'});
 
@@ -406,13 +455,13 @@ void main() {
       );
 
       expect(result.status, ConsentStatus.synced);
-      expect(await outbox.pending(), isEmpty);
+      expect((await outbox.pending()).single['traceId'], 'trace-1');
       expect(consentBodies.single['purpose'], 'ayniSdkImprovement');
       expect(consentBodies.single['decision'], 'declined');
     });
 
     test(
-      'declining SDK improvement purges even if receipt storage fails',
+      'declining SDK improvement does not purge traces if receipt storage fails',
       () async {
         final outbox = TraceOutboxStore(storageDirectory);
         await outbox.enqueue({'traceId': 'trace-1'});
@@ -428,7 +477,7 @@ void main() {
         );
 
         expect(result.status, ConsentStatus.error);
-        expect(await outbox.pending(), isEmpty);
+        expect((await outbox.pending()).single['traceId'], 'trace-1');
         expect(requests, isEmpty);
       },
     );
@@ -460,6 +509,258 @@ void main() {
         throwsArgumentError,
       );
       expect(requests, isEmpty);
+    });
+  });
+
+  group('pending workflow traces', () {
+    test(
+      'refreshes policy before each pending trace and removes acknowledged traces',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        telemetryPolicyResponses.addAll([
+          '{"enabled":true,"retentionDays":30}',
+          '{"enabled":true,"retentionDays":30}',
+          '{"enabled":true,"retentionDays":30}',
+        ]);
+        final outbox = TraceOutboxStore(storageDirectory);
+        await outbox.enqueue(
+          _traceEntry('550e8400-e29b-41d4-a716-446655440001'),
+        );
+        await outbox.enqueue(
+          _traceEntry('550e8400-e29b-41d4-a716-446655440002'),
+        );
+
+        await sdk().sync();
+
+        expect(
+          traceBodies.map((trace) => trace['traceId']),
+          unorderedEquals([
+            '550e8400-e29b-41d4-a716-446655440001',
+            '550e8400-e29b-41d4-a716-446655440002',
+          ]),
+        );
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/sync',
+        ]);
+        expect(await outbox.pending(), isEmpty);
+      },
+    );
+
+    test(
+      'sends validation traces while SDK-improvement receipt is pending',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        consentStatusCode = HttpStatus.serviceUnavailable;
+        final client = sdk();
+        await client.recordConsent(
+          subjectId: '550e8400-e29b-41d4-a716-446655440000',
+          purpose: ConsentPurpose.sdkImprovement,
+          decision: ConsentDecision.accepted,
+          noticeVersion: '1.0.0',
+        );
+        telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+        final outbox = TraceOutboxStore(storageDirectory);
+        final trace = _traceEntry('550e8400-e29b-41d4-a716-446655440006');
+        await outbox.enqueue(trace);
+        requests.clear();
+
+        expect(await syncStatus(client), SyncStatus.upToDate);
+
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
+          '/sdk/consents',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/sync',
+        ]);
+        expect(traceBodies.single['traceId'], trace['traceId']);
+        expect(await outbox.pending(), isEmpty);
+      },
+    );
+
+    test('keeps a trace pending after server rejection', () async {
+      responseBody = '{"workflows":[],"models":[]}';
+      telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+      traceStatusCode = HttpStatus.unauthorized;
+      final outbox = TraceOutboxStore(storageDirectory);
+      final trace = _traceEntry('550e8400-e29b-41d4-a716-446655440003');
+      await outbox.enqueue(trace);
+
+      await sdk().sync();
+
+      expect(traceBodies, [trace]);
+      expect((await outbox.pending()).single['traceId'], trace['traceId']);
+    });
+
+    for (final (name, acknowledgement) in [
+      ('invalid JSON', 'not JSON'),
+      (
+        'mismatched trace ID',
+        '{"traceId":"550e8400-e29b-41d4-a716-446655440099",'
+            '"receivedAt":"2026-10-02T12:01:00.000Z"}',
+      ),
+    ]) {
+      test(
+        'stops the batch after a malformed 201 acknowledgement ($name)',
+        () async {
+          responseBody = '{"workflows":[],"models":[]}';
+          telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+          traceResponseBody = acknowledgement;
+          final outbox = TraceOutboxStore(storageDirectory);
+          await outbox.enqueue(
+            _traceEntry('550e8400-e29b-41d4-a716-446655440012'),
+          );
+          await outbox.enqueue(
+            _traceEntry('550e8400-e29b-41d4-a716-446655440013'),
+          );
+
+          await sdk().sync();
+
+          expect(traceBodies, hasLength(1));
+          expect(await outbox.pending(), hasLength(2));
+          expect(requests.map((request) => request.uri.path), [
+            '/sdk/telemetry-policy',
+            '/sdk/telemetry-policy',
+            '/sdk/traces',
+            '/sdk/sync',
+          ]);
+        },
+      );
+    }
+
+    test(
+      'keeps an oversized trace local without retrying a permanent 413',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+        final outbox = TraceOutboxStore(storageDirectory);
+        final trace = _traceEntry('550e8400-e29b-41d4-a716-446655440011')
+          ..['condition'] = List<String>.filled(
+            TraceOutboxStore.maxPayloadBytes,
+            'x',
+          ).join();
+        await outbox.enqueue(trace);
+
+        await sdk().sync();
+
+        expect(traceBodies, isEmpty);
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
+          '/sdk/sync',
+        ]);
+        expect((await outbox.pending()).single['traceId'], trace['traceId']);
+      },
+    );
+
+    test(
+      'continues the bounded batch after a trace-specific rejection',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+        traceStatusCodes.addAll([
+          HttpStatus.requestEntityTooLarge,
+          HttpStatus.created,
+        ]);
+        final outbox = TraceOutboxStore(storageDirectory);
+        final rejected = _traceEntry('550e8400-e29b-41d4-a716-446655440007');
+        final confirmed = _traceEntry('550e8400-e29b-41d4-a716-446655440008');
+        await outbox.enqueue(rejected);
+        await outbox.enqueue(confirmed);
+
+        await sdk().sync();
+
+        expect(
+          traceBodies.map((trace) => trace['traceId']),
+          unorderedEquals([rejected['traceId'], confirmed['traceId']]),
+        );
+        expect(
+          (await outbox.pending()).single['traceId'],
+          traceBodies.first['traceId'],
+        );
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/sync',
+        ]);
+      },
+    );
+
+    test(
+      'validation permission revocation clears the outbox and stops the active batch',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+        traceRequestReceived = Completer<void>();
+        releaseTraceResponse = Completer<void>();
+        final client = sdk();
+        final outbox = TraceOutboxStore(storageDirectory);
+        await outbox.enqueue(
+          _traceEntry('550e8400-e29b-41d4-a716-446655440009'),
+        );
+        await outbox.enqueue(
+          _traceEntry('550e8400-e29b-41d4-a716-446655440010'),
+        );
+
+        final activeSync = client.sync();
+        await traceRequestReceived!.future;
+        final revocation = client.clearPendingTraces();
+        await Future<void>.delayed(Duration.zero);
+        expect(await outbox.pending(), isEmpty);
+        releaseTraceResponse!.complete();
+        await activeSync;
+
+        await revocation;
+        expect(traceBodies, hasLength(1));
+        expect((await outbox.pending()), isEmpty);
+      },
+    );
+
+    test(
+      'keeps traces pending when the current policy cannot be fetched',
+      () async {
+        responseBody = '{"workflows":[],"models":[]}';
+        telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+        telemetryPolicyStatusCode = HttpStatus.serviceUnavailable;
+        final outbox = TraceOutboxStore(storageDirectory);
+        final trace = _traceEntry('550e8400-e29b-41d4-a716-446655440005');
+        await outbox.enqueue(trace);
+
+        await sdk().sync();
+
+        expect(traceBodies, isEmpty);
+        expect((await outbox.pending()).single['traceId'], trace['traceId']);
+        expect(requests.map((request) => request.uri.path), [
+          '/sdk/telemetry-policy',
+          '/sdk/telemetry-policy',
+          '/sdk/sync',
+        ]);
+      },
+    );
+
+    test('keeps a trace pending when its endpoint redirects', () async {
+      responseBody = '{"workflows":[],"models":[]}';
+      telemetryPolicyResponseBody = '{"enabled":true,"retentionDays":30}';
+      traceStatusCode = HttpStatus.found;
+      redirectUrl = Uri.parse(
+        'http://${InternetAddress.loopbackIPv4.address}:${artifactServer.port}/sdk/traces',
+      );
+      final outbox = TraceOutboxStore(storageDirectory);
+      final trace = _traceEntry('550e8400-e29b-41d4-a716-446655440004');
+      await outbox.enqueue(trace);
+
+      await sdk().sync();
+
+      expect(traceBodies, [trace]);
+      expect(artifactRequests, isEmpty);
+      expect((await outbox.pending()).single['traceId'], trace['traceId']);
     });
   });
 
@@ -2719,6 +3020,27 @@ void main() {
     );
   });
 }
+
+Map<String, Object?> _traceEntry(String traceId) => {
+  'traceSchemaVersion': 1,
+  'traceId': traceId,
+  'runId': 'run-1',
+  'repetition': 1,
+  'installationId': '550e8400-e29b-41d4-a716-446655440000',
+  'timestamp': '2026-10-02T12:00:00.000Z',
+  'measurements': <Object?>[],
+  'incidents': <String>[],
+  'workflowId': 'workflow-1',
+  'workflowVersionId': 'workflow-version-1',
+  'workflowVersion': '1.0.0',
+  'models': <Object?>[],
+  'profile': {'schemaVersion': 1, 'platform': 'android'},
+  'status': 'success',
+  'durationMs': 12,
+  'nodes': <Object?>[],
+  'outputs': <String, Object?>{},
+  'clientReportedFields': ['runId', 'repetition'],
+};
 
 String _manifest({required String workflowVersion}) => jsonEncode({
   'workflows': [

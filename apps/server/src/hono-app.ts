@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createOpenApiDocument } from "@ayni/api";
 import type { SdkConsentReceipt } from "@ayni/api/sdk-consent";
+import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import { auth } from "@ayni/auth";
 import { db } from "@ayni/db";
 import {
@@ -74,6 +75,8 @@ import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
+import { storeSdkTrace } from "./sdk-trace-store";
+import { createSdkTracesApp } from "./sdk-traces";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";
 import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
@@ -346,6 +349,15 @@ const sdkTelemetryPolicies = {
   get(applicationId: string) {
     return getTelemetryPolicy(db, applicationId);
   },
+};
+
+const sdkTraces = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  get: (applicationId: string) => getTelemetryPolicy(db, applicationId),
+  store: (applicationId: string, trace: SdkWorkflowTrace, retentionDays: 7 | 30 | 90) =>
+    storeSdkTrace(db, { applicationId, trace, retentionDays }),
 };
 
 const workspaces = {
@@ -808,6 +820,14 @@ app.route(
   createSdkTelemetryPolicyApp({
     credentials: sdkTelemetryPolicies,
     policies: sdkTelemetryPolicies,
+  }),
+);
+app.route(
+  "/",
+  createSdkTracesApp({
+    credentials: sdkTraces,
+    policies: sdkTraces,
+    traces: sdkTraces,
   }),
 );
 
