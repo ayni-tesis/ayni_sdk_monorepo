@@ -69,10 +69,7 @@ export function createModelsApp({ getSession, applications, models }: Dependenci
       return c.json({ message: "No tienes permiso para registrar modelos." }, 403);
     }
     if (application.status !== "active") {
-      return c.json(
-        { message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" },
-        409,
-      );
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
     }
 
     let rawBody: unknown;
