@@ -4,7 +4,49 @@ import { safeTraceVersionSchema, sdkTraceSchema } from "./sdk-trace";
 export const APPLICATION_TRACE_PAGE_SIZE = 50;
 export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;
 
-export const applicationTracePageQuerySchema = z.strictObject({
+const traceFilterText = z.string().trim().min(1).max(128);
+const traceContextFilterText = z.string().min(1);
+const traceVersionFilterText = safeTraceVersionSchema.trim().min(1).max(128);
+const nonNegativeIntegerQuery = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.number().int().nonnegative());
+const positiveIntegerQuery = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.number().int().positive());
+
+export const applicationTraceFiltersSchema = z
+  .strictObject({
+    workflowId: traceFilterText.optional(),
+    workflowVersion: traceVersionFilterText.optional(),
+    modelId: traceFilterText.optional(),
+    modelVersionId: traceFilterText.optional(),
+    modelVersion: traceVersionFilterText.optional(),
+    status: z.enum(["success", "error"]).optional(),
+    receivedFrom: z.iso.date().optional(),
+    receivedTo: z.iso.date().optional(),
+    platform: z.enum(["android", "ios", "unknown"]).optional(),
+    deviceModel: traceContextFilterText.optional(),
+    osVersion: traceContextFilterText.optional(),
+    apiLevel: nonNegativeIntegerQuery.optional(),
+    ramRange: traceContextFilterText.optional(),
+    socModel: traceContextFilterText.optional(),
+    runId: traceContextFilterText.optional(),
+    repetition: positiveIntegerQuery.optional(),
+    condition: traceContextFilterText.optional(),
+    caseId: traceContextFilterText.optional(),
+    scenario: traceContextFilterText.optional(),
+    backend: traceContextFilterText.optional(),
+  })
+  .refine(
+    ({ receivedFrom, receivedTo }) => !receivedFrom || !receivedTo || receivedFrom <= receivedTo,
+    { path: ["receivedTo"], error: "The end date must not be before the start date." },
+  );
+
+export const applicationTracePageQuerySchema = applicationTraceFiltersSchema.extend({
   cursor: z
     .string()
     .min(1)
@@ -53,6 +95,7 @@ export const applicationTraceListResponseSchema = z.strictObject({
 });
 
 export type ApplicationTracePageQuery = z.infer<typeof applicationTracePageQuerySchema>;
+export type ApplicationTraceFilters = z.infer<typeof applicationTraceFiltersSchema>;
 export type ApplicationTraceSummary = z.infer<typeof applicationTraceSummarySchema>;
 export type ApplicationTraceRecord = z.infer<typeof applicationTraceRecordSchema>;
 export type ApplicationTraceListResponse = z.infer<typeof applicationTraceListResponseSchema>;

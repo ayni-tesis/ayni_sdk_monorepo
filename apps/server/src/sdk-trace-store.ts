@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import {
+  type ApplicationTraceFilters,
+  type ApplicationTracePageQuery,
   type ApplicationTraceRecord,
   type ApplicationTraceSummary,
   applicationTraceRecordSchema,
@@ -7,8 +9,8 @@ import {
 } from "@ayni/api/application-traces";
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import type * as schema from "@ayni/db/schema/index";
-import { sdkTrace } from "@ayni/db/schema/index";
-import { and, desc, eq, gt, lt, lte, or, sql } from "drizzle-orm";
+import { model, modelVersion, sdkTrace } from "@ayni/db/schema/index";
+import { and, desc, eq, gt, gte, inArray, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
 
@@ -58,9 +60,24 @@ function decodeCursor(value: string | undefined) {
   }
 }
 
-function applicationTracePageFilter(applicationId: string, cursorValue: string | undefined) {
+function traceJsonTextEquals(path: SQL, value: string | number | undefined) {
+  return value === undefined ? undefined : sql`${path} = ${String(value)}`;
+}
+
+function applicationTracePageFilter(
+  applicationId: string,
+  cursorValue: string | undefined,
+  filters: ApplicationTraceFilters = {},
+) {
   const cursor = decodeCursor(cursorValue);
   const cursorTime = cursor ? new Date(cursor.receivedAt) : undefined;
+  const receivedFrom = filters.receivedFrom
+    ? new Date(`${filters.receivedFrom}T00:00:00.000Z`)
+    : undefined;
+  const receivedBefore = filters.receivedTo
+    ? new Date(`${filters.receivedTo}T00:00:00.000Z`)
+    : undefined;
+  receivedBefore?.setUTCDate(receivedBefore.getUTCDate() + 1);
   const afterCursor =
     cursor && cursorTime
       ? or(
@@ -68,11 +85,49 @@ function applicationTracePageFilter(applicationId: string, cursorValue: string |
           and(eq(sdkTrace.receivedAt, cursorTime), lt(sdkTrace.traceId, cursor.traceId)),
         )
       : undefined;
+  const modelVersionCondition = and(
+    traceJsonTextEquals(sql`trace_model.value ->> 'modelVersionId'`, filters.modelVersionId),
+    traceJsonTextEquals(sql`trace_model.value ->> 'version'`, filters.modelVersion),
+  );
+  const modelVersionFilter = modelVersionCondition
+    ? sql`exists (
+        select 1
+        from jsonb_array_elements(coalesce(${sdkTrace.trace} -> 'models', '[]'::jsonb)) as trace_model(value)
+        where ${modelVersionCondition}
+      )`
+    : undefined;
+  const modelFilter = filters.modelId
+    ? sql`${sdkTrace.modelReferences} @> ${JSON.stringify([
+        {
+          modelId: filters.modelId,
+          ...(filters.modelVersionId ? { modelVersionId: filters.modelVersionId } : {}),
+          ...(filters.modelVersion ? { version: filters.modelVersion } : {}),
+        },
+      ])}::jsonb`
+    : modelVersionFilter;
 
   return and(
     eq(sdkTrace.applicationId, applicationId),
     gt(sdkTrace.expiresAt, new Date()),
     afterCursor,
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'workflowId'`, filters.workflowId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'workflowVersion'`, filters.workflowVersion),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'status'`, filters.status),
+    receivedFrom ? gte(sdkTrace.receivedAt, receivedFrom) : undefined,
+    receivedBefore ? lt(sdkTrace.receivedAt, receivedBefore) : undefined,
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'platform'`, filters.platform),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'model'`, filters.deviceModel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'osVersion'`, filters.osVersion),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'apiLevel'`, filters.apiLevel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'ramRange'`, filters.ramRange),
+    traceJsonTextEquals(sql`${sdkTrace.trace} -> 'profile' ->> 'socModel'`, filters.socModel),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'runId'`, filters.runId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'repetition'`, filters.repetition),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'condition'`, filters.condition),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'caseId'`, filters.caseId),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'scenario'`, filters.scenario),
+    traceJsonTextEquals(sql`${sdkTrace.trace} ->> 'backend'`, filters.backend),
+    modelFilter,
   );
 }
 
@@ -113,6 +168,25 @@ export async function storeSdkTrace(
 ): Promise<StoreSdkTraceResult> {
   const now = new Date();
   const contentSha256 = createHash("sha256").update(canonicalJson(trace)).digest("hex");
+  const modelVersionIds = [...new Set(trace.models.map(({ modelVersionId }) => modelVersionId))];
+  const modelIdsByVersionId = new Map<string, string>();
+  if (modelVersionIds.length > 0) {
+    const versions = await database
+      .select({ modelVersionId: modelVersion.id, modelId: modelVersion.modelId })
+      .from(modelVersion)
+      .innerJoin(model, eq(model.id, modelVersion.modelId))
+      .where(
+        and(eq(model.applicationId, applicationId), inArray(modelVersion.id, modelVersionIds)),
+      );
+    for (const version of versions)
+      modelIdsByVersionId.set(version.modelVersionId, version.modelId);
+  }
+  const modelReferences = trace.models.flatMap((traceModel) => {
+    const modelId = modelIdsByVersionId.get(traceModel.modelVersionId);
+    return modelId
+      ? [{ modelId, modelVersionId: traceModel.modelVersionId, version: traceModel.version }]
+      : [];
+  });
 
   // ponytail: purge expired rows on ingestion; add scheduled cleanup if idle applications need timed physical deletion.
   await database.delete(sdkTrace).where(lte(sdkTrace.expiresAt, now));
@@ -124,6 +198,7 @@ export async function storeSdkTrace(
       traceId: trace.traceId,
       contentSha256,
       trace,
+      modelReferences,
       source: "clientReported",
       receivedAt: now,
       expiresAt: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000),
@@ -152,7 +227,8 @@ export async function listApplicationTraceSummaries(
     applicationId,
     cursor: cursorValue,
     limit,
-  }: { applicationId: string; cursor?: string; limit: number },
+    ...filters
+  }: ApplicationTracePageQuery & { applicationId: string },
 ): Promise<ApplicationTracePage> {
   const rows = await database
     .select({
@@ -169,7 +245,7 @@ export async function listApplicationTraceSummaries(
       profile: sql<Record<string, unknown>>`${sdkTrace.trace} -> 'profile'`,
     })
     .from(sdkTrace)
-    .where(applicationTracePageFilter(applicationId, cursorValue))
+    .where(applicationTracePageFilter(applicationId, cursorValue, filters))
     .orderBy(desc(sdkTrace.receivedAt), desc(sdkTrace.traceId))
     .limit(limit + 1);
 
@@ -235,7 +311,8 @@ export async function listApplicationTraceRecords(
     applicationId,
     cursor: cursorValue,
     limit,
-  }: { applicationId: string; cursor?: string; limit: number },
+    ...filters
+  }: ApplicationTracePageQuery & { applicationId: string },
 ): Promise<ApplicationTraceRecordPage> {
   const rows = await database
     .select({
@@ -246,7 +323,7 @@ export async function listApplicationTraceRecords(
       trace: sdkTrace.trace,
     })
     .from(sdkTrace)
-    .where(applicationTracePageFilter(applicationId, cursorValue))
+    .where(applicationTracePageFilter(applicationId, cursorValue, filters))
     .orderBy(desc(sdkTrace.receivedAt), desc(sdkTrace.traceId))
     .limit(limit + 1);
 

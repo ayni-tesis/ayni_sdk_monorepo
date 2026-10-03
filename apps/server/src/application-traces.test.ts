@@ -127,6 +127,33 @@ describe("application traces routes", () => {
     expect(invalid.status).toBe(400);
   });
 
+  it("passes validated trace filters to the application-scoped query", async () => {
+    const { app, listTraces } = makeApp();
+    const response = await app.request(
+      "/applications/app-1/traces?workflowId=workflow-1&modelId=model-1&modelVersionId=model-version-1&status=error&runId=run-1&repetition=2&backend=tflite",
+    );
+    expect(response.status).toBe(200);
+    expect(listTraces).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      limit: 50,
+      workflowId: "workflow-1",
+      modelId: "model-1",
+      modelVersionId: "model-version-1",
+      status: "error",
+      runId: "run-1",
+      repetition: 2,
+      backend: "tflite",
+    });
+  });
+
+  it("rejects an unsupported trace filter without querying the store", async () => {
+    const { app, listTraces } = makeApp();
+    const response = await app.request("/applications/app-1/traces?unknown=anything");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ message: "La consulta de trazas no es válida." });
+    expect(listTraces).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed keyset cursor", async () => {
     const { app } = makeApp({
       list: async () => {
