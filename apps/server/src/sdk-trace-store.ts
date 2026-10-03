@@ -87,17 +87,23 @@ function applicationTracePageFilter(
       : undefined;
   const modelCondition = and(
     filters.modelId ? eq(model.id, filters.modelId) : undefined,
-    filters.modelVersionId ? eq(modelVersion.id, filters.modelVersionId) : undefined,
-    filters.modelVersion ? eq(modelVersion.version, filters.modelVersion) : undefined,
+    traceJsonTextEquals(sql`trace_model.value ->> 'modelVersionId'`, filters.modelVersionId),
+    traceJsonTextEquals(sql`trace_model.value ->> 'version'`, filters.modelVersion),
   );
   const modelFilter = modelCondition
     ? sql`exists (
         select 1
         from jsonb_array_elements(coalesce(${sdkTrace.trace} -> 'models', '[]'::jsonb)) as trace_model(value)
-        inner join ${modelVersion} on ${modelVersion.id} = trace_model.value ->> 'modelVersionId'
-        inner join ${model} on ${model.id} = ${modelVersion.modelId}
-        where ${model.applicationId} = ${sdkTrace.applicationId}
-          and ${modelCondition}
+          ${
+            filters.modelId
+              ? sql`inner join ${modelVersion} on ${modelVersion.id} = trace_model.value ->> 'modelVersionId'
+                inner join ${model} on ${model.id} = ${modelVersion.modelId}`
+              : sql``
+          }
+          where ${and(
+            filters.modelId ? eq(model.applicationId, sdkTrace.applicationId) : undefined,
+            modelCondition,
+          )}
       )`
     : undefined;
 

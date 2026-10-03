@@ -13,6 +13,17 @@ import type { Application } from "../../types";
 import { type TraceValueSource, traceErrorDetail } from "./trace-error-detail";
 
 const PAGE_SIZE = 50;
+const EXACT_MATCH_TRACE_TEXT_FILTERS = new Set([
+  "deviceModel",
+  "osVersion",
+  "ramRange",
+  "socModel",
+  "runId",
+  "condition",
+  "caseId",
+  "scenario",
+  "backend",
+]);
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(
@@ -120,7 +131,9 @@ export function ApplicationTracesView({ application }: { application: Applicatio
     event.preventDefault();
     const query = new URLSearchParams();
     new FormData(event.currentTarget).forEach((value, key) => {
-      if (typeof value === "string" && value.trim()) query.set(key, value.trim());
+      if (typeof value === "string" && value.trim()) {
+        query.set(key, EXACT_MATCH_TRACE_TEXT_FILTERS.has(key) ? value : value.trim());
+      }
     });
     setFilterQuery(query.toString());
     setCursorHistory([undefined]);

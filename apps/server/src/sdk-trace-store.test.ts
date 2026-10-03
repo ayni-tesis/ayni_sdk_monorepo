@@ -195,4 +195,32 @@ describe("listApplicationTraceSummaries", () => {
       ]),
     );
   });
+
+  it("matches model version filters against trace data without live model joins", async () => {
+    let where: SQL | undefined;
+    const database = {
+      select: () => ({
+        from: () => ({
+          where: (condition: SQL) => {
+            where = condition;
+            return { orderBy: () => ({ limit: async () => [] }) };
+          },
+        }),
+      }),
+    } as unknown as SdkTraceDatabase;
+
+    await listApplicationTraceSummaries(database, {
+      applicationId: "app-1",
+      limit: 10,
+      modelVersionId: "deleted-model-version",
+      modelVersion: "2.0.0",
+    });
+
+    if (!where) throw new Error("Expected the trace query to include a WHERE clause");
+    const query = new PgDialect().sqlToQuery(where);
+    expect(query.sql).toContain("trace_model.value ->> 'modelVersionId'");
+    expect(query.sql).toContain("trace_model.value ->> 'version'");
+    expect(query.sql).not.toContain("inner join");
+    expect(query.params).toEqual(expect.arrayContaining(["deleted-model-version", "2.0.0"]));
+  });
 });

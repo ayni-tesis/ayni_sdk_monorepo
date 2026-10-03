@@ -212,6 +212,44 @@ describe("ApplicationTracesView", () => {
     );
   });
 
+  it("preserves exact text in context and device-profile filters", async () => {
+    render(<ApplicationTracesView application={application} />);
+    await screen.findByText("Workflow 1.0.0 · workflow-1");
+    fireEvent.click(screen.getByText("Perfil técnico"));
+    fireEvent.click(screen.getByText("Repetición y contexto"));
+
+    const filters = [
+      ["Modelo del dispositivo", "deviceModel"],
+      ["Versión del sistema operativo", "osVersion"],
+      ["Rango de RAM", "ramRange"],
+      ["SoC", "socModel"],
+      ["Run ID", "runId"],
+      ["Condición", "condition"],
+      ["ID de caso", "caseId"],
+      ["Escenario", "scenario"],
+      ["Backend efectivo", "backend"],
+    ] as const;
+    const submitted = filters.map(([label, name]) => {
+      const value = ` ${name} `;
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+      return [name, value] as const;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar filtros" }));
+
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        expect.stringContaining("runId="),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    const requestUrl = get.mock.calls
+      .map((call) => String(call[0]))
+      .find((url) => url.includes("runId="));
+    if (!requestUrl) throw new Error("Expected an application trace request with context filters");
+    const query = new URLSearchParams(requestUrl.split("?")[1]);
+    for (const [name, value] of submitted) expect(query.get(name)).toBe(value);
+  });
+
   it("downloads the complete application trace export", async () => {
     render(<ApplicationTracesView application={application} />);
     fireEvent.click(screen.getByRole("button", { name: "Exportar JSONL" }));
