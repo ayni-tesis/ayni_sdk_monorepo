@@ -79,10 +79,12 @@ superan vencen en ese momento; al alargarlo, una traza ya vencida no vuelve.
 Una traza vencida deja de aparecer en la lista, los filtros, el detalle, la
 exportación JSONL y las métricas de trazas del dashboard. El servidor la elimina
 al recibir otra traza y en una tarea diaria, que solo se ejecuta si el
-despliegue del servidor configura `CRON_SECRET`; sin ese secreto, la traza
-vencida queda oculta pero almacenada hasta que llegue otra traza. Las copias JSONL exportadas antes del
-vencimiento quedan fuera de Ayni: las conserva o elimina el procedimiento de
-quien las exportó, y no cambian la retención del servidor.
+despliegue del servidor configura `CRON_SECRET` con al menos 16 caracteres (un
+valor más corto impide que el servidor arranque); sin ese secreto, la traza
+vencida queda oculta pero almacenada hasta que llegue otra traza. Las copias
+JSONL exportadas antes del vencimiento quedan fuera de Ayni: las conserva o
+elimina el procedimiento de quien las exportó, y no cambian la retención del
+servidor.
 
 La retención la fija la política de telemetría de la aplicación; no depende del
 recibo `sdkImprovement` ni del permiso de validación que gestiona la app, y no
