@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationTracesView } from "./application-traces-view";
 
@@ -100,6 +100,75 @@ describe("ApplicationTracesView", () => {
         "/applications/app-1/traces?limit=50&cursor=next-page",
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
+    );
+  });
+
+  it("opens the sanitized detail of a failed execution from its row", async () => {
+    const errorTraceId = "550e8400-e29b-41d4-a716-446655440002";
+    const errorSummary = {
+      ...summary,
+      trace: { ...summary.trace, traceId: errorTraceId, status: "error" as const },
+    };
+    const errorRecord = {
+      ...record,
+      trace: {
+        ...record.trace,
+        traceId: errorTraceId,
+        status: "error" as const,
+        condition: "treatment",
+        nodes: [
+          {
+            nodeId: "classifier",
+            type: "model.tflite" as const,
+            status: "failed" as const,
+            modelVersionId: "model-version-1",
+          },
+        ],
+        outputs: {},
+        clientReportedFields: ["runId", "repetition", "condition"] as Array<
+          "runId" | "repetition" | "condition"
+        >,
+        error: {
+          category: "modelOutputInvalid" as const,
+          phase: "modelOutputValidation" as const,
+          nodeId: "classifier",
+          modelVersionId: "model-version-1",
+        },
+      },
+    };
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith(errorTraceId)) return { data: { record: errorRecord } };
+      if (url.endsWith(traceId)) return { data: { record } };
+      return { data: { traces: [summary, errorSummary], nextCursor: null } };
+    });
+
+    render(<ApplicationTracesView application={application} />);
+    const errorRow = await screen.findByRole("button", {
+      name: `Ver detalle de la traza ${errorTraceId}`,
+    });
+    expect(errorRow.textContent).toContain("Ver detalle");
+    expect(
+      screen.getByRole("button", { name: `Ver detalle de la traza ${traceId}` }).textContent,
+    ).not.toContain("Ver detalle");
+
+    fireEvent.click(errorRow);
+    const errorSection = await screen.findByRole("region", { name: "Error de ejecución" });
+    const detail = within(errorSection);
+    expect(detail.getByText("No se muestran secretos ni rutas internas.")).toBeTruthy();
+    expect(detail.getByText("Salida del modelo no válida (modelOutputInvalid)")).toBeTruthy();
+    expect(detail.getByText("classifier · Modelo")).toBeTruthy();
+    expect(detail.getByText("workflow-1")).toBeTruthy();
+    expect(detail.getByText("1.0.0 · workflow-version-1")).toBeTruthy();
+    expect(detail.getByText("1.2.0 · model-version-1")).toBeTruthy();
+    expect(detail.getByText("Pixel")).toBeTruthy();
+    expect(detail.getByText("treatment")).toBeTruthy();
+    expect(detail.getByText(/no están verificados por Ayni/)).toBeTruthy();
+    expect(detail.queryByText(/verificad[oa]s?$/i)).toBeNull();
+    expect(detail.getAllByText("Ayni")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: `Ver detalle de la traza ${traceId}` }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Error de ejecución" })).toBeNull(),
     );
   });
 
