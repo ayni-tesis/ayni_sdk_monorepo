@@ -80,12 +80,14 @@ import {
   getApplicationTrace,
   listApplicationTraceRecords,
   listApplicationTraceSummaries,
+  purgeExpiredSdkTraces,
   storeSdkTrace,
 } from "./sdk-trace-store";
 import { createSdkTracesApp } from "./sdk-traces";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";
 import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
+import { createTelemetryRetentionApp } from "./telemetry-retention";
 import {
   addConditionNode,
   addImageInputNode,
@@ -846,6 +848,13 @@ app.route(
       get: (applicationId, traceId) => getApplicationTrace(db, applicationId, traceId),
       listRecords: (query) => listApplicationTraceRecords(db, query),
     },
+  }),
+);
+app.route(
+  "/",
+  createTelemetryRetentionApp({
+    cronSecret: env.CRON_SECRET,
+    traces: { purgeExpired: () => purgeExpiredSdkTraces(db) },
   }),
 );
 

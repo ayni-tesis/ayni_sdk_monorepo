@@ -65,9 +65,26 @@ trazas mientras tenga presupuesto. Los valores y el perfil reportados por el cli
 `clientReported`; son datos no verificados de forma independiente. El campo
 `condition` conserva el mismo esquema para `control` y `treatment`.
 
-El servidor fija la fecha de vencimiento con la retención seleccionada para la
-aplicación (7, 30 o 90 días) y purga trazas vencidas al recibir otra traza. La
-retención no vence los archivos que siguen pendientes en el dispositivo.
+### Retención de las trazas en el servidor
+
+Cada aplicación tiene su propia retención de trazas: 7, 30 o 90 días, 30 si
+nadie la cambió. Solo los administradores y propietarios del workspace la
+cambian, en `Privacidad y telemetría` → «Retención»; el servidor rechaza
+cualquier otro periodo y conserva el anterior. El vencimiento se cuenta desde
+que el servidor recibe la traza, no desde su captura en el dispositivo, y
+consultarla o exportarla no lo extiende. Un periodo nuevo se aplica también a
+las trazas ya guardadas, contado desde su recepción: al acortarlo, las que lo
+superan vencen en ese momento; al alargarlo, una traza ya vencida no vuelve.
+
+Una traza vencida deja de aparecer en la lista, el detalle y la exportación
+JSONL de trazas del dashboard. El servidor la elimina en una tarea diaria y
+también al recibir otra traza. Las copias JSONL exportadas antes del
+vencimiento quedan fuera de Ayni: las conserva o elimina el procedimiento de
+quien las exportó, y no cambian la retención del servidor.
+
+La retención la fija la política de telemetría de la aplicación; no depende del
+recibo `sdkImprovement` ni del permiso de validación que gestiona la app, y no
+vence los archivos que siguen pendientes en el dispositivo.
 
 ## Datos opcionales
 

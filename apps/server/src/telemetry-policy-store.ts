@@ -7,6 +7,7 @@ import { applicationTelemetryPolicy } from "@ayni/db/schema/index";
 import { eq } from "drizzle-orm";
 import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
 import { getApplicationSetting, upsertApplicationSetting } from "./application-setting-store";
+import { applyTraceRetention, type SdkTraceDatabase } from "./sdk-trace-store";
 
 export type TelemetryPolicyDatabase = ApplicationDatabase;
 
@@ -52,11 +53,12 @@ export async function getTelemetryPolicy(
     : { applicationId, ...DEFAULT_TELEMETRY_POLICY, updatedAt: null };
 }
 
+/** A change to the policy: a field left out keeps its saved value. */
 export type UpdateTelemetryPolicyInput = {
   applicationId: string;
   userId: string;
-  enabled: boolean;
-  retentionDays: TelemetryRetentionDays;
+  enabled?: boolean;
+  retentionDays?: TelemetryRetentionDays;
 };
 
 export type UpdateTelemetryPolicyResult =
@@ -66,12 +68,17 @@ export type UpdateTelemetryPolicyResult =
 /**
  * Saves the telemetry policy of an active application. Only workspace
  * administrators and owners may change it; any other outcome writes nothing,
- * so the previous policy is kept.
+ * so the previous policy is kept. A new retention period also applies, in the
+ * same transaction, to the traces the application already stored (US-112).
  */
 export async function updateTelemetryPolicy(
   database: TelemetryPolicyDatabase,
   { applicationId, userId, enabled, retentionDays }: UpdateTelemetryPolicyInput,
 ): Promise<UpdateTelemetryPolicyResult> {
+  const changes = {
+    ...(enabled === undefined ? {} : { enabled }),
+    ...(retentionDays === undefined ? {} : { retentionDays }),
+  };
   const result = await executeApplicationAction(
     database,
     { applicationId, userId },
@@ -79,12 +86,23 @@ export async function updateTelemetryPolicy(
       const saved = (await upsertApplicationSetting(
         tx,
         applicationTelemetryPolicy,
-        { applicationId: application.id, enabled, retentionDays, updatedById: userId },
+        {
+          applicationId: application.id,
+          ...DEFAULT_TELEMETRY_POLICY,
+          ...changes,
+          updatedById: userId,
+        },
         applicationTelemetryPolicy.applicationId,
-        { enabled, retentionDays, updatedById: userId, updatedAt: new Date() },
+        { ...changes, updatedById: userId, updatedAt: new Date() },
       )) as TelemetryPolicyRow | undefined;
 
       if (!saved) throw new Error("Telemetry policy update returned no record");
+      if (retentionDays !== undefined) {
+        await applyTraceRetention(tx as unknown as Pick<SdkTraceDatabase, "update">, {
+          applicationId: application.id,
+          retentionDays,
+        });
+      }
       return toTelemetryPolicy(saved);
     },
   );

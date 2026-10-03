@@ -1,7 +1,10 @@
 import { sdkTraceSchema } from "@ayni/api/sdk-trace";
-import { describe, expect, it } from "vitest";
+import { sdkTrace } from "@ayni/db/schema/index";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
 import type { SdkTraceDatabase } from "./sdk-trace-store";
-import { storeSdkTrace } from "./sdk-trace-store";
+import { purgeExpiredSdkTraces, storeSdkTrace } from "./sdk-trace-store";
 
 const trace = sdkTraceSchema.parse({
   traceSchemaVersion: 1,
@@ -35,7 +38,7 @@ const trace = sdkTraceSchema.parse({
 function memoryDatabase() {
   let row: Record<string, unknown> | undefined;
   const database = {
-    delete: () => ({ where: async () => undefined }),
+    delete: () => ({ where: async () => ({ count: 0 }) }),
     insert: () => ({
       values: (value: Record<string, unknown>) => ({
         onConflictDoNothing: () => ({
@@ -98,7 +101,6 @@ describe("storeSdkTrace", () => {
 
   it("expires the stored record according to the application's retention policy", async () => {
     const memory = memoryDatabase();
-    const before = Date.now();
 
     await storeSdkTrace(memory.database, {
       applicationId: "app-1",
@@ -106,10 +108,45 @@ describe("storeSdkTrace", () => {
       retentionDays: 7,
     });
 
-    const storedExpiry = memory.row?.expiresAt;
-    expect(storedExpiry).toBeInstanceOf(Date);
-    const expiresAt = storedExpiry instanceof Date ? storedExpiry.getTime() : Number.NaN;
-    expect(expiresAt).toBeGreaterThanOrEqual(before + 7 * 24 * 60 * 60 * 1000);
-    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Counted from receipt with the period saved when the row is written, read
+    // under FOR SHARE so a concurrent retention change cannot be missed (US-112).
+    const receivedAt = memory.row?.receivedAt;
+    expect(receivedAt).toBeInstanceOf(Date);
+    const expiry = new PgDialect().sqlToQuery(memory.row?.expiresAt as SQL);
+    expect(expiry.sql).toBe(
+      '$1::timestamp + make_interval(days => coalesce((select "application_telemetry_policy"."retention_days" from "application_telemetry_policy" where "application_telemetry_policy"."application_id" = $2 for share), $3)::integer)',
+    );
+    expect(expiry.params).toEqual([(receivedAt as Date).toISOString(), "app-1", 7]);
+  });
+});
+
+describe("purgeExpiredSdkTraces (US-112)", () => {
+  it("deletes every trace whose expiry has passed and counts them", async () => {
+    const where = vi.fn();
+    const database = {
+      delete: (table: unknown) => ({
+        where: (condition: SQL) => {
+          where(table, condition);
+          return Promise.resolve({ count: 2 });
+        },
+      }),
+    } as unknown as SdkTraceDatabase;
+    const now = new Date("2026-10-03T00:00:00.000Z");
+
+    await expect(purgeExpiredSdkTraces(database, now)).resolves.toEqual({ deletedTraces: 2 });
+
+    const [table, condition] = where.mock.calls[0] as [unknown, SQL];
+    expect(table).toBe(sdkTrace);
+    const query = new PgDialect().sqlToQuery(condition);
+    expect(query.sql).toBe('"sdk_trace"."expires_at" <= $1');
+    expect(query.params).toEqual([now.toISOString()]);
+  });
+
+  it("does nothing when no trace has expired, so a repeated run is harmless", async () => {
+    const database = {
+      delete: () => ({ where: async () => ({ count: 0 }) }),
+    } as unknown as SdkTraceDatabase;
+
+    await expect(purgeExpiredSdkTraces(database)).resolves.toEqual({ deletedTraces: 0 });
   });
 });

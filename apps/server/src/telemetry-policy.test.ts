@@ -29,7 +29,12 @@ function makeApp({
   update = async ({ applicationId, enabled, retentionDays }: UpdateTelemetryPolicyInput) =>
     ({
       ok: true,
-      policy: { applicationId, enabled, retentionDays, updatedAt: "2026-09-26T12:00:00.000Z" },
+      policy: {
+        applicationId,
+        enabled: enabled ?? savedPolicy.enabled,
+        retentionDays: retentionDays ?? savedPolicy.retentionDays,
+        updatedAt: "2026-09-26T12:00:00.000Z",
+      },
     }) as UpdateTelemetryPolicyResult,
 }: {
   session?: { user: { id: string } } | null;
@@ -172,12 +177,56 @@ describe("PATCH /applications/:applicationId/telemetry-policy", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("changes only the retention period when it is the only field (US-112)", async () => {
+    const { request, update } = makeApp();
+
+    const response = await patchPolicy(request, { retentionDays: 7 });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      policy: {
+        applicationId: "app-1",
+        enabled: false,
+        retentionDays: 7,
+        updatedAt: "2026-09-26T12:00:00.000Z",
+      },
+    });
+    expect(update).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      userId: "admin",
+      retentionDays: 7,
+    });
+  });
+
+  it("changes only the switch when it is the only field", async () => {
+    const { request, update } = makeApp();
+
+    const response = await patchPolicy(request, { enabled: true });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({ applicationId: "app-1", userId: "admin", enabled: true });
+  });
+
+  it("rejects a plain member's retention change and keeps the previous period (US-112)", async () => {
+    const { request } = makeApp({
+      membershipRole: "member",
+      update: async () => ({ ok: false, reason: "forbidden" }),
+    });
+
+    const response = await patchPolicy(request, { retentionDays: 90 });
+
+    expect(response.status).toBe(403);
+  });
+
   it.each([
     [{ enabled: true, retentionDays: 45 }, "Selecciona un periodo de retención válido."],
     [{ enabled: true, retentionDays: "30" }, "Selecciona un periodo de retención válido."],
-    [{ enabled: true }, "Selecciona un periodo de retención válido."],
+    [{ retentionDays: 0 }, "Selecciona un periodo de retención válido."],
+    [{ retentionDays: 365 }, "Selecciona un periodo de retención válido."],
+    [{ retentionDays: null }, "Selecciona un periodo de retención válido."],
     [{ enabled: "yes", retentionDays: 30 }, "Indica si se permite la telemetría técnica."],
-    [{ retentionDays: 30 }, "Indica si se permite la telemetría técnica."],
+    [{}, "La política de telemetría no es válida."],
+    [[], "La política de telemetría no es válida."],
     ["{", "La política de telemetría no es válida."],
   ])("rejects the invalid policy %j without writing", async (body, message) => {
     const { request, update } = makeApp();

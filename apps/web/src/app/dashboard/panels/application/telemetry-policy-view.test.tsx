@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Application } from "../../types";
 import { ApplicationDetailPanel } from "../application-detail-panel";
@@ -39,7 +39,25 @@ function toggle() {
 }
 
 function retention() {
-  return screen.getByLabelText("Retención") as HTMLSelectElement;
+  return screen.getByLabelText("Periodo de retención") as HTMLSelectElement;
+}
+
+function savedResponse(policy: Partial<typeof savedPolicy>) {
+  return {
+    data: {
+      policy: { ...savedPolicy, updatedAt: "2026-09-26T12:00:00.000Z", ...policy },
+    },
+  };
+}
+
+function policyCancel() {
+  return within(screen.getByRole("form", { name: "Política de telemetría" })).getByRole("button", {
+    name: "Cancelar",
+  });
+}
+
+function retentionForm() {
+  return within(screen.getByRole("form", { name: "Retención" }));
 }
 
 async function renderView(props: Partial<Parameters<typeof TelemetryPolicyView>[0]> = {}) {
@@ -82,21 +100,11 @@ describe("US-100: Configurar la política de telemetría", () => {
     ).toBe(true);
   });
 
-  it("lets an administrator enable telemetry and saves the chosen retention", async () => {
-    client.patch.mockResolvedValue({
-      data: {
-        policy: {
-          applicationId: "app-1",
-          enabled: true,
-          retentionDays: 90,
-          updatedAt: "2026-09-26T12:00:00.000Z",
-        },
-      },
-    });
+  it("lets an administrator enable telemetry without sending the retention", async () => {
+    client.patch.mockResolvedValue(savedResponse({ enabled: true }));
     await renderView();
 
     fireEvent.click(toggle());
-    fireEvent.change(retention(), { target: { value: "90" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar política" }));
 
     expect(await screen.findByRole("button", { name: "Guardando política…" })).toBeTruthy();
@@ -105,10 +113,9 @@ describe("US-100: Configurar la política de telemetría", () => {
     );
     expect(client.patch).toHaveBeenCalledWith("/applications/app-1/telemetry-policy", {
       enabled: true,
-      retentionDays: 90,
     });
     expect(toggle().checked).toBe(true);
-    expect(retention().value).toBe("90");
+    expect(retention().value).toBe("30");
     expect(
       (screen.getByRole("button", { name: "Guardar política" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -118,11 +125,9 @@ describe("US-100: Configurar la política de telemetría", () => {
     await renderView();
 
     fireEvent.click(toggle());
-    fireEvent.change(retention(), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.click(policyCancel());
 
     expect(toggle().checked).toBe(false);
-    expect(retention().value).toBe("30");
     expect(client.patch).not.toHaveBeenCalled();
   });
 
@@ -141,7 +146,7 @@ describe("US-100: Configurar la política de telemetría", () => {
       ),
     );
     expect(toastMock.success).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    fireEvent.click(policyCancel());
     expect(toggle().checked).toBe(false);
   });
 
@@ -220,5 +225,113 @@ describe("US-100: Configurar la política de telemetría", () => {
     );
 
     expect(await screen.findByRole("switch", { name: "Permitir telemetría técnica" })).toBeTruthy();
+  });
+});
+
+describe("US-112: Aplicar retención de telemetría", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client.get.mockReset();
+    client.patch.mockReset();
+    client.get.mockResolvedValue({ data: { policy: { ...savedPolicy, enabled: true } } });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows the period selector with its help under Retención", async () => {
+    await renderView();
+
+    expect(screen.getByRole("heading", { name: "Retención" })).toBeTruthy();
+    expect(retention().value).toBe("30");
+    expect(
+      retentionForm().getByText("Las trazas vencidas dejarán de estar disponibles."),
+    ).toBeTruthy();
+    expect(retention().getAttribute("aria-describedby")).toBe("telemetry-retention-help");
+    expect(
+      (retentionForm().getByRole("button", { name: "Guardar retención" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("saves only the retention period and keeps the switch", async () => {
+    client.patch.mockResolvedValue(savedResponse({ enabled: true, retentionDays: 7 }));
+    await renderView();
+
+    fireEvent.change(retention(), { target: { value: "7" } });
+    fireEvent.click(retentionForm().getByRole("button", { name: "Guardar retención" }));
+
+    expect(
+      await retentionForm().findByRole("button", { name: "Guardando retención…" }),
+    ).toBeTruthy();
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Retención actualizada."));
+    expect(client.patch).toHaveBeenCalledWith("/applications/app-1/telemetry-policy", {
+      retentionDays: 7,
+    });
+    expect(retention().value).toBe("7");
+    expect(toggle().checked).toBe(true);
+    expect(
+      (retentionForm().getByRole("button", { name: "Guardar retención" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("keeps the previous period when the server rejects it", async () => {
+    client.patch.mockRejectedValue(axiosError(400, "Selecciona un periodo de retención válido."));
+    await renderView();
+
+    fireEvent.change(retention(), { target: { value: "90" } });
+    fireEvent.click(retentionForm().getByRole("button", { name: "Guardar retención" }));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith("Selecciona un periodo de retención válido."),
+    );
+    expect(toastMock.success).not.toHaveBeenCalled();
+    fireEvent.click(retentionForm().getByRole("button", { name: "Cancelar" }));
+    expect(retention().value).toBe("30");
+  });
+
+  it("falls back to a generic message when saving the period fails", async () => {
+    client.patch.mockRejectedValue(new Error("network"));
+    await renderView();
+
+    fireEvent.change(retention(), { target: { value: "90" } });
+    fireEvent.click(retentionForm().getByRole("button", { name: "Guardar retención" }));
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "No pudimos guardar la retención. Inténtalo nuevamente.",
+      ),
+    );
+  });
+
+  it("keeps an unsaved switch change when the period is saved", async () => {
+    client.patch.mockResolvedValue(savedResponse({ enabled: true, retentionDays: 90 }));
+    await renderView();
+
+    fireEvent.click(toggle());
+    fireEvent.change(retention(), { target: { value: "90" } });
+    fireEvent.click(retentionForm().getByRole("button", { name: "Guardar retención" }));
+
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Retención actualizada."));
+    expect(toggle().checked).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "Guardar política" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("does not let a plain member change the period", async () => {
+    await renderView({ canManage: false });
+
+    expect(retention().disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Guardar retención" })).toBeNull();
+  });
+
+  it("does not let administrators change the period of an archived application", async () => {
+    await renderView({ application: { ...activeApp, status: "archived" } });
+
+    expect(retention().disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Guardar retención" })).toBeNull();
   });
 });
