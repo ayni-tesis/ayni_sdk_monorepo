@@ -12,6 +12,7 @@ import 'consent_receipt_store.dart';
 import 'evidence_event.dart';
 import 'evidence_image_optimizer.dart';
 import 'evidence_queue_status.dart';
+import 'evidence_status.dart';
 import 'evidence_store.dart';
 import 'evidence_uploader.dart';
 import 'installation_id_store.dart';
@@ -309,8 +310,9 @@ class AyniConfig {
   /// Creates an SDK configuration instance.
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required.
-  /// [syncTimeout] defaults to 30 seconds and [allowInsecureLoopback] to
-  /// `false`; the [onProgress] callback is optional.
+  /// [syncTimeout] defaults to 30 seconds, [allowInsecureLoopback] to
+  /// `false` and [maxEvidenceUploadAttempts] to 5; the [onProgress] callback
+  /// is optional.
   /// The constructor never throws: [AyniSdk.initialize] reports an invalid
   /// configuration.
   AyniConfig({
@@ -320,6 +322,7 @@ class AyniConfig {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
+    this.maxEvidenceUploadAttempts = 5,
   });
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
@@ -357,15 +360,22 @@ class AyniConfig {
   /// See [AyniSdk.onProgress].
   final void Function(String message)? onProgress;
 
+  /// How many times [AyniSdk.sync] tries to upload an evidence for datasets
+  /// before it stops. Defaults to 5 and must be at least 1.
+  ///
+  /// See [AyniSdk.maxEvidenceUploadAttempts].
+  final int maxEvidenceUploadAttempts;
+
   /// Whether this configuration is complete and valid for SDK initialization.
   ///
   /// It is `true` when [credential] and the [storageDirectory] path are not
-  /// blank, [syncTimeout] is positive, and [serverUrl] can receive the
-  /// credential.
+  /// blank, [syncTimeout] is positive, [maxEvidenceUploadAttempts] is at
+  /// least 1, and [serverUrl] can receive the credential.
   bool get isValid =>
       credential.trim().isNotEmpty &&
       storageDirectory.path.trim().isNotEmpty &&
       syncTimeout > Duration.zero &&
+      maxEvidenceUploadAttempts >= 1 &&
       AyniSdk._canSendCredentialTo(
         serverUrl,
         allowInsecureLoopback: allowInsecureLoopback,
@@ -378,7 +388,8 @@ class AyniConfig {
       'credential: [REDACTED], '
       'storageDirectory: ${storageDirectory.path}, '
       'syncTimeout: $syncTimeout, '
-      'allowInsecureLoopback: $allowInsecureLoopback'
+      'allowInsecureLoopback: $allowInsecureLoopback, '
+      'maxEvidenceUploadAttempts: $maxEvidenceUploadAttempts'
       ')';
 }
 
@@ -455,8 +466,8 @@ class AyniSdk {
   /// Creates a new [AyniSdk] instance directly.
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required and mean
-  /// the same as in [AyniConfig]. [syncTimeout] defaults to 30 seconds and
-  /// [allowInsecureLoopback] to `false`.
+  /// the same as in [AyniConfig]. [syncTimeout] defaults to 30 seconds,
+  /// [allowInsecureLoopback] to `false` and [maxEvidenceUploadAttempts] to 5.
   ///
   /// Unlike [initialize], the constructor does not validate its arguments and
   /// does not set [instance]: a [serverUrl] that cannot receive the credential
@@ -471,6 +482,7 @@ class AyniSdk {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
+    this.maxEvidenceUploadAttempts = 5,
   }) : _credential = credential;
 
   /// The workflow schema versions supported by this SDK release (US-098).
@@ -607,6 +619,7 @@ class AyniSdk {
         syncTimeout: config.syncTimeout,
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
+        maxEvidenceUploadAttempts: config.maxEvidenceUploadAttempts,
       );
       sdk._ensureInstallationId();
       _instance = sdk;
@@ -689,6 +702,27 @@ class AyniSdk {
   /// Other messages include `Descargando modelos para <nombre>…` during
   /// [sync] and `Usando recursos guardados en este dispositivo.` during [run].
   final void Function(String message)? onProgress;
+
+  /// How many times [sync] tries to upload an evidence for datasets without
+  /// a confirmation from the server before it stops (US-071). Defaults to 5:
+  /// the first upload and up to four retries.
+  ///
+  /// Every upload that ends without a confirmation counts: no answer, a
+  /// timeout, a server error, or a server rejection of that evidence. A
+  /// revoked credential and a sync that sends nothing, because of the
+  /// collection policy, the connection or the time left, do not count. After
+  /// each failed attempt the evidence is [EvidenceStatus.retrying] and a
+  /// later [sync] tries again once a wait passes: 5 minutes after the first
+  /// failure, twice as long after each next one, and at most an hour. On the
+  /// last attempt it becomes [EvidenceStatus.failed], [sync] reports
+  /// [EvidenceEvent.evidenceRetriesExhausted], and the SDK keeps it on the
+  /// device without sending it again automatically. A value below 1 counts
+  /// as 1.
+  final int maxEvidenceUploadAttempts;
+
+  /// The clock the evidence retries use; tests replace it through
+  /// [createAyniSdkForTesting].
+  DateTime Function() _now = DateTime.now;
 
   /// Installation identity used only by policy-enabled diagnostic traces.
   String? _installationId;
@@ -1039,6 +1073,10 @@ class AyniSdk {
   /// for the evidence the SDK is still preparing or saving, and it makes no
   /// network request. [clearPendingEvidence] empties the queue.
   ///
+  /// It counts the [EvidenceStatus.pending] and [EvidenceStatus.retrying]
+  /// evidence, not the [EvidenceStatus.failed] one, which the SDK no longer
+  /// sends automatically (see [evidenceStatusCounts]).
+  ///
   /// ```dart
   /// final pending = await sdk.pendingEvidenceCount();
   /// if (pending > 0) {
@@ -1046,6 +1084,30 @@ class AyniSdk {
   /// }
   /// ```
   Future<int> pendingEvidenceCount() => _evidence.pendingCount();
+
+  /// How many evidences for datasets kept on this device are in each
+  /// [EvidenceStatus] (US-071), for example to show how many are `Fallida`.
+  /// Every status is in the map, with 0 when no evidence has it.
+  ///
+  /// An evidence is [EvidenceStatus.pending] until its first upload,
+  /// [EvidenceStatus.retrying] after an upload without a confirmation,
+  /// [EvidenceStatus.received] once the server confirmed it, and
+  /// [EvidenceStatus.failed] after [maxEvidenceUploadAttempts] uploads
+  /// without one: the SDK keeps a failed evidence on the device but no
+  /// longer sends it automatically. Like [pendingEvidenceCount], it reads the
+  /// queue on the device without a network request and without waiting for
+  /// the evidence the SDK is still preparing or saving.
+  /// [clearPendingEvidence] deletes the evidence of every status.
+  ///
+  /// ```dart
+  /// final counts = await sdk.evidenceStatusCounts();
+  /// final failed = counts[EvidenceStatus.failed]!;
+  /// if (failed > 0) {
+  ///   showStatus('${EvidenceStatus.failed.message}: $failed');
+  /// }
+  /// ```
+  Future<Map<EvidenceStatus, int>> evidenceStatusCounts() =>
+      _evidence.statusCounts();
 
   /// The state of the queue of evidence for datasets pending upload on this
   /// device (US-069), for example to show `Pendiente de Wi-Fi`.
@@ -1873,6 +1935,10 @@ class AyniSdk {
 
     var consulted = true;
     await for (final evidence in _evidence.pending()) {
+      // US-071: an evidence whose last upload failed waits before the next.
+      if (!isEvidenceUploadDue(await _evidence.attempts(evidence), _now())) {
+        continue;
+      }
       if (!consulted) policy = await _refreshCollectionPolicy(client, deadline);
       consulted = false;
       if (policy == null ||
@@ -1884,31 +1950,53 @@ class AyniSdk {
         return;
       }
       report(EvidenceEvent.evidenceUploading);
+      final startedAt = _now();
       final result = await upload(evidence);
       // clearPendingEvidence() deleted it: there is nothing left to report.
       if (cleared()) return;
       switch (result.outcome) {
         case EvidenceUploadOutcome.received:
           try {
-            await _evidence.markReceived(
-              evidence,
-              result.receivedAt ?? DateTime.now(),
-            );
+            await _evidence.markReceived(evidence, result.receivedAt ?? _now());
           } on FileSystemException {
             // The server holds it; a later sync asks again and the server
             // answers that it already received it, without a new upload.
           }
           report(EvidenceEvent.evidenceReceived);
         case EvidenceUploadOutcome.rejected:
-          report(EvidenceEvent.evidenceUploadFailed);
+          // Only this evidence: the next one still goes.
+          report(await _recordFailedUpload(evidence, startedAt));
         case EvidenceUploadOutcome.failed:
-          report(EvidenceEvent.evidenceUploadFailed);
+          report(await _recordFailedUpload(evidence, startedAt));
           return;
         case EvidenceUploadOutcome.credentialRevoked:
+          // Not a failure of this evidence: it uses up no attempt.
           report(EvidenceEvent.evidenceCredentialRevoked);
           return;
       }
     }
+  }
+
+  /// Counts an upload of [evidence] that started at [startedAt] and ended
+  /// without a confirmation, and returns what [sync] reports: it failed for
+  /// good once it reaches [maxEvidenceUploadAttempts] (US-071). When the SDK
+  /// cannot record it, the attempt does not count and the evidence keeps its
+  /// status.
+  Future<EvidenceEvent> _recordFailedUpload(
+    Directory evidence,
+    DateTime startedAt,
+  ) async {
+    try {
+      final attempts = await _evidence.recordFailedAttempt(
+        evidence,
+        startedAt,
+        limit: maxEvidenceUploadAttempts,
+      );
+      if (attempts.failed) return EvidenceEvent.evidenceRetriesExhausted;
+    } on FileSystemException {
+      // A full device, or a clearPendingEvidence() that deleted it.
+    }
+    return EvidenceEvent.evidenceUploadFailed;
   }
 
   /// What a step of the evidence queue may still wait: the optional budget
@@ -2815,6 +2903,8 @@ AyniSdk createAyniSdkForTesting({
   EvidenceFileWriter? evidenceFileWriter,
   NetworkTypeReader? networkTypeReader,
   EvidenceUploader? evidenceUploader,
+  int maxEvidenceUploadAttempts = 5,
+  DateTime Function()? clock,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -2823,6 +2913,7 @@ AyniSdk createAyniSdkForTesting({
     syncTimeout: syncTimeout,
     allowInsecureLoopback: allowInsecureLoopback,
     onProgress: onProgress,
+    maxEvidenceUploadAttempts: maxEvidenceUploadAttempts,
   );
   sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
   ConsentReceiptStore.beforeRemoveForTesting = onBeforeConsentReceiptRemoval;
@@ -2839,6 +2930,7 @@ AyniSdk createAyniSdkForTesting({
   }
   if (networkTypeReader != null) sdk._readNetworkType = networkTypeReader;
   sdk._evidenceUploader = evidenceUploader;
+  if (clock != null) sdk._now = clock;
   return sdk;
 }
 

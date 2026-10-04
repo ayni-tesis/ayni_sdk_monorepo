@@ -22,6 +22,7 @@ function section(heading: string): string {
 const defaultWording: Record<string, string> = {
   "const Duration(seconds: 30)": "30 segundos",
   false: "`false`",
+  "5": "5",
 };
 
 function pubspecValue(key: string): string {

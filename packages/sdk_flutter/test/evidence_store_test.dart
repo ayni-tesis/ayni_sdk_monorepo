@@ -125,6 +125,67 @@ void main() {
     });
   });
 
+  group('recordFailedAttempt (US-071)', () {
+    test('records each failed attempt apart from evidence.json and fails the '
+        'evidence at the limit', () async {
+      final store = EvidenceStore(storageDirectory);
+      await store.save('evidence-1', content);
+      final evidence = Directory('${evidenceDirectory.path}/evidence-1');
+      final attempts = File('${evidence.path}/upload-attempts.json');
+
+      final first = await store.recordFailedAttempt(
+        evidence,
+        DateTime.utc(2026, 10, 4, 12),
+        limit: 2,
+      );
+
+      expect(first, (
+        count: 1,
+        lastAttemptAt: DateTime.utc(2026, 10, 4, 12),
+        failed: false,
+      ));
+      expect(
+        attempts.readAsStringSync(),
+        '{"evidenceId":"evidence-1","attempts":1,'
+        '"lastAttemptAt":"2026-10-04T12:00:00.000Z","failed":false}',
+      );
+      expect(await store.pendingCount(), 1);
+
+      final second = await store.recordFailedAttempt(
+        evidence,
+        DateTime.utc(2026, 10, 4, 13),
+        limit: 2,
+      );
+
+      expect(second.failed, isTrue);
+      expect(
+        attempts.readAsStringSync(),
+        '{"evidenceId":"evidence-1","attempts":2,'
+        '"lastAttemptAt":"2026-10-04T13:00:00.000Z","failed":true}',
+      );
+      expect(await store.pendingCount(), 0);
+      expect(
+        File('${evidence.path}/evidence.json').readAsStringSync(),
+        '{"evidenceSchemaVersion":1}',
+      );
+      expect(evidence.listSync().map((e) => e.uri.pathSegments.last), {
+        'image',
+        'evidence.json',
+        'upload-attempts.json',
+      });
+    });
+
+    test('reads an unreadable record as no attempts', () async {
+      final store = EvidenceStore(storageDirectory);
+      await store.save('evidence-1', content);
+      final evidence = Directory('${evidenceDirectory.path}/evidence-1');
+      File('${evidence.path}/upload-attempts.json').writeAsStringSync('{');
+
+      expect(await store.attempts(evidence), noEvidenceUploadAttempts);
+      expect(await store.pendingCount(), 1);
+    });
+  });
+
   group('save', () {
     test('leaves no partial file when a write fails', () async {
       var writes = 0;

@@ -59,6 +59,20 @@
   pendiente y un `sync()` posterior la vuelve a intentar con el mismo ID, sin
   duplicarla. La copia local de la evidencia recibida se conserva hasta
   `clearPendingEvidence()`.
+- Cada carga de evidencia que termina sin confirmación cuenta como un intento,
+  salvo con la credencial revocada. Después de un intento fallido la evidencia
+  queda `EvidenceStatus.retrying` (`Reintentando`) y un `sync()` posterior la
+  reintenta tras una espera de 5 minutos que se duplica en cada fallo, hasta una
+  hora. El nuevo parámetro `maxEvidenceUploadAttempts` de `AyniSdk` y
+  `AyniConfig` (5 por defecto) limita los intentos: en el último, `sync()` avisa
+  `evidenceRetriesExhausted`
+  (`No se pudo enviar la evidencia después de varios intentos.`) y la evidencia
+  queda `failed` (`Fallida`), conservada en el dispositivo pero sin reenviarse
+  automáticamente ni bloquear a las demás. Los intentos se guardan en
+  `upload-attempts.json`, dentro del directorio de la evidencia.
+- `evidenceStatusCounts()` devuelve cuántas evidencias hay en cada
+  `EvidenceStatus`: `pending` (`Pendiente`), `retrying`, `received`
+  (`Enviada`) y `failed`, sin solicitudes de red.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega esas dos rutas.
 
 ## 0.2.0 - 2026-10-03

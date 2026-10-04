@@ -38,6 +38,7 @@ const Map<String, Set<String>> expectedExports = {
   'src/device_profile.dart': {'DeviceProfile'},
   'src/evidence_event.dart': {'EvidenceEvent'},
   'src/evidence_queue_status.dart': {'EvidenceQueueStatus'},
+  'src/evidence_status.dart': {'EvidenceStatus'},
   'src/workflow_trace.dart': {
     'TraceMeasurement',
     'TraceModel',
@@ -214,6 +215,7 @@ void main() {
         'DeviceProfile': DeviceProfile,
         'EvidenceEvent': EvidenceEvent,
         'EvidenceQueueStatus': EvidenceQueueStatus,
+        'EvidenceStatus': EvidenceStatus,
         'TraceMeasurement': TraceMeasurement,
         'TraceModel': TraceModel,
         'TraceNodeExecution': TraceNodeExecution,
@@ -261,6 +263,11 @@ void main() {
           sdk.evidenceQueueStatus,
           isA<Future<EvidenceQueueStatus> Function()>(),
         );
+        expect(
+          sdk.evidenceStatusCounts,
+          isA<Future<Map<EvidenceStatus, int>> Function()>(),
+        );
+        expect(sdk.maxEvidenceUploadAttempts, 5);
         expect(sdk.resetInstallationId, isA<Future<void> Function()>());
         expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
         expect(

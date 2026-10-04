@@ -29,4 +29,10 @@ describe("privacy example (US-147)", () => {
     expect(privacy.uploadEvidence).toContain("onEvidence:");
     expect(privacy.uploadEvidence).toContain("event.message");
   });
+
+  it("counts the evidence of each status, such as Fallida (US-071)", () => {
+    expect(privacy.evidenceStatus).toContain("await sdk.evidenceStatusCounts()");
+    expect(privacy.evidenceStatus).toContain("EvidenceStatus.failed");
+    expect(privacy.evidenceStatus).toContain(".message");
+  });
 });

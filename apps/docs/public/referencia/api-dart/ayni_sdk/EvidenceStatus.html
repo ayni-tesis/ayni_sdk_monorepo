@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
-  <meta name="description" content="API docs for the EvidenceEvent enum from the ayni_sdk library, for the Dart programming language.">
-  <title>EvidenceEvent enum - ayni_sdk library - Dart API</title>
+  <meta name="description" content="API docs for the EvidenceStatus enum from the ayni_sdk library, for the Dart programming language.">
+  <title>EvidenceStatus enum - ayni_sdk library - Dart API</title>
 
 
   
@@ -26,9 +26,9 @@
   <ol class="breadcrumbs gt-separated dark hidden-xs">
     <li><a href="/">Ayni Docs</a></li><li><a href="../index.html">ayni_sdk 0.3.0</a></li>
     <li><a href="../ayni_sdk/">ayni_sdk.dart</a></li>
-    <li class="self-crumb">EvidenceEvent enum</li>
+    <li class="self-crumb">EvidenceStatus enum</li>
   </ol>
-  <div class="self-name">EvidenceEvent</div>
+  <div class="self-name">EvidenceStatus</div>
   <form class="search navbar-right" role="search">
     <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
   </form>
@@ -46,11 +46,11 @@
     id="dartdoc-main-content" lang="en" data-pagefind-body
     class="main-content"
     data-above-sidebar="ayni_sdk&#47;ayni_sdk-library-sidebar.html"
-    data-below-sidebar="ayni_sdk&#47;EvidenceEvent-enum-sidebar.html">
+    data-below-sidebar="ayni_sdk&#47;EvidenceStatus-enum-sidebar.html">
     <div>
 
       <h1>
-        <span class="kind-enum">EvidenceEvent</span>
+        <span class="kind-enum">EvidenceStatus</span>
         enum 
  
 
@@ -59,24 +59,15 @@
 
     
 <section class="desc markdown">
-  <p>What the SDK did with an evidence for datasets: the events of its capture,
-reported to the <code>onEvidence</code> callback of <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a> (US-066 to
-US-068), and those of its upload, reported to the <code>onEvidence</code> callback of
-<a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> (US-070). The SDK also reports each <a href="../ayni_sdk/EvidenceEvent/message.html">message</a> to
-<a href="../ayni_sdk/AyniSdk/onProgress.html">AyniSdk.onProgress</a>.</p>
-<p>The SDK only creates evidence when the app passes <code>evidenceConsent: true</code>
-to <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>; without it, no event is reported and the image is not
-kept. Each evidence reports <a href="../ayni_sdk/EvidenceEvent.html">evidenceOptimizing</a>, then <a href="../ayni_sdk/EvidenceEvent.html">evidencePrepared</a>
-once its image is ready, and finally <a href="../ayni_sdk/EvidenceEvent.html">evidenceQueued</a> once it is pending
-in the local queue. When it cannot be kept, the last event is instead
-<a href="../ayni_sdk/EvidenceEvent.html">evidenceStorageFull</a> or <a href="../ayni_sdk/EvidenceEvent.html">evidenceDiscarded</a>, which can also come right
-after <a href="../ayni_sdk/EvidenceEvent.html">evidenceOptimizing</a>.</p>
-<p>Each pending evidence that <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> starts to upload reports
-<a href="../ayni_sdk/EvidenceEvent.html">evidenceUploading</a>, then <a href="../ayni_sdk/EvidenceEvent.html">evidenceReceived</a> once the server confirmed it,
-<a href="../ayni_sdk/EvidenceEvent.html">evidenceUploadFailed</a> when it stays pending for a later sync,
-<a href="../ayni_sdk/EvidenceEvent.html">evidenceRetriesExhausted</a> when that failed upload was its last attempt
-(US-071), or <a href="../ayni_sdk/EvidenceEvent.html">evidenceCredentialRevoked</a> when the server rejected the
-revoked credential.</p>
+  <p>The state of one evidence for datasets kept on this device, which
+<a href="../ayni_sdk/AyniSdk/evidenceStatusCounts.html">AyniSdk.evidenceStatusCounts</a> counts (US-071).</p>
+<p>A new evidence is <a href="../ayni_sdk/EvidenceStatus.html">pending</a>. When <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> cannot send it, it is
+<a href="../ayni_sdk/EvidenceStatus.html">retrying</a> and a later sync tries again, waiting a little longer after
+each failed attempt. Once the server confirms it, it is <a href="../ayni_sdk/EvidenceStatus.html">received</a>. After
+<a href="../ayni_sdk/AyniSdk/maxEvidenceUploadAttempts.html">AyniSdk.maxEvidenceUploadAttempts</a> attempts without that confirmation it
+is <a href="../ayni_sdk/EvidenceStatus.html">failed</a>: the SDK keeps it on the device but no longer sends it
+automatically. <a href="../ayni_sdk/AyniSdk/pendingEvidenceCount.html">AyniSdk.pendingEvidenceCount</a> counts the <a href="../ayni_sdk/EvidenceStatus.html">pending</a> and
+<a href="../ayni_sdk/EvidenceStatus.html">retrying</a> ones.</p>
 </section>
 
 
@@ -88,7 +79,7 @@ revoked credential.</p>
     <ul class="gt-separated dark eNum-relationships">
       <li><a href="https://api.flutter.dev/flutter/dart-core/Object-class.html">Object</a></li>
         <li><a href="https://api.flutter.dev/flutter/dart-core/Enum-class.html">Enum</a></li>
-      <li>EvidenceEvent</li>
+      <li>EvidenceStatus</li>
     </ul>
   </dd>
 
@@ -108,141 +99,54 @@ revoked credential.</p>
       <section class="summary offset-anchor" id="values">
         <h2>Values</h2>
         <dl class="properties">
-            <dt id="evidenceOptimizing" class="constant">
-    <span class="name ">evidenceOptimizing</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
+            <dt id="pending" class="constant">
+    <span class="name ">pending</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
   
 
 </dt>
 <dd>
-  <p>The SDK started reducing and compressing the image of the evidence with
-the size and quality of the application's collection policy.</p>
+  <p>Saved in the local queue and waiting for its first upload.</p>
   
 
 </dd>
 
-            <dt id="evidencePrepared" class="constant">
-    <span class="name ">evidencePrepared</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
+            <dt id="retrying" class="constant">
+    <span class="name ">retrying</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
   
 
 </dt>
 <dd>
-  <p>The SDK optimized the image of the evidence and is about to save it on
-the device with the inference result.</p>
+  <p>At least one upload failed, for example because the network or the
+server failed, and a later <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> tries again.</p>
   
 
 </dd>
 
-            <dt id="evidenceQueued" class="constant">
-    <span class="name ">evidenceQueued</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
+            <dt id="received" class="constant">
+    <span class="name ">received</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
   
 
 </dt>
 <dd>
-  <p>The SDK saved the image and the inference result, complete, in the
-local queue of evidence pending upload, where they stay across restarts
-of the app. <a href="../ayni_sdk/AyniSdk/pendingEvidenceCount.html">AyniSdk.pendingEvidenceCount</a> already counts it.</p>
+  <p>The server confirmed that it received the evidence. The SDK does not
+send it again.</p>
   
 
 </dd>
 
-            <dt id="evidenceDiscarded" class="constant">
-    <span class="name ">evidenceDiscarded</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
+            <dt id="failed" class="constant">
+    <span class="name ">failed</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
   
 
 </dt>
 <dd>
-  <p>The SDK could not prepare the evidence, for example because it had no
-collection policy yet or could not optimize the image or save it for a
-reason other than a full device, and discarded it without leaving
-partial files. The result <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a> returned does not change.</p>
-  
-
-</dd>
-
-            <dt id="evidenceStorageFull" class="constant">
-    <span class="name ">evidenceStorageFull</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p>The device had no space left to save the evidence, so the SDK
-discarded it without leaving partial files. The result <a href="../ayni_sdk/AyniSdk/run.html">AyniSdk.run</a>
-returned does not change, and the evidence already pending stays.</p>
-  
-
-</dd>
-
-            <dt id="evidenceUploading" class="constant">
-    <span class="name ">evidenceUploading</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p><a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> started to upload a pending evidence: the collection
-policy, consulted right before, allows it over the current connection.</p>
-  
-
-</dd>
-
-            <dt id="evidenceReceived" class="constant">
-    <span class="name ">evidenceReceived</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p>The server confirmed that it received the evidence, its data and its
-image, so it is no longer pending and no later <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> uploads it
-again.</p>
-  
-
-</dd>
-
-            <dt id="evidenceUploadFailed" class="constant">
-    <span class="name ">evidenceUploadFailed</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p>The SDK could not send the evidence, or the server did not confirm it,
-so it stays pending as <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a> and a later
-<a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> tries again.</p>
-  
-
-</dd>
-
-            <dt id="evidenceCredentialRevoked" class="constant">
-    <span class="name ">evidenceCredentialRevoked</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p>The server rejected the upload because the credential was revoked. The
-evidence stays pending, and the SDK sends no other evidence in that
-<a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a>. It does not count as a failed attempt.</p>
-  
-
-</dd>
-
-            <dt id="evidenceRetriesExhausted" class="constant">
-    <span class="name ">evidenceRetriesExhausted</span>
-  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>
-  
-
-</dt>
-<dd>
-  <p>The upload failed again and the evidence reached
-<a href="../ayni_sdk/AyniSdk/maxEvidenceUploadAttempts.html">AyniSdk.maxEvidenceUploadAttempts</a> (US-071): it is
-<a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus.failed</a>. The SDK keeps it on the device but no longer
-sends it automatically.</p>
+  <p>The SDK reached the limit of upload attempts without a confirmation. It
+keeps the evidence on the device, does not send it again automatically
+and does not count it as pending.</p>
   
 
 </dd>
@@ -281,23 +185,14 @@ sends it automatically.</p>
 </dd>
 
         <dt id="message" class="property">
-  <span class="name"><a href="../ayni_sdk/EvidenceEvent/message.html">message</a></span>
+  <span class="name"><a href="../ayni_sdk/EvidenceStatus/message.html">message</a></span>
   <span class="signature">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>
   
 
 </dt>
 <dd>
-  A Spanish message for diagnostics, which the SDK also reports through
-<a href="../ayni_sdk/AyniSdk/onProgress.html">AyniSdk.onProgress</a>: <code>Optimizando</code>,
-<code>Evidencia preparada para envío.</code>,
-<code>Evidencia guardada para envío posterior.</code>,
-<code>No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.</code>,
-<code>No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.</code>,
-<code>Subiendo evidencia…</code>, <code>Evidencia recibida.</code>,
-<code>No se pudo enviar la evidencia; se reintentará cuando sea posible.</code>
-<code>No se puede enviar evidencia porque la credencial fue revocada.</code>
-or
-<code>No se pudo enviar la evidencia después de varios intentos.</code>
+  A Spanish text the app can show for this state: <code>Pendiente</code>,
+<code>Reintentando</code>, <code>Enviada</code> or <code>Fallida</code>.
   <div class="features"><span class="feature">no setter</span></div>
 
 </dd>
@@ -396,8 +291,8 @@ or
     <h2>Constants</h2>
     <dl class="properties">
         <dt id="values" class="constant">
-    <span class="name "><a href="../ayni_sdk/EvidenceEvent/values-constant.html">values</a></span>
-  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span>&gt;</span></span>
+    <span class="name "><a href="../ayni_sdk/EvidenceStatus/values-constant.html">values</a></span>
+  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>&gt;</span></span>
   
 
 </dt>
@@ -420,7 +315,7 @@ or
 <ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
     <li><a href="../index.html">ayni_sdk</a></li>
     <li><a href="../ayni_sdk/">ayni_sdk</a></li>
-    <li class="self-crumb">EvidenceEvent enum</li>
+    <li class="self-crumb">EvidenceStatus enum</li>
 </ol>
 
   <h5>ayni_sdk library</h5>

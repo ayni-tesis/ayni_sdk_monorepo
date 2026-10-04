@@ -328,6 +328,49 @@ void main() {
     });
   }
 
+  test('retries an unconfirmed upload with the same ID in a later sync, '
+      'without a new evidence on the server (US-071)', () async {
+    await pendingEvidence([_firstId]);
+    complete = (_) => (500, {});
+    final events = <EvidenceEvent>[];
+    var now = DateTime.utc(2026, 10, 4, 12);
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse(uploadHost),
+      credential: 'ayni_sk_test',
+      storageDirectory: storage,
+      allowInsecureLoopback: true,
+      networkTypeReader: () async => NetworkType.wifi,
+      clock: () => now,
+    );
+    await client.sync(onEvidence: events.add);
+    complete = (id) => (
+      200,
+      {'evidenceId': id, 'status': 'received', 'receivedAt': _receivedAt},
+    );
+
+    now = now.add(const Duration(hours: 1));
+    await client.sync(onEvidence: events.add);
+
+    final started = [
+      for (final request in requests)
+        if (request.path == '/sdk/evidence')
+          (jsonDecode(utf8.decode(request.body)) as Map)['evidenceId'],
+    ];
+    expect(started, [_firstId, _firstId]);
+    expect(events, [
+      EvidenceEvent.evidenceUploading,
+      EvidenceEvent.evidenceUploadFailed,
+      EvidenceEvent.evidenceUploading,
+      EvidenceEvent.evidenceReceived,
+    ]);
+    expect(await client.evidenceStatusCounts(), {
+      EvidenceStatus.pending: 0,
+      EvidenceStatus.retrying: 0,
+      EvidenceStatus.received: 1,
+      EvidenceStatus.failed: 0,
+    });
+  });
+
   test('goes on with the next evidence when the server rejects one', () async {
     await pendingEvidence([_firstId, _secondId]);
     var rejected = false;

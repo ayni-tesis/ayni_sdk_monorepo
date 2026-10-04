@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
-  <meta name="description" content="API docs for the pendingEvidenceCount method from the AyniSdk class, for the Dart programming language.">
-  <title>pendingEvidenceCount method - AyniSdk class - ayni_sdk library - Dart API</title>
+  <meta name="description" content="API docs for the evidenceStatusCounts method from the AyniSdk class, for the Dart programming language.">
+  <title>evidenceStatusCounts method - AyniSdk class - ayni_sdk library - Dart API</title>
 
 
   
@@ -27,9 +27,9 @@
     <li><a href="/">Ayni Docs</a></li><li><a href="../../index.html">ayni_sdk 0.3.0</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk.dart</a></li>
     <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
-    <li class="self-crumb">pendingEvidenceCount method</li>
+    <li class="self-crumb">evidenceStatusCounts method</li>
   </ol>
-  <div class="self-name">pendingEvidenceCount</div>
+  <div class="self-name">evidenceStatusCounts</div>
   <form class="search navbar-right" role="search">
     <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
   </form>
@@ -49,35 +49,35 @@
     data-above-sidebar="ayni_sdk&#47;AyniSdk-class-sidebar.html"
     data-below-sidebar="">
     <div>
-<h1><span class="kind-method">pendingEvidenceCount</span> method 
+<h1><span class="kind-method">evidenceStatusCounts</span> method 
 </h1></div>
 
     <section class="multi-line-signature">
       
-<span class="returntype"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a></span>&gt;</span></span>
-<span class="name ">pendingEvidenceCount</span>(<wbr>)
+<span class="returntype"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>, <span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a></span>&gt;</span></span>&gt;</span></span>
+<span class="name ">evidenceStatusCounts</span>(<wbr>)
 
       
 
     </section>
     
 <section class="desc markdown">
-  <p>How many evidences for datasets are pending upload on this device
-(US-068), for example to show <code>Evidencia pendiente de envío</code> while it is
-more than zero.</p>
-<p>Each evidence a <a href="../../ayni_sdk/AyniSdk/run.html">run</a> keeps waits in a local queue in <a href="../../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a>
-and is already counted when <a href="../../ayni_sdk/AyniSdk/run.html">run</a> reports
-<a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceQueued</a>. It stays pending across restarts of the
-app and while the device has no connection, and the SDK never counts it
-as sent before the server confirms its upload. The count does not wait
-for the evidence the SDK is still preparing or saving, and it makes no
-network request. <a href="../../ayni_sdk/AyniSdk/clearPendingEvidence.html">clearPendingEvidence</a> empties the queue.</p>
-<p>It counts the <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.pending</a> and <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a>
-evidence, not the <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.failed</a> one, which the SDK no longer
-sends automatically (see <a href="../../ayni_sdk/AyniSdk/evidenceStatusCounts.html">evidenceStatusCounts</a>).</p>
-<pre class="language-dart"><code class="language-dart">final pending = await sdk.pendingEvidenceCount();
-if (pending &gt; 0) {
-  showStatus('Evidencia pendiente de envío ($pending)');
+  <p>How many evidences for datasets kept on this device are in each
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a> (US-071), for example to show how many are <code>Fallida</code>.
+Every status is in the map, with 0 when no evidence has it.</p>
+<p>An evidence is <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.pending</a> until its first upload,
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a> after an upload without a confirmation,
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.received</a> once the server confirmed it, and
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.failed</a> after <a href="../../ayni_sdk/AyniSdk/maxEvidenceUploadAttempts.html">maxEvidenceUploadAttempts</a> uploads
+without one: the SDK keeps a failed evidence on the device but no
+longer sends it automatically. Like <a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a>, it reads the
+queue on the device without a network request and without waiting for
+the evidence the SDK is still preparing or saving.
+<a href="../../ayni_sdk/AyniSdk/clearPendingEvidence.html">clearPendingEvidence</a> deletes the evidence of every status.</p>
+<pre class="language-dart"><code class="language-dart">final counts = await sdk.evidenceStatusCounts();
+final failed = counts[EvidenceStatus.failed]!;
+if (failed &gt; 0) {
+  showStatus('${EvidenceStatus.failed.message}: $failed');
 }
 </code></pre>
 </section>
@@ -86,7 +86,8 @@ if (pending &gt; 0) {
     
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">Future&lt;int&gt; pendingEvidenceCount() =&gt; _evidence.pendingCount();</code></pre>
+  <pre class="language-dart"><code class="language-dart">Future&lt;Map&lt;EvidenceStatus, int&gt;&gt; evidenceStatusCounts() =&gt;
+    _evidence.statusCounts();</code></pre>
 </section>
 
 
@@ -102,7 +103,7 @@ if (pending &gt; 0) {
     <li><a href="../../index.html">ayni_sdk</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk</a></li>
     <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
-    <li class="self-crumb">pendingEvidenceCount method</li>
+    <li class="self-crumb">evidenceStatusCounts method</li>
 </ol>
 
     <h5>AyniSdk class</h5>

@@ -36,6 +36,7 @@ export 'src/workflow_execution.dart'
 export 'src/device_profile.dart' show DeviceProfile;
 export 'src/evidence_event.dart' show EvidenceEvent;
 export 'src/evidence_queue_status.dart' show EvidenceQueueStatus;
+export 'src/evidence_status.dart' show EvidenceStatus;
 export 'src/workflow_trace.dart'
     show
         TraceMeasurement,

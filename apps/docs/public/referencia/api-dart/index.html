@@ -349,6 +349,21 @@ habilitada y permita la conexión actual. <code>onEvidence</code> de <code>sync(
 la recibió; sin esa confirmación sigue pendiente y un <code>sync()</code> posterior la
 vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
 copia de la evidencia recibida hasta <code>clearPendingEvidence()</code>.</p>
+<p>Cada carga sin confirmación cuenta como un intento, salvo con la credencial
+revocada, y la evidencia queda <code>Reintentando</code>: un <code>sync()</code> posterior la
+reintenta tras una espera de 5 minutos que se duplica en cada fallo, hasta una
+hora. <code>maxEvidenceUploadAttempts</code> (5 por defecto) limita los intentos; en el
+último, <code>onEvidence</code> recibe <code>evidenceRetriesExhausted</code>
+(<code>No se pudo enviar la evidencia después de varios intentos.</code>) y la evidencia
+queda <code>Fallida</code>: el SDK la conserva, pero no la vuelve a enviar
+automáticamente. <code>evidenceStatusCounts()</code> devuelve cuántas hay en cada estado
+(<code>Pendiente</code>, <code>Reintentando</code>, <code>Enviada</code> o <code>Fallida</code>):</p>
+<pre class="language-dart"><code class="language-dart">final counts = await sdk.evidenceStatusCounts();
+final failed = counts[EvidenceStatus.failed]!;
+if (failed &gt; 0) {
+  showStatus('${EvidenceStatus.failed.message}: $failed');
+}
+</code></pre>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>
