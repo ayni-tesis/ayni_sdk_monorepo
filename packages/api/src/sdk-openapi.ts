@@ -704,7 +704,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     request: {
       params: z.object({
         evidenceId: z
-          .string()
+          .uuid()
           .describe("ID de la evidencia, el mismo de `POST /sdk/evidence`.")
           .openapi({ example: evidenceExample.evidenceId }),
       }),

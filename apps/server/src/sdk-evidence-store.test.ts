@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SdkEvidence } from "@ayni/api/sdk-evidence";
+import { EVIDENCE_UPLOAD_URL_TTL_SECONDS, type SdkEvidence } from "@ayni/api/sdk-evidence";
 import { describe, expect, it } from "vitest";
 import {
   createSdkEvidenceService,
@@ -129,6 +129,7 @@ function memory({
   };
   return {
     service: createSdkEvidenceService({ repository, storage, now: () => NOW }),
+    storage,
     rows,
     objects,
     uploadUrls,
@@ -147,8 +148,10 @@ describe("starting an evidence upload (US-070)", () => {
     expect(result).toEqual({
       ok: true,
       status: "uploadRequired",
-      uploadUrl: `https://storage.example/${stagingKey}?expires=900&bytes=${image.length}`,
-      uploadUrlExpiresAt: "2026-10-03T12:16:00.000Z",
+      uploadUrl: `https://storage.example/${stagingKey}?expires=${EVIDENCE_UPLOAD_URL_TTL_SECONDS}&bytes=${image.length}`,
+      uploadUrlExpiresAt: new Date(
+        NOW.getTime() + EVIDENCE_UPLOAD_URL_TTL_SECONDS * 1000,
+      ).toISOString(),
     });
     expect(rows.get(`app-1/${EVIDENCE_ID}`)).toMatchObject({
       applicationId: "app-1",
@@ -212,6 +215,7 @@ describe("starting an evidence upload (US-070)", () => {
       { result: { type: "detection", nodeId: "modelo", detections: [] } },
     ],
     ["a label the model does not have", { result: { ...evidence.result, label: "gato" } }],
+    ["a result of another node", { result: { ...evidence.result, nodeId: "otro" } }],
   ] as const)("rejects evidence of %s and saves nothing", async (_, change) => {
     const { service, rows } = memory();
 
@@ -303,6 +307,20 @@ describe("completing an evidence upload (US-070)", () => {
       reason: "imageMissing",
     });
     expect(rows.get(`app-1/${EVIDENCE_ID}`)?.status).toBe("awaitingUpload");
+  });
+
+  it("still rejects the image when discarding it fails", async () => {
+    const { service, objects, storage } = memory();
+    await service.start("app-1", evidence);
+    objects.set(stagingKey, new Uint8Array(image.length));
+    storage.remove = async () => {
+      throw new Error("R2 unavailable");
+    };
+
+    expect(await service.complete("app-1", EVIDENCE_ID)).toEqual({
+      ok: false,
+      reason: "invalidImage",
+    });
   });
 
   it.each([

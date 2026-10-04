@@ -91,8 +91,9 @@ function resultLabels(result: SdkEvidence["result"]): string[] {
 /**
  * The evidence service (US-070). `start` checks that the evidence comes from a
  * `dataset.capture` node of a published version of the application's workflow,
- * fed by the model version it names (also of that application, with the same
- * version, SHA-256, task type and labels), saves its metadata once per
+ * fed by the model node that produced its result and runs the model version
+ * it names (also of that application, with the same version, SHA-256, task
+ * type and labels), saves its metadata once per
  * evidence ID and signs an upload URL for its image. `complete` accepts the
  * image only when it has the size, SHA-256 and dimensions of the metadata and
  * is a JPEG, copies it to its final key and only then marks it received.
@@ -127,7 +128,13 @@ export function createSdkEvidenceService({
     const modelNode = nodes.find(
       (node) => node.id === feed?.sourceNodeId && node.type === "model.tflite",
     );
-    if (!capture || modelNode?.modelVersionId !== evidence.model.modelVersionId) return null;
+    if (
+      !capture ||
+      modelNode?.modelVersionId !== evidence.model.modelVersionId ||
+      evidence.result.nodeId !== modelNode.id
+    ) {
+      return null;
+    }
 
     const found = await repository.findModelVersion(applicationId, evidence.model.modelVersionId);
     const output = isRecord(found?.contract) ? found.contract.output : undefined;
@@ -220,7 +227,8 @@ export function createSdkEvidenceService({
         dimensions?.width !== row.imageWidth ||
         dimensions.height !== row.imageHeight
       ) {
-        await storage.remove(stagingKey);
+        // A failed cleanup must not hide why the image was refused.
+        await storage.remove(stagingKey).catch(() => {});
         return { ok: false, reason: "invalidImage" };
       }
 

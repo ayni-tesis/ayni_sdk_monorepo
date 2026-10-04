@@ -27,7 +27,9 @@ export function readJpegSize(bytes: Uint8Array): { width: number; height: number
     const isFrameHeader =
       marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
     if (isFrameHeader) {
-      if (offset + 9 > bytes.length) return null;
+      // Precision, height, width and the component count, all inside the
+      // segment the header declares and the bytes received.
+      if (length < 8 || offset + 2 + length > bytes.length) return null;
       const height = ((bytes[offset + 5] ?? 0) << 8) | (bytes[offset + 6] ?? 0);
       const width = ((bytes[offset + 7] ?? 0) << 8) | (bytes[offset + 8] ?? 0);
       return width > 0 && height > 0 ? { width, height } : null;

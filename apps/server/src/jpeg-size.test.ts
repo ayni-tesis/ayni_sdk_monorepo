@@ -46,6 +46,11 @@ describe("readJpegSize", () => {
     ["an empty file", new Uint8Array()],
     ["a JPEG cut before its frame header", jpeg(640, 480).slice(0, 12)],
     ["a JPEG without a frame header", new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0x00, 0x02])],
+    [
+      "a frame header shorter than its dimensions",
+      new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x02, 0x08, 0x01, 0xe0, 0x02, 0x80, 0x03]),
+    ],
+    ["a JPEG cut inside its frame header", jpeg(640, 480).slice(0, 30)],
   ])("answers null for %s", (_, bytes) => {
     expect(readJpegSize(bytes)).toBeNull();
   });
