@@ -246,7 +246,14 @@ void main() {
           credential: 'ayni_sk_test',
           storageDirectory: Directory.systemTemp,
         );
-        expect(sdk.sync, isA<Future<SyncResult> Function()>());
+        expect(
+          sdk.sync,
+          isA<
+            Future<SyncResult> Function({
+              void Function(EvidenceEvent)? onEvidence,
+            })
+          >(),
+        );
         expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
         expect(sdk.clearPendingEvidence, isA<Future<void> Function()>());
         expect(sdk.pendingEvidenceCount, isA<Future<int> Function()>());

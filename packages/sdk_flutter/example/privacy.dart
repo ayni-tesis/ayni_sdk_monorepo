@@ -73,6 +73,20 @@ Future<void> showEvidenceQueueStatus(
   // #endregion estado-cola-evidencia
 }
 
+/// Syncs and shows how the upload of each pending evidence goes, such as
+/// `Subiendo evidencia…` and then `Evidencia recibida.`
+Future<SyncResult> syncAndShowEvidenceUploads(
+  AyniSdk sdk, {
+  required void Function(String status) showStatus,
+}) async {
+  // #region subir-evidencia
+  final result = await sdk.sync(
+    onEvidence: (event) => showStatus(event.message),
+  );
+  // #endregion subir-evidencia
+  return result;
+}
+
 /// Deletes the evidence kept on this device after the person withdraws their
 /// consent for evidence collection.
 Future<void> withdrawEvidenceConsent(AyniSdk sdk) async {

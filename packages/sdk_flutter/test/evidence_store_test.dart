@@ -78,6 +78,53 @@ void main() {
     });
   });
 
+  group('markReceived (US-070)', () {
+    test('takes the evidence out of the queue and keeps its files', () async {
+      final store = EvidenceStore(storageDirectory);
+      await store.save('evidence-1', content);
+      await store.save('evidence-2', content);
+      final received = Directory('${evidenceDirectory.path}/evidence-1');
+
+      await store.markReceived(received, DateTime.utc(2026, 10, 3, 12));
+
+      expect(
+        await store
+            .pending()
+            .map((d) => d.uri.pathSegments.lastWhere((s) => s != ''))
+            .toList(),
+        ['evidence-2'],
+      );
+      expect(await EvidenceStore(storageDirectory).pendingCount(), 1);
+      expect(File('${received.path}/image').readAsBytesSync(), [1, 2, 3]);
+      expect(
+        File('${received.path}/evidence.json').readAsStringSync(),
+        '{"evidenceSchemaVersion":1}',
+      );
+      expect(
+        File('${received.path}/received.json').readAsStringSync(),
+        '{"evidenceId":"evidence-1","receivedAt":"2026-10-03T12:00:00.000Z"}',
+      );
+      expect(received.listSync().map((e) => e.uri.pathSegments.last), {
+        'image',
+        'evidence.json',
+        'received.json',
+      });
+    });
+
+    test('fails without leaving files when the evidence was cleared', () async {
+      final store = EvidenceStore(storageDirectory);
+      await store.save('evidence-1', content);
+      final received = Directory('${evidenceDirectory.path}/evidence-1');
+      await store.clear();
+
+      await expectLater(
+        store.markReceived(received, DateTime.utc(2026, 10, 3)),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(evidenceDirectory.existsSync(), isFalse);
+    });
+  });
+
   group('save', () {
     test('leaves no partial file when a write fails', () async {
       var writes = 0;

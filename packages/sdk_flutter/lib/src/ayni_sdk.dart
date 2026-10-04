@@ -13,6 +13,7 @@ import 'evidence_event.dart';
 import 'evidence_image_optimizer.dart';
 import 'evidence_queue_status.dart';
 import 'evidence_store.dart';
+import 'evidence_uploader.dart';
 import 'installation_id_store.dart';
 import 'network_type.dart';
 import 'sdk_consent.dart';
@@ -964,8 +965,9 @@ class AyniSdk {
   /// [createAyniSdkForTesting].
   NetworkTypeReader _readNetworkType = network_type_reader.readNetworkType;
 
-  /// Sends one pending evidence (US-070); `null` until that upload exists, so
-  /// [sync] sends none. Tests attach one through [createAyniSdkForTesting].
+  /// Replaces the upload of each pending evidence (US-070) in tests, which
+  /// attach it through [createAyniSdkForTesting]; `null` uses
+  /// [EvidenceUploadClient].
   EvidenceUploader? _evidenceUploader;
 
   /// Grows with each [clearPendingEvidence], so a [run] active at that moment
@@ -1508,11 +1510,30 @@ class AyniSdk {
   ///   }
   /// }
   /// ```
-  Future<SyncResult> sync() {
+  ///
+  /// As its last optional step, before the manifest, [sync] uploads the
+  /// evidence for datasets pending on this device (US-070) while the
+  /// application's collection policy, consulted right before each one,
+  /// allows it over the current connection. [onEvidence] receives, for each
+  /// evidence it starts to upload, [EvidenceEvent.evidenceUploading] and then
+  /// [EvidenceEvent.evidenceReceived] once the server confirmed it,
+  /// [EvidenceEvent.evidenceUploadFailed] when it stays pending for a later
+  /// sync, or [EvidenceEvent.evidenceCredentialRevoked] when the server
+  /// rejected the revoked credential; [onProgress] receives their messages.
+  /// An evidence counts as sent only after that confirmation. The uploads
+  /// share the time [syncTimeout] leaves before the part kept for the
+  /// manifest, so an evidence that does not fit stays pending.
+  ///
+  /// ```dart
+  /// final result = await sdk.sync(
+  ///   onEvidence: (event) => showStatus(event.message),
+  /// );
+  /// ```
+  Future<SyncResult> sync({void Function(EvidenceEvent event)? onEvidence}) {
     final previousSync = _syncQueue;
     final syncFinished = Completer<void>();
     _syncQueue = syncFinished.future;
-    return _syncAfter(previousSync, syncFinished);
+    return _syncAfter(previousSync, syncFinished, onEvidence);
   }
 
   /// Records one user's explicit choice for one optional Ayni-owned purpose.
@@ -1803,39 +1824,88 @@ class AyniSdk {
     return policy;
   }
 
-  /// Processes the queue of evidence pending upload (US-069), the last of the
-  /// optional work of a [sync].
+  /// Processes the queue of evidence pending upload (US-069, US-070), the
+  /// last of the optional work of a [sync].
   ///
   /// It first refreshes the collection policy, which [run] also applies to
   /// each evidence image, even when nothing is pending. Then, for each
   /// pending evidence, it consults the policy on the server right before
   /// sending it (that first refresh counts for the first one) and reads the
-  /// type of connection, and sends it only while the policy is enabled and
+  /// type of connection, and uploads it only while the policy is enabled and
   /// allows that connection: only Wi-Fi for `wifi`. When the policy cannot be
   /// consulted or does not allow it, it stops and every evidence left stays
-  /// pending for a later [sync]; so does an upload the server did not
-  /// confirm.
+  /// pending for a later [sync]; so do an upload that failed and a revoked
+  /// credential. An evidence the server rejected stays pending too, but the
+  /// next one still goes. Only a confirmed upload marks an evidence received.
   Future<void> _processEvidenceQueue(
     HttpClient client,
     _SyncDeadline deadline,
+    void Function(EvidenceEvent event)? onEvidence,
   ) async {
     var policy = await _refreshCollectionPolicy(client, deadline);
-    final upload = _evidenceUploader;
-    if (upload == null) return;
     final generation = _evidenceGeneration;
+    bool cleared() => generation != _evidenceGeneration;
+    final upload =
+        _evidenceUploader ??
+        EvidenceUploadClient(
+          client: client,
+          serverUrl: serverUrl,
+          credential: _credential,
+          canUploadTo: (url) => _canSendCredentialTo(
+            url,
+            allowInsecureLoopback: allowInsecureLoopback,
+          ),
+          requestTimeout: () {
+            final budget = deadline.optionalRequestBudget;
+            return budget < _optionalRequestAttemptTimeout
+                ? budget
+                : _optionalRequestAttemptTimeout;
+          },
+          uploadTimeout: () => deadline.optionalRequestBudget,
+          cancelled: () => cleared() || deadline.expired,
+        ).upload;
+    void report(EvidenceEvent event) {
+      onProgress?.call(event.message);
+      onEvidence?.call(event);
+    }
+
     var consulted = true;
     await for (final evidence in _evidence.pending()) {
       if (!consulted) policy = await _refreshCollectionPolicy(client, deadline);
       consulted = false;
       if (policy == null ||
           deadline.expired ||
-          generation != _evidenceGeneration ||
+          cleared() ||
           !policy.allowsEvidenceUploadOver(
             await _currentNetworkType(_evidenceAttemptBudget(deadline)),
           )) {
         return;
       }
-      if (!await upload(evidence)) return;
+      report(EvidenceEvent.evidenceUploading);
+      final result = await upload(evidence);
+      // clearPendingEvidence() deleted it: there is nothing left to report.
+      if (cleared()) return;
+      switch (result.outcome) {
+        case EvidenceUploadOutcome.received:
+          try {
+            await _evidence.markReceived(
+              evidence,
+              result.receivedAt ?? DateTime.now(),
+            );
+          } on FileSystemException {
+            // The server holds it; a later sync asks again and the server
+            // answers that it already received it, without a new upload.
+          }
+          report(EvidenceEvent.evidenceReceived);
+        case EvidenceUploadOutcome.rejected:
+          report(EvidenceEvent.evidenceUploadFailed);
+        case EvidenceUploadOutcome.failed:
+          report(EvidenceEvent.evidenceUploadFailed);
+          return;
+        case EvidenceUploadOutcome.credentialRevoked:
+          report(EvidenceEvent.evidenceCredentialRevoked);
+          return;
+      }
     }
   }
 
@@ -1928,6 +1998,7 @@ class AyniSdk {
   Future<SyncResult> _syncAfter(
     Future<void> previousSync,
     Completer<void> syncFinished,
+    void Function(EvidenceEvent event)? onEvidence,
   ) async {
     await previousSync;
     final client = HttpClient();
@@ -1941,7 +2012,9 @@ class AyniSdk {
         return const SyncResult(SyncStatus.error);
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
-      final operation = _serializeConsentWork(() => _sync(client, deadline));
+      final operation = _serializeConsentWork(
+        () => _sync(client, deadline, onEvidence),
+      );
       return await operation.timeout(
         syncTimeout,
         onTimeout: () {
@@ -1974,7 +2047,11 @@ class AyniSdk {
     }
   }
 
-  Future<SyncResult> _sync(HttpClient client, _SyncDeadline deadline) async {
+  Future<SyncResult> _sync(
+    HttpClient client,
+    _SyncDeadline deadline,
+    void Function(EvidenceEvent event)? onEvidence,
+  ) async {
     try {
       await _refreshTelemetryPolicy(client);
     } on Exception {
@@ -1993,7 +2070,7 @@ class AyniSdk {
     }
     try {
       // Last of the optional work, so it only takes what the others left.
-      await _processEvidenceQueue(client, deadline);
+      await _processEvidenceQueue(client, deadline, onEvidence);
     } on Exception {
       // Optional too: evidence keeps using the last valid collection policy,
       // and the evidence not sent stays pending.
