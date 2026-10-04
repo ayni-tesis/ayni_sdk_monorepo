@@ -1,6 +1,7 @@
 // US-069: before each evidence upload the SDK consults the collection policy
 // and the type of connection, and with `wifi` it only sends over Wi-Fi; the
 // queue reports `Pendiente de Wi-Fi` while it waits.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -27,6 +28,8 @@ void main() {
   var policyStatus = HttpStatus.ok;
   var networks = <NetworkType>[];
   var networkReads = 0;
+  // Replaces the answer of the network reader when set.
+  Future<NetworkType> Function()? networkFailure;
   final uploads = <String>[];
   var confirmUploads = true;
 
@@ -39,6 +42,7 @@ void main() {
     policyStatus = HttpStatus.ok;
     networks = [NetworkType.wifi];
     networkReads = 0;
+    networkFailure = null;
     confirmUploads = true;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
@@ -65,6 +69,8 @@ void main() {
 
   Future<NetworkType> readNetwork() async {
     final index = networkReads++;
+    final failure = networkFailure;
+    if (failure != null) return failure();
     return networks[index < networks.length ? index : networks.length - 1];
   }
 
@@ -156,11 +162,7 @@ void main() {
       expect(uploads, ['evidence-1']);
     });
 
-    for (final network in [
-      NetworkType.wifi,
-      NetworkType.cellular,
-      NetworkType.other,
-    ]) {
+    for (final network in [NetworkType.wifi, NetworkType.cellular]) {
       test('sends over ${network.name} when the policy allows Wi-Fi and '
           'mobile data', () async {
         await pendingEvidence(['evidence-1']);
@@ -170,6 +172,48 @@ void main() {
         await sdk().sync();
 
         expect(uploads, ['evidence-1']);
+      });
+    }
+
+    test('sends nothing over another or an unknown connection when the '
+        'policy allows Wi-Fi and mobile data', () async {
+      await pendingEvidence(['evidence-1']);
+      policyBodies = [_policy(network: 'wifiAndCellular')];
+      networks = [NetworkType.other];
+
+      await sdk().sync();
+
+      expect(uploads, isEmpty);
+    });
+
+    for (final (name, failure) in [
+      ('fails', () async => throw StateError('no network service')),
+      ('never answers', () => Completer<NetworkType>().future),
+    ]) {
+      test('sends nothing and still syncs when the network reader '
+          '$name', () async {
+        await pendingEvidence(['evidence-1']);
+        policyBodies = [_policy(network: 'wifiAndCellular')];
+        networkFailure = failure;
+        final client = sdk();
+
+        final result = await client.sync();
+
+        expect(result.status, SyncStatus.upToDate);
+        expect(requests.last, '/sdk/sync');
+        expect(uploads, isEmpty);
+        expect(await client.pendingEvidenceCount(), 1);
+      });
+
+      test('waits for Wi-Fi when the network reader $name', () async {
+        await pendingEvidence(['evidence-1']);
+        await cachePolicy(_policy());
+        networkFailure = failure;
+
+        expect(
+          await sdk().evidenceQueueStatus(),
+          EvidenceQueueStatus.waitingForWifi,
+        );
       });
     }
 

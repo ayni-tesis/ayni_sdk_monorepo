@@ -5,10 +5,6 @@ import 'network_type.dart';
 
 const _networkChannel = MethodChannel('dev.ayni.ayni_sdk/network');
 
-/// The longest the SDK waits for the plugin's answer, so a platform that
-/// never reports a path cannot hold `sync()` or `evidenceQueueStatus()`.
-const networkTypeTimeout = Duration(seconds: 2);
-
 /// Asks the SDK's native plugin which connection the device uses right now
 /// (US-069): `ConnectivityManager` on Android and `NWPathMonitor` on iOS.
 ///

@@ -47,13 +47,15 @@ class CollectionPolicy {
 
   /// Whether this policy lets the SDK send evidence while the device uses
   /// [connection]: only when collection is [enabled], and then only over
-  /// Wi-Fi for [CollectionNetwork.wifi] and over any connection for
-  /// [CollectionNetwork.wifiAndCellular].
+  /// Wi-Fi for [CollectionNetwork.wifi] and over Wi-Fi or mobile data for
+  /// [CollectionNetwork.wifiAndCellular]. Another or an unknown connection
+  /// ([NetworkType.other]) never qualifies.
   bool allowsEvidenceUploadOver(NetworkType connection) =>
       enabled &&
       switch (network) {
         CollectionNetwork.wifi => connection == NetworkType.wifi,
-        CollectionNetwork.wifiAndCellular => connection != NetworkType.none,
+        CollectionNetwork.wifiAndCellular =>
+          connection == NetworkType.wifi || connection == NetworkType.cellular,
         null => false,
       };
 

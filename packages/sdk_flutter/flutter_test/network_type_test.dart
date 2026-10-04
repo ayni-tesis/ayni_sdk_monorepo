@@ -38,7 +38,9 @@ void main() {
       nativeAnswer = () => 'wifi';
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(_channel, (call) async {
-            expect(call.method, equals('getNetworkType'));
+            // An expect here would be swallowed by the reader, which turns
+            // any failure into `other`; each test checks `calls` instead.
+            if (call.method != 'getNetworkType') return null;
             calls++;
             return nativeAnswer();
           });
@@ -80,6 +82,7 @@ void main() {
           await createSdk().evidenceQueueStatus(),
           EvidenceQueueStatus.waitingForWifi,
         );
+        expect(calls, 1);
       });
     }
 
@@ -91,6 +94,7 @@ void main() {
         await createSdk().evidenceQueueStatus(),
         EvidenceQueueStatus.waitingForWifi,
       );
+      expect(calls, 1);
     });
 
     test('waits for Wi-Fi when the plugin never answers', () async {
@@ -102,6 +106,7 @@ void main() {
         await createSdk().evidenceQueueStatus(),
         EvidenceQueueStatus.waitingForWifi,
       );
+      expect(calls, 1);
     });
 
     test('does not ask a platform without the plugin', () async {

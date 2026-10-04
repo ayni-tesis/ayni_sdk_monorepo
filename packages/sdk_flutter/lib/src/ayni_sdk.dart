@@ -1070,7 +1070,8 @@ class AyniSdk {
   Future<EvidenceQueueStatus> evidenceQueueStatus() async {
     if (await _evidence.pending().isEmpty) return EvidenceQueueStatus.empty;
     final policy = await _collectionPolicy.read();
-    if (policy != null && policy.waitsForWifiOn(await _readNetworkType())) {
+    if (policy != null &&
+        policy.waitsForWifiOn(await _currentNetworkType(networkTypeTimeout))) {
       return EvidenceQueueStatus.waitingForWifi;
     }
     return EvidenceQueueStatus.pending;
@@ -1829,10 +1830,34 @@ class AyniSdk {
       if (policy == null ||
           deadline.expired ||
           generation != _evidenceGeneration ||
-          !policy.allowsEvidenceUploadOver(await _readNetworkType())) {
+          !policy.allowsEvidenceUploadOver(
+            await _currentNetworkType(_evidenceAttemptBudget(deadline)),
+          )) {
         return;
       }
       if (!await upload(evidence)) return;
+    }
+  }
+
+  /// What a step of the evidence queue may still wait: the optional budget
+  /// left before the part of the sync timeout kept for the required sync.
+  Duration _evidenceAttemptBudget(_SyncDeadline deadline) {
+    final budget = deadline.optionalRequestBudget;
+    return budget < networkTypeTimeout ? budget : networkTypeTimeout;
+  }
+
+  /// The connection the device uses, or [NetworkType.other], which never
+  /// lets evidence go, when the reader fails or does not answer within
+  /// [limit].
+  Future<NetworkType> _currentNetworkType(Duration limit) async {
+    if (limit <= Duration.zero) return NetworkType.other;
+    try {
+      return await _readNetworkType().timeout(
+        limit,
+        onTimeout: () => NetworkType.other,
+      );
+    } on Object {
+      return NetworkType.other;
     }
   }
 

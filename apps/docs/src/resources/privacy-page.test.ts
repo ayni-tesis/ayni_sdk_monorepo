@@ -186,8 +186,11 @@ describe("Datos y privacidad (US-147)", () => {
 
   it("describes the network evidence may use and the state of its queue (US-069)", () => {
     const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
-    const networks = (pattern: RegExp, source: string) =>
-      [...(pattern.exec(source)?.[1] ?? "").matchAll(/\w+/g)].map(([name]) => name);
+    const networks = (pattern: RegExp, source: string) => {
+      const match = pattern.exec(source);
+      if (!match) throw new Error(`No match for ${pattern} any more; update this test.`);
+      return [...(match[1] ?? "").matchAll(/\w+/g)].map(([name]) => name);
+    };
 
     expect(evidence).toContain("### Red permitida para enviar evidencia");
     expect(evidence).toContain('<Code code={privacy.evidenceQueueStatus} lang="dart" />');

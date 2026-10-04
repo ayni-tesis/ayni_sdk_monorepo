@@ -16,6 +16,11 @@ enum NetworkType {
   none,
 }
 
+/// The longest the SDK waits to learn the current [NetworkType], so a
+/// platform that never answers cannot hold `sync()` or
+/// `evidenceQueueStatus()`.
+const networkTypeTimeout = Duration(seconds: 2);
+
 /// Reads the current [NetworkType]; tests replace it through
 /// `createAyniSdkForTesting`.
 typedef NetworkTypeReader = Future<NetworkType> Function();
