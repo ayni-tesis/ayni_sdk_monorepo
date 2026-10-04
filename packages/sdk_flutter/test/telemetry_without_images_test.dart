@@ -359,7 +359,11 @@ Map<String, Object?> _withAttachments(
       Map<String, Object?>.from(value! as Map);
   final outputs = copy(trace['outputs']);
   final classification = copy(outputs['Clasificación'])
-    ..['tensor'] = [0.1, 0.9];
+    ..['tensor'] = [0.1, 0.9]
+    ..['confidences'] = {
+      ...copy(outputs['Clasificación'])['confidences']! as Map,
+      base64Encode(image): 0.5,
+    };
   return {
     ...trace,
     'image': base64Encode(image),
@@ -394,6 +398,7 @@ Map<String, Object?> _withAttachments(
         'nodeId': 'input-1',
         'bytes': base64Encode(image),
       },
+      'data:image/png;base64,${base64Encode(image)}': outputs['Clasificación'],
     },
     'error': copy(trace['error'])..['message'] = 'failed reading /tmp/a.png',
   };

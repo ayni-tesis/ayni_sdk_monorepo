@@ -57,8 +57,9 @@ _Field _record(_Field item) =>
     (record) => record is Map
     ? {
         for (final MapEntry(:key, :value) in record.entries)
-          if (key is String)
-            if (item(value) case final kept?) key: kept,
+          // A key is text too: an output name or label never carries an image.
+          if (_string(key) case final String name)
+            if (item(value) case final kept?) name: kept,
       }
     : null;
 
