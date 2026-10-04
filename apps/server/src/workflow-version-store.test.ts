@@ -216,6 +216,50 @@ describe("publishWorkflowVersion", () => {
     expect(store.inserted).toHaveLength(0);
   });
 
+  // US-065: a capture is published only with both inputs connected, and only
+  // once an SDK runs it (US-066), so for now it never is.
+  const imageToCapture = {
+    sourceNodeId: "input",
+    sourcePort: "imagen",
+    targetNodeId: "capture",
+    targetPort: "imagen",
+  };
+  const resultToCapture = {
+    sourceNodeId: "classifier",
+    sourcePort: "result",
+    targetNodeId: "capture",
+    targetPort: "resultado",
+  };
+  it.each([
+    ["without its image", [resultToCapture], [{ code: "requiredInput", port: "imagen" }]],
+    ["with its image and result", [imageToCapture, resultToCapture], []],
+  ])("refuses to publish a dataset capture %s", async (_, captureConnections, nodeErrors) => {
+    const store = makePublishDb({
+      draft: {
+        ...publishableDraft,
+        nodes: [
+          ...publishableDraft.nodes,
+          {
+            id: "capture",
+            type: "dataset.capture",
+            inputs: { imagen: "image", resultado: "inferenceResult" },
+          },
+        ],
+        connections: [...(publishableDraft.connections ?? []), ...captureConnections],
+      },
+    });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    if (result.ok || result.reason !== "invalidDraft")
+      throw new Error("Expected the draft to be refused");
+    expect(result.errors.filter((error) => error.nodeId === "capture")).toEqual(
+      nodeErrors.map((error) => expect.objectContaining(error)),
+    );
+    expect(result.errors).toContainEqual(expect.objectContaining({ code: "unpublishableNode" }));
+    expect(store.inserted).toHaveLength(0);
+  });
+
   it("rejects a version identifier already used by the workflow, keeping the existing versions", async () => {
     const store = makePublishDb({ existingVersions: ["1.0.0"] });
 
