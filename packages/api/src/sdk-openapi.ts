@@ -485,7 +485,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     operationId: "obtener-politica-de-recoleccion",
     summary: "Obtener la política de recolección de evidencia",
     description: describeWithErrors(
-      "Devuelve la política de recolección de evidencia de la aplicación de la credencial. El SDK la refresca en cada sincronización, justo antes de pedir el manifiesto, y optimiza cada imagen de evidencia con su tamaño máximo y su calidad. Sin configuración, la recolección está deshabilitada, con 1024 px y calidad 80. No incluye el identificador de aplicación.",
+      "Devuelve la política de recolección de evidencia de la aplicación de la credencial. El SDK intenta refrescarla en cada sincronización, justo antes de pedir el manifiesto, y optimiza cada imagen de evidencia con su tamaño máximo y su calidad. Sin configuración, la recolección está deshabilitada, con 1024 px y calidad 80. No incluye el identificador de aplicación.",
       credentialErrors(revokedMessage),
     ),
     security,
