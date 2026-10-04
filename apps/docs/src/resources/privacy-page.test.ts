@@ -6,6 +6,7 @@ import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dar
 import sdkCollectionPolicySource from "../../../../packages/sdk_flutter/lib/src/collection_policy_store.dart?raw";
 import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
 import evidenceStoreSource from "../../../../packages/sdk_flutter/lib/src/evidence_store.dart?raw";
+import traceOutboxSource from "../../../../packages/sdk_flutter/lib/src/trace_outbox_store.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { dashboardTexts, quotedTexts } from "../guides/dashboard-texts";
 import { tableRows } from "../markdown-table";
@@ -326,6 +327,35 @@ describe("Datos y privacidad (US-147)", () => {
       expect(row[2], row[1]).toMatch(/^`sync\(\)` l[oa] elimina/);
       expect(row[2], row[1]).not.toContain("también la enviada");
     }
+  });
+
+  it("says telemetry carries no images and dataset.capture is the only way to collect them (US-073)", () => {
+    const telemetry = section("## Telemetría sin captura de imágenes").replace(/\s+/g, " ");
+    const rows = tableRows(section("## Telemetría sin captura de imágenes"));
+
+    for (const text of [
+      "La telemetría no incluye imágenes, secretos ni datos de entrada crudos.",
+      "el SDK descarta ese adjunto y envía la traza solo con los metadatos permitidos",
+      "`invalidTrace`",
+      "es el único mecanismo con el que el SDK recolecta imágenes",
+      "aunque la app pase `evidenceConsent: true`",
+      "«Este workflow no recolecta imágenes.»",
+      "«La telemetría no incluye imágenes de entrada.»",
+      "`tracePersistenceFailed: true`",
+    ]) {
+      expect(telemetry).toContain(text);
+    }
+    // The SDK keeps only the schema's fields when it saves a trace and when it
+    // reads one to send it, as the page says.
+    expect(traceOutboxSource.match(/allowlistedTracePayload\(/g)).toHaveLength(2);
+    expect(rows.map((row) => row[0])).toEqual([
+      "Qué guarda y envía",
+      "Política que la habilita",
+      "Consentimiento",
+      "Retención en el dispositivo",
+      "Retención en el servidor",
+    ]);
+    expect(rows.filter((row) => row.length !== 3 || row.some((cell) => cell === ""))).toEqual([]);
   });
 
   it("names every Android permission the SDK adds to the app", () => {
