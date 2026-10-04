@@ -33,11 +33,8 @@ La autorización de trazas comienza apagada. Si la activas, la traza SDK puede i
 El host Android debe tener Flutter 3.47.4 / Dart 3.13.3, Android SDK 36, `cmdline-tools` y licencias Android aceptadas. En Android Studio abre **Tools > SDK Manager**; en **SDK Platforms** instala Android 16 / API 36 y en **SDK Tools** marca **Android SDK Command-line Tools (latest)**. Luego acepta las licencias y verifica el host:
 
 ```powershell
-flutter doctor -v
-```
-
-```powershell
 flutter doctor --android-licenses
+flutter doctor -v
 ```
 
 Conecta el teléfono con opciones de desarrollador y depuración USB activadas; `flutter devices` debe mostrarlo antes de instalar el APK. Si Windows Application Control bloquea `dartaotruntime.exe`, Flutter no puede ejecutar sus tests ni compilar el APK en ese host hasta que el administrador permita el runtime Flutter aprobado. No desactives ni eludas la política.
