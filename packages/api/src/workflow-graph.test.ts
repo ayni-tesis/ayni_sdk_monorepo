@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   findWorkflowCycle,
+  isCaptureConditionCompatible,
   type WorkflowGraphDraft,
   type WorkflowPortDraft,
   type WorkflowPortNode,
   workflowEdges,
+  workflowInputPortTypes,
   workflowNodesToDelete,
   workflowPortCompatibility,
   workflowSourceTarget,
@@ -238,6 +240,91 @@ describe("the inputs of a dataset capture", () => {
     expect(
       workflowPortCompatibility(connected, connect("capture", "resultado", "detector", "image")),
     ).toBe("incompatible");
+  });
+});
+
+// US-074: a capture may hang from a branch of a condition on the result it captures.
+describe("a dataset capture behind a condition", () => {
+  const draft: WorkflowPortDraft = {
+    nodes: [
+      image("image"),
+      model("classifier"),
+      model("other"),
+      { id: "condition", type: "condition", sourceNodeId: "classifier", label: "perro" },
+      { id: "other-condition", type: "condition", sourceNodeId: "other", label: "perro" },
+      { id: "capture", type: "dataset.capture" },
+    ],
+    connections: [
+      connect("image", "imagen", "capture", "imagen"),
+      connect("classifier", "result", "capture", "resultado"),
+    ],
+  };
+
+  it("takes either branch of a condition on condicion", () => {
+    expect(workflowInputPortTypes(draft.nodes.at(-1), "condicion")).toEqual(["boolean"]);
+    for (const branch of ["true", "false"])
+      expect(
+        workflowPortCompatibility(draft, connect("condition", branch, "capture", "condicion")),
+      ).toBe("compatible");
+  });
+
+  it("rejects a result or the image on condicion", () => {
+    expect(
+      workflowPortCompatibility(draft, connect("classifier", "result", "capture", "condicion")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(draft, connect("image", "imagen", "capture", "condicion")),
+    ).toBe("incompatible");
+  });
+
+  it("takes one condition, on the model whose result it captures", () => {
+    expect(
+      workflowPortCompatibility(draft, connect("other-condition", "true", "capture", "condicion")),
+    ).toBe("incompatible");
+    const gated: WorkflowPortDraft = {
+      ...draft,
+      connections: [
+        connect("image", "imagen", "capture", "imagen"),
+        connect("condition", "true", "capture", "condicion"),
+      ],
+    };
+    expect(
+      workflowPortCompatibility(gated, connect("condition", "false", "capture", "condicion")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(gated, connect("other", "result", "capture", "resultado")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(gated, connect("classifier", "result", "capture", "resultado")),
+    ).toBe("compatible");
+  });
+
+  it("tells whether the condition of a capture evaluates the result it captures", () => {
+    expect(isCaptureConditionCompatible(draft, "capture")).toBe(true);
+    expect(
+      isCaptureConditionCompatible(
+        {
+          ...draft,
+          connections: [
+            ...(draft.connections ?? []),
+            connect("condition", "false", "capture", "condicion"),
+          ],
+        },
+        "capture",
+      ),
+    ).toBe(true);
+    expect(
+      isCaptureConditionCompatible(
+        {
+          ...draft,
+          connections: [
+            ...(draft.connections ?? []),
+            connect("other-condition", "true", "capture", "condicion"),
+          ],
+        },
+        "capture",
+      ),
+    ).toBe(false);
   });
 });
 

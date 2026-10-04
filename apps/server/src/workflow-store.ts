@@ -76,7 +76,9 @@ export function toWorkflowVersion(row: WorkflowVersionRow): WorkflowVersion {
  * The nodes of a draft and of a published version, the ones the SDK runs. A
  * dataset capture (US-064) takes the image on `imagen` and a model's inference
  * result on `resultado`, and holds nothing else, so never any code; the SDK
- * creates local evidence from it since `ayni_sdk` 0.3.0 (US-066).
+ * creates local evidence from it since `ayni_sdk` 0.3.0 (US-066). A connection
+ * from a condition branch to its `condicion` input makes it capture only when
+ * the condition takes that branch (US-074); the node itself does not change.
  */
 export type WorkflowNode =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
@@ -633,7 +635,9 @@ type CollectionPolicyLookupExecutor = {
 /**
  * Adds a dataset capture, only if the application enabled evidence collection
  * (US-064). Added after a model's result, it takes that result and the image
- * the model reads, if the model has one.
+ * the model reads, if the model has one. Added after a condition branch
+ * (US-074), it hangs from that branch on `condicion` and takes the result of
+ * the model the condition evaluates and that model's image the same way.
  */
 export async function addDatasetCaptureNode(
   database: WorkflowDatabase,
@@ -661,18 +665,33 @@ export async function addDatasetCaptureNode(
         inputs: { imagen: "image", resultado: "inferenceResult" },
       };
       if (!source) return { draft: appendWorkflowNode(draft, node, position) };
-      const result: WorkflowConnection = {
-        sourceNodeId: source.nodeId,
+      // After a condition branch (US-074) the capture hangs from that branch
+      // and captures the result the condition evaluates.
+      const sourceNode = draft.nodes.find((item) => item.id === source.nodeId);
+      const condition = sourceNode?.type === "condition" ? sourceNode : undefined;
+      const gate: WorkflowConnection | undefined = condition && {
+        sourceNodeId: condition.id,
         sourcePort: source.port,
+        targetNodeId: node.id,
+        targetPort: "condicion",
+      };
+      const result: WorkflowConnection = {
+        sourceNodeId: condition ? condition.sourceNodeId : source.nodeId,
+        sourcePort: condition ? "result" : source.port,
         targetNodeId: node.id,
         targetPort: "resultado",
       };
-      if (!areWorkflowPortsCompatible(appendWorkflowNode(draft, node), result))
+      const withCapture = appendWorkflowNode(draft, node);
+      if (
+        !areWorkflowPortsCompatible(withCapture, result) ||
+        (gate && !areWorkflowPortsCompatible(withCapture, gate))
+      )
         return { reason: "incompatibleSource" as const };
       const modelImage = draft.connections?.find(
-        (edge) => edge.targetNodeId === source.nodeId && edge.targetPort === "image",
+        (edge) => edge.targetNodeId === result.sourceNodeId && edge.targetPort === "image",
       );
       const added: WorkflowConnection[] = [
+        ...(gate ? [gate] : []),
         result,
         ...(modelImage
           ? [

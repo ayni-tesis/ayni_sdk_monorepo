@@ -472,6 +472,91 @@ describe("validateWorkflowDraft", () => {
 
       expect(draft).toEqual(snapshot);
     });
+
+    // US-074: the capture may hang from a branch of a condition on its result.
+    describe("behind a condition", () => {
+      const conditionToCapture: WorkflowConnection = {
+        sourceNodeId: "condition",
+        sourcePort: "false",
+        targetNodeId: "capture",
+        targetPort: "condicion",
+      };
+
+      it("considers a capture on a branch of a condition on its result publishable", () => {
+        const draft: WorkflowDraft = {
+          nodes: [input, classifier, condition, diagnosis, capture],
+          connections: [inputToClassifier, imageToCapture, resultToCapture, conditionToCapture],
+        };
+
+        expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
+      });
+
+      it("still wants the image and the result of a capture behind a condition", () => {
+        const draft: WorkflowDraft = {
+          nodes: [input, classifier, condition, diagnosis, capture],
+          connections: [inputToClassifier, conditionToCapture],
+        };
+
+        expect(validateWorkflowDraft(draft).errors).toEqual([missingImage, missingResult]);
+      });
+
+      it("reports a condition on another model than the one captured", () => {
+        const other: WorkflowNode = { ...classifier, id: "other", modelVersionId: "version-3" };
+        const draft: WorkflowDraft = {
+          nodes: [
+            input,
+            classifier,
+            other,
+            { ...condition, sourceNodeId: "other" },
+            diagnosis,
+            capture,
+          ],
+          connections: [
+            inputToClassifier,
+            { ...inputToClassifier, targetNodeId: "other" },
+            imageToCapture,
+            resultToCapture,
+            conditionToCapture,
+          ],
+        };
+
+        expect(validateWorkflowDraft(draft)).toEqual({
+          publishable: false,
+          errors: [
+            {
+              code: "incompatibleType",
+              nodeId: "capture",
+              nodeName: "Capturar evidencia",
+              port: "condicion",
+              message:
+                'El nodo "Capturar evidencia" necesita una condición sobre el resultado que captura.',
+            },
+          ],
+        });
+      });
+
+      it("reports a model result connected as the condition", () => {
+        const draft: WorkflowDraft = {
+          nodes: [input, classifier, diagnosis, capture],
+          connections: [
+            inputToClassifier,
+            imageToCapture,
+            resultToCapture,
+            { ...resultToCapture, targetPort: "condicion" },
+          ],
+        };
+
+        expect(validateWorkflowDraft(draft).errors).toEqual([
+          {
+            code: "incompatibleType",
+            nodeId: "capture",
+            nodeName: "Capturar evidencia",
+            port: "condicion",
+            message: 'El nodo "Capturar evidencia" recibe un tipo incompatible en este puerto.',
+          },
+        ]);
+      });
+    });
   });
 
   it("does not modify the draft", () => {

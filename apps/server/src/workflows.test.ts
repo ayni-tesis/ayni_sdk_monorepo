@@ -3392,9 +3392,63 @@ describe("addDatasetCaptureNode (US-064)", () => {
     expect(store.reload()).toEqual(draft);
   });
 
+  it.each(["true", "false"])(
+    "added after the %s branch of a condition, hangs from it and takes the result the condition evaluates and its image (US-074)",
+    async (branch) => {
+      const store = captureStore(enabled);
+
+      const result = await addDatasetCaptureNode(store.db, {
+        ...input,
+        source: { nodeId: "condition", port: branch },
+      });
+
+      if (!result.ok) throw new Error(`Expected the capture to be added, got ${result.reason}`);
+      const added = result.draft.nodes[3];
+      expect(added).toEqual({
+        id: expect.any(String),
+        type: "dataset.capture",
+        inputs: { imagen: "image", resultado: "inferenceResult" },
+      });
+      expect(result.draft.connections).toEqual([
+        ...draft.connections,
+        {
+          sourceNodeId: "condition",
+          sourcePort: branch,
+          targetNodeId: added?.id,
+          targetPort: "condicion",
+        },
+        {
+          sourceNodeId: "detector",
+          sourcePort: "result",
+          targetNodeId: added?.id,
+          targetPort: "resultado",
+        },
+        {
+          sourceNodeId: "image",
+          sourcePort: "imagen",
+          targetNodeId: added?.id,
+          targetPort: "imagen",
+        },
+      ]);
+      expect(store.writes).toBe(1);
+    },
+  );
+
+  it("rejects a condition branch while collection is disabled (US-074)", async () => {
+    const store = captureStore({ enabled: false });
+
+    const result = await addDatasetCaptureNode(store.db, {
+      ...input,
+      source: { nodeId: "condition", port: "true" },
+    });
+
+    expect(result).toEqual({ ok: false, reason: "collectionDisabled" });
+    expect(store.writes).toBe(0);
+  });
+
   it.each([
     ["the image", "image", "imagen"],
-    ["a condition branch", "condition", "true"],
+    ["a condition's input", "condition", "source"],
     ["a missing node", "missing", "result"],
   ])("rejects %s as its source without saving anything", async (_case, nodeId, port) => {
     const store = captureStore(enabled);

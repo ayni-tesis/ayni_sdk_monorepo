@@ -143,17 +143,19 @@ export function workflowOutputPortType(node: WorkflowPortNode | undefined, sourc
 
 /**
  * The types an input port takes from a connection, or none if the node has no
- * such input: a model's `image`, and a capture's `imagen` and `resultado`, the
- * result of a classification or detection model.
+ * such input: a model's `image`, a capture's `imagen` and `resultado`, the
+ * result of a classification or detection model, and a capture's optional
+ * `condicion`, a condition branch it hangs from (US-074).
  */
 export function workflowInputPortTypes(
   node: WorkflowPortNode | undefined,
   targetPort: string,
-): readonly ("image" | "classification" | "detection")[] {
+): readonly ("image" | "classification" | "detection" | "boolean")[] {
   if (node?.type === "model.tflite" && targetPort === "image") return ["image"];
   if (node?.type === "dataset.capture" && targetPort === "imagen") return ["image"];
   if (node?.type === "dataset.capture" && targetPort === "resultado")
     return ["classification", "detection"];
+  if (node?.type === "dataset.capture" && targetPort === "condicion") return ["boolean"];
   return [];
 }
 
@@ -164,9 +166,26 @@ export function areWorkflowPortsCompatible(draft: WorkflowPortDraft, connection:
   const outputType = workflowOutputPortType(source, connection.sourcePort);
   return (
     outputType !== undefined &&
-    outputType !== "boolean" &&
     workflowInputPortTypes(target, connection.targetPort).includes(outputType)
   );
+}
+
+/**
+ * Whether the condition a capture hangs from (US-074) evaluates the model whose
+ * result the capture receives, so the capture keeps the very result its
+ * condition decided on. A capture missing either connection has nothing to
+ * compare yet and passes.
+ */
+export function isCaptureConditionCompatible(draft: WorkflowPortDraft, captureId: string) {
+  const inputSource = (port: string) =>
+    (draft.connections ?? []).find(
+      (edge) => edge.targetNodeId === captureId && edge.targetPort === port,
+    );
+  const gate = inputSource("condicion");
+  const result = inputSource("resultado");
+  if (!gate || !result) return true;
+  const condition = draft.nodes.find((node) => node.id === gate.sourceNodeId);
+  return condition?.type === "condition" && condition.sourceNodeId === result.sourceNodeId;
 }
 
 /** A condition needs the result of a classification model that produces its label. */
@@ -219,8 +238,9 @@ export function withWorkflowSource<Node extends WorkflowSourcedNode>(
 }
 
 /**
- * Whether `connection` may be added to the draft: matching types and one
- * connection per model image input, or, on the `source` input of a condition or
+ * Whether `connection` may be added to the draft: matching types, one
+ * connection per input, and a capture's condition on the result it captures
+ * (US-074), or, on the `source` input of a condition or
  * an output, a source that node accepts, which replaces its current one. Cycles
  * are checked separately with `findWorkflowCycle`.
  */
@@ -250,11 +270,20 @@ export function workflowPortCompatibility(
     return accepted ? "compatible" : "incompatible";
   }
   if (!areWorkflowPortsCompatible(draft, connection)) return "incompatible";
-  const inputTaken = (draft.connections ?? []).some(
+  const connections = draft.connections ?? [];
+  const inputTaken = connections.some(
     (edge) =>
       edge.targetNodeId === connection.targetNodeId && edge.targetPort === connection.targetPort,
   );
-  return inputTaken ? "incompatible" : "compatible";
+  if (inputTaken) return "incompatible";
+  const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
+  return target?.type === "dataset.capture" &&
+    !isCaptureConditionCompatible(
+      { ...draft, connections: [...connections, connection] },
+      target.id,
+    )
+    ? "incompatible"
+    : "compatible";
 }
 
 /**
