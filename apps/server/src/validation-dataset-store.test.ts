@@ -162,26 +162,26 @@ describe("createValidationDatasetStore", () => {
     expect(state.insertedDatasets).toHaveLength(0);
   });
 
-    it("maps a PostgreSQL unique violation wrapped by the Drizzle driver", async () => {
-      const state = adminState({
-        insertError: {
-          name: "DrizzleQueryError",
-          cause: Object.assign(new Error("duplicate key"), { code: "23505" }),
-        },
-      });
-      const { storage } = makeFakeStorage();
-      const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
-
-      const result = await store.createDataset({
-        applicationId: "app-1",
-        userId: "user-1",
-        name: "Dataset de prueba",
-        source: "Repositorio público de la tesis",
-        license: "CC BY 4.0",
-      });
-
-      expect(result).toEqual({ ok: false, reason: "datasetExists" });
+  it("maps a PostgreSQL unique violation wrapped by the Drizzle driver", async () => {
+    const state = adminState({
+      insertError: {
+        name: "DrizzleQueryError",
+        cause: Object.assign(new Error("duplicate key"), { code: "23505" }),
+      },
     });
+    const { storage } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+
+    const result = await store.createDataset({
+      applicationId: "app-1",
+      userId: "user-1",
+      name: "Dataset de prueba",
+      source: "Repositorio público de la tesis",
+      license: "CC BY 4.0",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "datasetExists" });
+  });
 
   it("stores the actual ZIP SHA-256 and byte count in an immutable version", async () => {
     const state = adminState({
@@ -205,7 +205,7 @@ describe("createValidationDatasetStore", () => {
       userId: "user-1",
       version: "1.0.0",
       partition: "validation",
-        expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
       bytes,
     });
 
@@ -222,29 +222,29 @@ describe("createValidationDatasetStore", () => {
     expect(artifacts.size).toBe(1);
   });
 
-    it("rejects a ZIP whose bytes do not match the upload's expected SHA-256", async () => {
-      const state = adminState({
-        datasets: [{ id: "dataset-1", applicationId: "app-1" }],
-      });
-      const { storage, artifacts } = makeFakeStorage();
-      const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
-      const bytes = new Uint8Array([1, 2, 3]);
-
-      const result = await store.completeUpload({
-        applicationId: "app-1",
-        datasetId: "dataset-1",
-        userId: "user-1",
-        version: "1.0.0",
-        partition: "validation",
-        expectedSha256: "f".repeat(64),
-        bytes,
-      });
-
-      expect(result).toEqual({ ok: false, reason: "hashMismatch" });
-      expect(storage.putArtifact).not.toHaveBeenCalled();
-      expect(artifacts.size).toBe(0);
-      expect(state.insertedVersions).toHaveLength(0);
+  it("rejects a ZIP whose bytes do not match the upload's expected SHA-256", async () => {
+    const state = adminState({
+      datasets: [{ id: "dataset-1", applicationId: "app-1" }],
     });
+    const { storage, artifacts } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const result = await store.completeUpload({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      userId: "user-1",
+      version: "1.0.0",
+      partition: "validation",
+      expectedSha256: "f".repeat(64),
+      bytes,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "hashMismatch" });
+    expect(storage.putArtifact).not.toHaveBeenCalled();
+    expect(artifacts.size).toBe(0);
+    expect(state.insertedVersions).toHaveLength(0);
+  });
 
   it("rejects a duplicate version and partition without touching R2", async () => {
     const state = adminState({
@@ -267,7 +267,9 @@ describe("createValidationDatasetStore", () => {
       userId: "user-1",
       version: "1.0.0",
       partition: "validation",
-        expectedSha256: createHash("sha256").update(new Uint8Array([1])).digest("hex"),
+      expectedSha256: createHash("sha256")
+        .update(new Uint8Array([1]))
+        .digest("hex"),
       bytes: new Uint8Array([1]),
     });
 

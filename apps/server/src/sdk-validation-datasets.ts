@@ -1,11 +1,11 @@
 import { SdkValidationDatasetManifestSchema } from "@ayni/api";
 import { Hono } from "hono";
 
-import {
-  INVALID_CREDENTIAL_MESSAGE,
-  type VerifySdkCredentialResult,
-} from "./sdk-credential-store";
-import type { ValidationDatasetStorage, ValidationDatasetStoreResult } from "./validation-dataset-store";
+import { INVALID_CREDENTIAL_MESSAGE, type VerifySdkCredentialResult } from "./sdk-credential-store";
+import type {
+  ValidationDatasetStorage,
+  ValidationDatasetStoreResult,
+} from "./validation-dataset-store";
 
 const DATASET_VERSION_NOT_FOUND_MESSAGE = "El dataset de validación ya no está disponible.";
 const DATASET_MANIFEST_UNAVAILABLE_MESSAGE = "No se pudo preparar la descarga del dataset.";
@@ -71,15 +71,15 @@ export function createSdkValidationDatasetsApp({
       );
     }
     if (verified.ok === false) {
-        if (verified.code === "applicationArchived") {
-          return c.json(
-            {
-              message: DATASET_VERSION_NOT_FOUND_MESSAGE,
-              code: "datasetVersionNotFound",
-            },
-            404,
-          );
-        }
+      if (verified.code === "applicationArchived") {
+        return c.json(
+          {
+            message: DATASET_VERSION_NOT_FOUND_MESSAGE,
+            code: "datasetVersionNotFound",
+          },
+          404,
+        );
+      }
       return c.json({ message: verified.message, code: verified.code }, 401);
     }
 
@@ -143,7 +143,9 @@ export function createSdkValidationDatasetsApp({
       sha256: result.value.sha256,
       sizeBytes: result.value.sizeBytes,
       downloadUrl,
-      downloadUrlExpiresAt: new Date(now().getTime() + DOWNLOAD_URL_TTL_SECONDS * 1000).toISOString(),
+      downloadUrlExpiresAt: new Date(
+        now().getTime() + DOWNLOAD_URL_TTL_SECONDS * 1000,
+      ).toISOString(),
     };
     const response = SdkValidationDatasetManifestSchema.safeParse({ manifest });
     if (!response.success) {

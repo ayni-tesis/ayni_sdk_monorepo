@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
+import 'package:better_fullstack_app/validation/models/validation_run_metadata.dart';
 import 'package:better_fullstack_app/validation/storage/validation_jsonl_store.dart';
 import 'package:better_fullstack_app/validation/storage/validation_jsonl_exporter.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,8 +133,17 @@ ValidationRunRecord _record(
   workflowVersionId: null,
   workflowVersion: null,
   backend: 'CPU',
+  metadata: const ValidationRunMetadata(
+    deviceModel: 'Pixel 8',
+    platform: 'android',
+    osVersion: '16',
+    apiLevel: 36,
+    appVersion: '1.0.0',
+    sdkVersion: '0.2.0',
+  ),
   durationMicros: 12,
   outcome: ValidationRunOutcome.success,
+  traceCaptureEnabled: false,
   normalizedOutput: const {
     'classification': {'label': 'roya'},
   },

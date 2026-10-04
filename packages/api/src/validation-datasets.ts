@@ -11,15 +11,19 @@ export const ValidationDatasetCreateRequestSchema = z
 
 export const ValidationDatasetVersionUploadRequestSchema = z
   .object({
-    version: z.string().trim().regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/),
+    version: z
+      .string()
+      .trim()
+      .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/),
     partition: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
   })
   .strict();
 
-export const ValidationDatasetUploadRequestSchema = ValidationDatasetVersionUploadRequestSchema.extend({
-  uploadId: z.string().uuid(),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-}).strict();
+export const ValidationDatasetUploadRequestSchema =
+  ValidationDatasetVersionUploadRequestSchema.extend({
+    uploadId: z.string().uuid(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict();
 
 export const ValidationDatasetCancelRequestSchema = z
   .object({ uploadId: z.string().uuid() })
@@ -52,11 +56,15 @@ export const ValidationDatasetVersionSchema = z
 
 export const ValidationDatasetListResponseSchema = z
   .object({
-    datasets: z.array(ValidationDatasetSchema.extend({ versions: z.array(ValidationDatasetVersionSchema) })),
+    datasets: z.array(
+      ValidationDatasetSchema.extend({ versions: z.array(ValidationDatasetVersionSchema) }),
+    ),
   })
   .strict();
 
-export const ValidationDatasetCreateResponseSchema = z.object({ dataset: ValidationDatasetSchema }).strict();
+export const ValidationDatasetCreateResponseSchema = z
+  .object({ dataset: ValidationDatasetSchema })
+  .strict();
 export const ValidationDatasetUploadUrlResponseSchema = z
   .object({ uploadId: z.string().uuid(), uploadUrl: z.string().url() })
   .strict();
@@ -107,7 +115,8 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     tags: ["Validation datasets"],
     operationId: "listar-datasets-de-validacion",
     summary: "Listar datasets privados de validación",
-    description: "Lista los datasets de la aplicación para sus miembros. Las versiones publicadas son inmutables.",
+    description:
+      "Lista los datasets de la aplicación para sus miembros. Las versiones publicadas son inmutables.",
     request: { params: applicationId },
     responses: {
       "200": {
@@ -130,7 +139,10 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "el sistema no certifica cumplimiento legal.",
     request: {
       params: applicationId,
-      body: { required: true, content: { "application/json": { schema: ValidationDatasetCreateRequestSchema } } },
+      body: {
+        required: true,
+        content: { "application/json": { schema: ValidationDatasetCreateRequestSchema } },
+      },
     },
     responses: {
       "201": {
@@ -151,7 +163,8 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     tags: ["Validation datasets"],
     operationId: "iniciar-carga-de-dataset-de-validacion",
     summary: "Iniciar la carga temporal de un ZIP",
-    description: "Emite una URL de carga temporal al bucket privado para una versión y partición válidas.",
+    description:
+      "Emite una URL de carga temporal al bucket privado para una versión y partición válidas.",
     request: {
       params: datasetParams,
       body: {
@@ -211,14 +224,17 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "inmutable y elimina el objeto de staging.",
     request: {
       params: datasetParams,
-      body: { required: true, content: { "application/json": { schema: ValidationDatasetUploadRequestSchema } } },
+      body: {
+        required: true,
+        content: { "application/json": { schema: ValidationDatasetUploadRequestSchema } },
+      },
     },
     responses: {
       "201": {
         description: "Versión publicada con SHA-256 y tamaño verificados.",
         content: { "application/json": { schema: ValidationDatasetCompleteResponseSchema } },
       },
-        "400": errorResponse("La solicitud o el objeto ZIP no es válido o su SHA-256 no coincide."),
+      "400": errorResponse("La solicitud o el objeto ZIP no es válido o su SHA-256 no coincide."),
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para subir datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),

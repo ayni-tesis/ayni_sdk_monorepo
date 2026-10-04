@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'experiment_plan.dart';
+import 'validation_run_metadata.dart';
 
 enum ValidationCondition { control, treatment }
 
@@ -23,9 +24,11 @@ class ValidationRunRecord {
     required this.workflowVersionId,
     required this.workflowVersion,
     required this.backend,
+    required this.metadata,
     required this.durationMicros,
     required this.outcome,
     required Map<String, Object?> normalizedOutput,
+    required this.traceCaptureEnabled,
     this.tracePersistenceFailed = false,
     this.errorCode,
     this.errorMessage,
@@ -96,10 +99,12 @@ class ValidationRunRecord {
   final String? workflowVersionId;
   final String? workflowVersion;
   final String backend;
+  final ValidationRunMetadata metadata;
   final int durationMicros;
   final ValidationRunOutcome outcome;
   final Map<String, Object?> normalizedOutput;
   final bool tracePersistenceFailed;
+  final bool traceCaptureEnabled;
   final String? errorCode;
   final String? errorMessage;
   final DateTime recordedAtUtc;
@@ -120,10 +125,12 @@ class ValidationRunRecord {
     'workflowVersionId': workflowVersionId,
     'workflowVersion': workflowVersion,
     'backend': backend,
+    'metadata': metadata.toJson(),
     'durationMicros': durationMicros,
     'outcome': outcome.name,
     'normalizedOutput': normalizedOutput,
     'tracePersistenceFailed': tracePersistenceFailed,
+    'traceCaptureEnabled': traceCaptureEnabled,
     'errorCode': errorCode,
     'errorMessage': errorMessage,
     'recordedAtUtc': recordedAtUtc.toIso8601String(),
@@ -146,10 +153,12 @@ class ValidationRunRecord {
       'workflowVersionId',
       'workflowVersion',
       'backend',
+      'metadata',
       'durationMicros',
       'outcome',
       'normalizedOutput',
       'tracePersistenceFailed',
+      'traceCaptureEnabled',
       'errorCode',
       'errorMessage',
       'recordedAtUtc',
@@ -184,6 +193,9 @@ class ValidationRunRecord {
         'workflowVersion',
       ),
       backend: _asString(json['backend'], 'backend'),
+      metadata: ValidationRunMetadata.fromJson(
+        _asObject(json['metadata'], 'metadata'),
+      ),
       durationMicros: _asInt(json['durationMicros'], 'durationMicros'),
       outcome: _enumByName(
         ValidationRunOutcome.values,
@@ -194,6 +206,10 @@ class ValidationRunRecord {
       tracePersistenceFailed: _asBoolean(
         json['tracePersistenceFailed'],
         'tracePersistenceFailed',
+      ),
+      traceCaptureEnabled: _asBoolean(
+        json['traceCaptureEnabled'],
+        'traceCaptureEnabled',
       ),
       errorCode: _nullableString(json['errorCode'], 'errorCode'),
       errorMessage: _nullableString(json['errorMessage'], 'errorMessage'),

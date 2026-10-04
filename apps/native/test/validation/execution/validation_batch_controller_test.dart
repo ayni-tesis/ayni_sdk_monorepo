@@ -8,6 +8,7 @@ import 'package:better_fullstack_app/validation/execution/validation_batch_contr
 import 'package:better_fullstack_app/validation/execution/validation_condition_runner.dart';
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
+import 'package:better_fullstack_app/validation/models/validation_run_metadata.dart';
 import 'package:better_fullstack_app/validation/storage/validation_jsonl_store.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
@@ -36,7 +37,10 @@ void main() {
       final store = ValidationJsonlStore(
         File('${directory.path}${Platform.pathSeparator}runs.jsonl'),
       );
-      final controller = ValidationBatchController(store: store);
+      final controller = ValidationBatchController(
+        store: store,
+        metadata: _metadata,
+      );
       final persistedBeforeEachRun = <int>[];
       runner.beforeRun = () async =>
           persistedBeforeEachRun.add((await store.readAll()).length);
@@ -79,6 +83,7 @@ void main() {
         store: ValidationJsonlStore(
           File('${directory.path}${Platform.pathSeparator}cold.jsonl'),
         ),
+        metadata: _metadata,
       );
 
       await expectLater(
@@ -105,7 +110,10 @@ void main() {
       final store = ValidationJsonlStore(
         File('${directory.path}${Platform.pathSeparator}cancel.jsonl'),
       );
-      final controller = ValidationBatchController(store: store);
+      final controller = ValidationBatchController(
+        store: store,
+        metadata: _metadata,
+      );
       final records = <ValidationRunRecord>[];
 
       final running = controller.runPhase(
@@ -118,7 +126,7 @@ void main() {
         isCancelled: () async => false,
         onRecord: records.add,
       );
-    await runner.started.future;
+      await runner.started.future;
       await controller.cancel();
       runner.barrier!.complete();
       final summary = await running;
@@ -136,6 +144,44 @@ void main() {
     },
   );
 
+  test('cancelling during image loading never starts inference', () async {
+    final runner = _FakeRunner();
+    final imageReadStarted = Completer<void>();
+    final imageReadGate = Completer<void>();
+    final store = ValidationJsonlStore(
+      File('${directory.path}${Platform.pathSeparator}cancel-loading.jsonl'),
+    );
+    final controller = ValidationBatchController(
+      store: store,
+      metadata: _metadata,
+      readBytes: (path) async {
+        imageReadStarted.complete();
+        await imageReadGate.future;
+        return File(path).readAsBytes();
+      },
+    );
+    final running = controller.runPhase(
+      plan: plan,
+      pairRunId: 'pair-cancel-loading',
+      runner: runner,
+      dataset: dataset,
+      scenarioId: 'PERF-02-WARMUP',
+      phase: ValidationPhase.warmup,
+      isCancelled: () async => false,
+      onRecord: (_) {},
+    );
+
+    await imageReadStarted.future;
+    await controller.cancel();
+    imageReadGate.complete();
+    final summary = await running;
+
+    expect(runner.calls, 0);
+    expect(summary.attempted, 0);
+    expect(summary.stoppedByCancellation, isTrue);
+    expect(await store.readAll(), isEmpty);
+  });
+
   test('detects a changed local image before calling the runner', () async {
     final image = File(dataset.cases.first.localPath);
     await image.writeAsBytes([1, 2, 3]);
@@ -144,6 +190,7 @@ void main() {
       store: ValidationJsonlStore(
         File('${directory.path}${Platform.pathSeparator}tampered.jsonl'),
       ),
+      metadata: _metadata,
     );
 
     await expectLater(
@@ -162,6 +209,15 @@ void main() {
     expect(runner.calls, 0);
   });
 }
+
+const _metadata = ValidationRunMetadata(
+  deviceModel: 'Pixel 8',
+  platform: 'android',
+  osVersion: '16',
+  apiLevel: 36,
+  appVersion: '1.0.0',
+  sdkVersion: '0.2.0',
+);
 
 Future<VerifiedDataset> _installDataset(Directory root) async {
   final image1 = utf8.encode('image-one');

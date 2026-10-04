@@ -21,6 +21,7 @@ import '../storage/validation_jsonl_exporter.dart';
 import '../storage/validation_jsonl_store.dart';
 import '../storage/validation_preferences.dart';
 import '../validation_build_mode.dart';
+import '../validation_run_metadata_reader.dart';
 
 abstract interface class ValidationHomeRuntime {
   Future<ExperimentPlan> loadPlan();
@@ -103,6 +104,8 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
   final ValidationPreferences _preferences;
   final AssetBundle _assetBundle;
   final Future<Directory> Function() _documentsDirectoryProvider;
+  final ValidationRunMetadataReader _metadataReader =
+      const ValidationRunMetadataReader();
   ExperimentPlan? _plan;
   ValidationSdkCredentials? _credentials;
   VerifiedDataset? _dataset;
@@ -324,7 +327,10 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       );
     }
     final store = ValidationJsonlStore(await _resultFile());
-    final batch = ValidationBatchController(store: store);
+    final batch = ValidationBatchController(
+      store: store,
+      metadata: await _metadataReader.read(),
+    );
     _batchController = batch;
     return batch.runPhase(
       plan: _plan ?? await loadPlan(),
@@ -836,6 +842,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       body: _bootstrapping
           ? const Center(child: CircularProgressIndicator())
           : ListView(
+              key: const ValueKey('validation-home-scroll'),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
                 _buildProfileCard(profile),

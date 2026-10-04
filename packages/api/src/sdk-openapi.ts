@@ -274,7 +274,7 @@ function errorResponses(
                         ? "El aviso de privacidad de Ayni todavía no está publicado."
                         : status === "500"
                           ? "No se pudo completar la solicitud por un fallo temporal del servidor."
-                            : "Recurso no disponible."),
+                          : "Recurso no disponible."),
           content: {
             "application/json": {
               schema: z.object({

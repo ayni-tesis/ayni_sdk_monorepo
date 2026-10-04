@@ -64,7 +64,7 @@ El APK `selector` incluye ambas condiciones y tiene un solo tamaño común. Repo
 
 ## Evidencia local
 
-Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro del directorio privado de documentos de la app. El registro incluye fase, escenario, pareja/repetición, caso, hashes, versiones, backend CPU, duración, resultado normalizado y estado. No incluye credenciales, imágenes, tensores, URL firmadas ni la traza SDK.
+Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro del directorio privado de documentos de la app. El registro incluye fase, escenario, pareja/repetición, caso, hashes, perfil de dispositivo (modelo, plataforma, versión de SO y API), versiones de la app y del SDK, backend CPU, duración, resultado normalizado, estado y si la captura de trazas estaba habilitada. Android excluye el almacenamiento privado de la app de copias en la nube y transferencias entre dispositivos. No incluye credenciales, imágenes, tensores, URL firmadas ni la traza SDK.
 
 ## Requisitos de validación
 

@@ -18,7 +18,8 @@ describe("validation dataset request schemas", () => {
     ).toBe(true);
 
     expect(
-      ValidationDatasetCreateRequestSchema.safeParse({ name: "Flores", source: " ", license: "" }).success,
+      ValidationDatasetCreateRequestSchema.safeParse({ name: "Flores", source: " ", license: "" })
+        .success,
     ).toBe(false);
   });
 
@@ -61,9 +62,9 @@ describe("validation dataset request schemas", () => {
         uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e",
       }).success,
     ).toBe(true);
-    expect(ValidationDatasetCancelRequestSchema.safeParse({ uploadId: "../../other-app.zip" }).success).toBe(
-      false,
-    );
+    expect(
+      ValidationDatasetCancelRequestSchema.safeParse({ uploadId: "../../other-app.zip" }).success,
+    ).toBe(false);
   });
 });
 

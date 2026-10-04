@@ -6,15 +6,23 @@ import 'package:crypto/crypto.dart';
 
 import '../data/dataset_bundle_loader.dart';
 import '../models/experiment_plan.dart';
+import '../models/validation_run_metadata.dart';
 import '../models/validation_run_record.dart';
 import '../storage/validation_jsonl_store.dart';
 import 'validation_condition_runner.dart';
 
 class ValidationBatchController {
-  ValidationBatchController({required ValidationJsonlStore store})
-    : _store = store;
+  ValidationBatchController({
+    required ValidationJsonlStore store,
+    required ValidationRunMetadata metadata,
+    Future<List<int>> Function(String path)? readBytes,
+  }) : _store = store,
+       _metadata = metadata,
+       _readBytes = readBytes ?? _readFileBytes;
 
   final ValidationJsonlStore _store;
+  final ValidationRunMetadata _metadata;
+  final Future<List<int>> Function(String path) _readBytes;
   ValidationConditionRunner? _activeRunner;
   bool _cancelRequested = false;
 
@@ -94,6 +102,10 @@ class ValidationBatchController {
         }
         final selectedCase = cases[index % cases.length];
         final bytes = await _readVerifiedImage(selectedCase);
+        if (_cancelRequested || await isCancelled()) {
+          await cancel();
+          break;
+        }
         final inputHash = sha256.convert(bytes).toString();
         final request = ValidationRunRequest(
           pairRunId: pairRunId,
@@ -164,9 +176,11 @@ class ValidationBatchController {
           workflowVersionId: result.workflowVersionId,
           workflowVersion: result.workflowVersion,
           backend: 'CPU',
+          metadata: _metadata,
           durationMicros: result.durationMicros,
           outcome: result.outcome,
           normalizedOutput: result.normalizedOutput,
+          traceCaptureEnabled: captureTrace,
           tracePersistenceFailed: result.tracePersistenceFailed,
           errorCode: result.errorCode,
           errorMessage: result.errorMessage,
@@ -257,7 +271,7 @@ class ValidationBatchController {
         'Una imagen del dataset verificado ya no está disponible.',
       );
     }
-    final bytes = await file.readAsBytes();
+    final bytes = await _readBytes(file.path);
     if (sha256.convert(bytes).toString() != datasetCase.sha256) {
       throw const ValidationBatchException(
         'datasetImageChanged',
@@ -266,6 +280,9 @@ class ValidationBatchController {
     }
     return Uint8List.fromList(bytes);
   }
+
+  static Future<List<int>> _readFileBytes(String path) =>
+      File(path).readAsBytes();
 }
 
 class BatchRunSummary {

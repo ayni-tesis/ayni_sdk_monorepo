@@ -170,7 +170,9 @@ it("never answers POST /sdk/sync with 404", () => {
 describe("validation dataset routes", () => {
   it("documents member listing, administrator upload, and verified ZIP publication", () => {
     expect(document.paths["/applications/{applicationId}/validation-datasets"]?.get).toBeDefined();
-    expect(document.paths["/applications/{applicationId}/validation-datasets"]?.post?.responses).toHaveProperty("201");
+    expect(
+      document.paths["/applications/{applicationId}/validation-datasets"]?.post?.responses,
+    ).toHaveProperty("201");
     expect(
       document.paths[
         "/applications/{applicationId}/validation-datasets/{datasetId}/versions/upload-url"
@@ -181,11 +183,11 @@ describe("validation dataset routes", () => {
         "/applications/{applicationId}/validation-datasets/{datasetId}/versions/complete"
       ]?.post?.responses,
     ).toHaveProperty("413");
-      expect(
-        document.paths[
-          "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel"
-        ]?.post?.responses,
-      ).toHaveProperty("204");
+    expect(
+      document.paths[
+        "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel"
+      ]?.post?.responses,
+    ).toHaveProperty("204");
   });
 });
 

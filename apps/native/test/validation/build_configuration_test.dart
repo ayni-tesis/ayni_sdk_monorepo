@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:better_fullstack_app/validation/validation_build_mode.dart';
+import 'package:better_fullstack_app/validation/validation_run_metadata_reader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -10,6 +11,7 @@ void main() {
     final android = File('android/app/build.gradle.kts').readAsStringSync();
 
     expect(pubspec, matches(RegExp(r'^  ayni_sdk: 0\.2\.0$', multiLine: true)));
+    expect(validationSdkVersion, '0.2.0');
     expect(android, contains('compileSdk = 36'));
     expect(android, contains('minSdk = 26'));
   });
@@ -24,7 +26,7 @@ void main() {
 
     expect(
       buildMode,
-      contains("String.fromEnvironment('VALIDATION_CONDITION'"),
+      matches(RegExp(r"String\.fromEnvironment\(\s*'VALIDATION_CONDITION'")),
     );
     expect(buildMode, contains("defaultValue: 'selector'"));
     for (final mode in ['selector', 'control', 'treatment']) {

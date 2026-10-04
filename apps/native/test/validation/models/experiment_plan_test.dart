@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
+import 'package:better_fullstack_app/validation/models/validation_run_metadata.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -273,8 +274,17 @@ void main() {
           workflowVersionId: null,
           workflowVersion: null,
           backend: 'CPU',
+          metadata: const ValidationRunMetadata(
+            deviceModel: 'Pixel 8',
+            platform: 'android',
+            osVersion: '16',
+            apiLevel: 36,
+            appVersion: '1.0.0',
+            sdkVersion: '0.2.0',
+          ),
           durationMicros: 1200,
           outcome: ValidationRunOutcome.success,
+          traceCaptureEnabled: false,
           normalizedOutput: const {
             'classification': {'label': 'sana', 'score': 0.9},
           },
@@ -284,6 +294,9 @@ void main() {
         expect(restored.pairRunId, 'paired-run-1');
         expect(restored.repetition, 1);
         expect(restored.condition, ValidationCondition.control);
+        expect(restored.metadata.deviceModel, 'Pixel 8');
+        expect(restored.metadata.sdkVersion, '0.2.0');
+        expect(restored.traceCaptureEnabled, isFalse);
         expect(restored.normalizedOutput, {
           'classification': {'label': 'sana', 'score': 0.9},
         });
@@ -311,8 +324,17 @@ void main() {
           workflowVersionId: null,
           workflowVersion: null,
           backend: 'CPU',
+          metadata: const ValidationRunMetadata(
+            deviceModel: 'Pixel 8',
+            platform: 'android',
+            osVersion: '16',
+            apiLevel: 36,
+            appVersion: '1.0.0',
+            sdkVersion: '0.2.0',
+          ),
           durationMicros: 1200,
           outcome: ValidationRunOutcome.success,
+          traceCaptureEnabled: false,
           normalizedOutput: const {},
         ),
         throwsFormatException,

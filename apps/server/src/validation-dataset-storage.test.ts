@@ -45,9 +45,9 @@ describe("r2ValidationDatasetStorage", () => {
   });
 
   it("signs a PUT with the ZIP content type and requested expiry", async () => {
-    await expect(r2ValidationDatasetStorage.createUploadUrl("staging/upload.zip", 900)).resolves.toBe(
-      "https://signed.example/upload",
-    );
+    await expect(
+      r2ValidationDatasetStorage.createUploadUrl("staging/upload.zip", 900),
+    ).resolves.toBe("https://signed.example/upload");
     expect(getUploadUrl).toHaveBeenCalledWith("staging/upload.zip", {
       expiresIn: 900,
       contentType: "application/zip",
@@ -58,7 +58,9 @@ describe("r2ValidationDatasetStorage", () => {
     await expect(r2ValidationDatasetStorage.getArtifact("private/dataset.zip")).resolves.toEqual(
       new Uint8Array([1, 2, 3]),
     );
-    await expect(r2ValidationDatasetStorage.getArtifactSize("private/dataset.zip")).resolves.toBe(3);
+    await expect(r2ValidationDatasetStorage.getArtifactSize("private/dataset.zip")).resolves.toBe(
+      3,
+    );
     await r2ValidationDatasetStorage.removeArtifact("staging/upload.zip");
     expect(downloadFileAsBuffer).toHaveBeenCalledWith("private/dataset.zip");
     expect(getFileMetadata).toHaveBeenCalledWith("private/dataset.zip");
@@ -66,9 +68,9 @@ describe("r2ValidationDatasetStorage", () => {
   });
 
   it("signs a private download URL only for the requested short lifetime", async () => {
-    await expect(r2ValidationDatasetStorage.createDownloadUrl("private/dataset.zip", 900)).resolves.toBe(
-      "https://signed.example/dataset",
-    );
+    await expect(
+      r2ValidationDatasetStorage.createDownloadUrl("private/dataset.zip", 900),
+    ).resolves.toBe("https://signed.example/dataset");
     expect(getDownloadUrl).toHaveBeenCalledWith("private/dataset.zip", { expiresIn: 900 });
   });
 });

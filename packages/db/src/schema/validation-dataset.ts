@@ -1,13 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  bigint,
-  check,
-  index,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { bigint, check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { application } from "./application";
 import { user } from "./auth";

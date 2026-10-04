@@ -13,63 +13,78 @@ import 'package:flutter/material.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late _FakeRuntime runtime;
+  late String planSource;
 
-  setUp(() => runtime = _FakeRuntime());
+  setUpAll(() async {
+    planSource = await rootBundle.loadString(ExperimentPlan.assetPath);
+  });
+
+  setUp(() => runtime = _FakeRuntime(planSource));
 
   testWidgets('disables execution until verified resources are prepared', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(runtime));
-    await tester.pumpAndSettle();
+    await _pumpHomePage(tester, _app(runtime));
 
-    expect(_button(tester, 'run-batch').onPressed, isNull);
+    expect(find.textContaining('ZIP'), findsOneWidget);
+    await _scrollToFinder(
+      tester,
+      find.text(ValidationPreferences.tracePermissionDisclosure),
+    );
     expect(
       find.text(ValidationPreferences.tracePermissionDisclosure),
       findsOneWidget,
     );
-    expect(find.textContaining('ZIP'), findsOneWidget);
+    await _scrollToKey(tester, 'run-batch');
+    expect(_button(tester, 'run-batch').onPressed, isNull);
 
+    await _scrollToKey(tester, 'prepare-resources');
     await tester.tap(find.byKey(const ValueKey('prepare-resources')));
     await tester.pumpAndSettle();
     expect(runtime.prepareCalls, 1);
+    await _scrollToKey(tester, 'run-batch');
     expect(_button(tester, 'run-batch').onPressed, isNotNull);
   });
 
   testWidgets('preparation never performs SDK sync; sync stays explicit', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(runtime));
-    await tester.pumpAndSettle();
+    await _pumpHomePage(tester, _app(runtime));
     await _selectTreatment(tester);
+    await _scrollToKey(tester, 'prepare-resources');
     await tester.tap(find.byKey(const ValueKey('prepare-resources')));
     await tester.pumpAndSettle();
 
     expect(runtime.syncCalls, 0);
+    await _scrollToKey(tester, 'run-batch');
     expect(_button(tester, 'run-batch').onPressed, isNull);
     expect(_button(tester, 'sync-sdk').onPressed, isNotNull);
     await tester.tap(find.byKey(const ValueKey('sync-sdk')));
     await tester.pumpAndSettle();
     expect(runtime.syncCalls, 1);
     expect(_button(tester, 'run-batch').onPressed, isNotNull);
+    await _scrollToFinder(tester, find.textContaining('dashboard'));
     expect(find.textContaining('dashboard'), findsOneWidget);
   });
 
   testWidgets('shows run progress and cancellation', (tester) async {
-    await tester.pumpWidget(_app(runtime));
-    await tester.pumpAndSettle();
+    await _pumpHomePage(tester, _app(runtime));
+    await _scrollToKey(tester, 'prepare-resources');
     await tester.tap(find.byKey(const ValueKey('prepare-resources')));
     await tester.pumpAndSettle();
+    await _scrollToKey(tester, 'run-batch');
     await tester.tap(find.byKey(const ValueKey('run-batch')));
     await tester.pump();
-    await runtime.runStarted.future;
-    await tester.pump();
+    expect(runtime.runStarted.isCompleted, isTrue);
 
     expect(find.text('Ejecutando lote…'), findsOneWidget);
     expect(_button(tester, 'cancel-batch').onPressed, isNotNull);
     await tester.tap(find.byKey(const ValueKey('cancel-batch')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
 
     expect(runtime.cancelCalls, 1);
+    await _scrollToFinder(tester, find.textContaining('cancelad'));
     expect(find.textContaining('cancelad'), findsOneWidget);
   });
 
@@ -78,13 +93,17 @@ void main() {
   ) async {
     runtime.jsonlPresent = true;
     runtime.traceAllowed = true;
-    await tester.pumpWidget(_app(runtime));
-    await tester.pumpAndSettle();
+    await _pumpHomePage(tester, _app(runtime));
 
+    await _scrollToKey(tester, 'export-jsonl');
     await tester.tap(find.byKey(const ValueKey('export-jsonl')));
     await tester.pumpAndSettle();
     expect(runtime.exportCalls, 1);
 
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('trace-permission-switch')),
+    );
     await tester.tap(find.byKey(const ValueKey('trace-permission-switch')));
     await tester.pumpAndSettle();
     expect(runtime.tracePermissionChanges, [false]);
@@ -94,10 +113,41 @@ void main() {
 MaterialApp _app(_FakeRuntime runtime) =>
     MaterialApp(home: ValidationHomePage(runtime: runtime));
 
-FilledButton _button(WidgetTester tester, String key) =>
-    tester.widget<FilledButton>(find.byKey(ValueKey(key)));
+Future<void> _pumpHomePage(WidgetTester tester, Widget app) async {
+  await tester.pumpWidget(app);
+  for (var frame = 0; frame < 100; frame++) {
+    if (find.text('Perfil de recursos').evaluate().isNotEmpty) {
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  fail('La pantalla de validación no terminó de iniciar.');
+}
+
+Future<void> _scrollToKey(WidgetTester tester, String key) async {
+  await _scrollToFinder(tester, find.byKey(ValueKey(key)));
+}
+
+Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    300,
+    scrollable: find
+        .descendant(
+          of: find.byKey(const ValueKey('validation-home-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.ensureVisible(finder);
+  await tester.pump();
+}
+
+ButtonStyleButton _button(WidgetTester tester, String key) =>
+    tester.widget<ButtonStyleButton>(find.byKey(ValueKey(key)));
 
 Future<void> _selectTreatment(WidgetTester tester) async {
+  await _scrollToKey(tester, 'condition-selector');
   await tester.tap(find.byKey(const ValueKey('condition-selector')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('ayni_sdk').last);
@@ -105,6 +155,9 @@ Future<void> _selectTreatment(WidgetTester tester) async {
 }
 
 class _FakeRuntime implements ValidationHomeRuntime {
+  _FakeRuntime(this.planSource);
+
+  final String planSource;
   int prepareCalls = 0;
   int syncCalls = 0;
   int cancelCalls = 0;
@@ -117,8 +170,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<ExperimentPlan> loadPlan() async {
-    final source = await rootBundle.loadString(ExperimentPlan.assetPath);
-    final plan = (jsonDecode(source) as Map).cast<String, Object?>();
+    final plan = (jsonDecode(planSource) as Map).cast<String, Object?>();
     final profiles = (plan['resourceProfiles'] as List).cast<Map>();
     final profile = profiles.single;
     profile['datasetVersionId'] = 'dataset-version-1';
