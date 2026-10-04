@@ -379,9 +379,10 @@ final result = await sdk.sync(
 ```
 
 El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
-la recibió; sin esa confirmación sigue pendiente y un `sync()` posterior la
-vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
-copia de la evidencia recibida hasta `clearPendingEvidence()`.
+la recibió, y entonces elimina su copia local antes de avisar
+`evidenceReceived`, sin tocar workflows ni modelos instalados. Sin esa
+confirmación la conserva como pendiente, sin eliminar nada, y un `sync()`
+posterior la vuelve a intentar sin duplicarla.
 
 Cada carga sin confirmación cuenta como un intento, salvo con la credencial
 revocada, y la evidencia queda `Reintentando`: un `sync()` posterior la
@@ -391,7 +392,8 @@ horas. `maxEvidenceUploadAttempts` (5 por defecto) limita los intentos; en el
 (`No se pudo enviar la evidencia después de varios intentos.`) y la evidencia
 queda `Fallida`: el SDK la conserva, pero no la vuelve a enviar
 automáticamente. `evidenceStatusCounts()` devuelve cuántas hay en cada estado
-(`Pendiente`, `Reintentando`, `Enviada` o `Fallida`):
+(`Pendiente`, `Enviando`, `Reintentando`, `Enviada` o `Fallida`); la
+evidencia confirmada ya no se cuenta, porque el SDK la eliminó:
 
 ```dart
 final counts = await sdk.evidenceStatusCounts();

@@ -1056,8 +1056,10 @@ class AyniSdk {
   /// as `evidenceConsent`, after it stops passing `evidenceConsent: true`. It
   /// waits for the evidence the SDK is still saving and then deletes it too,
   /// and a [run] already active when it is called saves no evidence, so no
-  /// image of a capture stays on the device. It does not affect installed
-  /// workflows and models or pending traces.
+  /// image of a capture stays on the device. It deletes the evidence of
+  /// every [EvidenceStatus], also the [EvidenceStatus.failed] one; [sync]
+  /// already deletes each evidence the server confirmed (US-072). It does not
+  /// affect installed workflows and models or pending traces.
   Future<void> clearPendingEvidence() {
     _evidenceGeneration++;
     return _evidence.clear();
@@ -1071,13 +1073,15 @@ class AyniSdk {
   /// and is already counted when [run] reports
   /// [EvidenceEvent.evidenceQueued]. It stays pending across restarts of the
   /// app and while the device has no connection, and the SDK never counts it
-  /// as sent before the server confirms its upload. The count does not wait
+  /// as sent before the server confirms its upload; then [sync] deletes it
+  /// from the device and it leaves the count (US-072). The count does not wait
   /// for the evidence the SDK is still preparing or saving, and it makes no
   /// network request. [clearPendingEvidence] empties the queue.
   ///
-  /// It counts the [EvidenceStatus.pending] and [EvidenceStatus.retrying]
-  /// evidence, not the [EvidenceStatus.failed] one, which the SDK no longer
-  /// sends automatically (see [evidenceStatusCounts]).
+  /// It counts the [EvidenceStatus.pending], [EvidenceStatus.uploading] and
+  /// [EvidenceStatus.retrying] evidence, not the [EvidenceStatus.failed] one,
+  /// which the SDK no longer sends automatically (see
+  /// [evidenceStatusCounts]).
   ///
   /// ```dart
   /// final pending = await sdk.pendingEvidenceCount();
@@ -1092,11 +1096,16 @@ class AyniSdk {
   /// Every status is in the map, with 0 when no evidence has it.
   ///
   /// An evidence is [EvidenceStatus.pending] until its first upload,
-  /// [EvidenceStatus.retrying] after an upload without a confirmation,
-  /// [EvidenceStatus.received] once the server confirmed it, and
+  /// [EvidenceStatus.uploading] while [sync] sends it,
+  /// [EvidenceStatus.retrying] after an upload without a confirmation, and
   /// [EvidenceStatus.failed] after [maxEvidenceUploadAttempts] uploads
   /// without one: the SDK keeps a failed evidence on the device but no
-  /// longer sends it automatically. Like [pendingEvidenceCount], it reads the
+  /// longer sends it automatically. Once the server confirms an evidence,
+  /// [sync] deletes it from the device (US-072), so it leaves the counts:
+  /// [EvidenceStatus.received] only counts one whose local copy the SDK
+  /// could not delete yet, which the next [sync] deletes, and the app learns
+  /// of each confirmation through [EvidenceEvent.evidenceReceived]. Like
+  /// [pendingEvidenceCount], it reads the
   /// queue on the device without a network request and without waiting for
   /// the evidence the SDK is still preparing or saving.
   /// [clearPendingEvidence] deletes the evidence of every status.
@@ -1584,7 +1593,10 @@ class AyniSdk {
   /// [EvidenceEvent.evidenceUploadFailed] when it stays pending for a later
   /// sync, or [EvidenceEvent.evidenceCredentialRevoked] when the server
   /// rejected the revoked credential; [onProgress] receives their messages.
-  /// An evidence counts as sent only after that confirmation. The uploads
+  /// An evidence counts as sent only after that confirmation, and then the
+  /// SDK deletes its local copy before it reports
+  /// [EvidenceEvent.evidenceReceived] (US-072); without it, the SDK keeps
+  /// the evidence and deletes nothing. The uploads
   /// share the time [syncTimeout] leaves before the part kept for the
   /// manifest, so an evidence that does not fit stays pending.
   ///
@@ -1900,7 +1912,9 @@ class AyniSdk {
   /// consulted or does not allow it, it stops and every evidence left stays
   /// pending for a later [sync]; so do an upload that failed and a revoked
   /// credential. An evidence the server rejected stays pending too, but the
-  /// next one still goes. Only a confirmed upload marks an evidence received.
+  /// next one still goes. Only a confirmed upload marks an evidence received,
+  /// and then the SDK deletes its local copy (US-072). Before all that, it
+  /// deletes what a stopped process or a failed deletion left in the queue.
   Future<void> _processEvidenceQueue(
     HttpClient client,
     _SyncDeadline deadline,
@@ -1910,6 +1924,7 @@ class AyniSdk {
     // policy refresh still stops every upload of this sync.
     final generation = _evidenceGeneration;
     bool cleared() => generation != _evidenceGeneration;
+    await _evidence.removeLeftovers();
     var policy = await _refreshCollectionPolicy(client, deadline);
     final upload =
         _evidenceUploader ??
@@ -1953,32 +1968,63 @@ class AyniSdk {
       }
       // An upload that cannot even start uses up no attempt.
       if (deadline.optionalRequestBudget <= Duration.zero) return;
-      report(EvidenceEvent.evidenceUploading);
       final startedAt = _now();
-      final result = await upload(evidence);
-      // clearPendingEvidence() deleted it: there is nothing left to report.
-      if (cleared()) return;
-      switch (result.outcome) {
-        case EvidenceUploadOutcome.received:
-          try {
-            await _evidence.markReceived(evidence, result.receivedAt ?? _now());
-          } on FileSystemException {
-            // The server holds it; a later sync asks again and the server
-            // answers that it already received it, without a new upload.
-          }
-          report(EvidenceEvent.evidenceReceived);
-        case EvidenceUploadOutcome.rejected:
-          // Only this evidence: the next one still goes.
-          report(await _recordFailedUpload(evidence, startedAt));
-        case EvidenceUploadOutcome.failed:
-          report(await _recordFailedUpload(evidence, startedAt));
-          return;
-        case EvidenceUploadOutcome.credentialRevoked:
+      final EvidenceUploadOutcome outcome;
+      final EvidenceEvent event;
+      // `Enviando` until the upload ends and its outcome is recorded.
+      _evidence.uploading = evidence;
+      try {
+        report(EvidenceEvent.evidenceUploading);
+        final result = await upload(evidence);
+        // clearPendingEvidence() deleted it: there is nothing left to report.
+        if (cleared()) return;
+        outcome = result.outcome;
+        event = switch (outcome) {
+          EvidenceUploadOutcome.received => await _removeReceivedEvidence(
+            evidence,
+            result.receivedAt ?? _now(),
+          ),
+          EvidenceUploadOutcome.rejected || EvidenceUploadOutcome.failed =>
+            await _recordFailedUpload(evidence, startedAt),
           // Not a failure of this evidence: it uses up no attempt.
-          report(EvidenceEvent.evidenceCredentialRevoked);
-          return;
+          EvidenceUploadOutcome.credentialRevoked =>
+            EvidenceEvent.evidenceCredentialRevoked,
+        };
+      } finally {
+        _evidence.uploading = null;
+      }
+      report(event);
+      // A rejection concerns only this evidence: the next one still goes.
+      if (outcome == EvidenceUploadOutcome.failed ||
+          outcome == EvidenceUploadOutcome.credentialRevoked) {
+        return;
       }
     }
+  }
+
+  /// Records that the server received [evidence] at [receivedAt] and deletes
+  /// its local copy (US-072), and returns what [sync] reports. The
+  /// confirmation is written first, so an evidence whose copy cannot be
+  /// deleted now, or whose process stops in between, never goes back to the
+  /// queue: the next [sync] deletes it.
+  Future<EvidenceEvent> _removeReceivedEvidence(
+    Directory evidence,
+    DateTime receivedAt,
+  ) async {
+    try {
+      await _evidence.markReceived(evidence, receivedAt);
+    } on FileSystemException {
+      // The server holds it. If the deletion below fails too, a later sync
+      // asks again and the server answers that it already received it,
+      // without a new upload.
+    }
+    try {
+      await _evidence.remove(evidence);
+    } on FileSystemException {
+      // A locked file, or a clearPendingEvidence() that deleted it: its
+      // received.json keeps it out of the queue until the next sync.
+    }
+    return EvidenceEvent.evidenceReceived;
   }
 
   /// Counts an upload of [evidence] that started at [startedAt] and ended

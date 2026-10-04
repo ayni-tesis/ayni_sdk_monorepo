@@ -273,7 +273,7 @@ describe("Datos y privacidad (US-147)", () => {
     );
     expect(retries).toContain("`evidence/<evidenceId>/upload-attempts.json`");
     expect(retries).toContain("no cuenta como intento");
-    for (const status of ["Pendiente", "Reintentando", "Enviada", "Fallida"]) {
+    for (const status of ["Pendiente", "Enviando", "Reintentando", "Enviada", "Fallida"]) {
       expect(retries).toContain(`\`${status}\``);
     }
     expect(retries).toContain("no vence");
@@ -287,6 +287,45 @@ describe("Datos y privacidad (US-147)", () => {
     expect(retries).not.toContain("no limita los reintentos");
     expect(evidence).not.toContain("no limita los reintentos");
     expect(storedSection).toContain("`evidence/<evidenceId>/upload-attempts.json`");
+  });
+
+  it("describes that the SDK deletes the local copy of a confirmed evidence and keeps the rest (US-072)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const heading = "### Retención de la evidencia en el dispositivo";
+    const local = evidence.slice(
+      evidence.indexOf(heading),
+      evidence.indexOf("### Retención de la evidencia en el servidor"),
+    );
+
+    expect(evidence).toContain(heading);
+    for (const text of [
+      "elimina el directorio `evidence/<evidenceId>/` completo",
+      "`received.json`",
+      "`upload-attempts.json`",
+      "`evidenceReceived`",
+      "`Enviando`",
+      "`Enviada`",
+      "Una carga incierta conserva la evidencia",
+      "no elimina nada",
+      "`Fallida`",
+      "no toca workflows, modelos instalados",
+      "no sigue enlaces",
+      "`evidence/<evidenceId>.tmp/`",
+    ]) {
+      expect(local).toContain(text);
+    }
+    expect(evidence).not.toContain("conserva la copia local de la evidencia recibida");
+    expect(evidence).not.toContain("también la que ya se envió");
+    const rows = tableRows(storedSection).filter((row) =>
+      ["image", "evidence.json", "received.json", "upload-attempts.json"].some((file) =>
+        row[1]?.includes(`\`evidence/<evidenceId>/${file}\``),
+      ),
+    );
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(row[2], row[1]).toMatch(/^`sync\(\)` l[oa] elimina/);
+      expect(row[2], row[1]).not.toContain("también la enviada");
+    }
   });
 
   it("names every Android permission the SDK adds to the app", () => {

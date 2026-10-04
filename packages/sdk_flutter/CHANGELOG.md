@@ -54,11 +54,15 @@
   `evidenceCredentialRevoked`
   (`No se puede enviar evidencia porque la credencial fue revocada.`).
 - Una evidencia solo cuenta como enviada cuando el servidor confirma que la
-  recibió: el SDK agrega `received.json` a su directorio, deja de contarla en
-  `pendingEvidenceCount()` y no la vuelve a subir. Sin confirmación sigue
-  pendiente y un `sync()` posterior la vuelve a intentar con el mismo ID, sin
-  duplicarla. La copia local de la evidencia recibida se conserva hasta
-  `clearPendingEvidence()`.
+  recibió: el SDK agrega `received.json` a su directorio, elimina su copia
+  local (la imagen optimizada, sus datos y sus intentos) antes de avisar
+  `evidenceReceived`, deja de contarla en `pendingEvidenceCount()` y no la
+  vuelve a subir. Sin confirmación la conserva como pendiente, sin eliminar
+  nada, y un `sync()` posterior la vuelve a intentar con el mismo ID, sin
+  duplicarla. El borrado se limita al directorio de esa evidencia y no afecta
+  workflows ni modelos instalados. Si no puede eliminarla, `received.json`
+  evita que se suba otra vez y el siguiente `sync()` la elimina, junto con la
+  evidencia que quedó a medio guardar o a medio eliminar si la app se cerró.
 - Cada carga de evidencia que termina sin confirmación cuenta como un intento,
   salvo con la credencial revocada; un `sync()` que no llega a empezarla por la
   política, la conexión o el tiempo disponible tampoco cuenta. Después de un
@@ -73,8 +77,10 @@
   automáticamente ni bloquear a las demás. Los intentos se guardan en
   `upload-attempts.json`, dentro del directorio de la evidencia.
 - `evidenceStatusCounts()` devuelve cuántas evidencias hay en cada
-  `EvidenceStatus`: `pending` (`Pendiente`), `retrying`, `received`
-  (`Enviada`) y `failed`, sin solicitudes de red.
+  `EvidenceStatus`: `pending` (`Pendiente`), `uploading` (`Enviando`, mientras
+  `sync()` la sube), `retrying`, `received` (`Enviada`) y `failed`, sin
+  solicitudes de red. Como el SDK elimina la evidencia confirmada, `received`
+  solo cuenta la que todavía no pudo eliminar.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega `POST /sdk/evidence` y
   `POST /sdk/evidence/<evidenceId>/complete`.
 
