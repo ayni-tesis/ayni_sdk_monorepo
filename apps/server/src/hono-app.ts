@@ -63,6 +63,7 @@ import {
   publishPrivacyNotice,
   updatePrivacyTreatmentMap,
 } from "./privacy-treatment-map-store";
+import { createSdkCollectionPolicyApp } from "./sdk-collection-policy";
 import { recordSdkConsentReceipt } from "./sdk-consent-store";
 import { createSdkConsentsApp } from "./sdk-consents";
 import {
@@ -361,6 +362,15 @@ const sdkTelemetryPolicies = {
   },
   get(applicationId: string) {
     return getTelemetryPolicy(db, applicationId);
+  },
+};
+
+const sdkCollectionPolicies = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  get(applicationId: string) {
+    return getCollectionPolicy(db, applicationId);
   },
 };
 
@@ -833,6 +843,13 @@ app.route(
   createSdkTelemetryPolicyApp({
     credentials: sdkTelemetryPolicies,
     policies: sdkTelemetryPolicies,
+  }),
+);
+app.route(
+  "/",
+  createSdkCollectionPolicyApp({
+    credentials: sdkCollectionPolicies,
+    policies: sdkCollectionPolicies,
   }),
 );
 app.route(

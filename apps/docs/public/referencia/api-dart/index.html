@@ -284,13 +284,20 @@ consentimiento de recolección que tu app le pide:</p>
 </code></pre>
 <p>El ejemplo comprobado está en <code>example/privacy.dart</code>.</p>
 <p><code>run()</code> devuelve el resultado sin esperar la evidencia y una evidencia que no se
-puede guardar no lo cambia. Después, el SDK guarda en
-<code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> una copia de la imagen y
-<code>evidence.json</code>, con el resultado que recibió el nodo, el workflow, su versión y
-el modelo; luego llama a <code>onEvidence</code> con <code>EvidenceEvent.evidenceQueued</code> y a
-<code>onProgress</code> con <code>Evidencia guardada para envío posterior.</code> Sin consentimiento,
-el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
-la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
+puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
+imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección
+de la aplicación, que <code>sync()</code> consulta, y la guarda en
+<code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> con <code>evidence.json</code>, con el resultado
+que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
+<code>run()</code> no cambia. <code>onEvidence</code> recibe <code>EvidenceEvent.evidenceOptimizing</code>,
+<code>evidencePrepared</code> y <code>evidenceQueued</code>, y <code>onProgress</code>, sus mensajes:
+<code>Optimizando</code>, <code>Evidencia preparada para envío.</code> y
+<code>Evidencia guardada para envío posterior.</code> Si no puede preparar una evidencia,
+por ejemplo porque ningún <code>sync()</code> guardó aún la política, la descarta sin dejar
+archivos a medias y avisa <code>evidenceDiscarded</code>:
+<code>No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.</code>
+Sin consentimiento, el SDK omite la captura y no conserva la imagen. Esta
+versión todavía no envía la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
 deja de pasar <code>evidenceConsent: true</code> y elimina la evidencia guardada; un
 <code>run()</code> que ya estaba en curso tampoco guarda la suya:</p>
 <pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();

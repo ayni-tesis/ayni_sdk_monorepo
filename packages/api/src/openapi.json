@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ayni API",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "Endpoints HTTP que usa el SDK de Ayni para sincronizar workflows y modelos.\n\n## Autenticación\n\nCada solicitud lleva el secreto de una credencial del SDK en el encabezado:\n\n```http\nAuthorization: Bearer ayni_sk_…\n```\n\n- Un administrador genera la credencial en el dashboard, en Credenciales SDK de la aplicación. El secreto se muestra una sola vez.\n- La credencial solo da acceso a los recursos de su aplicación.\n- Cuando un administrador revoca o regenera la credencial, estos endpoints responden `401` con `credentialRevoked`. Revocarla no borra workflows, modelos ni versiones, ni lo que ya está instalado en los dispositivos."
   },
   "servers": [
@@ -1363,6 +1363,123 @@
                   },
                   "required": ["enabled", "retentionDays"],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/collection-policy": {
+      "get": {
+        "tags": ["Endpoints"],
+        "operationId": "obtener-politica-de-recoleccion",
+        "summary": "Obtener la política de recolección de evidencia",
+        "description": "Devuelve la política de recolección de evidencia de la aplicación de la credencial. El SDK intenta refrescarla en cada sincronización, justo antes de pedir el manifiesto, y optimiza cada imagen de evidencia con su tamaño máximo y su calidad. Sin configuración, la recolección está deshabilitada, con 1024 px y calidad 80. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/collection-policy \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Política de recolección de la aplicación autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Si la aplicación permite capturar imágenes para datasets."
+                    },
+                    "consentRequired": {
+                      "type": "boolean",
+                      "description": "Si el SDK debe contar con el consentimiento de la persona antes de capturar."
+                    },
+                    "network": {
+                      "type": "string",
+                      "enum": ["wifi", "wifiAndCellular"],
+                      "description": "Red por la que se puede enviar la evidencia: `wifi` o `wifiAndCellular`."
+                    },
+                    "maxImageSize": {
+                      "type": "integer",
+                      "minimum": 128,
+                      "maximum": 4096,
+                      "description": "Lado mayor, en píxeles, al que el SDK reduce cada imagen de evidencia."
+                    },
+                    "imageQuality": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 100,
+                      "description": "Calidad JPEG con la que el SDK comprime cada imagen de evidencia."
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "consentRequired",
+                    "network",
+                    "maxImageSize",
+                    "imageQuality"
+                  ],
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "habilitada": {
+                    "summary": "Recolección habilitada solo por Wi-Fi",
+                    "value": {
+                      "enabled": true,
+                      "consentRequired": true,
+                      "network": "wifi",
+                      "maxImageSize": 1024,
+                      "imageQuality": 80
+                    }
+                  }
                 }
               }
             }

@@ -5,6 +5,7 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
+import { sdkCollectionPolicySchema } from "./sdk-collection-policy";
 import { sdkConsentReceiptSchema } from "./sdk-consent";
 import { sdkTelemetryPolicySchema } from "./sdk-telemetry-policy";
 import { SDK_TRACE_MAX_BYTES, sdkTraceSchema } from "./sdk-trace";
@@ -472,6 +473,43 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
       "200": {
         description: "Política de telemetría de la aplicación autenticada.",
         content: { "application/json": { schema: sdkTelemetryPolicySchema } },
+      },
+      ...errorResponses(credentialErrors(revokedMessage)),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/sdk/collection-policy",
+    tags: ["Endpoints"],
+    operationId: "obtener-politica-de-recoleccion",
+    summary: "Obtener la política de recolección de evidencia",
+    description: describeWithErrors(
+      "Devuelve la política de recolección de evidencia de la aplicación de la credencial. El SDK intenta refrescarla en cada sincronización, justo antes de pedir el manifiesto, y optimiza cada imagen de evidencia con su tamaño máximo y su calidad. Sin configuración, la recolección está deshabilitada, con 1024 px y calidad 80. No incluye el identificador de aplicación.",
+      credentialErrors(revokedMessage),
+    ),
+    security,
+    "x-codeSamples": curlSample("get", "/sdk/collection-policy"),
+    responses: {
+      "200": {
+        description: "Política de recolección de la aplicación autenticada.",
+        content: {
+          "application/json": {
+            schema: sdkCollectionPolicySchema,
+            examples: {
+              habilitada: {
+                summary: "Recolección habilitada solo por Wi-Fi",
+                value: {
+                  enabled: true,
+                  consentRequired: true,
+                  network: "wifi",
+                  maxImageSize: 1024,
+                  imageQuality: 80,
+                },
+              },
+            },
+          },
+        },
       },
       ...errorResponses(credentialErrors(revokedMessage)),
     },

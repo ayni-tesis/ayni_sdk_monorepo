@@ -1,4 +1,5 @@
 import { createOpenApiDocument } from "@ayni/api";
+import { sdkCollectionPolicySchema } from "@ayni/api/sdk-collection-policy";
 import {
   SdkModelVersionManifestSchema,
   SdkSyncManifestSchema,
@@ -9,6 +10,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type { z } from "zod";
 
 import type { SdkModelVersionManifest } from "./model-version-store";
+import { createSdkCollectionPolicyApp } from "./sdk-collection-policy";
 import {
   INVALID_CREDENTIAL_MESSAGE,
   SDK_CREDENTIAL_REVOKED_MESSAGE,
@@ -90,6 +92,8 @@ const endpoints: {
   path: string;
   url: string;
   schema: z.ZodType;
+  /** Whether it answers 404 for a resource that is no longer available. */
+  notFound: boolean;
   app: (verify: Verify, found?: boolean) => Hono;
 }[] = [
   {
@@ -97,6 +101,7 @@ const endpoints: {
     path: "/sdk/sync",
     url: "/sdk/sync",
     schema: SdkSyncManifestSchema,
+    notFound: false,
     app: (verify) =>
       createSdkSyncApp({
         credentials: { verify },
@@ -108,6 +113,7 @@ const endpoints: {
     path: "/sdk/workflow-versions/{workflowVersionId}",
     url: "/sdk/workflow-versions/workflow-version-1",
     schema: SdkWorkflowVersionDefinitionSchema,
+    notFound: true,
     app: (verify, found = true) =>
       createSdkWorkflowVersionsApp({
         credentials: { verify },
@@ -124,12 +130,35 @@ const endpoints: {
     path: "/sdk/model-versions/{modelVersionId}/manifest",
     url: "/sdk/model-versions/model-version-1/manifest",
     schema: SdkModelVersionManifestSchema,
+    notFound: true,
     app: (verify, found = true) =>
       createSdkModelVersionsApp({
         credentials: { verify },
         modelVersions: {
           getManifest: async () =>
             found ? { ok: true, manifest: modelManifest } : { ok: false, reason: "notFound" },
+        },
+      }),
+  },
+  {
+    method: "get",
+    path: "/sdk/collection-policy",
+    url: "/sdk/collection-policy",
+    schema: sdkCollectionPolicySchema,
+    notFound: false,
+    app: (verify) =>
+      createSdkCollectionPolicyApp({
+        credentials: { verify },
+        policies: {
+          get: async (applicationId) => ({
+            applicationId,
+            enabled: true,
+            consentRequired: true,
+            network: "wifi",
+            maxImageSize: 1024,
+            imageQuality: 80,
+            updatedAt: null,
+          }),
         },
       }),
   },
@@ -180,22 +209,25 @@ describe.each(endpoints)("$method $path matches the OpenAPI document", (endpoint
   });
 });
 
-describe.each(endpoints.slice(1))("$method $path unavailable resource", (endpoint) => {
-  it("answers with the documented 404 example", async () => {
-    const { method, path, url } = endpoint;
-    const { status, body } = await send(
-      endpoint.app(active, false),
-      method,
-      url,
-      `Bearer ${SECRET}`,
-    );
-    const examples = Object.values(documentedErrors(path, method, "404"));
+describe.each(endpoints.filter((endpoint) => endpoint.notFound))(
+  "$method $path unavailable resource",
+  (endpoint) => {
+    it("answers with the documented 404 example", async () => {
+      const { method, path, url } = endpoint;
+      const { status, body } = await send(
+        endpoint.app(active, false),
+        method,
+        url,
+        `Bearer ${SECRET}`,
+      );
+      const examples = Object.values(documentedErrors(path, method, "404"));
 
-    expect(status).toBe("404");
-    expect(examples).toHaveLength(1);
-    expect(body).toEqual(examples[0]?.value);
-  });
-});
+      expect(status).toBe("404");
+      expect(examples).toHaveLength(1);
+      expect(body).toEqual(examples[0]?.value);
+    });
+  },
+);
 
 it("documents the same manifest types the stores return", () => {
   expectTypeOf<z.infer<typeof SdkSyncManifestSchema>>().toEqualTypeOf<SdkSyncManifest>();
