@@ -232,7 +232,7 @@ git commit -m "feat: record offline validation batches as jsonl"
 
 **Files:**
 - Modify: `apps/native/lib/main.dart`
-- Create: `apps/native/lib/validation/screens/validation_home_page.dart`
+- Create: `apps/native/lib/validation/screens/validation_home_page.dart` with injectable runtime wiring for widget verification
 - Create: `apps/native/test/validation/screens/validation_home_page_test.dart`
 - Modify: `apps/native/test/widget_test.dart`
 
@@ -240,21 +240,21 @@ git commit -m "feat: record offline validation batches as jsonl"
 - Consumes: Tasks 2–5's plan, dataset repository, condition adapters, JSONL store/exporter, and secure preferences.
 - Produces: one home screen with server/SDK state, dataset version/hash, `Integración directa` / `ayni_sdk` selector, scenario/phase and paired `run_id`, trace permission text/toggle, `Preparar recursos`, `Ejecutar lote`, `Cancelar`, `Sincronizar SDK`, and `Exportar JSONL` controls, progress, and compact events/errors.
 
-- [ ] **Step 1: Write failing widget tests** for disabled execution before all hashes/resources are verified, the trace disclosure/default-off state, run/cancel progress, explicit-only SDK sync, local JSONL export action, and permission revocation calling `clearPendingTraces()`.
-- [ ] **Step 2: Run the focused widget test**
+- [x] **Step 1: Write failing widget tests** for disabled execution before all hashes/resources are verified, the trace disclosure/default-off state, run/cancel progress, explicit-only SDK sync, local JSONL export action, and permission revocation calling `clearPendingTraces()`.
+- [x] **Step 2: Run the focused widget test**
 
 Run: `cd apps/native; flutter test test/validation/screens/validation_home_page_test.dart`
 
-Expected: FAIL because the operator screen is absent.
+RED confirmed: compilation failed because the operator screen and injected runtime contract were absent.
 
-- [ ] **Step 3: Implement the small screen** with no image/model/workflow editing features. Keep SDK sync out of measurement phases; show errors and manifest/resource hashes needed to decide whether to start. Mark client-reported profile values as declared metadata, not SDK-verified facts. After `Sincronizar SDK`, show the sync result and remind the operator to confirm trace receipt in the dashboard; the SDK 0.2.0 API has no separate per-trace acknowledgement.
+- [x] **Step 3: Implement the small screen** with no image/model/workflow editing features. Keep SDK sync out of measurement phases; show errors and manifest/resource hashes needed to decide whether to start. Mark client-reported profile values as declared metadata, not SDK-verified facts. After `Sincronizar SDK`, show the sync result and remind the operator to confirm trace receipt in the dashboard; the SDK 0.2.0 API has no separate per-trace acknowledgement. The screen explains that the ZIP is a compressed package with `manifest.json` and images, stores SDK credentials securely, keeps capture off by default, and leaves the bundled resource profile as a template until published IDs/hashes replace its sentinels.
 - [ ] **Step 4: Rerun widget tests and analyzer**
 
 Run: `cd apps/native && flutter test test/validation/screens/validation_home_page_test.dart && flutter analyze`
 
-Expected: tests PASS and analyzer reports no issues.
+The analyzer passes. The widget test was attempted twice but Windows Application Control blocked `dartaotruntime.exe` before compilation; rerun it when that host policy permits the Flutter test compiler.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** (implementation committed; focused widget verification remains pending because of the Windows execution policy)
 
 ```bash
 git add apps/native/lib/main.dart apps/native/lib/validation/screens/validation_home_page.dart apps/native/test/validation/screens/validation_home_page_test.dart apps/native/test/widget_test.dart

@@ -153,12 +153,15 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     }
     await _preferences.setTraceCaptureAllowed(
       false,
-      clearPendingTraces: () => _operationGate.run(() async {
-        await _ensureInitialized();
-        await _sdk.clearPendingTraces();
-      }),
+      clearPendingTraces: clearPendingTracesForRevocation,
     );
   }
+
+  Future<void> clearPendingTracesForRevocation() =>
+      _operationGate.run(() async {
+        await _ensureInitialized();
+        await _sdk.clearPendingTraces();
+      });
 
   @override
   Future<ConditionRunResult> runCase(ValidationRunRequest request) =>

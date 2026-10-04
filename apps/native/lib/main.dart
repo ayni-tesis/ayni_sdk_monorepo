@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'validation/screens/validation_home_page.dart';
+
 void main() => runApp(const BetterFullstackApp());
 
 class BetterFullstackApp extends StatelessWidget {
@@ -8,30 +10,12 @@ class BetterFullstackApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ayni',
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple)),
-      home: const HomePage(),
-    );
-  }
-}
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('BETTER FULLSTACK'),
-            SizedBox(height: 12),
-            Text('ayni', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold)),
-            Text('Flutter is ready for iOS and Android.'),
-          ],
-        ),
+      title: 'Ayni · validación',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF175C4B)),
       ),
+      home: const ValidationHomePage(),
     );
   }
 }
