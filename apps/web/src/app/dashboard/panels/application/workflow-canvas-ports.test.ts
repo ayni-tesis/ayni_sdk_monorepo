@@ -85,6 +85,8 @@ describe("workflow node ports", () => {
       inputs: [
         { id: "imagen", label: "imagen" },
         { id: "resultado", label: "resultado" },
+        // US-074: the optional condition branch the capture hangs from.
+        { id: "condicion", label: "condición" },
       ],
       outputs: [],
     });

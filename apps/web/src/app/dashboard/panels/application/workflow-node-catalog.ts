@@ -111,7 +111,8 @@ export function workflowOutputSources(draft: WorkflowCanvasDraft): WorkflowOutpu
  * The types Agregar nodo offers. After an output port (`origin`), only the types
  * that port can feed, with the DAG's rules: models after the image, conditions
  * and outputs after a classification result, outputs after a detection result
- * or a condition branch, and the dataset capture after a model's result.
+ * or a condition branch, and the dataset capture after a model's result or,
+ * to capture only when the condition takes it, a condition branch (US-074).
  * The capture is offered only if the application enabled collection (US-064).
  */
 export function workflowNodeCatalog(
@@ -132,7 +133,7 @@ export function workflowNodeCatalog(
         : type === "detection"
           ? ["output", "dataset"]
           : type === "boolean"
-            ? ["output"]
+            ? ["output", "dataset"]
             : [];
   // The port itself is the source, so nothing is missing from the canvas; only
   // the collection policy can still keep the capture out.

@@ -87,6 +87,12 @@ import {
   type WorkflowCanvasSize,
   type WorkflowCanvasViewport,
 } from "./workflow-canvas-viewport";
+import {
+  CAPTURE_BRANCH_LABELS,
+  CAPTURE_ONLY_WHEN_LABEL,
+  conditionOnBranch,
+  workflowCaptureBranches,
+} from "./workflow-capture-condition";
 
 export type WorkflowCanvasPosition = { x: number; y: number };
 export type WorkflowCanvasConnection = {
@@ -494,6 +500,16 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
   const { label: typeLabel, Icon: TypeIcon } = WORKFLOW_NODE_TYPES[node.type];
   const typeId = useId();
   const summaryId = useId();
+  // A condition some capture hangs from says which branch captures (US-074).
+  const captureBranches =
+    node.type === "condition" ? workflowCaptureBranches(data.draft, node.id) : [];
+  const captureBranch = captureBranches.length === 1 ? captureBranches[0] : undefined;
+  const branchCaption = (portId: string) =>
+    captureBranches.length === 0
+      ? undefined
+      : captureBranches.some((branch) => branch === portId)
+        ? CAPTURE_BRANCH_LABELS.capture
+        : CAPTURE_BRANCH_LABELS.skip;
   // Names use the normal font; versions use the monospaced one.
   const summary =
     node.type === "model.tflite" ? (
@@ -501,9 +517,17 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
         <span>{node.modelName}</span> · <span className="font-mono">{node.version}</span>
       </p>
     ) : node.type === "condition" ? (
-      <p id={summaryId} className="truncate">
-        {workflowConditionRule(node)}
-      </p>
+      <>
+        <p id={summaryId} className="truncate">
+          {workflowConditionRule(node)}
+        </p>
+        {captureBranch && (
+          <p className="text-muted-foreground text-xs">
+            {CAPTURE_ONLY_WHEN_LABEL}{" "}
+            {workflowConditionRule(conditionOnBranch(node, captureBranch))}
+          </p>
+        )}
+      </>
     ) : node.type === "output" ? (
       <>
         <p id={summaryId} className="truncate">
@@ -630,6 +654,11 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
             >
               {port.label}
             </button>
+            {branchCaption(port.id) && (
+              <span className="min-w-0 truncate text-muted-foreground">
+                {branchCaption(port.id)}
+              </span>
+            )}
             {/* An output ends a connection only when the source end of an edge
                 is dragged onto it (US-131); a drag from another output is
                 refused, since React Flow's strict mode joins outputs to inputs. */}

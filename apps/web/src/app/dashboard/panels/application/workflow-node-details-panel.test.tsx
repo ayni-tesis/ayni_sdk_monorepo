@@ -38,16 +38,18 @@ function renderPanel({
   node = conditionNode,
   canManage = true,
   saving = false,
+  panelDraft = draft,
 }: {
   node?: WorkflowCanvasNode;
   canManage?: boolean;
   saving?: boolean;
+  panelDraft?: WorkflowCanvasDraft;
 } = {}) {
   const handlers = { onSave: vi.fn(), onClose: vi.fn(), onDirtyChange: vi.fn() };
   render(
     <WorkflowNodeDetailsPanel
       node={node}
-      draft={draft}
+      draft={panelDraft}
       canManage={canManage}
       saving={saving}
       {...handlers}
@@ -130,6 +132,36 @@ describe("WorkflowNodeDetailsPanel", () => {
     expect(within(panel).queryByRole("textbox")).toBeNull();
     expect(within(panel).queryByRole("combobox")).toBeNull();
     expect(within(panel).queryByRole("button", { name: "Guardar cambios del nodo" })).toBeNull();
+  });
+
+  it("shows when a capture behind a condition branch captures (US-074)", () => {
+    const capture: WorkflowCanvasNode = {
+      id: "capture",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+    const gate = (sourcePort: string) => ({
+      sourceNodeId: "condition",
+      sourcePort,
+      targetNodeId: "capture",
+      targetPort: "condicion",
+    });
+    const { panel } = renderPanel({
+      node: capture,
+      panelDraft: { nodes: [...draft.nodes, capture], connections: [gate("false")] },
+    });
+
+    expect(within(panel).getByText("Entradas").nextSibling?.textContent).toBe("imagen y resultado");
+    expect(within(panel).getByText("Capturar solo cuando").nextSibling?.textContent).toBe(
+      "roya < 0,5",
+    );
+    cleanup();
+
+    const { panel: ungated } = renderPanel({
+      node: capture,
+      panelDraft: { nodes: [...draft.nodes, capture] },
+    });
+    expect(within(ungated).queryByText("Capturar solo cuando")).toBeNull();
   });
 
   it("shows a member the configuration read-only, with nothing to save", () => {
