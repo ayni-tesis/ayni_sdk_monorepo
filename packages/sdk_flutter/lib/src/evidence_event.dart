@@ -14,9 +14,10 @@
 ///
 /// Each pending evidence that [AyniSdk.sync] starts to upload reports
 /// [evidenceUploading], then [evidenceReceived] once the server confirmed it,
-/// [evidenceUploadFailed] when it stays pending for a later sync, or
-/// [evidenceCredentialRevoked] when the server rejected the revoked
-/// credential.
+/// [evidenceUploadFailed] when it stays pending for a later sync,
+/// [evidenceRetriesExhausted] when that failed upload was its last attempt
+/// (US-071), or [evidenceCredentialRevoked] when the server rejected the
+/// revoked credential.
 enum EvidenceEvent {
   /// The SDK started reducing and compressing the image of the evidence with
   /// the size and quality of the application's collection policy.
@@ -52,13 +53,20 @@ enum EvidenceEvent {
   evidenceReceived,
 
   /// The SDK could not send the evidence, or the server did not confirm it,
-  /// so it stays pending and a later [AyniSdk.sync] tries again.
+  /// so it stays pending as [EvidenceStatus.retrying] and a later
+  /// [AyniSdk.sync] tries again.
   evidenceUploadFailed,
 
   /// The server rejected the upload because the credential was revoked. The
   /// evidence stays pending, and the SDK sends no other evidence in that
-  /// [AyniSdk.sync].
-  evidenceCredentialRevoked;
+  /// [AyniSdk.sync]. It does not count as a failed attempt.
+  evidenceCredentialRevoked,
+
+  /// The upload failed again and the evidence reached
+  /// [AyniSdk.maxEvidenceUploadAttempts] (US-071): it is
+  /// [EvidenceStatus.failed]. The SDK keeps it on the device but no longer
+  /// sends it automatically.
+  evidenceRetriesExhausted;
 
   /// A Spanish message for diagnostics, which the SDK also reports through
   /// [AyniSdk.onProgress]: `Optimizando`,
@@ -67,9 +75,10 @@ enum EvidenceEvent {
   /// `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`,
   /// `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`,
   /// `Subiendo evidencia…`, `Evidencia recibida.`,
-  /// `No se pudo enviar la evidencia; se reintentará cuando sea posible.`
-  /// or
+  /// `No se pudo enviar la evidencia; se reintentará cuando sea posible.`,
   /// `No se puede enviar evidencia porque la credencial fue revocada.`
+  /// or
+  /// `No se pudo enviar la evidencia después de varios intentos.`
   String get message => switch (this) {
     EvidenceEvent.evidenceOptimizing => 'Optimizando',
     EvidenceEvent.evidencePrepared => 'Evidencia preparada para envío.',
@@ -84,5 +93,7 @@ enum EvidenceEvent {
       'No se pudo enviar la evidencia; se reintentará cuando sea posible.',
     EvidenceEvent.evidenceCredentialRevoked =>
       'No se puede enviar evidencia porque la credencial fue revocada.',
+    EvidenceEvent.evidenceRetriesExhausted =>
+      'No se pudo enviar la evidencia después de varios intentos.',
   };
 }

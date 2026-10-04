@@ -383,6 +383,24 @@ la recibió; sin esa confirmación sigue pendiente y un `sync()` posterior la
 vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
 copia de la evidencia recibida hasta `clearPendingEvidence()`.
 
+Cada carga sin confirmación cuenta como un intento, salvo con la credencial
+revocada, y la evidencia queda `Reintentando`: un `sync()` posterior la
+reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
+horas. `maxEvidenceUploadAttempts` (5 por defecto) limita los intentos; en el
+último, `onEvidence` recibe `evidenceRetriesExhausted`
+(`No se pudo enviar la evidencia después de varios intentos.`) y la evidencia
+queda `Fallida`: el SDK la conserva, pero no la vuelve a enviar
+automáticamente. `evidenceStatusCounts()` devuelve cuántas hay en cada estado
+(`Pendiente`, `Reintentando`, `Enviada` o `Fallida`):
+
+```dart
+final counts = await sdk.evidenceStatusCounts();
+final failed = counts[EvidenceStatus.failed]!;
+if (failed > 0) {
+  showStatus('${EvidenceStatus.failed.message}: $failed');
+}
+```
+
 ## Estructura del paquete
 
 - `pubspec.yaml`: Especificación del paquete y dependencias genéricas.

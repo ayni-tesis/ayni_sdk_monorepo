@@ -145,6 +145,7 @@ return AyniSdk.instance;
       syncTimeout: config.syncTimeout,
       allowInsecureLoopback: config.allowInsecureLoopback,
       onProgress: config.onProgress,
+      maxEvidenceUploadAttempts: config.maxEvidenceUploadAttempts,
     );
     sdk._ensureInstallationId();
     _instance = sdk;

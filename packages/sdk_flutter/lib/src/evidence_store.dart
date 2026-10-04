@@ -4,7 +4,51 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'evidence_status.dart';
 import 'sdk_internal.dart';
+
+/// The upload attempts of one evidence that ended without a confirmation
+/// (US-071): how many, when the last one started, and whether they reached
+/// the limit, which makes the evidence [EvidenceStatus.failed].
+typedef EvidenceUploadAttempts = ({
+  int count,
+  DateTime? lastAttemptAt,
+  bool failed,
+});
+
+/// No failed upload attempt recorded.
+const EvidenceUploadAttempts noEvidenceUploadAttempts = (
+  count: 0,
+  lastAttemptAt: null,
+  failed: false,
+);
+
+/// How long the SDK waits after the [failedAttempts]-th failed upload of an
+/// evidence before it tries again (US-071): 15 minutes after the first, twice
+/// as long after each next one, and never more than 6 hours. So an app that
+/// syncs often spends neither data nor battery on an upload that just failed,
+/// and an outage of the server of a few hours does not use up the attempts.
+Duration evidenceRetryDelay(int failedAttempts) {
+  const first = Duration(minutes: 15);
+  const longest = Duration(hours: 6);
+  var delay = first;
+  for (var failure = 1; failure < failedAttempts; failure++) {
+    delay *= 2;
+    if (delay >= longest) return longest;
+  }
+  return delay;
+}
+
+/// Whether an evidence with these [attempts] may be uploaded at [now]: it
+/// has none, or the [evidenceRetryDelay] of the last one passed. A last
+/// attempt later than [now] means the device clock went back, and it does
+/// not hold the evidence.
+bool isEvidenceUploadDue(EvidenceUploadAttempts attempts, DateTime now) {
+  final last = attempts.lastAttemptAt;
+  if (attempts.failed) return false;
+  if (attempts.count == 0 || last == null || now.isBefore(last)) return true;
+  return !now.isBefore(last.add(evidenceRetryDelay(attempts.count)));
+}
 
 /// What an evidence keeps: its optimized `image` bytes and `evidence.json`.
 typedef EvidenceContent = ({Uint8List image, Map<String, Object?> record});
@@ -18,16 +62,18 @@ enum EvidenceUploadOutcome {
   received,
 
   /// The evidence could not be sent now (no answer, a timeout, a server
-  /// error or a policy that stopped allowing it): it stays pending and the
-  /// queue stops until a later sync.
+  /// error or a policy that stopped allowing it): it counts as a failed
+  /// attempt (US-071) and the queue stops until a later sync.
   failed,
 
   /// The server rejected this evidence (it cannot read it, it is too large,
   /// it is not of the credential's application or its image did not match):
-  /// it stays pending, and the SDK goes on with the next one.
+  /// it counts as a failed attempt too, since the SDK cannot be sure a
+  /// rejection is final, but the SDK goes on with the next one.
   rejected,
 
-  /// The server rejected the revoked credential: nothing else can be sent.
+  /// The server rejected the revoked credential: nothing else can be sent,
+  /// and no attempt counts, since the evidence itself did not fail.
   credentialRevoked,
 }
 
@@ -69,17 +115,23 @@ bool isEvidenceStorageFull(Object error) =>
 /// evidence is US-072's. A `.tmp` directory left by a process that stopped
 /// mid-save is skipped, and only [clear] removes it.
 class EvidenceStore {
+  /// [maxUploadAttempts] is `AyniSdk.maxEvidenceUploadAttempts`: after that
+  /// many failed uploads an evidence is [EvidenceStatus.failed]. A value
+  /// below 1 counts as 1.
   EvidenceStore(
     Directory storageDirectory, {
     EvidenceFileWriter writeFile = writeEvidenceFile,
+    int maxUploadAttempts = 5,
   }) : _directory = Directory(
          '${storageDirectory.path}${Platform.pathSeparator}evidence',
        ),
-       _writeFile = writeFile;
+       _writeFile = writeFile,
+       _maxUploadAttempts = maxUploadAttempts < 1 ? 1 : maxUploadAttempts;
 
   static const _writingSuffix = '.tmp';
   final Directory _directory;
   final EvidenceFileWriter _writeFile;
+  final int _maxUploadAttempts;
   Future<void> _work = Future<void>.value();
 
   /// Prepares the evidence [evidenceId] with [prepare] and adds what it
@@ -118,18 +170,39 @@ class EvidenceStore {
   });
 
   /// The directory of each evidence pending upload, in no particular order,
-  /// for the upload (US-070). It does not wait for the saves in progress,
-  /// which are not pending yet, skips the evidence the server already
-  /// received, and ends early when a [clear] deletes the queue while it is
-  /// being listed.
+  /// for the upload (US-070): the [EvidenceStatus.pending] and
+  /// [EvidenceStatus.retrying] ones. It does not wait for the saves in
+  /// progress, which are not pending yet, skips the evidence the server
+  /// already received or that reached the limit of attempts (US-071), and
+  /// ends early when a [clear] deletes the queue while it is being listed.
   Stream<Directory> pending() async* {
+    await for (final (:evidence, :status) in _evidenceStatuses()) {
+      if (status == EvidenceStatus.pending ||
+          status == EvidenceStatus.retrying) {
+        yield evidence;
+      }
+    }
+  }
+
+  /// How many evidences of each [EvidenceStatus] the queue holds, with every
+  /// status present (US-071). Like [pending], it does not wait for the saves
+  /// in progress.
+  Future<Map<EvidenceStatus, int>> statusCounts() async {
+    final counts = {for (final status in EvidenceStatus.values) status: 0};
+    await for (final (evidence: _, :status) in _evidenceStatuses()) {
+      counts[status] = counts[status]! + 1;
+    }
+    return counts;
+  }
+
+  /// Each complete evidence directory with its status.
+  Stream<({Directory evidence, EvidenceStatus status})>
+  _evidenceStatuses() async* {
     try {
       if (!await _directory.exists()) return;
       await for (final entity in _directory.list(followLinks: false)) {
-        if (entity is Directory &&
-            !entity.path.endsWith(_writingSuffix) &&
-            !await _receivedFile(entity).exists()) {
-          yield entity;
+        if (entity is Directory && !entity.path.endsWith(_writingSuffix)) {
+          yield (evidence: entity, status: await _status(entity));
         }
       }
     } on PathNotFoundException {
@@ -137,20 +210,88 @@ class EvidenceStore {
     }
   }
 
+  Future<EvidenceStatus> _status(Directory evidence) async {
+    if (await _receivedFile(evidence).exists()) return EvidenceStatus.received;
+    final recorded = await attempts(evidence);
+    // A lower limit than the one in force when it was recorded fails it too.
+    if (recorded.failed || recorded.count >= _maxUploadAttempts) {
+      return EvidenceStatus.failed;
+    }
+    return recorded.count > 0
+        ? EvidenceStatus.retrying
+        : EvidenceStatus.pending;
+  }
+
+  /// The upload attempts recorded for [evidence] that did not end with a
+  /// confirmation (US-071); none when `upload-attempts.json` is missing or
+  /// unreadable.
+  Future<EvidenceUploadAttempts> attempts(Directory evidence) async {
+    Object? recorded;
+    try {
+      recorded = jsonDecode(await _attemptsFile(evidence).readAsString());
+    } on FileSystemException {
+      return noEvidenceUploadAttempts;
+    } on FormatException {
+      return noEvidenceUploadAttempts;
+    }
+    if (recorded is! Map) return noEvidenceUploadAttempts;
+    final count = recorded['attempts'];
+    final lastAttemptAt = DateTime.tryParse('${recorded['lastAttemptAt']}');
+    if (count is! int || count < 1 || lastAttemptAt == null) {
+      return noEvidenceUploadAttempts;
+    }
+    return (
+      count: count,
+      lastAttemptAt: lastAttemptAt,
+      failed: recorded['failed'] == true,
+    );
+  }
+
+  /// Records that an upload of [evidence] that started at [at] ended without
+  /// a confirmation, and returns the attempts it now has: failed once they
+  /// reach the store's `maxUploadAttempts` (US-071). It writes
+  /// `upload-attempts.json`, through a temporary file renamed into place, and
+  /// leaves the rest of the directory unchanged.
+  Future<EvidenceUploadAttempts> recordFailedAttempt(
+    Directory evidence,
+    DateTime at,
+  ) async {
+    final count = (await attempts(evidence)).count + 1;
+    final recorded = (
+      count: count,
+      lastAttemptAt: at.toUtc(),
+      failed: count >= _maxUploadAttempts,
+    );
+    await _replace(
+      _attemptsFile(evidence),
+      jsonEncode({
+        'evidenceId': _evidenceId(evidence),
+        'attempts': recorded.count,
+        'lastAttemptAt': recorded.lastAttemptAt.toIso8601String(),
+        'failed': recorded.failed,
+      }),
+    );
+    return recorded;
+  }
+
   /// Records that the server received [evidence] at [receivedAt], so it is
   /// no longer [pending]: it writes `received.json`, through a temporary file
   /// renamed into place, and leaves the rest of the directory unchanged.
-  Future<void> markReceived(Directory evidence, DateTime receivedAt) async {
-    final file = _receivedFile(evidence);
-    final temporary = File('${file.path}$_writingSuffix');
-    try {
-      await temporary.writeAsString(
+  Future<void> markReceived(Directory evidence, DateTime receivedAt) =>
+      _replace(
+        _receivedFile(evidence),
         jsonEncode({
-          'evidenceId': evidence.uri.pathSegments.lastWhere((s) => s != ''),
+          'evidenceId': _evidenceId(evidence),
           'receivedAt': receivedAt.toUtc().toIso8601String(),
         }),
-        flush: true,
       );
+
+  /// Writes [contents] to [file] through a temporary file renamed into
+  /// place, so a reader never sees it half-written.
+  Future<void> _replace(File file, String contents) async {
+    final temporary = File('${file.path}$_writingSuffix');
+    try {
+      await temporary.writeAsString(contents, flush: true);
       await temporary.rename(file.path);
     } finally {
       try {
@@ -161,10 +302,18 @@ class EvidenceStore {
     }
   }
 
+  String _evidenceId(Directory evidence) =>
+      evidence.uri.pathSegments.lastWhere((s) => s != '');
+
   /// The file that marks an evidence the server confirmed, apart from
   /// `evidence.json`, which never changes.
   File _receivedFile(Directory evidence) =>
       File('${evidence.path}${Platform.pathSeparator}received.json');
+
+  /// The file with the failed upload attempts of an evidence (US-071), apart
+  /// from `evidence.json`, which never changes.
+  File _attemptsFile(Directory evidence) =>
+      File('${evidence.path}${Platform.pathSeparator}upload-attempts.json');
 
   /// How many evidences are [pending].
   Future<int> pendingCount() => pending().length;

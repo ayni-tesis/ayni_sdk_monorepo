@@ -73,6 +73,21 @@ Future<void> showEvidenceQueueStatus(
   // #endregion estado-cola-evidencia
 }
 
+/// Shows how many evidences the SDK stopped sending after the limit of
+/// upload attempts, which it keeps as `Fallida`.
+Future<void> showFailedEvidence(
+  AyniSdk sdk, {
+  required void Function(String status) showStatus,
+}) async {
+  // #region estado-de-cada-evidencia
+  final counts = await sdk.evidenceStatusCounts();
+  final failed = counts[EvidenceStatus.failed]!;
+  if (failed > 0) {
+    showStatus('${EvidenceStatus.failed.message}: $failed');
+  }
+  // #endregion estado-de-cada-evidencia
+}
+
 /// Syncs and shows how the upload of each pending evidence goes, such as
 /// `Subiendo evidencia…` and then `Evidencia recibida.`
 Future<SyncResult> syncAndShowEvidenceUploads(

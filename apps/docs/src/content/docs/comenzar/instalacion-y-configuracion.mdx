@@ -87,6 +87,7 @@ valor por defecto adecuado:
 | `syncTimeout` | `Duration` | No | 30 segundos | Tiempo máximo de una sincronización completa, incluidas las descargas. |
 | `allowInsecureLoopback` | `bool` | No | `false` | Permite `http` solo hacia tu propio equipo, para [desarrollo local](#entorno-de-desarrollo-local). |
 | `onProgress` | `void Function(String message)?` | No | Ninguno | Recibe mensajes de actividad, como `Descargando workflow <nombre>…`. |
+| `maxEvidenceUploadAttempts` | `int` | No | 5 | Cuántas veces `sync()` intenta subir una evidencia para datasets sin confirmación del servidor antes de dejarla como `Fallida` y no volver a enviarla automáticamente (ver [Reintentos de la evidencia](/recursos/datos-y-privacidad/#reintentos-de-la-evidencia)). |
 
 Crear el cliente no conecta con el servidor: la conexión empieza al llamar a
 `sync()`.
@@ -122,6 +123,7 @@ devuelve en cada caso:
 | `credential` | Una credencial inválida o revocada | `SyncStatus.error`: el servidor responde `401`. |
 | `storageDirectory` | Un directorio donde la app no puede escribir | `SyncStatus.error` cuando hay una versión nueva que guardar. |
 | `syncTimeout` | Una duración menor que lo que tarda la sincronización | `SyncStatus.error`. Se mantienen las versiones que ya estaban guardadas. |
+| `maxEvidenceUploadAttempts` | Un valor menor que 1 | `initialize()` devuelve `InitializationStatus.incompleteConfiguration`; el constructor de `AyniSdk` lo trata como 1. |
 | `allowInsecureLoopback` | `false` cuando el servidor entrega un modelo por `http` hacia loopback | El workflow que usa el modelo termina con `SyncResourceStatus.dependencyFailed`. Las descargas de modelos siguen la misma regla que `serverUrl`. |
 
 Encontrarás cómo resolver cada caso en

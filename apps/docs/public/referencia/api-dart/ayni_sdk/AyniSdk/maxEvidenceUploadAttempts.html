@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
-  <meta name="description" content="API docs for the isValid property from the AyniConfig class, for the Dart programming language.">
-  <title>isValid property - AyniConfig class - ayni_sdk library - Dart API</title>
+  <meta name="description" content="API docs for the maxEvidenceUploadAttempts property from the AyniSdk class, for the Dart programming language.">
+  <title>maxEvidenceUploadAttempts property - AyniSdk class - ayni_sdk library - Dart API</title>
 
 
   
@@ -26,10 +26,10 @@
   <ol class="breadcrumbs gt-separated dark hidden-xs">
     <li><a href="/">Ayni Docs</a></li><li><a href="../../index.html">ayni_sdk 0.3.0</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk.dart</a></li>
-    <li><a href="../../ayni_sdk/AyniConfig-class.html">AyniConfig</a></li>
-    <li class="self-crumb">isValid property</li>
+    <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
+    <li class="self-crumb">maxEvidenceUploadAttempts property</li>
   </ol>
-  <div class="self-name">isValid</div>
+  <div class="self-name">maxEvidenceUploadAttempts</div>
   <form class="search navbar-right" role="search">
     <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
   </form>
@@ -46,50 +46,47 @@
 <div
     id="dartdoc-main-content" lang="en" data-pagefind-body
     class="main-content"
-    data-above-sidebar="ayni_sdk&#47;AyniConfig-class-sidebar.html"
+    data-above-sidebar="ayni_sdk&#47;AyniSdk-class-sidebar.html"
     data-below-sidebar="">
     <div>
-<h1><span class="kind-property">isValid</span> property 
+<h1><span class="kind-property">maxEvidenceUploadAttempts</span> property 
 </h1></div>
 
     
-
-    
+      <section class="multi-line-signature">
         
-  <section id="getter">
-    <section class="multi-line-signature">
-      
-      <span class="returntype"><a href="https://api.flutter.dev/flutter/dart-core/bool-class.html">bool</a></span>
-      get
-      <span class="name ">isValid</span>
-      
+        <a href="https://api.flutter.dev/flutter/dart-core/int-class.html">int</a>
+        <span class="name ">maxEvidenceUploadAttempts</span>
+        <div class="features"><span class="feature">final</span></div>
 
-    </section>
-    
+      </section>
+      
 <section class="desc markdown">
-  <p>Whether this configuration is complete and valid for SDK initialization.</p>
-<p>It is <code>true</code> when <a href="../../ayni_sdk/AyniConfig/credential.html">credential</a> and the <a href="../../ayni_sdk/AyniConfig/storageDirectory.html">storageDirectory</a> path are not
-blank, <a href="../../ayni_sdk/AyniConfig/syncTimeout.html">syncTimeout</a> is positive, <a href="../../ayni_sdk/AyniConfig/maxEvidenceUploadAttempts.html">maxEvidenceUploadAttempts</a> is at
-least 1, and <a href="../../ayni_sdk/AyniConfig/serverUrl.html">serverUrl</a> can receive the credential.</p>
+  <p>How many times <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> tries to upload an evidence for datasets without
+a confirmation from the server before it stops (US-071). Defaults to 5:
+the first upload and up to four retries.</p>
+<p>Every upload that ends without a confirmation counts: no answer, a
+timeout, a server error, or a server rejection of that evidence. A
+revoked credential and a sync that never starts the upload, because of
+the collection policy, the connection or the time left, do not count;
+an upload that runs out of time halfway does. After each failed attempt
+the evidence is <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a> and a later <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> tries again
+once a wait passes: 15 minutes after the first failure, twice as long
+after each next one, and at most 6 hours. On the
+last attempt it becomes <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.failed</a>, <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> reports
+<a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceRetriesExhausted</a>, and the SDK keeps it on the
+device without sending it again automatically. A value below 1 counts
+as 1.</p>
 </section>
 
-    
+      
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">bool get isValid =&gt;
-    credential.trim().isNotEmpty &amp;&amp;
-    storageDirectory.path.trim().isNotEmpty &amp;&amp;
-    syncTimeout &gt; Duration.zero &amp;&amp;
-    maxEvidenceUploadAttempts &gt;= 1 &amp;&amp;
-    AyniSdk._canSendCredentialTo(
-      serverUrl,
-      allowInsecureLoopback: allowInsecureLoopback,
-    );</code></pre>
+  <pre class="language-dart"><code class="language-dart">final int maxEvidenceUploadAttempts;</code></pre>
 </section>
 
-  </section>
 
-
+    
 </div> <!-- /.main-content -->
 <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
   <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
@@ -101,11 +98,11 @@ least 1, and <a href="../../ayni_sdk/AyniConfig/serverUrl.html">serverUrl</a> ca
 <ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
     <li><a href="../../index.html">ayni_sdk</a></li>
     <li><a href="../../ayni_sdk/">ayni_sdk</a></li>
-    <li><a href="../../ayni_sdk/AyniConfig-class.html">AyniConfig</a></li>
-    <li class="self-crumb">isValid property</li>
+    <li><a href="../../ayni_sdk/AyniSdk-class.html">AyniSdk</a></li>
+    <li class="self-crumb">maxEvidenceUploadAttempts property</li>
 </ol>
 
-  <h5>AyniConfig class</h5>
+  <h5>AyniSdk class</h5>
   <div id="dartdoc-sidebar-left-content"></div>
 </div><!--/.sidebar-offcanvas-->
 <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">

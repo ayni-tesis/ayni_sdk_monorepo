@@ -2558,8 +2558,38 @@ void main() {
           ).isValid,
           isFalse,
         );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            maxEvidenceUploadAttempts: 0,
+          ).isValid,
+          isFalse,
+        );
       },
     );
+
+    test('initialize keeps the limit of evidence upload attempts (US-071)', () {
+      AyniConfig config({int? attempts}) => attempts == null
+          ? AyniConfig(
+              serverUrl: Uri.parse('https://api.ayni.dev'),
+              credential: 'ayni_sk_valid_secret',
+              storageDirectory: storageDirectory,
+            )
+          : AyniConfig(
+              serverUrl: Uri.parse('https://api.ayni.dev'),
+              credential: 'ayni_sk_valid_secret',
+              storageDirectory: storageDirectory,
+              maxEvidenceUploadAttempts: attempts,
+            );
+
+      expect(AyniSdk.initialize(config()).sdk!.maxEvidenceUploadAttempts, 5);
+      expect(
+        AyniSdk.initialize(config(attempts: 2)).sdk!.maxEvidenceUploadAttempts,
+        2,
+      );
+    });
 
     test('does not expose credential in AyniConfig.toString()', () {
       const secret = 'ayni_sk_super_secret_never_leak_this';
