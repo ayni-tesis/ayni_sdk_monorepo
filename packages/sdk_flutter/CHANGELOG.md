@@ -1,3 +1,21 @@
+## 0.2.0 - 2026-10-03
+
+### Novedades
+
+- Perfil técnico seguro del dispositivo e identificador de instalación que la
+  aplicación puede restablecer con `resetInstallationId()`.
+- Trazas tipadas de ejecución con tiempos por nodo, resultados y errores
+  sanitizados; el SDK no incorpora imágenes, tensores ni credenciales.
+- Outbox local de trazas técnicas que conserva pendientes durante desconexiones y
+  las envía en `sync()` solo cuando la política de telemetría lo permite. El SDK
+  elimina cada pendiente después del acuse del servidor.
+- `clearPendingTraces()` permite a la aplicación detener el envío y vaciar las
+  trazas pendientes al retirar la autorización correspondiente.
+
+La outbox no almacena resultados de aplicación. La captura de trazas sigue
+desactivada hasta que la política y la autorización gestionada por la aplicación
+permitan pasar `traceContext`.
+
 ## 0.1.0 - 2026-10-01
 
 Primera versión estable de `ayni_sdk`.

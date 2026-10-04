@@ -6,13 +6,14 @@ El paquete `ayni_sdk` permite integrar modelos de IA en aplicaciones Flutter con
 
 ## Instalación
 
-Android 8.0 (API 26) o posterior es obligatorio; configura `minSdkVersion 26` en la app Flutter.
+Usa Flutter 3.32.0 o posterior. Android 8.0 (API 26) o posterior es obligatorio;
+configura `minSdkVersion 26` en la app Flutter.
 
 Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.1.0
+  ayni_sdk: ^0.2.0
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -27,7 +28,8 @@ de ejemplo está en `example/app`: solicita una credencial de prueba, inicializa
 el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 [README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
-y fija la versión resuelta en su `pubspec.lock`.
+y usa una dependencia local `path: ../..` para verificar este checkout antes
+de publicar. Una aplicación consumidora debe resolver `^0.2.0` desde pub.dev.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
@@ -190,7 +192,8 @@ un presupuesto opcional que reserva tiempo para actualizar workflows y modelos;
 si una traza individual se rechaza, conserva esa entrada y continúa con las
 siguientes mientras quede presupuesto.
 
-La outbox contiene trazas de validación autorizadas por la app; no son datos de
+La outbox contiene trazas de validación autorizadas por la app, no resultados
+ni capturas de la aplicación; no son datos de
 la finalidad `sdkImprovement`. Al retirar el permiso o consentimiento de
 validación, desactiva primero la captura, espera a que terminen los `run()` en
 curso y llama a `await sdk.clearPendingTraces()`. El SDK pausa los envíos y
@@ -290,7 +293,7 @@ La cancelación detiene los nodos pendientes después de que termine una inferen
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.2.0: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.
