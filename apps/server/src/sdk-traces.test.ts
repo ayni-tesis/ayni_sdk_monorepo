@@ -209,6 +209,62 @@ describe("POST /sdk/traces", () => {
     expect(storeMock).not.toHaveBeenCalled();
   });
 
+  // US-073: the strict schema leaves no place for the input image, its bytes or
+  // other raw input, at the top level or inside any nested object.
+  it.each([
+    { inputBytes: [137, 80, 78, 71] },
+    { incidents: ["iVBORw0KGgoAAAANSUhEUgAAAAQAAAAE"] },
+    { scenario: "data:image/png;base64,iVBORw0KGgo=" },
+    { condition: "captura /9j/4AAQSkZJRgABAQ" },
+    { input: { bytes: "iVBORw0KGgo=" } },
+    { profile: { ...trace.profile, image: "iVBORw0KGgo=" } },
+    { nodes: [{ nodeId: "input-1", type: "input.image", status: "completed", image: "AA==" }] },
+    {
+      models: [{ modelVersionId: "m-1", version: "1.0.0", sha256: "a".repeat(64), bytes: "AA==" }],
+    },
+    {
+      measurements: [
+        {
+          name: "latency",
+          value: 1,
+          unit: "ms",
+          method: "clock",
+          source: "app",
+          provenance: "clientReported",
+          raw: [1, 2],
+        },
+      ],
+    },
+    { error: { category: "runtimeError", phase: "workflowExecution", message: "raw input" } },
+    {
+      outputs: {
+        result: {
+          type: "classification",
+          nodeId: "node-1",
+          label: "perro",
+          confidence: 0.9,
+          confidences: { perro: 0.9 },
+          image: "iVBORw0KGgo=",
+        },
+      },
+    },
+    { outputs: { image: { type: "image", nodeId: "input-1", bytes: "iVBORw0KGgo=" } } },
+  ])(
+    "rejects the input image or raw input anywhere in the trace without storing it",
+    async (fields) => {
+      const { app, storeMock } = makeApp();
+      const response = await app.request("/sdk/traces", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...trace, ...fields }),
+      });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({ code: "invalidTrace" });
+      expect(storeMock).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     { condition: "contacto: diego@example.com" },
     { scenario: "Authorization: Bearer abc.def.ghi" },

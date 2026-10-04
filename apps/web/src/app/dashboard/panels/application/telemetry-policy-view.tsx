@@ -116,6 +116,15 @@ export function TelemetryPolicyView({ application, canManage = false }: Telemetr
         <h2 className="font-semibold text-lg">Privacidad y telemetría</h2>
       </div>
 
+      {/* US-073: dataset.capture is the only way an image leaves a run. */}
+      <div className="max-w-xl space-y-1 text-muted-foreground text-sm">
+        <p>La telemetría no incluye imágenes de entrada.</p>
+        <p>
+          Las imágenes solo se recolectan en workflows con el nodo Capturar evidencia, según la
+          política de Recolección de evidencia.
+        </p>
+      </div>
+
       {loading ? (
         <p className="text-muted-foreground text-sm">Cargando política de telemetría…</p>
       ) : loadError || !saved ? (

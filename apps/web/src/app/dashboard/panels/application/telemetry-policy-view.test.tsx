@@ -335,3 +335,26 @@ describe("US-112: Aplicar retención de telemetría", () => {
     expect(screen.queryByRole("button", { name: "Guardar retención" })).toBeNull();
   });
 });
+
+describe("US-073: Enviar solo telemetría sin nodo de captura", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client.get.mockReset();
+    client.get.mockResolvedValue({ data: { policy: { ...savedPolicy, enabled: true } } });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("clarifies that telemetry carries no input images and names the only node that collects them", async () => {
+    await renderView({ canManage: false });
+
+    expect(screen.getByText("La telemetría no incluye imágenes de entrada.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Las imágenes solo se recolectan en workflows con el nodo Capturar evidencia, según la política de Recolección de evidencia.",
+      ),
+    ).toBeTruthy();
+  });
+});
