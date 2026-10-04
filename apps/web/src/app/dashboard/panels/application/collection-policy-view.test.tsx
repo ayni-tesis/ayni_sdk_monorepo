@@ -292,3 +292,41 @@ describe("US-063: Configurar la política de recolección", () => {
     ).toBeTruthy();
   });
 });
+
+describe("US-069: Respetar la política de red para evidencia", () => {
+  const wifiOnly =
+    "La evidencia se envía solo por Wi-Fi: con datos móviles o sin conexión queda pendiente de Wi-Fi y no consume datos móviles.";
+  const anyNetwork =
+    "La evidencia se envía por Wi-Fi o por datos móviles, así que puede consumir datos móviles.";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client.get.mockReset();
+    client.get.mockResolvedValue({ data: { policy: savedPolicy } });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("explains the selected network under Red permitida", async () => {
+    await renderView();
+
+    expect(network().getAttribute("aria-describedby")).toBe("collection-network-help");
+    expect(document.getElementById("collection-network-help")?.textContent).toBe(wifiOnly);
+
+    fireEvent.change(network(), { target: { value: "wifiAndCellular" } });
+
+    expect(document.getElementById("collection-network-help")?.textContent).toBe(anyNetwork);
+  });
+
+  it("explains the network to members who only read the policy", async () => {
+    client.get.mockResolvedValue({
+      data: { policy: { ...savedPolicy, network: "wifiAndCellular" } },
+    });
+    await renderView({ canManage: false });
+
+    expect(network().disabled).toBe(true);
+    expect(screen.getByText(anyNetwork)).toBeTruthy();
+  });
+});
