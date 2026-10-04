@@ -7,10 +7,15 @@ environment:
   sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
-  ayni_sdk:
-    path: ../../packages/sdk_flutter
+  ayni_sdk: 0.2.0
+  archive: ^4.3.0
+  crypto: ^3.0.7
   flutter:
     sdk: flutter
+  flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.6
+  share_plus: ^13.3.1
+  tflite_flutter: ^0.12.1
 
 dev_dependencies:
   flutter_test:

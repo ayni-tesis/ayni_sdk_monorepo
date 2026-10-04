@@ -3,5 +3,7 @@
 .flutter-plugins-dependencies
 .packages
 build/
+*.iml
+.idea/
 android/.gradle/
 ios/Pods/
