@@ -218,7 +218,9 @@ imagen que recibe `run()` ni sus bytes. Además, al guardar una traza en
 `diagnostics/trace-outbox/` y al leerla para enviarla con `POST /sdk/traces`,
 conserva solo los campos del esquema, cada uno con su tipo: si un componente
 agrega a la traza la imagen de entrada, sus bytes u otro dato, el SDK descarta
-ese adjunto y envía la traza solo con los metadatos permitidos. El servidor
+ese adjunto y envía la traza solo con los metadatos permitidos. Solo esos
+campos cuentan para el límite de 2 MiB de una traza, así que un adjunto
+descartado no hace perder la traza. El servidor
 también rechaza con `invalidTrace`, sin guardar nada, una traza con un campo
 fuera del esquema, en cualquier nivel, o con un texto que parece una
 credencial, un correo, un teléfono o una ruta local.
@@ -230,9 +232,9 @@ pase `evidenceConsent: true`. El editor del dashboard lo indica con «Este
 workflow no recolecta imágenes.», y `Privacidad y telemetría` aclara «La
 telemetría no incluye imágenes de entrada.»
 
-La telemetría no retrasa ni cambia el resultado: `run()` guarda la traza en el
-dispositivo, sin solicitudes de red, y si no puede guardarla devuelve el
-resultado o el error con `tracePersistenceFailed: true`. El envío ocurre
+La telemetría no bloquea el resultado: `run()` solo guarda la traza en el
+dispositivo, sin solicitudes de red, y si no puede guardarla devuelve igual el
+resultado o el error, con `tracePersistenceFailed: true`. El envío ocurre
 después, en `sync()`.
 
 Cada uno tiene su propia política, consentimiento y retención:

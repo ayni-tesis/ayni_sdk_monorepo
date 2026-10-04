@@ -342,12 +342,15 @@ describe("Datos y privacidad (US-147)", () => {
       "«Este workflow no recolecta imágenes.»",
       "«La telemetría no incluye imágenes de entrada.»",
       "`tracePersistenceFailed: true`",
+      "un adjunto descartado no hace perder la traza",
     ]) {
       expect(telemetry).toContain(text);
     }
-    // The SDK keeps only the schema's fields when it saves a trace and when it
-    // reads one to send it, as the page says.
-    expect(traceOutboxSource.match(/allowlistedTracePayload\(/g)).toHaveLength(2);
+    // The SDK keeps only the schema's fields when it saves a trace, when it
+    // reads one to send it and before it checks its size, as the page says.
+    expect(traceOutboxSource).toContain("jsonEncode(allowlistedTracePayload(trace))");
+    expect(traceOutboxSource).toContain("return allowlistedTracePayload(");
+    expect(ayniSdkSource).toContain("allowlistedTracePayload(trace.toJson())");
     expect(rows.map((row) => row[0])).toEqual([
       "Qué guarda y envía",
       "Política que la habilita",
