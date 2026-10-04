@@ -63,7 +63,7 @@ class CollectionPolicy {
   bool waitsForWifiOn(NetworkType connection) =>
       enabled &&
       network == CollectionNetwork.wifi &&
-      connection != NetworkType.wifi;
+      !allowsEvidenceUploadOver(connection);
 
   static CollectionPolicy? fromJson(Object? value) {
     if (value is! Map) return null;

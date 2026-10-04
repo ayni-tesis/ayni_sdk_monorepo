@@ -1,5 +1,6 @@
 // US-069: the SDK asks its native plugin which connection the device uses,
 // and only Wi-Fi satisfies a collection policy that allows only Wi-Fi.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
@@ -85,6 +86,17 @@ void main() {
     test('waits for Wi-Fi when the plugin fails', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       nativeAnswer = () => throw PlatformException(code: 'unavailable');
+
+      expect(
+        await createSdk().evidenceQueueStatus(),
+        EvidenceQueueStatus.waitingForWifi,
+      );
+    });
+
+    test('waits for Wi-Fi when the plugin never answers', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final never = Completer<Object?>();
+      nativeAnswer = () => never.future;
 
       expect(
         await createSdk().evidenceQueueStatus(),

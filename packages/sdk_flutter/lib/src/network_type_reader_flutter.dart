@@ -5,11 +5,15 @@ import 'network_type.dart';
 
 const _networkChannel = MethodChannel('dev.ayni.ayni_sdk/network');
 
+/// The longest the SDK waits for the plugin's answer, so a platform that
+/// never reports a path cannot hold `sync()` or `evidenceQueueStatus()`.
+const networkTypeTimeout = Duration(seconds: 2);
+
 /// Asks the SDK's native plugin which connection the device uses right now
 /// (US-069): `ConnectivityManager` on Android and `NWPathMonitor` on iOS.
 ///
-/// Any other platform, or a failed or unknown answer, is [NetworkType.other],
-/// which never counts as Wi-Fi.
+/// Any other platform, or a failed, late or unknown answer, is
+/// [NetworkType.other], which never counts as Wi-Fi.
 Future<NetworkType> readNetworkType() async {
   if (defaultTargetPlatform != TargetPlatform.android &&
       defaultTargetPlatform != TargetPlatform.iOS) {
@@ -17,7 +21,9 @@ Future<NetworkType> readNetworkType() async {
   }
   try {
     return networkTypeNamed(
-      await _networkChannel.invokeMethod<String>('getNetworkType'),
+      await _networkChannel
+          .invokeMethod<String>('getNetworkType')
+          .timeout(networkTypeTimeout, onTimeout: () => null),
     );
   } catch (_) {
     return NetworkType.other;
