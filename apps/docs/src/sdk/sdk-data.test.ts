@@ -62,6 +62,38 @@ describe("sdkRequests", () => {
     ]);
   });
 
+  it("reads cascaded headers and the Content-Type a request declares (US-070)", () => {
+    const source = [
+      "final start = await _client.postUrl(serverUrl.resolve('/sdk/evidence'));",
+      "start.headers",
+      "  ..set(HttpHeaders.authorizationHeader, 'Bearer $_credential')",
+      "  ..contentType = ContentType.json;",
+      "start.write(jsonEncode(body));",
+      "await start.close();",
+      "final upload = await _client.putUrl(uploadUrl);",
+      "upload.headers.contentType = ContentType('image', 'jpeg');",
+      "upload.add(image);",
+      "await upload.close();",
+    ].join("\n");
+
+    expect(sdkRequests(source)).toEqual([
+      expect.objectContaining({
+        method: "POST",
+        target: "/sdk/evidence",
+        headers: ["HttpHeaders.authorizationHeader", "HttpHeaders.contentTypeHeader"],
+        sendsCredential: true,
+        sendsBody: true,
+      }),
+      expect.objectContaining({
+        method: "PUT",
+        target: "<uploadUrl>",
+        headers: ["HttpHeaders.contentTypeHeader"],
+        sendsCredential: false,
+        sendsBody: true,
+      }),
+    ]);
+  });
+
   it("notices a credential sent without the Authorization header constant", () => {
     const source = [
       "final request = await client.getUrl(manifest.downloadUrl);",

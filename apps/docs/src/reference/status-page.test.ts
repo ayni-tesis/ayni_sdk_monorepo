@@ -168,9 +168,27 @@ describe("Estados y errores (US-146)", () => {
       "telemetryDisabled",
       "traceConflict",
       "traceTooLarge",
+      "invalidEvidence",
+      "collectionDisabled",
+      "evidenceSourceNotFound",
+      "evidenceConflict",
+      "evidenceTooLarge",
+      "invalidEvidenceImage",
+      "evidenceNotFound",
+      "evidenceImageMissing",
       "workflowVersionNotFound",
       "modelVersionNotFound",
     ]);
+    const evidenceCodes = [
+      "invalidEvidence",
+      "collectionDisabled",
+      "evidenceSourceNotFound",
+      "evidenceConflict",
+      "evidenceTooLarge",
+      "invalidEvidenceImage",
+      "evidenceNotFound",
+      "evidenceImageMissing",
+    ];
     for (const row of rows) {
       const code = (row[0] ?? "").replace(/`/g, "");
       expect(row.at(-1), row[0]).toContain(
@@ -178,9 +196,15 @@ describe("Estados y errores (US-146)", () => {
           ? "`ConsentStatus.pending`"
           : ["invalidTrace", "traceTooLarge", "telemetryDisabled", "traceConflict"].includes(code)
             ? "outbox"
-            : "`SyncStatus.error`",
+            : evidenceCodes.includes(code)
+              ? "`evidenceUploadFailed`"
+              : "`SyncStatus.error`",
       );
     }
+    // US-070: a revoked credential while uploading evidence has its own event.
+    expect(rows.find((row) => row[0] === "`credentialRevoked`")?.at(-1)).toContain(
+      "`evidenceCredentialRevoked`",
+    );
   });
 
   it("warns that the app never receives the HTTP status code", () => {

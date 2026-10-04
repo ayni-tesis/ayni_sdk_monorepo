@@ -9,4 +9,5 @@ export const privacy = {
   deleteEvidence: exampleRegion(source, "borrar-evidencia"),
   pendingEvidence: exampleRegion(source, "evidencia-pendiente"),
   evidenceQueueStatus: exampleRegion(source, "estado-cola-evidencia"),
+  uploadEvidence: exampleRegion(source, "subir-evidencia"),
 };

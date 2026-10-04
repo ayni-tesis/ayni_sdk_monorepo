@@ -23,4 +23,10 @@ describe("privacy example (US-147)", () => {
     expect(privacy.evidenceQueueStatus).toContain("EvidenceQueueStatus.empty");
     expect(privacy.evidenceQueueStatus).toContain("status.message");
   });
+
+  it("syncs and shows each event of the evidence upload (US-070)", () => {
+    expect(privacy.uploadEvidence).toContain("await sdk.sync(");
+    expect(privacy.uploadEvidence).toContain("onEvidence:");
+    expect(privacy.uploadEvidence).toContain("event.message");
+  });
 });

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import collectionPolicySource from "../../../../packages/api/src/collection-policy.ts?raw";
 import sdkCollectionPolicySource from "../../../../packages/sdk_flutter/lib/src/collection_policy_store.dart?raw";
+import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { dashboardTexts, quotedTexts } from "../guides/dashboard-texts";
 import { tableRows } from "../markdown-table";
@@ -112,13 +113,27 @@ describe("Datos y privacidad (US-147)", () => {
 
     expect(
       requests.filter((request) => request.sendsBody).map((request) => request.target),
-    ).toEqual(["/sdk/consents", "/sdk/traces"]);
+    ).toEqual(["/sdk/consents", "/sdk/traces", "/sdk/evidence", "<uploadUrl>"]);
+    // Besides the credential, a request only declares the type of the body it sends.
     expect(
-      requests.flatMap(({ headers }) =>
-        headers.filter((header) => header !== "HttpHeaders.authorizationHeader"),
+      requests.flatMap(({ headers, sendsBody }) =>
+        headers.filter(
+          (header) =>
+            header !== "HttpHeaders.authorizationHeader" &&
+            !(sendsBody && header === "HttpHeaders.contentTypeHeader"),
+        ),
       ),
     ).toEqual([]);
-    expect(doesNot).toContain("No sube imágenes ni entradas del modelo.");
+    expect(
+      requests.filter(
+        (request) =>
+          request.sendsBody && !request.headers.includes("HttpHeaders.contentTypeHeader"),
+      ),
+    ).toEqual([]);
+    expect(page).toContain("`Content-Type`");
+    expect(doesNot.replace(/\s+/g, " ")).toContain(
+      "No sube imágenes ni entradas del modelo, salvo la copia optimizada de cada evidencia para datasets",
+    );
     expect(doesNot).toContain("`POST /sdk/traces`");
     expect(doesNot).toContain("`diagnostics/trace-outbox/`");
     expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
@@ -203,6 +218,36 @@ describe("Datos y privacidad (US-147)", () => {
     expect(networks(/enum CollectionNetwork \{([^}]*)\}/, sdkCollectionPolicySource)).toEqual(
       networks(/COLLECTION_NETWORKS = \[([^\]]*)\]/, collectionPolicySource),
     );
+  });
+
+  it("describes the upload of evidence, its confirmation and its retention (US-070)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const events = Object.fromEntries(
+      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, event, message]) => [event, message],
+      ),
+    );
+
+    expect(evidence).toContain("### Envío de la evidencia");
+    expect(evidence).toContain('<Code code={privacy.uploadEvidence} lang="dart" />');
+    for (const request of [
+      "`POST /sdk/evidence`",
+      "`PUT <uploadUrl>`",
+      "`POST /sdk/evidence/<evidenceId>/complete`",
+    ]) {
+      expect(evidence).toContain(request);
+    }
+    for (const event of [
+      "evidenceUploading",
+      "evidenceReceived",
+      "evidenceUploadFailed",
+      "evidenceCredentialRevoked",
+    ]) {
+      expect(evidence).toContain(`\`${event}\` (\`${events[event]}\`)`);
+    }
+    expect(evidence).toContain("`received.json`");
+    expect(evidence).toContain("### Retención de la evidencia en el servidor");
+    expect(storedSection).toContain("`evidence/<evidenceId>/received.json`");
   });
 
   it("names every Android permission the SDK adds to the app", () => {

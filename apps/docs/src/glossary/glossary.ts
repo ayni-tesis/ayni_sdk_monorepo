@@ -136,16 +136,15 @@ export const glossary: GlossaryEntry[] = [
     definition:
       "La configuración de cada aplicación que indica si el SDK puede capturar imágenes como evidencia para datasets, por qué red puede subirlas y el tamaño y la calidad máximos a los que las comprime. Solo los administradores la cambian. Sin una política guardada, la recolección está desactivada. Solo se puede activar junto con una configuración explícita de consentimiento, y solo capturan imágenes los workflows que incluyen `dataset.capture`.",
     avoid: ["configuración de captura", "configuración de subida"],
-    comingSoon:
-      "El SDK guarda la evidencia de `dataset.capture` en el dispositivo e informa si espera Wi-Fi, pero todavía no la sube.",
   },
   {
     source: "Evidence",
     term: "Evidencia",
     definition:
-      "Una imagen que el SDK conserva en el dispositivo cuando una ejecución de una versión de workflow alcanza un nodo `dataset.capture` y termina bien (una ejecución que falla o se cancela no crea ninguna), junto con el resultado de inferencia que recibió el nodo, la versión de workflow y la versión de modelo que produjo el resultado, para enviarla después a los datasets de su aplicación. El SDK solo la crea mientras la app indica que la persona consiente la recolección de evidencia, y nunca retrasa ni cambia el resultado que devuelve. Conserva una copia de la imagen reducida y comprimida con el tamaño máximo y la calidad de la política de recolección, nunca la imagen que usó el workflow, y descarta la evidencia que no puede preparar o que no tiene espacio para guardar. Una evidencia guardada queda pendiente en una cola local del dispositivo, sin conexión y aunque la app se reinicie, y nunca cuenta como enviada antes de que el servidor confirme que la recibió. Solo sale del dispositivo mientras la política de recolección está habilitada y por la red que permite: si solo permite Wi-Fi, la evidencia espera el Wi-Fi (`Pendiente de Wi-Fi`) en vez de usar datos móviles.",
+      "Una imagen que el SDK conserva en el dispositivo cuando una ejecución de una versión de workflow alcanza un nodo `dataset.capture` y termina bien (una ejecución que falla o se cancela no crea ninguna), junto con el resultado de inferencia que recibió el nodo, la versión de workflow y la versión de modelo que produjo el resultado, para enviarla después a los datasets de su aplicación. El SDK solo la crea mientras la app indica que la persona consiente la recolección de evidencia, y nunca retrasa ni cambia el resultado que devuelve. Conserva una copia de la imagen reducida y comprimida con el tamaño máximo y la calidad de la política de recolección, nunca la imagen que usó el workflow, y descarta la evidencia que no puede preparar o que no tiene espacio para guardar. Una evidencia guardada queda pendiente en una cola local del dispositivo, sin conexión y aunque la app se reinicie, y nunca cuenta como enviada antes de que el servidor confirme que la recibió. Solo sale del dispositivo mientras la política de recolección está habilitada y por la red que permite: si solo permite Wi-Fi, la evidencia espera el Wi-Fi (`Pendiente de Wi-Fi`) en vez de usar datos móviles. El servidor solo la acepta para la aplicación de la credencial del SDK, desde un nodo `dataset.capture` de una de sus versiones de workflow, y la conserva, imagen y datos, asociada a esa aplicación, workflow, versión de workflow y versión de modelo.",
     avoid: ["muestra", "subida", "telemetría"],
-    comingSoon: "El SDK todavía no envía la evidencia: la conserva en el dispositivo.",
+    comingSoon:
+      "El servidor recibe la evidencia, pero el dashboard todavía no la muestra ni la agrega a datasets.",
   },
   {
     source: "Slug",
