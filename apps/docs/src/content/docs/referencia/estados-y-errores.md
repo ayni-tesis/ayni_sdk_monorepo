@@ -83,7 +83,8 @@ resultado y llama a `onEvidence` con cada `EvidenceEvent`, en este orden:
 conservarla, el último evento es `evidenceStorageFull` o `evidenceDiscarded`,
 que también puede llegar justo después de `evidenceOptimizing`. Su `message` es
 también el diagnóstico que recibe `onProgress`. Sin consentimiento no hay
-evento. Ningún evento cambia el resultado que ya devolvió `run()` (ver
+evento, y tampoco cuando el nodo cuelga de una rama de una condición que la
+ejecución no tomó. Ningún evento cambia el resultado que ya devolvió `run()` (ver
 [Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets)).
 
 `sync()` llama a su propio `onEvidence` por cada evidencia pendiente que empieza

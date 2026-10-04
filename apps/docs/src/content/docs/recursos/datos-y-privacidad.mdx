@@ -320,6 +320,29 @@ En los dos casos el resultado no cambia y la evidencia ya guardada, los
 workflows y los modelos siguen igual. Una ejecución que falla, se cancela o no
 ejecuta el modelo que alimenta la captura no crea evidencia.
 
+### Captura condicionada por confianza
+
+Un administrador puede colgar el nodo de una rama de una «Condición» para
+recolectar solo los ejemplos útiles, por ejemplo las predicciones de baja
+confianza. La condición compara la confianza de una etiqueta del mismo modelo
+cuyo resultado recibe la captura con un umbral, con uno de los operadores
+mayor o igual, mayor, menor o igual y menor, sin expresiones ni código. En el
+editor, la condición muestra «Capturar solo cuando» con esa etiqueta, el
+operador y el umbral, y rotula la rama que llega a la captura como
+«Capturar evidencia» y la otra como «No capturar». El nodo se agrega con
+«Capturar para dataset» después de una rama, igual que después de un
+resultado, así que también exige «Permitir captura de imágenes para datasets»
+activado en «Recolección de evidencia».
+
+Cuando el resultado cumple la condición, `run()` alcanza el nodo y el SDK crea
+la evidencia como en cualquier otra captura: con los mismos datos, el mismo
+consentimiento (`evidenceConsent: true`) y la misma retención. La condición no
+agrega ningún dato a la evidencia. Cuando no la cumple, el SDK no copia la
+imagen, no crea evidencia ni llama a `onEvidence`, y devuelve el mismo
+resultado. La traza de esa ejecución, si la telemetría está habilitada,
+registra la condición como completada y la captura como omitida (`skipped`),
+sin la imagen.
+
 ### Evidencia pendiente de envío
 
 Cada evidencia guardada queda pendiente de envío en una cola local: su

@@ -283,6 +283,9 @@ consentimiento de recolección que tu app le pide:</p>
 );
 </code></pre>
 <p>El ejemplo comprobado está en <code>example/privacy.dart</code>.</p>
+<p>Si el nodo cuelga de una rama de una condición, por ejemplo para guardar solo
+las predicciones de baja confianza, <code>run()</code> lo alcanza solo cuando la condición
+toma esa rama; si toma la otra, no crea evidencia y el resultado es el mismo.</p>
 <p><code>run()</code> devuelve el resultado sin esperar la evidencia y una evidencia que no se
 puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
 imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección
