@@ -58,21 +58,21 @@
 - Consumes: Flutter 3.47.4 / Dart 3.13.3 and the already released pub.dev `ayni_sdk` 0.2.0.
 - Produces: Android-buildable `apps/native` with a hosted `ayni_sdk: 0.2.0` dependency, direct `tflite_flutter: ^0.12.1`, and dependencies `archive: ^4.3.0`, `crypto: ^3.0.7`, `flutter_secure_storage: ^11.2.0`, `path_provider: ^2.1.6`, and `share_plus: ^13.3.1`.
 
-- [ ] **Step 1: Write failing package configuration tests** that assert the SDK dependency is hosted and exactly `0.2.0`, no path dependency/override points to `packages/sdk_flutter`, and Android min SDK is at least 26.
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 1: Write failing package configuration tests** that assert the SDK dependency is hosted and exactly `0.2.0`, no path dependency/override points to `packages/sdk_flutter`, and Android min SDK is at least 26.
+- [x] **Step 2: Run the focused test**
 
 Run: `cd apps/native; flutter test test/validation/package_configuration_test.dart`
 
 Expected: FAIL because the app still depends on the local SDK package and has no Android host.
 
-- [ ] **Step 3: Implement package/host configuration**. Remove the local path dependency, add the listed dependencies, commit the resolved lockfile, and generate only Android host files with `flutter create --platforms=android .` if `android/` is absent. Set `minSdk = 26` and `compileSdk = 36`; do not generate iOS.
-- [ ] **Step 4: Resolve and verify**
+- [x] **Step 3: Implement package/host configuration**. Remove the local path dependency, add the listed dependencies, commit the resolved lockfile, and generate only Android host files with `flutter create --platforms=android .` if `android/` is absent. Set `minSdk = 26` and `compileSdk = 36`; do not generate iOS.
+- [x] **Step 4: Resolve and verify**
 
 Run: `cd apps/native && flutter pub get && flutter test test/validation/package_configuration_test.dart && flutter analyze`
 
 Expected: `ayni_sdk 0.2.0` resolves from the hosted package; tests PASS and analyzer reports no issues.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/native/pubspec.yaml apps/native/pubspec.lock apps/native/android apps/native/README.md apps/native/test/validation/package_configuration_test.dart
@@ -93,21 +93,21 @@ git commit -m "build: pin validation app to ayni sdk 0.2.0"
 - Produces: `ExperimentPlan.fromJson(Map<String, Object?> json)`; `ExperimentPlan.load(AssetBundle bundle)`; `ValidationPhase` values `coldStart`, `warmup`, `measured`, `stress`, `fault`; immutable `ValidationScenario`, `ValidationResourceProfile`, and `ValidationRunRecord`.
 - Each profile identifies one dataset version, the same model version/hash in control and treatment, treatment workflow ID/expected version, and a shared image/preprocess/output contract. The profile rejects different model version IDs between the direct adapter and the workflow definition. A `pairRunId` links control and treatment; repetitions are one-based.
 
-- [ ] **Step 1: Write failing parser tests** for a valid plan, unsupported schema version, missing resource profile, duplicate case IDs, invalid count/phase, 30 cold-start launch labels, exactly 20 warmups, three measured blocks of 100, 1,024 stress repetitions, and 30 repetitions per fault scenario.
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 1: Write failing parser tests** for a valid plan, unsupported schema version, missing resource profile, duplicate case IDs, invalid count/phase, 30 cold-start launch labels, exactly 20 warmups, three measured blocks of 100, 1,024 stress repetitions, and 30 repetitions per fault scenario.
+- [x] **Step 2: Run the focused tests**
 
 Run: `cd apps/native; flutter test test/validation/models/experiment_plan_test.dart`
 
 Expected: FAIL because plan models and fixture do not exist.
 
-- [ ] **Step 3: Implement immutable models and the bundled plan**. Reject unknown/missing required fields, use `schemaVersion: "1"`, define profile resource identifiers without credentials, include both expected model-version IDs and require them to match, and keep all phase counts in the plan rather than hardcoding batch-loop behavior. The 30 cold-start labels are exported for the Plan's external Macrobenchmark procedure; the app does not measure process startup itself.
-- [ ] **Step 4: Rerun the focused tests**
+- [x] **Step 3: Implement immutable models and the bundled plan**. Reject unknown/missing required fields, use `schemaVersion: "1"`, define profile resource identifiers without credentials, include both expected model-version IDs and require them to match, and keep all phase counts in the plan rather than hardcoding batch-loop behavior. The 30 cold-start labels are exported for the Plan's external Macrobenchmark procedure; the app does not measure process startup itself.
+- [x] **Step 4: Rerun the focused tests**
 
 Run: `cd apps/native; flutter test test/validation/models/experiment_plan_test.dart`
 
 Expected: PASS, including the exact Plan v1.3 phase counts.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/native/assets/validation/experiment_plan.json apps/native/pubspec.yaml apps/native/lib/validation/models apps/native/test/validation/models/experiment_plan_test.dart
