@@ -274,8 +274,8 @@ con el número de evidencias en la cola:
 <Code code={privacy.pendingEvidence} lang="dart" />
 
 `pendingEvidenceCount()` lee la cola en el dispositivo, sin solicitudes de red,
-y no espera a la evidencia que el SDK aún prepara o guarda: la cuenta desde que
-avisa `evidenceQueued`.
+y no espera a la evidencia que el SDK aún prepara o guarda: cuando avisa
+`evidenceQueued`, ya la cuenta.
 
 Esta versión no envía la evidencia, así que nunca marca una como enviada: cada
 una sigue pendiente en `evidence/<evidenceId>/` y no vence. Si la persona

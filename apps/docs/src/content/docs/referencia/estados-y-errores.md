@@ -90,7 +90,7 @@ evento. Ningún evento cambia el resultado que ya devolvió `run()` (ver
 | --- | --- | --- |
 | `evidenceOptimizing` | El SDK empezó a reducir y comprimir la imagen de la evidencia con el tamaño máximo y la calidad de la política de recolección. | `Optimizando` |
 | `evidencePrepared` | El SDK optimizó la imagen de la evidencia y va a guardarla en el dispositivo con el resultado de la captura. | `Evidencia preparada para envío.` |
-| `evidenceQueued` | El SDK guardó completas la imagen y el resultado de la captura en la cola local de evidencia pendiente de envío, donde se conservan aunque la app se reinicie. Desde ese momento, `pendingEvidenceCount()` la cuenta. | `Evidencia guardada para envío posterior.` |
+| `evidenceQueued` | El SDK guardó completas la imagen y el resultado de la captura en la cola local de evidencia pendiente de envío, donde se conservan aunque la app se reinicie. Cuando llega, `pendingEvidenceCount()` ya la cuenta. | `Evidencia guardada para envío posterior.` |
 | `evidenceDiscarded` | El SDK no pudo preparar la evidencia, por ejemplo porque ningún `sync()` guardó aún la política de recolección o porque no pudo optimizar o guardar la imagen por un motivo distinto de la falta de espacio, y la descartó sin dejar archivos a medias. | `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.` |
 | `evidenceStorageFull` | El dispositivo no tenía espacio para guardar la evidencia en la cola, así que el SDK la descartó sin dejar archivos a medias. La evidencia que ya estaba pendiente se conserva. | `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.` |
 

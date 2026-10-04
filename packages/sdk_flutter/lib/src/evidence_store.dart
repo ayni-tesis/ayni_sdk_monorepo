@@ -4,33 +4,23 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'sdk_internal.dart';
+
 /// What an evidence keeps: its optimized `image` bytes and `evidence.json`.
 typedef EvidenceContent = ({Uint8List image, Map<String, Object?> record});
 
 /// Writes one file of an evidence; tests replace it to simulate a full device.
 typedef EvidenceFileWriter = Future<void> Function(File file, List<int> bytes);
 
+/// The [EvidenceFileWriter] the SDK uses: writes [bytes] to [file] and
+/// flushes them to the device.
 Future<void> writeEvidenceFile(File file, List<int> bytes) =>
     file.writeAsBytes(bytes, flush: true);
 
-/// `ENOSPC` (`No space left on device`), the same number on Android (Linux)
-/// and iOS (XNU). `dart:io` reports the operating system's own code in
-/// [OSError.errorCode].
-const _noSpaceLeftOnDevice = 28;
-
-/// `ERROR_HANDLE_DISK_FULL` and `ERROR_DISK_FULL`, Windows system error codes.
-const _windowsDiskFull = {39, 112};
-
-/// Whether [error] says the device has no space left to write a file.
-/// [windows] is the platform whose error codes apply; it defaults to the
-/// current one.
-bool isOutOfStorage(Object error, {bool? windows}) {
-  if (error is! FileSystemException) return false;
-  final code = error.osError?.errorCode;
-  return (windows ?? Platform.isWindows)
-      ? _windowsDiskFull.contains(code)
-      : code == _noSpaceLeftOnDevice;
-}
+/// Whether a failed [EvidenceStore.save] failed because the device had no
+/// space left, which `run()` reports as `evidenceStorageFull`.
+bool isEvidenceStorageFull(Object error) =>
+    error is FileSystemException && isOutOfStorage(error);
 
 /// The local queue of evidence that `dataset.capture` nodes create (US-066,
 /// US-068): one directory per evidence under `storageDirectory/evidence/`,
@@ -83,13 +73,21 @@ class EvidenceStore {
       await temporary.rename(
         '${_directory.path}${Platform.pathSeparator}$evidenceId',
       );
-    } finally {
-      if (await temporary.exists()) await temporary.delete(recursive: true);
+    } catch (_) {
+      try {
+        if (await temporary.exists()) await temporary.delete(recursive: true);
+      } on FileSystemException {
+        // Keep the error that stopped the save (such as a full device); the
+        // `.tmp` directory is never pending, and clear() removes it.
+      }
+      rethrow;
     }
   });
 
-  /// The directory of each evidence pending upload, in no particular order.
-  /// It does not wait for the saves in progress, which are not pending yet.
+  /// The directory of each evidence pending upload, in no particular order,
+  /// for the upload (US-070). It does not wait for the saves in progress,
+  /// which are not pending yet, and ends early when a [clear] deletes the
+  /// queue while it is being listed.
   Stream<Directory> pending() async* {
     try {
       if (!await _directory.exists()) return;
@@ -98,9 +96,8 @@ class EvidenceStore {
           yield entity;
         }
       }
-    } on FileSystemException {
-      // A clear() that deleted the queue while it was being listed.
-      if (await _directory.exists()) rethrow;
+    } on PathNotFoundException {
+      // A clear() deleted the queue while it was being listed.
     }
   }
 

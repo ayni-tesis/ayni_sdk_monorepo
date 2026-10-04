@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ayni_sdk/src/evidence_store.dart';
+import 'package:ayni_sdk/src/sdk_internal.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -120,7 +121,8 @@ void main() {
 
     test('rejects other errors', () {
       expect(isOutOfStorage(const FileSystemException('denied')), false);
-      expect(isOutOfStorage(StateError('no policy')), false);
+      expect(isEvidenceStorageFull(StateError('no policy')), false);
+      expect(isEvidenceStorageFull(_noSpace('image')), true);
     });
   });
 }

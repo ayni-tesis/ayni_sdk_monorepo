@@ -1016,7 +1016,7 @@ class AyniSdk {
   /// more than zero.
   ///
   /// Each evidence a [run] keeps waits in a local queue in [storageDirectory]
-  /// and is counted from the moment [run] reports
+  /// and is already counted when [run] reports
   /// [EvidenceEvent.evidenceQueued]. It stays pending across restarts of the
   /// app and while the device has no connection, and the SDK never counts it
   /// as sent before the server confirms its upload. The count does not wait
@@ -1098,7 +1098,7 @@ class AyniSdk {
               // The result was already returned; an evidence that cannot be
               // prepared or saved is discarded without affecting it.
               onError: (Object error) => report(
-                isOutOfStorage(error)
+                isEvidenceStorageFull(error)
                     ? EvidenceEvent.evidenceStorageFull
                     : EvidenceEvent.evidenceDiscarded,
               ),
@@ -1162,11 +1162,10 @@ class AyniSdk {
   /// and keeps it in [storageDirectory] with the captured inference result,
   /// the workflow version, and the model, pending upload in a local queue
   /// that [pendingEvidenceCount] counts. [input] itself never changes. It
-  /// reports [EvidenceEvent.evidenceOptimizing], then
+  /// reports to [onEvidence] [EvidenceEvent.evidenceOptimizing], then
   /// [EvidenceEvent.evidencePrepared] once the image is optimized and
   /// [EvidenceEvent.evidenceQueued] once the evidence is pending in the
-  /// queue to [onEvidence], and each [EvidenceEvent.message] to
-  /// [onProgress]. An evidence it cannot keep is discarded without partial
+  /// queue, and each [EvidenceEvent.message] to [onProgress]. An evidence it cannot keep is discarded without partial
   /// files: without space on the device it reports
   /// [EvidenceEvent.evidenceStorageFull], and for any other reason, for
   /// example before any [sync] saved the policy,

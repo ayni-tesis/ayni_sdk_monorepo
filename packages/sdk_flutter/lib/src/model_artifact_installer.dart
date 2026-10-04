@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' as crypto;
 
 import 'model_artifact_integrity_verifier.dart';
+import 'sdk_internal.dart';
 
 /// The state of a model installation by [ModelArtifactInstaller.install].
 enum ModelArtifactInstallStatus {
@@ -159,7 +160,7 @@ class ModelArtifactInstaller {
       } on FileSystemException catch (error) {
         if (createdArtifact && await artifact.exists()) await artifact.delete();
         return _notAvailable(
-          _isNoSpace(error)
+          isOutOfStorage(error)
               ? 'No hay espacio suficiente para instalar el modelo.'
               : 'No disponible',
         );
@@ -187,11 +188,6 @@ class ModelArtifactInstaller {
         status: ModelArtifactInstallStatus.notAvailable,
         message: message,
       );
-
-  bool _isNoSpace(FileSystemException error) {
-    final code = error.osError?.errorCode;
-    return code == 28 || code == 112;
-  }
 
   /// Returns whether the exact model version is present and hash-valid offline.
   ///

@@ -19,13 +19,13 @@ enum EvidenceEvent {
 
   /// The SDK saved the image and the inference result, complete, in the
   /// local queue of evidence pending upload, where they stay across restarts
-  /// of the app. [AyniSdk.pendingEvidenceCount] counts it from now on.
+  /// of the app. [AyniSdk.pendingEvidenceCount] already counts it.
   evidenceQueued,
 
   /// The SDK could not prepare the evidence, for example because it had no
-  /// collection policy yet or could not optimize or save the image, and
-  /// discarded it without leaving partial files. The result [AyniSdk.run]
-  /// returned does not change.
+  /// collection policy yet or could not optimize the image or save it for a
+  /// reason other than a full device, and discarded it without leaving
+  /// partial files. The result [AyniSdk.run] returned does not change.
   evidenceDiscarded,
 
   /// The device had no space left to save the evidence, so the SDK
