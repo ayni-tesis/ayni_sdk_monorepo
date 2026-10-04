@@ -5,6 +5,7 @@ import collectionPolicySource from "../../../../packages/api/src/collection-poli
 import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
 import sdkCollectionPolicySource from "../../../../packages/sdk_flutter/lib/src/collection_policy_store.dart?raw";
 import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
+import evidenceStoreSource from "../../../../packages/sdk_flutter/lib/src/evidence_store.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { dashboardTexts, quotedTexts } from "../guides/dashboard-texts";
 import { tableRows } from "../markdown-table";
@@ -263,7 +264,9 @@ describe("Datos y privacidad (US-147)", () => {
 
     expect(evidence).toContain("### Reintentos de la evidencia");
     expect(retries).toContain('<Code code={privacy.evidenceStatus} lang="dart" />');
-    expect(retries).toContain(`\`maxEvidenceUploadAttempts\` de \`AyniSdk\` o de \`AyniConfig\`, ${defaultAttempts} si`);
+    expect(retries).toContain(
+      `\`maxEvidenceUploadAttempts\` de \`AyniSdk\` o de \`AyniConfig\`, ${defaultAttempts} si`,
+    );
     expect(retries).toContain(
       `\`evidenceRetriesExhausted\` con \`${events.evidenceRetriesExhausted}\``,
     );
@@ -273,6 +276,13 @@ describe("Datos y privacidad (US-147)", () => {
       expect(retries).toContain(`\`${status}\``);
     }
     expect(retries).toContain("no vence");
+    const firstWait = /const first = Duration\(minutes: (\d+)\);/.exec(evidenceStoreSource)?.[1];
+    const longestWait = /const longest = Duration\(hours: (\d+)\);/.exec(evidenceStoreSource)?.[1];
+    expect(firstWait, "evidenceRetryDelay changed; update this test").toBeDefined();
+    expect(longestWait, "evidenceRetryDelay changed; update this test").toBeDefined();
+    expect(retries).toContain(
+      `una espera de ${firstWait} minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo ${longestWait} horas`,
+    );
     expect(retries).not.toContain("no limita los reintentos");
     expect(evidence).not.toContain("no limita los reintentos");
     expect(storedSection).toContain("`evidence/<evidenceId>/upload-attempts.json`");

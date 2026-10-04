@@ -24,17 +24,19 @@ const EvidenceUploadAttempts noEvidenceUploadAttempts = (
 );
 
 /// How long the SDK waits after the [failedAttempts]-th failed upload of an
-/// evidence before it tries again (US-071): 5 minutes after the first, twice
-/// as long after each next one, and never more than an hour. So an app that
+/// evidence before it tries again (US-071): 15 minutes after the first, twice
+/// as long after each next one, and never more than 6 hours. So an app that
 /// syncs often spends neither data nor battery on an upload that just failed,
-/// and a short outage of the server does not use up the attempts.
+/// and an outage of the server of a few hours does not use up the attempts.
 Duration evidenceRetryDelay(int failedAttempts) {
-  const first = Duration(minutes: 5);
-  const longest = Duration(hours: 1);
-  if (failedAttempts <= 1) return first;
-  if (failedAttempts > 5) return longest;
-  final delay = first * (1 << (failedAttempts - 1));
-  return delay > longest ? longest : delay;
+  const first = Duration(minutes: 15);
+  const longest = Duration(hours: 6);
+  var delay = first;
+  for (var failure = 1; failure < failedAttempts; failure++) {
+    delay *= 2;
+    if (delay >= longest) return longest;
+  }
+  return delay;
 }
 
 /// Whether an evidence with these [attempts] may be uploaded at [now]: it

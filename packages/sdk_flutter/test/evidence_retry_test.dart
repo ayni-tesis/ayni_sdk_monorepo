@@ -180,14 +180,14 @@ void main() {
     final client = sdk();
     final start = now;
 
-    // Failures at 0, 5 and 15 minutes; the waits are 5 and then 10 minutes.
+    // Failures at 0, 15 and 45 minutes; the waits are 15 and then 30.
     for (final (minute, uploaded) in [
       (0, 1),
-      (4, 1),
-      (5, 2),
-      (14, 2),
-      (15, 3),
-      (34, 3),
+      (14, 1),
+      (15, 2),
+      (44, 2),
+      (45, 3),
+      (104, 3),
     ]) {
       await syncAt(client, start.add(Duration(minutes: minute)));
       expect(uploads, hasLength(uploaded), reason: 'at minute $minute');
@@ -196,12 +196,12 @@ void main() {
     expect(await client.evidenceQueueStatus(), EvidenceQueueStatus.pending);
   });
 
-  test('never waits more than an hour between two attempts', () {
+  test('never waits more than 6 hours between two attempts', () {
     expect(
       [
         for (var failures = 1; failures <= 7; failures++) failures,
       ].map((failures) => evidenceRetryDelay(failures).inMinutes),
-      [5, 10, 20, 40, 60, 60, 60],
+      [15, 30, 60, 120, 240, 360, 360],
     );
   });
 

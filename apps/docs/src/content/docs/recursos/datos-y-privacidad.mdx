@@ -282,10 +282,11 @@ ejecuta el modelo que alimenta la captura no crea evidencia.
 Cada evidencia guardada queda pendiente de envío en una cola local: su
 directorio `evidence/<evidenceId>/` dentro de `storageDirectory`. Una evidencia
 está pendiente mientras su directorio existe sin `received.json`, el archivo
-con el que el SDK registra que el servidor la recibió, y sin alcanzar el límite
-de intentos de carga (ver
-[Reintentos de la evidencia](#reintentos-de-la-evidencia)), y un directorio terminado
-en `.tmp` es una evidencia que el SDK todavía está guardando y que no cuenta. La cola se conserva sin conexión y aunque la
+con el que el SDK registra que el servidor la recibió, mientras no alcance el
+límite de intentos de carga (ver
+[Reintentos de la evidencia](#reintentos-de-la-evidencia)). Un directorio
+terminado en `.tmp` es una evidencia que el SDK todavía está guardando y que no
+cuenta. La cola se conserva sin conexión y aunque la
 app se reinicie, y no bloquea `run()`: el resultado llega aunque el SDK siga
 guardando otra evidencia. La app puede mostrar `Evidencia pendiente de envío`
 con el número de evidencias en la cola:
@@ -403,15 +404,18 @@ o porque el servidor la rechazó. El SDK no puede saber si un rechazo es
 definitivo, y el servidor no duplica una evidencia que recibe dos veces con el
 mismo ID, así que también la reintenta, pero sigue con la siguiente. La
 credencial revocada no cuenta como intento, porque no es un fallo de la
-evidencia, y tampoco cuenta un `sync()` que no la sube por la política de
-recolección, por la conexión o porque no le queda tiempo.
+evidencia, y tampoco cuenta un `sync()` que no llega a empezar su carga por la
+política de recolección, por la conexión o porque no le queda tiempo. Una carga
+que se queda sin tiempo a mitad sí cuenta, como cualquier tiempo agotado: así,
+una imagen que nunca alcanza a subirse no gasta datos indefinidamente.
 
 Después de cada intento fallido, `sync()` avisa `evidenceUploadFailed` y la
 evidencia queda `Reintentando`: un `sync()` posterior la vuelve a subir con el
-mismo ID cuando pasa una espera de 5 minutos después del primer fallo, el doble
-después de cada uno de los siguientes y como máximo una hora. Así, una app que
-llama a `sync()` a menudo no gasta datos ni batería en una carga que acaba de
-fallar, y una caída breve del servidor no agota los intentos. Mientras una
+mismo ID cuando pasa una espera de 15 minutos después del primer fallo, el
+doble después de cada uno de los siguientes y como máximo 6 horas. Así, una app
+que llama a `sync()` a menudo no gasta datos ni batería en una carga que acaba
+de fallar, y una caída del servidor de unas horas no agota los intentos: con el
+límite por defecto, una evidencia queda fallida tras casi 4 horas de fallos. Mientras una
 evidencia espera, `sync()` sube las demás. Si el reloj del dispositivo retrocede,
 la espera no retiene la evidencia.
 

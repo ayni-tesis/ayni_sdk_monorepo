@@ -709,11 +709,12 @@ class AyniSdk {
   ///
   /// Every upload that ends without a confirmation counts: no answer, a
   /// timeout, a server error, or a server rejection of that evidence. A
-  /// revoked credential and a sync that sends nothing, because of the
-  /// collection policy, the connection or the time left, do not count. After
-  /// each failed attempt the evidence is [EvidenceStatus.retrying] and a
-  /// later [sync] tries again once a wait passes: 5 minutes after the first
-  /// failure, twice as long after each next one, and at most an hour. On the
+  /// revoked credential and a sync that never starts the upload, because of
+  /// the collection policy, the connection or the time left, do not count;
+  /// an upload that runs out of time halfway does. After each failed attempt
+  /// the evidence is [EvidenceStatus.retrying] and a later [sync] tries again
+  /// once a wait passes: 15 minutes after the first failure, twice as long
+  /// after each next one, and at most 6 hours. On the
   /// last attempt it becomes [EvidenceStatus.failed], [sync] reports
   /// [EvidenceEvent.evidenceRetriesExhausted], and the SDK keeps it on the
   /// device without sending it again automatically. A value below 1 counts
@@ -1949,6 +1950,8 @@ class AyniSdk {
           )) {
         return;
       }
+      // An upload that cannot even start uses up no attempt.
+      if (deadline.optionalRequestBudget <= Duration.zero) return;
       report(EvidenceEvent.evidenceUploading);
       final startedAt = _now();
       final result = await upload(evidence);

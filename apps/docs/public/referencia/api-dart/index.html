@@ -351,8 +351,8 @@ vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
 copia de la evidencia recibida hasta <code>clearPendingEvidence()</code>.</p>
 <p>Cada carga sin confirmación cuenta como un intento, salvo con la credencial
 revocada, y la evidencia queda <code>Reintentando</code>: un <code>sync()</code> posterior la
-reintenta tras una espera de 5 minutos que se duplica en cada fallo, hasta una
-hora. <code>maxEvidenceUploadAttempts</code> (5 por defecto) limita los intentos; en el
+reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
+horas. <code>maxEvidenceUploadAttempts</code> (5 por defecto) limita los intentos; en el
 último, <code>onEvidence</code> recibe <code>evidenceRetriesExhausted</code>
 (<code>No se pudo enviar la evidencia después de varios intentos.</code>) y la evidencia
 queda <code>Fallida</code>: el SDK la conserva, pero no la vuelve a enviar

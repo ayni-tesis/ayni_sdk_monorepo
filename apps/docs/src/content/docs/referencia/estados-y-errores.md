@@ -133,7 +133,7 @@ dispositivo, sin solicitudes de red. `pendingEvidenceCount()` suma las
 | `EvidenceStatus` | Cuándo ocurre | `message` |
 | --- | --- | --- |
 | `pending` | La evidencia está en la cola y espera su primera carga. | `Pendiente` |
-| `retrying` | Al menos una carga terminó sin confirmación del servidor, por ejemplo por un fallo de la red o del servidor, y todavía no alcanzó `maxEvidenceUploadAttempts`. Un `sync()` posterior la vuelve a intentar con el mismo ID cuando pasa la espera: 5 minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo una hora. | `Reintentando` |
+| `retrying` | Al menos una carga terminó sin confirmación del servidor, por ejemplo por un fallo de la red o del servidor, y todavía no alcanzó `maxEvidenceUploadAttempts`. Un `sync()` posterior la vuelve a intentar con el mismo ID cuando pasa la espera: 15 minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo 6 horas. | `Reintentando` |
 | `received` | El servidor confirmó que la recibió. El SDK no la vuelve a subir y conserva su copia local hasta `clearPendingEvidence()`. | `Enviada` |
 | `failed` | La evidencia alcanzó `maxEvidenceUploadAttempts` cargas sin confirmación. El SDK la conserva en el dispositivo, no la vuelve a enviar automáticamente y ya no la cuenta como pendiente. | `Fallida` |
 

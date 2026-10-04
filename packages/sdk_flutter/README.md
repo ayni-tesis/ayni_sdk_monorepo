@@ -385,8 +385,8 @@ copia de la evidencia recibida hasta `clearPendingEvidence()`.
 
 Cada carga sin confirmación cuenta como un intento, salvo con la credencial
 revocada, y la evidencia queda `Reintentando`: un `sync()` posterior la
-reintenta tras una espera de 5 minutos que se duplica en cada fallo, hasta una
-hora. `maxEvidenceUploadAttempts` (5 por defecto) limita los intentos; en el
+reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
+horas. `maxEvidenceUploadAttempts` (5 por defecto) limita los intentos; en el
 último, `onEvidence` recibe `evidenceRetriesExhausted`
 (`No se pudo enviar la evidencia después de varios intentos.`) y la evidencia
 queda `Fallida`: el SDK la conserva, pero no la vuelve a enviar
