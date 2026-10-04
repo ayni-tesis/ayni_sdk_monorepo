@@ -1,10 +1,12 @@
 // US-067: sync() refreshes the application's collection policy, whose size
-// and quality the SDK applies to each evidence image.
+// and quality the SDK applies to each evidence image. US-069: it also keeps
+// whether collection is enabled and over which network evidence may go.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:ayni_sdk/src/ayni_sdk.dart';
+import 'package:ayni_sdk/src/collection_policy_store.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -128,6 +130,8 @@ void main() {
       'Bearer ayni_sk_test',
     );
     expect(jsonDecode(await cache.readAsString()), {
+      'enabled': true,
+      'network': 'wifi',
       'maxImageSize': 640,
       'imageQuality': 55,
     });
@@ -143,6 +147,8 @@ void main() {
     await sdk().sync();
 
     expect(jsonDecode(await cache.readAsString()), {
+      'enabled': false,
+      'network': 'wifi',
       'maxImageSize': 1024,
       'imageQuality': 80,
     });
@@ -187,9 +193,57 @@ void main() {
     await sdk().sync();
 
     expect(jsonDecode(await cache.readAsString()), {
+      'enabled': true,
+      'network': 'wifi',
       'maxImageSize': 640,
       'imageQuality': 55,
     });
+  });
+
+  for (final (name, body) in [
+    (
+      'a network it does not know',
+      enabledPolicy.replaceFirst('"wifi"', '"satellite"'),
+    ),
+    ('no network', enabledPolicy.replaceFirst('"network":"wifi",', '')),
+  ]) {
+    test(
+      'keeps the limits, but not the network, of a policy with $name',
+      () async {
+        policyBody = body;
+
+        await sdk().sync();
+
+        expect(jsonDecode(await cache.readAsString()), {
+          'enabled': true,
+          'maxImageSize': 640,
+          'imageQuality': 55,
+        });
+      },
+    );
+  }
+
+  test('keeps the network of a policy that allows mobile data', () async {
+    policyBody = enabledPolicy.replaceFirst('"wifi"', '"wifiAndCellular"');
+
+    await sdk().sync();
+
+    expect(
+      CollectionPolicy.fromJson(
+        jsonDecode(await cache.readAsString()),
+      )?.network,
+      CollectionNetwork.wifiAndCellular,
+    );
+  });
+
+  test('reads a policy saved before the SDK kept its network as disabled', () {
+    final policy = CollectionPolicy.fromJson({
+      'maxImageSize': 640,
+      'imageQuality': 55,
+    });
+
+    expect(policy?.enabled, isFalse);
+    expect(policy?.network, isNull);
   });
 
   test('does not follow policy redirects', () async {

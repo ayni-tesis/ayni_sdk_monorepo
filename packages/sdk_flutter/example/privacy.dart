@@ -59,6 +59,20 @@ Future<void> showPendingEvidence(
   // #endregion evidencia-pendiente
 }
 
+/// Shows the state of the evidence queue, such as `Pendiente de Wi-Fi` while
+/// the collection policy only allows Wi-Fi and the device does not use it.
+Future<void> showEvidenceQueueStatus(
+  AyniSdk sdk, {
+  required void Function(String status) showStatus,
+}) async {
+  // #region estado-cola-evidencia
+  final status = await sdk.evidenceQueueStatus();
+  if (status != EvidenceQueueStatus.empty) {
+    showStatus(status.message);
+  }
+  // #endregion estado-cola-evidencia
+}
+
 /// Deletes the evidence kept on this device after the person withdraws their
 /// consent for evidence collection.
 Future<void> withdrawEvidenceConsent(AyniSdk sdk) async {

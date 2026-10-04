@@ -343,6 +343,27 @@ la suya:
 await sdk.clearPendingEvidence();
 ```
 
+La «Red permitida» de la política de recolección dice por qué conexión puede
+salir la evidencia: `Solo Wi-Fi` o `Wi-Fi y datos móviles`. `sync()` guarda esa
+red y si la recolección está habilitada junto con el tamaño y la calidad.
+`evidenceQueueStatus()` devuelve el estado de la cola, sin solicitudes de red:
+`EvidenceQueueStatus.waitingForWifi` (`Pendiente de Wi-Fi`) mientras haya
+evidencia pendiente, la política esté habilitada y solo permita Wi-Fi, y el
+dispositivo use datos móviles, otra conexión o ninguna; la evidencia sigue
+pendiente, sin cargas ni consumo de datos móviles. Si no, es `pending` con
+evidencia pendiente o `empty` sin ella:
+
+```dart
+final status = await sdk.evidenceQueueStatus();
+if (status != EvidenceQueueStatus.empty) {
+  showStatus(status.message);
+}
+```
+
+Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
+(`ConnectivityManager` en Android, `NWPathMonitor` en iOS 12 o posterior) y no
+lo guarda ni lo envía.
+
 ## Estructura del paquete
 
 - `pubspec.yaml`: Especificación del paquete y dependencias genéricas.
@@ -365,6 +386,7 @@ Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Cons
 El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en Android a través de `tflite_flutter`.
 
 - Configura `minSdkVersion 26` (Android 8.0) y `compileSdkVersion 36` en `android/app/build.gradle`.
+- El SDK declara el permiso `ACCESS_NETWORK_STATE` en su manifiesto para saber si el dispositivo usa Wi-Fi antes de enviar evidencia. Android lo concede al instalar la app, sin preguntar, y lo agrega al manifiesto de tu app al compilarla.
 - Con Flutter 3.44 y `tflite_flutter` 0.12.1, alinea el target Java del subproyecto Android de `tflite_flutter` con Kotlin 17 en `android/build.gradle.kts`:
 
   ```kotlin

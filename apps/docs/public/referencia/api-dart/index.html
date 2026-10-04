@@ -317,6 +317,23 @@ elimina la evidencia guardada; un <code>run()</code> que ya estaba en curso tamp
 la suya:</p>
 <pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();
 </code></pre>
+<p>La «Red permitida» de la política de recolección dice por qué conexión puede
+salir la evidencia: <code>Solo Wi-Fi</code> o <code>Wi-Fi y datos móviles</code>. <code>sync()</code> guarda esa
+red y si la recolección está habilitada junto con el tamaño y la calidad.
+<code>evidenceQueueStatus()</code> devuelve el estado de la cola, sin solicitudes de red:
+<code>EvidenceQueueStatus.waitingForWifi</code> (<code>Pendiente de Wi-Fi</code>) mientras haya
+evidencia pendiente, la política esté habilitada y solo permita Wi-Fi, y el
+dispositivo use datos móviles, otra conexión o ninguna; la evidencia sigue
+pendiente, sin cargas ni consumo de datos móviles. Si no, es <code>pending</code> con
+evidencia pendiente o <code>empty</code> sin ella:</p>
+<pre class="language-dart"><code class="language-dart">final status = await sdk.evidenceQueueStatus();
+if (status != EvidenceQueueStatus.empty) {
+  showStatus(status.message);
+}
+</code></pre>
+<p>Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
+(<code>ConnectivityManager</code> en Android, <code>NWPathMonitor</code> en iOS 12 o posterior) y no
+lo guarda ni lo envía.</p>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>
@@ -337,6 +354,9 @@ la suya:</p>
 <ul>
 <li>
 <p>Configura <code>minSdkVersion 26</code> (Android 8.0) y <code>compileSdkVersion 36</code> en <code>android/app/build.gradle</code>.</p>
+</li>
+<li>
+<p>El SDK declara el permiso <code>ACCESS_NETWORK_STATE</code> en su manifiesto para saber si el dispositivo usa Wi-Fi antes de enviar evidencia. Android lo concede al instalar la app, sin preguntar, y lo agrega al manifiesto de tu app al compilarla.</p>
 </li>
 <li>
 <p>Con Flutter 3.44 y <code>tflite_flutter</code> 0.12.1, alinea el target Java del subproyecto Android de <code>tflite_flutter</code> con Kotlin 17 en <code>android/build.gradle.kts</code>:</p>

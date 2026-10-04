@@ -11,8 +11,10 @@ import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
 import 'evidence_event.dart';
 import 'evidence_image_optimizer.dart';
+import 'evidence_queue_status.dart';
 import 'evidence_store.dart';
 import 'installation_id_store.dart';
+import 'network_type.dart';
 import 'sdk_consent.dart';
 import 'telemetry_policy_store.dart';
 import 'trace_outbox_store.dart';
@@ -28,6 +30,9 @@ import 'supported_platform_stub.dart'
 import 'device_profile_reader_stub.dart'
     if (dart.library.ui) 'device_profile_reader_flutter.dart'
     as device_profile_reader;
+import 'network_type_reader_stub.dart'
+    if (dart.library.ui) 'network_type_reader_flutter.dart'
+    as network_type_reader;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -954,6 +959,15 @@ class AyniSdk {
   /// [createAyniSdkForTesting] to simulate a device without space.
   EvidenceFileWriter _evidenceFileWriter = writeEvidenceFile;
 
+  /// Says which connection the device uses before each evidence upload and
+  /// for [evidenceQueueStatus]; tests may replace it through
+  /// [createAyniSdkForTesting].
+  NetworkTypeReader _readNetworkType = network_type_reader.readNetworkType;
+
+  /// Sends one pending evidence (US-070); `null` until that upload exists, so
+  /// [sync] sends none. Tests attach one through [createAyniSdkForTesting].
+  EvidenceUploader? _evidenceUploader;
+
   /// Grows with each [clearPendingEvidence], so a [run] active at that moment
   /// keeps none of its captures.
   var _evidenceGeneration = 0;
@@ -1030,6 +1044,38 @@ class AyniSdk {
   /// }
   /// ```
   Future<int> pendingEvidenceCount() => _evidence.pendingCount();
+
+  /// The state of the queue of evidence for datasets pending upload on this
+  /// device (US-069), for example to show `Pendiente de Wi-Fi`.
+  ///
+  /// The application's collection policy says over which network the SDK may
+  /// send evidence. [EvidenceQueueStatus.waitingForWifi] means that evidence
+  /// is pending, the policy that [sync] last saved is enabled and allows only
+  /// Wi-Fi, and the device uses mobile data, another network or no
+  /// connection right now: the SDK keeps the evidence pending, starts no
+  /// upload and uses no mobile data for it. With pending evidence and any
+  /// other policy, or with Wi-Fi, it is [EvidenceQueueStatus.pending], and
+  /// without pending evidence, [EvidenceQueueStatus.empty].
+  ///
+  /// It reads the queue, the saved policy and the type of the current
+  /// connection on the device, without a network request. It does not keep
+  /// the type of connection or send it anywhere.
+  ///
+  /// ```dart
+  /// final status = await sdk.evidenceQueueStatus();
+  /// if (status != EvidenceQueueStatus.empty) {
+  ///   showStatus(status.message);
+  /// }
+  /// ```
+  Future<EvidenceQueueStatus> evidenceQueueStatus() async {
+    if (await _evidence.pending().isEmpty) return EvidenceQueueStatus.empty;
+    final policy = await _collectionPolicy.read();
+    if (policy != null &&
+        policy.waitsForWifiOn(await _currentNetworkType(networkTypeTimeout))) {
+      return EvidenceQueueStatus.waitingForWifi;
+    }
+    return EvidenceQueueStatus.pending;
+  }
 
   void _queueEvidence(
     List<WorkflowCapture> captures, {
@@ -1757,11 +1803,71 @@ class AyniSdk {
     return policy;
   }
 
+  /// Processes the queue of evidence pending upload (US-069), the last of the
+  /// optional work of a [sync].
+  ///
+  /// It first refreshes the collection policy, which [run] also applies to
+  /// each evidence image, even when nothing is pending. Then, for each
+  /// pending evidence, it consults the policy on the server right before
+  /// sending it (that first refresh counts for the first one) and reads the
+  /// type of connection, and sends it only while the policy is enabled and
+  /// allows that connection: only Wi-Fi for `wifi`. When the policy cannot be
+  /// consulted or does not allow it, it stops and every evidence left stays
+  /// pending for a later [sync]; so does an upload the server did not
+  /// confirm.
+  Future<void> _processEvidenceQueue(
+    HttpClient client,
+    _SyncDeadline deadline,
+  ) async {
+    var policy = await _refreshCollectionPolicy(client, deadline);
+    final upload = _evidenceUploader;
+    if (upload == null) return;
+    final generation = _evidenceGeneration;
+    var consulted = true;
+    await for (final evidence in _evidence.pending()) {
+      if (!consulted) policy = await _refreshCollectionPolicy(client, deadline);
+      consulted = false;
+      if (policy == null ||
+          deadline.expired ||
+          generation != _evidenceGeneration ||
+          !policy.allowsEvidenceUploadOver(
+            await _currentNetworkType(_evidenceAttemptBudget(deadline)),
+          )) {
+        return;
+      }
+      if (!await upload(evidence)) return;
+    }
+  }
+
+  /// What a step of the evidence queue may still wait: the optional budget
+  /// left before the part of the sync timeout kept for the required sync.
+  Duration _evidenceAttemptBudget(_SyncDeadline deadline) {
+    final budget = deadline.optionalRequestBudget;
+    return budget < networkTypeTimeout ? budget : networkTypeTimeout;
+  }
+
+  /// The connection the device uses, or [NetworkType.other], which never
+  /// lets evidence go, when the reader fails or does not answer within
+  /// [limit].
+  Future<NetworkType> _currentNetworkType(Duration limit) async {
+    if (limit <= Duration.zero) return NetworkType.other;
+    try {
+      return await _readNetworkType().timeout(
+        limit,
+        onTimeout: () => NetworkType.other,
+      );
+    } on Object {
+      return NetworkType.other;
+    }
+  }
+
   /// Refreshes the collection policy whose size and quality [run] applies to
-  /// each evidence image (US-067). Like the telemetry policy, a failed
-  /// refresh keeps the last valid policy. It never waits into the part of
-  /// the sync timeout kept for the required sync.
-  Future<void> _refreshCollectionPolicy(
+  /// each evidence image (US-067) and whose network and enablement decide
+  /// whether [sync] sends evidence (US-069), and returns it. Like the
+  /// telemetry policy, a failed refresh keeps the last valid policy and
+  /// returns `null`. It never waits into the part of the sync timeout kept
+  /// for the required sync.
+  Future<CollectionPolicy?> _refreshCollectionPolicy(
     HttpClient client,
     _SyncDeadline deadline,
   ) async {
@@ -1772,7 +1878,7 @@ class AyniSdk {
           : _optionalRequestAttemptTimeout;
     }
 
-    if (deadline.expired || timeout() <= Duration.zero) return;
+    if (deadline.expired || timeout() <= Duration.zero) return null;
     final request = await client.getUrl(
       serverUrl.resolve('/sdk/collection-policy'),
     );
@@ -1781,7 +1887,7 @@ class AyniSdk {
     final requestTimeout = timeout();
     if (requestTimeout <= Duration.zero) {
       request.abort();
-      return;
+      return null;
     }
     final response = await request.close().timeout(
       requestTimeout,
@@ -1793,7 +1899,7 @@ class AyniSdk {
     final responseTimeout = timeout();
     if (responseTimeout <= Duration.zero) {
       request.abort();
-      return;
+      return null;
     }
     final body = await utf8.decoder
         .bind(response)
@@ -1805,9 +1911,10 @@ class AyniSdk {
             throw TimeoutException('Collection policy response timed out');
           },
         );
-    if (response.statusCode != HttpStatus.ok) return;
+    if (response.statusCode != HttpStatus.ok) return null;
     final policy = CollectionPolicy.fromJson(jsonDecode(body));
     if (policy != null) await _collectionPolicy.write(policy);
+    return policy;
   }
 
   Duration get _optionalRequestAttemptTimeout {
@@ -1886,9 +1993,10 @@ class AyniSdk {
     }
     try {
       // Last of the optional work, so it only takes what the others left.
-      await _refreshCollectionPolicy(client, deadline);
+      await _processEvidenceQueue(client, deadline);
     } on Exception {
-      // Optional too: evidence keeps using the last valid collection policy.
+      // Optional too: evidence keeps using the last valid collection policy,
+      // and the evidence not sent stays pending.
     }
     if (deadline.expired) return const SyncResult(SyncStatus.error);
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
@@ -2626,6 +2734,8 @@ AyniSdk createAyniSdkForTesting({
   WorkflowInferenceRunner? workflowInferenceRunner,
   EvidenceImageOptimizer? evidenceImageOptimizer,
   EvidenceFileWriter? evidenceFileWriter,
+  NetworkTypeReader? networkTypeReader,
+  EvidenceUploader? evidenceUploader,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -2648,6 +2758,8 @@ AyniSdk createAyniSdkForTesting({
   if (evidenceFileWriter != null) {
     sdk._evidenceFileWriter = evidenceFileWriter;
   }
+  if (networkTypeReader != null) sdk._readNetworkType = networkTypeReader;
+  sdk._evidenceUploader = evidenceUploader;
   return sdk;
 }
 

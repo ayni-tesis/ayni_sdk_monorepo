@@ -3,6 +3,7 @@
 import {
   COLLECTION_IMAGE_QUALITY,
   COLLECTION_MAX_IMAGE_SIZE,
+  COLLECTION_NETWORK_DESCRIPTIONS,
   COLLECTION_NETWORK_LABELS,
   COLLECTION_NETWORKS,
   type CollectionNetwork,
@@ -186,6 +187,7 @@ export function CollectionPolicyView({
               className={selectClassName}
               value={form.network}
               disabled={disabled}
+              aria-describedby="collection-network-help"
               onChange={(event) =>
                 setForm({ ...form, network: event.target.value as CollectionNetwork })
               }
@@ -196,6 +198,9 @@ export function CollectionPolicyView({
                 </option>
               ))}
             </select>
+            <p id="collection-network-help" className="text-muted-foreground text-xs">
+              {COLLECTION_NETWORK_DESCRIPTIONS[form.network]}
+            </p>
           </div>
 
           <div className="space-y-1">

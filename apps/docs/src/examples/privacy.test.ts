@@ -17,4 +17,10 @@ describe("privacy example (US-147)", () => {
     expect(privacy.pendingEvidence).toContain("await sdk.pendingEvidenceCount()");
     expect(privacy.pendingEvidence).toContain("Evidencia pendiente de envío");
   });
+
+  it("shows the state of the evidence queue, such as Pendiente de Wi-Fi (US-069)", () => {
+    expect(privacy.evidenceQueueStatus).toContain("await sdk.evidenceQueueStatus()");
+    expect(privacy.evidenceQueueStatus).toContain("EvidenceQueueStatus.empty");
+    expect(privacy.evidenceQueueStatus).toContain("status.message");
+  });
 });

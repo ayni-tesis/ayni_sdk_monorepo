@@ -15,6 +15,10 @@ const page = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 const version = sdkVersion(pubspec);
+const androidManifest = readFileSync(
+  join(repositoryRoot, "packages", "sdk_flutter", "android", "src", "main", "AndroidManifest.xml"),
+  "utf8",
+);
 const source = sdkLibrarySource();
 const requests = sdkRequests(source);
 
@@ -178,6 +182,36 @@ describe("Datos y privacidad (US-147)", () => {
       "`evidenceStorageFull` con `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`",
     );
     expect(evidence).toContain("no vence");
+  });
+
+  it("describes the network evidence may use and the state of its queue (US-069)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const networks = (pattern: RegExp, source: string) => {
+      const match = pattern.exec(source);
+      if (!match) throw new Error(`No match for ${pattern} any more; update this test.`);
+      return [...(match[1] ?? "").matchAll(/\w+/g)].map(([name]) => name);
+    };
+
+    expect(evidence).toContain("### Red permitida para enviar evidencia");
+    expect(evidence).toContain('<Code code={privacy.evidenceQueueStatus} lang="dart" />');
+    expect(evidence).toContain("«Solo Wi-Fi»");
+    expect(evidence).toContain("«Wi-Fi y datos móviles»");
+    expect(evidence).toContain("`waitingForWifi`, con el texto `Pendiente de Wi-Fi`");
+    expect(evidence).toContain("no inicia ninguna carga ni usa datos móviles");
+    expect(evidence).toContain("No guarda ni envía el tipo de conexión");
+    expect(storedSection).toContain("`network`");
+    expect(networks(/enum CollectionNetwork \{([^}]*)\}/, sdkCollectionPolicySource)).toEqual(
+      networks(/COLLECTION_NETWORKS = \[([^\]]*)\]/, collectionPolicySource),
+    );
+  });
+
+  it("names every Android permission the SDK adds to the app", () => {
+    const permissions = [...androidManifest.matchAll(/android:name="android\.permission\.(\w+)"/g)];
+
+    expect(permissions.length).toBeGreaterThan(0);
+    for (const [, permission] of permissions) {
+      expect(page).toContain(`\`${permission}\``);
+    }
   });
 
   it("gives the size and quality ranges and defaults that the server and the SDK apply", () => {
