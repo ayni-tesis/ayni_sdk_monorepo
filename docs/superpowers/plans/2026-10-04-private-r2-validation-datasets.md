@@ -52,7 +52,7 @@
 **Interfaces:**
 - Consumes: Existing `applications`/workspace membership relations and the existing Drizzle database setup.
 - Produces: `createValidationDatasetStore({ db, storage, now })` with `createDataset(input)`, `list(applicationId)`, `completeUpload(input)`, and `getManifestData(applicationId, datasetVersionId)`. `completeUpload` stores the computed ZIP SHA-256 and byte count and never updates an existing version; `getManifestData` returns only stored metadata and never signs a URL.
-- Store result reasons are `notFound`, `versionExists`, `size`, `hash`, `storageFailed`, and `databaseFailed`.
+- Store result reasons are `notFound`, `forbidden`, `archived`, `invalidVersion`, `invalidPartition`, `versionExists`, `size`, `hash`, `storageFailed`, and `databaseFailed`.
 
 - [ ] **Step 1: Write failing store tests** for dataset creation/listing, successful version completion with SHA-256 and size, duplicate `(datasetId, version, partition)` rejection, and foreign-application manifest lookup returning `notFound`.
 - [ ] **Step 2: Run the focused tests**
