@@ -9,9 +9,9 @@ import { z } from "zod";
 
 import { type Application, getApplicationForMember } from "./applications";
 import {
-  MAX_VALIDATION_DATASET_BYTES,
   type CompleteValidationDatasetUploadInput,
   type CreateValidationDatasetInput,
+  MAX_VALIDATION_DATASET_BYTES,
   type ValidationDataset,
   type ValidationDatasetListItem,
   type ValidationDatasetStorage,
@@ -28,7 +28,9 @@ const UploadIdSchema = z.object({ uploadId: z.string().uuid() });
 
 type Store = {
   list(applicationId: string): Promise<{ datasets: ValidationDatasetListItem[] }>;
-  createDataset(input: CreateValidationDatasetInput): Promise<ValidationDatasetStoreResult<ValidationDataset>>;
+  createDataset(
+    input: CreateValidationDatasetInput,
+  ): Promise<ValidationDatasetStoreResult<ValidationDataset>>;
   completeUpload(
     input: CompleteValidationDatasetUploadInput,
   ): Promise<ValidationDatasetStoreResult<ValidationDatasetVersion>>;
@@ -154,125 +156,31 @@ export function createValidationDatasetsApp({
       case "notFound":
         return c.json({ message: "No encontramos esta aplicación.", code: "notFound" }, 404);
       default:
-        return c.json({ message: "No se pudo registrar el dataset.", code: "datasetSaveFailed" }, 500);
+        return c.json(
+          { message: "No se pudo registrar el dataset.", code: "datasetSaveFailed" },
+          500,
+        );
     }
   });
 
   app.post(
     "/applications/:applicationId/validation-datasets/:datasetId/versions/upload-url",
     async (c) => {
-    const session = await getSession(c.req.raw.headers);
-    if (!session) return c.json({ message: "Authentication required" }, 401);
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
 
-    const application = await getApplicationForMember(
-      applications,
-      c.req.param("applicationId"),
-      session.user.id,
-    );
-    if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
-    if (!isApplicationAdministrator(application.role)) {
-      return c.json(
-        { message: "No tienes permiso para subir datasets.", code: "forbidden" },
-        403,
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
       );
-    }
-    if (application.status !== "active") {
-      return c.json(
-        {
-          message: "No puedes subir versiones a una aplicación archivada.",
-          code: "applicationArchived",
-        },
-        409,
-      );
-    }
-
-    let rawBody: unknown;
-    try {
-      rawBody = await c.req.json();
-    } catch {
-      rawBody = null;
-    }
-    const parsed = ValidationDatasetVersionUploadRequestSchema.safeParse(rawBody);
-    if (!parsed.success) {
-      return c.json({ message: INVALID_VERSION_MESSAGE, code: "invalidVersionOrPartition" }, 400);
-    }
-
-    let current;
-    try {
-      current = await validationDatasets.list(application.id);
-    } catch {
-      return c.json(
-        { message: "No se pudo iniciar la carga del dataset.", code: "uploadFailed" },
-        500,
-      );
-    }
-    const dataset = current.datasets.find((item) => item.id === c.req.param("datasetId"));
-    if (!dataset) return c.json({ message: "No encontramos este dataset.", code: "datasetNotFound" }, 404);
-    if (
-      dataset.versions.some(
-        (version) =>
-          version.version === parsed.data.version && version.partition === parsed.data.partition,
-      )
-    ) {
-      return c.json(
-        { message: "Esa versión y partición ya están publicadas.", code: "datasetVersionExists" },
-        409,
-      );
-    }
-
-    const uploadId = crypto.randomUUID();
-    try {
-      const url = await storage.createUploadUrl(
-        stagingKey(application.id, uploadId),
-        900,
-      );
-      return c.json({ uploadId, uploadUrl: url });
-    } catch {
-      return c.json(
-        { message: "No se pudo iniciar la carga del dataset.", code: "uploadFailed" },
-        500,
-      );
-    }
-    },
-  );
-
-  app.post(
-    "/applications/:applicationId/validation-datasets/:datasetId/versions/complete",
-    async (c) => {
-    const session = await getSession(c.req.raw.headers);
-    if (!session) return c.json({ message: "Authentication required" }, 401);
-
-    const application = await getApplicationForMember(
-      applications,
-      c.req.param("applicationId"),
-      session.user.id,
-    );
-    if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
-    if (!isApplicationAdministrator(application.role)) {
-      return c.json(
-        { message: "No tienes permiso para subir datasets.", code: "forbidden" },
-        403,
-      );
-    }
-
-    let rawBody: unknown;
-    try {
-      rawBody = await c.req.json();
-    } catch {
-      rawBody = null;
-    }
-    const parsed = ValidationDatasetUploadRequestSchema.safeParse(rawBody);
-    if (!parsed.success) {
-      const upload = UploadIdSchema.safeParse(rawBody);
-      if (upload.success) {
-        await cleanupStaging(storage, stagingKey(application.id, upload.data.uploadId));
+      if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+      if (!isApplicationAdministrator(application.role)) {
+        return c.json(
+          { message: "No tienes permiso para subir datasets.", code: "forbidden" },
+          403,
+        );
       }
-      return c.json({ message: INVALID_UPLOAD_MESSAGE, code: "invalidUpload" }, 400);
-    }
-
-      const { uploadId, version, partition, sha256 } = parsed.data;
-    const key = stagingKey(application.id, uploadId);
-    try {
       if (application.status !== "active") {
         return c.json(
           {
@@ -283,55 +191,92 @@ export function createValidationDatasetsApp({
         );
       }
 
-      const size = await storage.getArtifactSize(key);
-      if (size === null) {
+      let rawBody: unknown;
+      try {
+        rawBody = await c.req.json();
+      } catch {
+        rawBody = null;
+      }
+      const parsed = ValidationDatasetVersionUploadRequestSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return c.json({ message: INVALID_VERSION_MESSAGE, code: "invalidVersionOrPartition" }, 400);
+      }
+
+      let current: Awaited<ReturnType<Store["list"]>>;
+      try {
+        current = await validationDatasets.list(application.id);
+      } catch {
         return c.json(
-          { message: "El archivo ZIP no existe o está vacío.", code: "invalidDatasetArchive" },
-          400,
+          { message: "No se pudo iniciar la carga del dataset.", code: "uploadFailed" },
+          500,
         );
       }
-      if (size > MAX_VALIDATION_DATASET_BYTES) {
+      const dataset = current.datasets.find((item) => item.id === c.req.param("datasetId"));
+      if (!dataset)
+        return c.json({ message: "No encontramos este dataset.", code: "datasetNotFound" }, 404);
+      if (
+        dataset.versions.some(
+          (version) =>
+            version.version === parsed.data.version && version.partition === parsed.data.partition,
+        )
+      ) {
         return c.json(
-          { message: "El ZIP supera el tamaño máximo permitido de 128 MiB.", code: "datasetTooLarge" },
-          413,
+          { message: "Esa versión y partición ya están publicadas.", code: "datasetVersionExists" },
+          409,
         );
       }
 
-      const bytes = await storage.getArtifact(key);
-      if (!bytes) {
+      const uploadId = crypto.randomUUID();
+      try {
+        const url = await storage.createUploadUrl(stagingKey(application.id, uploadId), 900);
+        return c.json({ uploadId, uploadUrl: url });
+      } catch {
         return c.json(
-          { message: "El archivo ZIP ya no está disponible.", code: "invalidDatasetArchive" },
-          400,
+          { message: "No se pudo iniciar la carga del dataset.", code: "uploadFailed" },
+          500,
         );
       }
-      if (bytes.byteLength === 0 || bytes.byteLength !== size) {
+    },
+  );
+
+  app.post(
+    "/applications/:applicationId/validation-datasets/:datasetId/versions/complete",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+      if (!isApplicationAdministrator(application.role)) {
         return c.json(
-          {
-            message: "El archivo ZIP no coincide con su tamaño registrado.",
-            code: "invalidDatasetArchive",
-          },
-          400,
+          { message: "No tienes permiso para subir datasets.", code: "forbidden" },
+          403,
         );
       }
 
-      const result = await validationDatasets.completeUpload({
-        applicationId: application.id,
-        datasetId: c.req.param("datasetId"),
-        userId: session.user.id,
-        version,
-        partition,
-        expectedSha256: sha256,
-        bytes,
-      });
-      if (result.ok) return c.json({ datasetVersion: result.value }, 201);
+      let rawBody: unknown;
+      try {
+        rawBody = await c.req.json();
+      } catch {
+        rawBody = null;
+      }
+      const parsed = ValidationDatasetUploadRequestSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        const upload = UploadIdSchema.safeParse(rawBody);
+        if (upload.success) {
+          await cleanupStaging(storage, stagingKey(application.id, upload.data.uploadId));
+        }
+        return c.json({ message: INVALID_UPLOAD_MESSAGE, code: "invalidUpload" }, 400);
+      }
 
-      switch (result.reason) {
-        case "forbidden":
-          return c.json(
-            { message: "No tienes permiso para subir datasets.", code: "forbidden" },
-            403,
-          );
-        case "archived":
+      const { uploadId, version, partition, sha256 } = parsed.data;
+      const key = stagingKey(application.id, uploadId);
+      try {
+        if (application.status !== "active") {
           return c.json(
             {
               message: "No puedes subir versiones a una aplicación archivada.",
@@ -339,53 +284,126 @@ export function createValidationDatasetsApp({
             },
             409,
           );
-        case "notFound":
-          return c.json({ message: "No encontramos este dataset.", code: "datasetNotFound" }, 404);
-        case "invalidVersion":
-        case "invalidPartition":
-          return c.json({ message: INVALID_VERSION_MESSAGE, code: "invalidVersionOrPartition" }, 400);
-        case "versionExists":
+        }
+
+        const size = await storage.getArtifactSize(key);
+        if (size === null) {
+          return c.json(
+            { message: "El archivo ZIP no existe o está vacío.", code: "invalidDatasetArchive" },
+            400,
+          );
+        }
+        if (size > MAX_VALIDATION_DATASET_BYTES) {
           return c.json(
             {
-              message: "Esa versión y partición ya están publicadas.",
-              code: "datasetVersionExists",
+              message: "El ZIP supera el tamaño máximo permitido de 128 MiB.",
+              code: "datasetTooLarge",
             },
-            409,
+            413,
           );
-        case "size":
-          return bytes.byteLength > MAX_VALIDATION_DATASET_BYTES
-            ? c.json(
-                {
-                  message: "El ZIP supera el tamaño máximo permitido de 128 MiB.",
-                  code: "datasetTooLarge",
-                },
-                413,
-              )
-            : c.json(
-                { message: "El archivo ZIP no es válido.", code: "invalidDatasetArchive" },
-                400,
-              );
-        case "hash":
-          return c.json({ message: "No se pudo verificar el hash del ZIP.", code: "datasetHashFailed" }, 500);
-          case "hashMismatch":
-            return c.json({ message: "El SHA-256 del ZIP no coincide con el archivo seleccionado.", code: "datasetHashMismatch" }, 400);
-        case "storageFailed":
-        case "databaseFailed":
-          return c.json({ message: UPLOAD_FAILED_MESSAGE, code: "datasetSaveFailed" }, 500);
-        case "datasetExists":
+        }
+
+        const bytes = await storage.getArtifact(key);
+        if (!bytes) {
           return c.json(
-            { message: "Ya existe un dataset con ese nombre.", code: "datasetExists" },
-            409,
+            { message: "El archivo ZIP ya no está disponible.", code: "invalidDatasetArchive" },
+            400,
           );
+        }
+        if (bytes.byteLength === 0 || bytes.byteLength !== size) {
+          return c.json(
+            {
+              message: "El archivo ZIP no coincide con su tamaño registrado.",
+              code: "invalidDatasetArchive",
+            },
+            400,
+          );
+        }
+
+        const result = await validationDatasets.completeUpload({
+          applicationId: application.id,
+          datasetId: c.req.param("datasetId"),
+          userId: session.user.id,
+          version,
+          partition,
+          expectedSha256: sha256,
+          bytes,
+        });
+        if (result.ok) return c.json({ datasetVersion: result.value }, 201);
+
+        switch (result.reason) {
+          case "forbidden":
+            return c.json(
+              { message: "No tienes permiso para subir datasets.", code: "forbidden" },
+              403,
+            );
+          case "archived":
+            return c.json(
+              {
+                message: "No puedes subir versiones a una aplicación archivada.",
+                code: "applicationArchived",
+              },
+              409,
+            );
+          case "notFound":
+            return c.json(
+              { message: "No encontramos este dataset.", code: "datasetNotFound" },
+              404,
+            );
+          case "invalidVersion":
+          case "invalidPartition":
+            return c.json(
+              { message: INVALID_VERSION_MESSAGE, code: "invalidVersionOrPartition" },
+              400,
+            );
+          case "versionExists":
+            return c.json(
+              {
+                message: "Esa versión y partición ya están publicadas.",
+                code: "datasetVersionExists",
+              },
+              409,
+            );
+          case "size":
+            return bytes.byteLength > MAX_VALIDATION_DATASET_BYTES
+              ? c.json(
+                  {
+                    message: "El ZIP supera el tamaño máximo permitido de 128 MiB.",
+                    code: "datasetTooLarge",
+                  },
+                  413,
+                )
+              : c.json(
+                  { message: "El archivo ZIP no es válido.", code: "invalidDatasetArchive" },
+                  400,
+                );
+          case "hash":
+            return c.json(
+              { message: "No se pudo verificar el hash del ZIP.", code: "datasetHashFailed" },
+              500,
+            );
+          case "hashMismatch":
+            return c.json(
+              {
+                message: "El SHA-256 del ZIP no coincide con el archivo seleccionado.",
+                code: "datasetHashMismatch",
+              },
+              400,
+            );
+          case "storageFailed":
+          case "databaseFailed":
+            return c.json({ message: UPLOAD_FAILED_MESSAGE, code: "datasetSaveFailed" }, 500);
+          case "datasetExists":
+            return c.json(
+              { message: "Ya existe un dataset con ese nombre.", code: "datasetExists" },
+              409,
+            );
+        }
+      } catch {
+        return c.json({ message: UPLOAD_FAILED_MESSAGE, code: "datasetSaveFailed" }, 500);
+      } finally {
+        await cleanupStaging(storage, key);
       }
-    } catch {
-      return c.json(
-        { message: UPLOAD_FAILED_MESSAGE, code: "datasetSaveFailed" },
-        500,
-      );
-    } finally {
-      await cleanupStaging(storage, key);
-    }
     },
   );
 
@@ -416,7 +434,10 @@ export function createValidationDatasetsApp({
       }
       const parsed = ValidationDatasetCancelRequestSchema.safeParse(rawBody);
       if (!parsed.success) {
-        return c.json({ message: "La solicitud de cancelación no es válida.", code: "invalidUpload" }, 400);
+        return c.json(
+          { message: "La solicitud de cancelación no es válida.", code: "invalidUpload" },
+          400,
+        );
       }
 
       try {

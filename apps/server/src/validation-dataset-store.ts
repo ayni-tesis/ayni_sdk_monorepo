@@ -1,13 +1,7 @@
+import { application, validationDataset, validationDatasetVersion } from "@ayni/db/schema/index";
 import { and, eq } from "drizzle-orm";
-
-import {
-  application,
-  validationDataset,
-  validationDatasetVersion,
-} from "@ayni/db/schema/index";
-
-import { executeApplicationAction, type ApplicationDatabase } from "./application-actions";
 import type { TransactionExecutor } from "./application-actions";
+import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
 import { computeSha256Hex } from "./tflite-validator";
 
 export const MAX_VALIDATION_DATASET_BYTES = 128 * 1024 * 1024;
@@ -157,11 +151,17 @@ export function buildValidationDatasetStorageKey(input: {
   return `applications/${input.applicationId}/validation-datasets/${input.datasetId}/versions/${input.versionId}.zip`;
 }
 
-export function createValidationDatasetStore({ db, storage, now = () => new Date() }: StoreDependencies) {
+export function createValidationDatasetStore({
+  db,
+  storage,
+  now = () => new Date(),
+}: StoreDependencies) {
   const reader = db as unknown as ReadDatabase;
 
   return {
-    async createDataset(input: CreateValidationDatasetInput): Promise<ValidationDatasetStoreResult<ValidationDataset>> {
+    async createDataset(
+      input: CreateValidationDatasetInput,
+    ): Promise<ValidationDatasetStoreResult<ValidationDataset>> {
       const name = input.name.trim();
       const source = input.source.trim();
       const license = input.license.trim();
@@ -172,15 +172,18 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
           db,
           { applicationId: input.applicationId, userId: input.userId },
           async (tx: TransactionExecutor) => {
-            const rows = await tx.insert(validationDataset).values({
-              id: crypto.randomUUID(),
-              applicationId: input.applicationId,
-              name,
-              source,
-              license,
-              createdAt: now(),
-              createdById: input.userId,
-            }).returning();
+            const rows = await tx
+              .insert(validationDataset)
+              .values({
+                id: crypto.randomUUID(),
+                applicationId: input.applicationId,
+                name,
+                source,
+                license,
+                createdAt: now(),
+                createdById: input.userId,
+              })
+              .returning();
             const created = rows[0];
             if (!created) throw new Error("Validation dataset insert returned no record");
             return datasetFromRow(created);
@@ -274,7 +277,9 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
               )
               .limit(1)
               .for("update")) as { id: string }[];
-            return duplicateRows[0] ? ({ kind: "versionExists" } as const) : ({ kind: "ready" } as const);
+            return duplicateRows[0]
+              ? ({ kind: "versionExists" } as const)
+              : ({ kind: "ready" } as const);
           },
         );
       } catch {
@@ -334,17 +339,20 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
               .for("update")) as { id: string }[];
             if (!datasetRows[0]) return { kind: "datasetNotFound" } as const;
 
-            const insertedRows = await tx.insert(validationDatasetVersion).values({
-              id: versionId,
-              datasetId: input.datasetId,
-              version: input.version,
-              partition: input.partition,
-              storageKey,
-              sha256,
-              sizeBytes: input.bytes.byteLength,
-              createdAt: now(),
-              uploadedById: input.userId,
-            }).returning();
+            const insertedRows = await tx
+              .insert(validationDatasetVersion)
+              .values({
+                id: versionId,
+                datasetId: input.datasetId,
+                version: input.version,
+                partition: input.partition,
+                storageKey,
+                sha256,
+                sizeBytes: input.bytes.byteLength,
+                createdAt: now(),
+                uploadedById: input.userId,
+              })
+              .returning();
             const created = insertedRows[0];
             if (!created) throw new Error("Validation dataset version insert returned no record");
             return { kind: "created", version: versionFromRow(created) } as const;
@@ -372,18 +380,20 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
     async getManifestData(
       applicationId: string,
       datasetVersionId: string,
-    ): Promise<ValidationDatasetStoreResult<{
-      datasetVersionId: string;
-      datasetId: string;
-      applicationId: string;
-      version: string;
-      partition: string;
-      source: string;
-      license: string;
-      sha256: string;
-      sizeBytes: number;
-      storageKey: string;
-    }>> {
+    ): Promise<
+      ValidationDatasetStoreResult<{
+        datasetVersionId: string;
+        datasetId: string;
+        applicationId: string;
+        version: string;
+        partition: string;
+        source: string;
+        license: string;
+        sha256: string;
+        sizeBytes: number;
+        storageKey: string;
+      }>
+    > {
       try {
         const versions = await reader
           .select({

@@ -26,14 +26,10 @@
         "properties": {
           "status": {
             "type": "string",
-            "enum": [
-              "ok"
-            ]
+            "enum": ["ok"]
           }
         },
-        "required": [
-          "status"
-        ]
+        "required": ["status"]
       },
       "SdkConsentAcknowledgement": {
         "type": "object",
@@ -47,10 +43,7 @@
             "format": "date-time"
           }
         },
-        "required": [
-          "receiptId",
-          "receivedAt"
-        ]
+        "required": ["receiptId", "receivedAt"]
       },
       "SdkConsentReceipt": {
         "type": "object",
@@ -65,17 +58,11 @@
           },
           "purpose": {
             "type": "string",
-            "enum": [
-              "ayniModelImprovement",
-              "ayniSdkImprovement"
-            ]
+            "enum": ["ayniModelImprovement", "ayniSdkImprovement"]
           },
           "decision": {
             "type": "string",
-            "enum": [
-              "accepted",
-              "declined"
-            ]
+            "enum": ["accepted", "declined"]
           },
           "noticeVersion": {
             "type": "string",
@@ -87,14 +74,7 @@
             "format": "date-time"
           }
         },
-        "required": [
-          "receiptId",
-          "subjectId",
-          "purpose",
-          "decision",
-          "noticeVersion",
-          "decidedAt"
-        ],
+        "required": ["receiptId", "subjectId", "purpose", "decision", "noticeVersion", "decidedAt"],
         "additionalProperties": false
       },
       "SdkTraceAcknowledgement": {
@@ -109,19 +89,14 @@
             "format": "date-time"
           }
         },
-        "required": [
-          "traceId",
-          "receivedAt"
-        ]
+        "required": ["traceId", "receivedAt"]
       },
       "SdkWorkflowTrace": {
         "type": "object",
         "properties": {
           "traceSchemaVersion": {
             "type": "number",
-            "enum": [
-              1
-            ]
+            "enum": [1]
           },
           "traceId": {
             "type": "string",
@@ -210,19 +185,10 @@
                 },
                 "provenance": {
                   "type": "string",
-                  "enum": [
-                    "clientReported"
-                  ]
+                  "enum": ["clientReported"]
                 }
               },
-              "required": [
-                "name",
-                "value",
-                "unit",
-                "method",
-                "source",
-                "provenance"
-              ],
+              "required": ["name", "value", "unit", "method", "source", "provenance"],
               "additionalProperties": false
             }
           },
@@ -270,11 +236,7 @@
                   "pattern": "^[a-f0-9]{64}$"
                 }
               },
-              "required": [
-                "modelVersionId",
-                "version",
-                "sha256"
-              ],
+              "required": ["modelVersionId", "version", "sha256"],
               "additionalProperties": false
             }
           },
@@ -283,17 +245,11 @@
             "properties": {
               "schemaVersion": {
                 "type": "number",
-                "enum": [
-                  1
-                ]
+                "enum": [1]
               },
               "platform": {
                 "type": "string",
-                "enum": [
-                  "android",
-                  "ios",
-                  "unknown"
-                ]
+                "enum": ["android", "ios", "unknown"]
               },
               "osVersion": {
                 "type": "string"
@@ -311,18 +267,12 @@
                 "type": "string"
               }
             },
-            "required": [
-              "schemaVersion",
-              "platform"
-            ],
+            "required": ["schemaVersion", "platform"],
             "additionalProperties": false
           },
           "status": {
             "type": "string",
-            "enum": [
-              "success",
-              "error"
-            ]
+            "enum": ["success", "error"]
           },
           "durationMs": {
             "type": "integer",
@@ -340,21 +290,11 @@
                 },
                 "type": {
                   "type": "string",
-                  "enum": [
-                    "input.image",
-                    "model.tflite",
-                    "condition",
-                    "output",
-                    "dataset.capture"
-                  ]
+                  "enum": ["input.image", "model.tflite", "condition", "output", "dataset.capture"]
                 },
                 "status": {
                   "type": "string",
-                  "enum": [
-                    "completed",
-                    "skipped",
-                    "failed"
-                  ]
+                  "enum": ["completed", "skipped", "failed"]
                 },
                 "durationMs": {
                   "type": "integer",
@@ -366,11 +306,7 @@
                   "maxLength": 128
                 }
               },
-              "required": [
-                "nodeId",
-                "type",
-                "status"
-              ],
+              "required": ["nodeId", "type", "status"],
               "additionalProperties": false
             }
           },
@@ -385,9 +321,7 @@
                       "properties": {
                         "type": {
                           "type": "string",
-                          "enum": [
-                            "classification"
-                          ]
+                          "enum": ["classification"]
                         },
                         "nodeId": {
                           "type": "string",
@@ -407,13 +341,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "type",
-                        "nodeId",
-                        "label",
-                        "confidence",
-                        "confidences"
-                      ],
+                      "required": ["type", "nodeId", "label", "confidence", "confidences"],
                       "additionalProperties": false
                     },
                     {
@@ -421,9 +349,7 @@
                       "properties": {
                         "type": {
                           "type": "string",
-                          "enum": [
-                            "detection"
-                          ]
+                          "enum": ["detection"]
                         },
                         "nodeId": {
                           "type": "string",
@@ -457,29 +383,16 @@
                                     "type": "number"
                                   }
                                 },
-                                "required": [
-                                  "xMin",
-                                  "yMin",
-                                  "xMax",
-                                  "yMax"
-                                ],
+                                "required": ["xMin", "yMin", "xMax", "yMax"],
                                 "additionalProperties": false
                               }
                             },
-                            "required": [
-                              "label",
-                              "confidence",
-                              "box"
-                            ],
+                            "required": ["label", "confidence", "box"],
                             "additionalProperties": false
                           }
                         }
                       },
-                      "required": [
-                        "type",
-                        "nodeId",
-                        "detections"
-                      ],
+                      "required": ["type", "nodeId", "detections"],
                       "additionalProperties": false
                     },
                     {
@@ -487,9 +400,7 @@
                       "properties": {
                         "type": {
                           "type": "string",
-                          "enum": [
-                            "boolean"
-                          ]
+                          "enum": ["boolean"]
                         },
                         "nodeId": {
                           "type": "string",
@@ -500,11 +411,7 @@
                           "type": "boolean"
                         }
                       },
-                      "required": [
-                        "type",
-                        "nodeId",
-                        "value"
-                      ],
+                      "required": ["type", "nodeId", "value"],
                       "additionalProperties": false
                     }
                   ]
@@ -514,9 +421,7 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": [
-                        "combined"
-                      ]
+                      "enum": ["combined"]
                     },
                     "nodeId": {
                       "type": "string",
@@ -532,9 +437,7 @@
                             "properties": {
                               "type": {
                                 "type": "string",
-                                "enum": [
-                                  "classification"
-                                ]
+                                "enum": ["classification"]
                               },
                               "nodeId": {
                                 "type": "string",
@@ -554,13 +457,7 @@
                                 }
                               }
                             },
-                            "required": [
-                              "type",
-                              "nodeId",
-                              "label",
-                              "confidence",
-                              "confidences"
-                            ],
+                            "required": ["type", "nodeId", "label", "confidence", "confidences"],
                             "additionalProperties": false
                           },
                           {
@@ -568,9 +465,7 @@
                             "properties": {
                               "type": {
                                 "type": "string",
-                                "enum": [
-                                  "detection"
-                                ]
+                                "enum": ["detection"]
                               },
                               "nodeId": {
                                 "type": "string",
@@ -604,29 +499,16 @@
                                           "type": "number"
                                         }
                                       },
-                                      "required": [
-                                        "xMin",
-                                        "yMin",
-                                        "xMax",
-                                        "yMax"
-                                      ],
+                                      "required": ["xMin", "yMin", "xMax", "yMax"],
                                       "additionalProperties": false
                                     }
                                   },
-                                  "required": [
-                                    "label",
-                                    "confidence",
-                                    "box"
-                                  ],
+                                  "required": ["label", "confidence", "box"],
                                   "additionalProperties": false
                                 }
                               }
                             },
-                            "required": [
-                              "type",
-                              "nodeId",
-                              "detections"
-                            ],
+                            "required": ["type", "nodeId", "detections"],
                             "additionalProperties": false
                           },
                           {
@@ -634,9 +516,7 @@
                             "properties": {
                               "type": {
                                 "type": "string",
-                                "enum": [
-                                  "boolean"
-                                ]
+                                "enum": ["boolean"]
                               },
                               "nodeId": {
                                 "type": "string",
@@ -647,22 +527,14 @@
                                 "type": "boolean"
                               }
                             },
-                            "required": [
-                              "type",
-                              "nodeId",
-                              "value"
-                            ],
+                            "required": ["type", "nodeId", "value"],
                             "additionalProperties": false
                           }
                         ]
                       }
                     }
                   },
-                  "required": [
-                    "type",
-                    "nodeId",
-                    "values"
-                  ],
+                  "required": ["type", "nodeId", "values"],
                   "additionalProperties": false
                 }
               ]
@@ -745,9 +617,7 @@
                 "maxLength": 128
               }
             },
-            "required": [
-              "category"
-            ],
+            "required": ["category"],
             "additionalProperties": false
           }
         },
@@ -1064,10 +934,7 @@
             "description": "Las versiones de modelo que usan los workflows de la lista."
           }
         },
-        "required": [
-          "workflows",
-          "models"
-        ]
+        "required": ["workflows", "models"]
       },
       "SdkSyncWorkflow": {
         "type": "object",
@@ -1096,13 +963,7 @@
             "description": "Versiones de modelo que usa esta versión; todas están en `models`."
           }
         },
-        "required": [
-          "workflowId",
-          "workflowVersionId",
-          "name",
-          "version",
-          "modelVersionIds"
-        ]
+        "required": ["workflowId", "workflowVersionId", "name", "version", "modelVersionIds"]
       },
       "SdkSyncModel": {
         "type": "object",
@@ -1120,11 +981,7 @@
             "description": "Hash SHA-256 del archivo del modelo, en hexadecimal."
           }
         },
-        "required": [
-          "modelVersionId",
-          "version",
-          "sha256"
-        ]
+        "required": ["modelVersionId", "version", "sha256"]
       },
       "SdkWorkflowVersionDefinition": {
         "type": "object",
@@ -1145,11 +1002,7 @@
             }
           }
         },
-        "required": [
-          "schemaVersion",
-          "nodes",
-          "connections"
-        ]
+        "required": ["schemaVersion", "nodes", "connections"]
       },
       "SdkWorkflowNode": {
         "type": "object",
@@ -1160,20 +1013,11 @@
           },
           "type": {
             "type": "string",
-            "enum": [
-              "input.image",
-              "model.tflite",
-              "condition",
-              "output",
-              "dataset.capture"
-            ],
+            "enum": ["input.image", "model.tflite", "condition", "output", "dataset.capture"],
             "description": "Tipo de nodo; los demás campos dependen del tipo."
           }
         },
-        "required": [
-          "id",
-          "type"
-        ],
+        "required": ["id", "type"],
         "additionalProperties": {}
       },
       "SdkWorkflowConnection": {
@@ -1192,12 +1036,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "sourceNodeId",
-          "sourcePort",
-          "targetNodeId",
-          "targetPort"
-        ]
+        "required": ["sourceNodeId", "sourcePort", "targetNodeId", "targetPort"]
       },
       "SdkModelVersionManifest": {
         "type": "object",
@@ -1250,9 +1089,7 @@
             ]
           }
         },
-        "required": [
-          "manifest"
-        ]
+        "required": ["manifest"]
       },
       "SdkModelVersionContract": {
         "type": "object",
@@ -1262,9 +1099,7 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": [
-                  "image"
-                ]
+                "enum": ["image"]
               },
               "width": {
                 "type": "integer"
@@ -1276,40 +1111,24 @@
                 "anyOf": [
                   {
                     "type": "number",
-                    "enum": [
-                      1
-                    ]
+                    "enum": [1]
                   },
                   {
                     "type": "number",
-                    "enum": [
-                      3
-                    ]
+                    "enum": [3]
                   },
                   {
                     "type": "number",
-                    "enum": [
-                      4
-                    ]
+                    "enum": [4]
                   }
                 ]
               },
               "normalization": {
                 "type": "string",
-                "enum": [
-                  "none",
-                  "zero_to_one",
-                  "minus_one_to_one"
-                ]
+                "enum": ["none", "zero_to_one", "minus_one_to_one"]
               }
             },
-            "required": [
-              "type",
-              "width",
-              "height",
-              "channels",
-              "normalization"
-            ]
+            "required": ["type", "width", "height", "channels", "normalization"]
           },
           "output": {
             "oneOf": [
@@ -1318,9 +1137,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "classification"
-                    ]
+                    "enum": ["classification"]
                   },
                   "labels": {
                     "type": "array",
@@ -1329,19 +1146,14 @@
                     }
                   }
                 },
-                "required": [
-                  "type",
-                  "labels"
-                ]
+                "required": ["type", "labels"]
               },
               {
                 "type": "object",
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": [
-                      "detection"
-                    ]
+                    "enum": ["detection"]
                   },
                   "labels": {
                     "type": "array",
@@ -1353,19 +1165,12 @@
                     "type": "number"
                   }
                 },
-                "required": [
-                  "type",
-                  "labels",
-                  "scoreThreshold"
-                ]
+                "required": ["type", "labels", "scoreThreshold"]
               }
             ]
           }
         },
-        "required": [
-          "input",
-          "output"
-        ]
+        "required": ["input", "output"]
       }
     },
     "parameters": {}
@@ -1373,9 +1178,7 @@
   "paths": {
     "/health": {
       "get": {
-        "tags": [
-          "System"
-        ],
+        "tags": ["System"],
         "responses": {
           "200": {
             "description": "Service health",
@@ -1392,9 +1195,7 @@
     },
     "/sdk/consents": {
       "post": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "registrar-decision-de-consentimiento",
         "summary": "Registrar una decisión opcional de privacidad",
         "description": "Registra de forma idempotente la elección de una persona para un uso adicional de Ayni. La identidad es un UUID aleatorio y opaco generado por la app integradora; no envíes nombre, correo, teléfono ni hashes derivados de ellos. Reutiliza el mismo `receiptId` al reintentar una decisión guardada sin conexión.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidConsent` | La decisión de consentimiento no es válida. | Falta un campo o su propósito, decisión, fecha o identificador no es válido. |\n| `409` | `consentReceiptConflict` | El recibo de consentimiento ya existe con otros datos. | Se reutilizó el mismo identificador de recibo para otra decisión. |\n| `503` | `privacyNoticeUnavailable` | El aviso de privacidad de Ayni aún no está publicado. | Ayni no registra decisiones para usos propios hasta publicar su aviso vigente. |",
@@ -1453,16 +1254,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidConsent"
-                      ],
+                      "enum": ["invalidConsent"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidConsent": {
@@ -1489,17 +1285,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -1533,16 +1323,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "consentReceiptConflict"
-                      ],
+                      "enum": ["consentReceiptConflict"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "consentReceiptConflict": {
@@ -1569,16 +1354,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "privacyNoticeUnavailable"
-                      ],
+                      "enum": ["privacyNoticeUnavailable"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "privacyNoticeUnavailable": {
@@ -1597,9 +1377,7 @@
     },
     "/sdk/traces": {
       "post": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "enviar-traza-de-ejecucion",
         "summary": "Enviar una traza de ejecución pendiente",
         "description": "Recibe una traza tipada y sanitizada para la aplicación de la credencial, únicamente cuando su política de telemetría está habilitada. Los valores y el perfil informados por el cliente se conservan como `clientReported` y no se verifican de forma independiente. El cuerpo admite hasta 2048 KiB. La retención sigue los días configurados para la aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidTrace` | La traza no tiene un formato válido. | Debe seguir el esquema tipado del SDK y no puede incluir campos adicionales. |\n| `413` | `traceTooLarge` | La traza supera el tamaño máximo permitido. | El cuerpo puede ocupar hasta 2048 KiB. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La aplicación puede recibir trazas solo cuando habilita la política de telemetría. |\n| `409` | `traceConflict` | El ID de traza ya se usó con otros datos. | Un mismo ID solo puede confirmar contenido idéntico para la misma aplicación. |",
@@ -1658,16 +1436,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidTrace"
-                      ],
+                      "enum": ["invalidTrace"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidTrace": {
@@ -1694,17 +1467,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -1738,16 +1505,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "telemetryDisabled"
-                      ],
+                      "enum": ["telemetryDisabled"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "telemetryDisabled": {
@@ -1774,16 +1536,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "traceConflict"
-                      ],
+                      "enum": ["traceConflict"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "traceConflict": {
@@ -1810,16 +1567,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "traceTooLarge"
-                      ],
+                      "enum": ["traceTooLarge"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "traceTooLarge": {
@@ -1838,9 +1590,7 @@
     },
     "/sdk/telemetry-policy": {
       "get": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "obtener-politica-de-telemetria",
         "summary": "Obtener la política de captura y envío de trazas",
         "description": "Devuelve si la aplicación de la credencial tiene habilitados la captura local y el envío de trazas, además de su periodo de retención. El SDK refresca esta política antes de cada envío. Sin configuración, la captura está deshabilitada. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
@@ -1871,29 +1621,20 @@
                       "anyOf": [
                         {
                           "type": "number",
-                          "enum": [
-                            7
-                          ]
+                          "enum": [7]
                         },
                         {
                           "type": "number",
-                          "enum": [
-                            30
-                          ]
+                          "enum": [30]
                         },
                         {
                           "type": "number",
-                          "enum": [
-                            90
-                          ]
+                          "enum": [90]
                         }
                       ]
                     }
                   },
-                  "required": [
-                    "enabled",
-                    "retentionDays"
-                  ],
+                  "required": ["enabled", "retentionDays"],
                   "additionalProperties": false
                 }
               }
@@ -1912,17 +1653,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -2575,9 +2310,7 @@
     },
     "/sdk/sync": {
       "post": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "sincronizar",
         "summary": "Obtener el manifiesto de sincronización",
         "description": "Devuelve lo que tiene publicado la aplicación de la credencial: la última versión de cada workflow no archivado y las versiones de modelo que usa. Un workflow que usa un modelo que ya no está disponible no aparece. La solicitud no lleva cuerpo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para sincronizar. | Un administrador revocó o regeneró la credencial. |",
@@ -2611,9 +2344,7 @@
                           "workflowVersionId": "5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d",
                           "name": "Clasificar hojas",
                           "version": "1.2.0",
-                          "modelVersionIds": [
-                            "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a"
-                          ]
+                          "modelVersionIds": ["c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a"]
                         }
                       ],
                       "models": [
@@ -2642,17 +2373,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -2678,9 +2403,7 @@
     },
     "/sdk/workflow-versions/{workflowVersionId}": {
       "get": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "descargar-version-de-workflow",
         "summary": "Descargar una versión de workflow",
         "description": "Devuelve la definición de una versión publicada: sus nodos y sus conexiones. Una versión publicada no cambia nunca.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `workflowVersionNotFound` | El workflow ya no está disponible. | La versión no existe, es de otra aplicación o su workflow está archivado. |",
@@ -2748,10 +2471,7 @@
                           "outputs": {
                             "result": {
                               "type": "classification",
-                              "labels": [
-                                "sana",
-                                "enferma"
-                              ]
+                              "labels": ["sana", "enferma"]
                             }
                           }
                         },
@@ -2791,17 +2511,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -2835,16 +2549,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "workflowVersionNotFound"
-                      ],
+                      "enum": ["workflowVersionNotFound"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "workflowVersionNotFound": {
@@ -2863,9 +2572,7 @@
     },
     "/sdk/model-versions/{modelVersionId}/manifest": {
       "get": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "obtener-manifiesto-de-modelo",
         "summary": "Obtener el manifiesto de descarga de un modelo",
         "description": "Devuelve dónde descargar el archivo de una versión de modelo y cómo verificarlo. La URL de descarga vence una hora después de la solicitud; para volver a descargar, pide un manifiesto nuevo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `modelVersionNotFound` | La versión del modelo ya no está disponible. | La versión no existe o su modelo es de otra aplicación. |",
@@ -2923,10 +2630,7 @@
                           },
                           "output": {
                             "type": "classification",
-                            "labels": [
-                              "sana",
-                              "enferma"
-                            ]
+                            "labels": ["sana", "enferma"]
                           }
                         }
                       }
@@ -2949,17 +2653,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -2993,16 +2691,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "modelVersionNotFound"
-                      ],
+                      "enum": ["modelVersionNotFound"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "modelVersionNotFound": {
@@ -3021,9 +2714,7 @@
     },
     "/sdk/dataset-versions/{datasetVersionId}/manifest": {
       "get": {
-        "tags": [
-          "Endpoints"
-        ],
+        "tags": ["Endpoints"],
         "operationId": "obtener-manifiesto-de-dataset-de-validacion",
         "summary": "Obtener el manifiesto de un dataset privado",
         "description": "Devuelve metadatos para verificar el ZIP y una URL privada que vence a los 15 minutos. La versión debe pertenecer a la aplicación activa de la credencial; las claves R2 no se exponen.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `datasetVersionNotFound` | El dataset de validación ya no está disponible. | La versión no existe, pertenece a otra aplicación o la aplicación está archivada. |\n| `500` | `datasetManifestUnavailable` | No se pudo preparar la descarga del dataset. | El servidor no pudo consultar el manifiesto o firmar una URL temporal. |",
@@ -3113,9 +2804,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "manifest"
-                  ],
+                  "required": ["manifest"],
                   "additionalProperties": false
                 },
                 "examples": {
@@ -3153,17 +2842,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "invalidCredential",
-                        "credentialRevoked"
-                      ],
+                      "enum": ["invalidCredential", "credentialRevoked"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "invalidCredential": {
@@ -3197,16 +2880,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "datasetVersionNotFound"
-                      ],
+                      "enum": ["datasetVersionNotFound"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "datasetVersionNotFound": {
@@ -3233,16 +2911,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "datasetManifestUnavailable"
-                      ],
+                      "enum": ["datasetManifestUnavailable"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
-                  "required": [
-                    "message",
-                    "code"
-                  ]
+                  "required": ["message", "code"]
                 },
                 "examples": {
                   "datasetManifestUnavailable": {
@@ -3261,9 +2934,7 @@
     },
     "/applications/{applicationId}/validation-datasets": {
       "get": {
-        "tags": [
-          "Validation datasets"
-        ],
+        "tags": ["Validation datasets"],
         "operationId": "listar-datasets-de-validacion",
         "summary": "Listar datasets privados de validación",
         "description": "Lista los datasets de la aplicación para sus miembros. Las versiones publicadas son inmutables.",
@@ -3311,10 +2982,7 @@
                             "format": "date-time"
                           },
                           "createdById": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
+                            "type": ["string", "null"]
                           },
                           "versions": {
                             "type": "array",
@@ -3346,10 +3014,7 @@
                                   "format": "date-time"
                                 },
                                 "uploadedById": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                  "type": ["string", "null"]
                                 }
                               },
                               "required": [
@@ -3380,9 +3045,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "datasets"
-                  ],
+                  "required": ["datasets"],
                   "additionalProperties": false
                 }
               }
@@ -3402,9 +3065,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3424,9 +3085,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3435,9 +3094,7 @@
         }
       },
       "post": {
-        "tags": [
-          "Validation datasets"
-        ],
+        "tags": ["Validation datasets"],
         "operationId": "registrar-dataset-de-validacion",
         "summary": "Registrar fuente y licencia de un dataset",
         "description": "Solo administradores de una aplicación activa. La persona operadora declara la licencia; el sistema no certifica cumplimiento legal.",
@@ -3475,11 +3132,7 @@
                     "maxLength": 500
                   }
                 },
-                "required": [
-                  "name",
-                  "source",
-                  "license"
-                ],
+                "required": ["name", "source", "license"],
                 "additionalProperties": false
               }
             }
@@ -3516,10 +3169,7 @@
                           "format": "date-time"
                         },
                         "createdById": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         }
                       },
                       "required": [
@@ -3534,9 +3184,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "dataset"
-                  ],
+                  "required": ["dataset"],
                   "additionalProperties": false
                 }
               }
@@ -3556,9 +3204,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3578,9 +3224,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3600,9 +3244,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3622,9 +3264,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3644,9 +3284,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3657,9 +3295,7 @@
     },
     "/applications/{applicationId}/validation-datasets/{datasetId}/versions/upload-url": {
       "post": {
-        "tags": [
-          "Validation datasets"
-        ],
+        "tags": ["Validation datasets"],
         "operationId": "iniciar-carga-de-dataset-de-validacion",
         "summary": "Iniciar la carga temporal de un ZIP",
         "description": "Emite una URL de carga temporal al bucket privado para una versión y partición válidas.",
@@ -3699,10 +3335,7 @@
                     "pattern": "^[A-Za-z0-9._-]{1,64}$"
                   }
                 },
-                "required": [
-                  "version",
-                  "partition"
-                ],
+                "required": ["version", "partition"],
                 "additionalProperties": false
               }
             }
@@ -3725,10 +3358,7 @@
                       "format": "uri"
                     }
                   },
-                  "required": [
-                    "uploadId",
-                    "uploadUrl"
-                  ],
+                  "required": ["uploadId", "uploadUrl"],
                   "additionalProperties": false
                 }
               }
@@ -3748,9 +3378,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3770,9 +3398,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3792,9 +3418,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3814,9 +3438,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3836,9 +3458,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3858,9 +3478,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3871,9 +3489,7 @@
     },
     "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel": {
       "post": {
-        "tags": [
-          "Validation datasets"
-        ],
+        "tags": ["Validation datasets"],
         "operationId": "cancelar-carga-de-dataset-de-validacion",
         "summary": "Eliminar un ZIP de staging cancelado",
         "description": "Solo administradores de la aplicación. El borrado del objeto temporal es de mejor esfuerzo.",
@@ -3909,9 +3525,7 @@
                     "format": "uuid"
                   }
                 },
-                "required": [
-                  "uploadId"
-                ],
+                "required": ["uploadId"],
                 "additionalProperties": false
               }
             }
@@ -3935,9 +3549,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3957,9 +3569,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3979,9 +3589,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4001,9 +3609,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4023,9 +3629,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4036,9 +3640,7 @@
     },
     "/applications/{applicationId}/validation-datasets/{datasetId}/versions/complete": {
       "post": {
-        "tags": [
-          "Validation datasets"
-        ],
+        "tags": ["Validation datasets"],
         "operationId": "completar-carga-de-dataset-de-validacion",
         "summary": "Verificar y publicar una versión de ZIP",
         "description": "Verifica el tamaño y hash SHA-256 del objeto subido, lo mueve a una clave privada e inmutable y elimina el objeto de staging.",
@@ -4086,12 +3688,7 @@
                     "pattern": "^[a-f0-9]{64}$"
                   }
                 },
-                "required": [
-                  "version",
-                  "partition",
-                  "uploadId",
-                  "sha256"
-                ],
+                "required": ["version", "partition", "uploadId", "sha256"],
                 "additionalProperties": false
               }
             }
@@ -4133,10 +3730,7 @@
                           "format": "date-time"
                         },
                         "uploadedById": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                          "type": ["string", "null"]
                         }
                       },
                       "required": [
@@ -4152,9 +3746,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "datasetVersion"
-                  ],
+                  "required": ["datasetVersion"],
                   "additionalProperties": false
                 }
               }
@@ -4174,9 +3766,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4196,9 +3786,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4218,9 +3806,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4240,9 +3826,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4262,9 +3846,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4284,9 +3866,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -4306,9 +3886,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }

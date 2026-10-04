@@ -65,7 +65,7 @@ export async function uploadValidationDataset(input: {
     input.onPhase?.("verifying");
     const response = await httpClient.post<{ datasetVersion: ValidationDatasetVersion }>(
       `${basePath}/complete`,
-        { uploadId, version: input.version, partition: input.partition, sha256 },
+      { uploadId, version: input.version, partition: input.partition, sha256 },
       { timeout: 0 },
     );
     input.onProgress(100);
@@ -73,9 +73,7 @@ export async function uploadValidationDataset(input: {
   } catch (error) {
     if (axios.isCancel(error)) {
       if (uploadId && phase === "uploading") {
-        await httpClient
-          .post(`${basePath}/cancel`, { uploadId })
-          .catch(() => undefined);
+        await httpClient.post(`${basePath}/cancel`, { uploadId }).catch(() => undefined);
       }
       return { ok: false, code: "canceled", message: "" };
     }
@@ -83,7 +81,8 @@ export async function uploadValidationDataset(input: {
       return {
         ok: false,
         code: error.response.data?.code ?? "uploadFailed",
-        message: error.response.data?.message ?? "No se pudo guardar el dataset. Inténtalo de nuevo.",
+        message:
+          error.response.data?.message ?? "No se pudo guardar el dataset. Inténtalo de nuevo.",
       };
     }
     return {

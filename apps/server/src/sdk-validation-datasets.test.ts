@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-
-import type { ValidationDatasetStoreResult } from "./validation-dataset-store";
 import type { VerifySdkCredentialResult } from "./sdk-credential-store";
 import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
+import type { ValidationDatasetStoreResult } from "./validation-dataset-store";
 
 const SECRET = "ayni_sk_abcd1234rest-of-secret";
 const DATASET_VERSION_ID = "dataset-version-1";

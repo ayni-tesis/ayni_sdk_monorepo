@@ -27,8 +27,16 @@ const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("./application/validation-datasets-panel", () => ({
-  ValidationDatasetsPanel: ({ applicationId, canManage }: { applicationId: string; canManage?: boolean }) => (
-    <div data-testid="validation-datasets-panel">{applicationId}:{String(canManage)}</div>
+  ValidationDatasetsPanel: ({
+    applicationId,
+    canManage,
+  }: {
+    applicationId: string;
+    canManage?: boolean;
+  }) => (
+    <div data-testid="validation-datasets-panel">
+      {applicationId}:{String(canManage)}
+    </div>
   ),
 }));
 vi.mock("next/link", async () => {

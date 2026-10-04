@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { SdkValidationDatasetManifestSchema, ValidationDatasetUploadUrlResponseSchema } from "@ayni/api";
+import {
+  SdkValidationDatasetManifestSchema,
+  ValidationDatasetUploadUrlResponseSchema,
+} from "@ayni/api";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
-
+import type { VerifySdkCredentialResult } from "./sdk-credential-store";
+import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
 import type {
   CompleteValidationDatasetUploadInput,
   CreateValidationDatasetInput,
@@ -10,21 +14,24 @@ import type {
   ValidationDatasetStoreResult,
   ValidationDatasetVersion,
 } from "./validation-dataset-store";
-import type { VerifySdkCredentialResult } from "./sdk-credential-store";
-import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
 import { createValidationDatasetsApp } from "./validation-datasets";
 
 const FIXED_NOW = new Date("2026-10-04T12:00:00.000Z");
 const SDK_SECRET = "ayni_sk_test_private_dataset";
-const zipBytes = new Uint8Array(Buffer.from([
-  "UEsDBBQAAAAIAIUQRF230mKX1AAAABUBAAANAAAAbWFuaWZlc3QuanNvbjSOO27DMBBEryJMrTgUrZ9ZxpU7VwGCIMVqubZo",
-  "2KKgZdIYPlWOkIsFkpLuYd4AM3co93KjV5k0xAEOBXJ4SqSSDh7un5/mfKQphbT2kmhCDo2fEwsc9vEqzOHne8i8ZEk0KHJc",
-  "A8ugi99nL29ZuTHIwaSicO93KMtAU4hwGKOGFL7kzy/jMyzL4UZnOVLq4VbW59VtLuN5vtGTrWo4NFVnWlubzluSExe7bWuq",
-  "znQNl21Zby2JKYnsjrkufFO1xna2ELLEhT9ZMXh8PH4BAAD//wMAUEsDBBQAAAAIAIUQRF1rnnu4GwAAABMAAAARAAAAaW1h",
-  "Z2VzL2Nhc2UtMS5qcGdKy6woKS1KVcjMTUxPVUiqLEktBgAAAP//AwBQSwECFAAUAAAACACFEERdt9Jil9QAAAAVAQAADQAA",
-  "AAAAAAAAAAAAAAAAAAAAbWFuaWZlc3QuanNvblBLAQIUABQAAAAIAIUQRF1rnnu4GwAAABMAAAARAAAAAAAAAAAAAAAAAP8A",
-  "AABpbWFnZXMvY2FzZS0xLmpwZ1BLBQYAAAAAAgACAHoAAABJAQAAAAA=",
-].join(""), "base64"));
+const zipBytes = new Uint8Array(
+  Buffer.from(
+    [
+      "UEsDBBQAAAAIAIUQRF230mKX1AAAABUBAAANAAAAbWFuaWZlc3QuanNvbjSOO27DMBBEryJMrTgUrZ9ZxpU7VwGCIMVqubZo",
+      "2KKgZdIYPlWOkIsFkpLuYd4AM3co93KjV5k0xAEOBXJ4SqSSDh7un5/mfKQphbT2kmhCDo2fEwsc9vEqzOHne8i8ZEk0KHJc",
+      "A8ugi99nL29ZuTHIwaSicO93KMtAU4hwGKOGFL7kzy/jMyzL4UZnOVLq4VbW59VtLuN5vtGTrWo4NFVnWlubzluSExe7bWuq",
+      "znQNl21Zby2JKYnsjrkufFO1xna2ELLEhT9ZMXh8PH4BAAD//wMAUEsDBBQAAAAIAIUQRF1rnnu4GwAAABMAAAARAAAAaW1h",
+      "Z2VzL2Nhc2UtMS5qcGdKy6woKS1KVcjMTUxPVUiqLEktBgAAAP//AwBQSwECFAAUAAAACACFEERdt9Jil9QAAAAVAQAADQAA",
+      "AAAAAAAAAAAAAAAAAAAAbWFuaWZlc3QuanNvblBLAQIUABQAAAAIAIUQRF1rnnu4GwAAABMAAAARAAAAAAAAAAAAAAAAAP8A",
+      "AABpbWFnZXMvY2FzZS0xLmpwZ1BLBQYAAAAAAgACAHoAAABJAQAAAAA=",
+    ].join(""),
+    "base64",
+  ),
+);
 const expectedZipSha256 = createHash("sha256").update(zipBytes).digest("hex");
 
 type StoredManifestData = {
@@ -89,7 +96,9 @@ describe("private validation dataset delivery integration", () => {
     };
 
     const store = {
-      async createDataset(input: CreateValidationDatasetInput): Promise<ValidationDatasetStoreResult<ValidationDataset>> {
+      async createDataset(
+        input: CreateValidationDatasetInput,
+      ): Promise<ValidationDatasetStoreResult<ValidationDataset>> {
         const dataset = {
           id: "dataset-1",
           applicationId: input.applicationId,
@@ -117,9 +126,9 @@ describe("private validation dataset delivery integration", () => {
       async completeUpload(
         input: CompleteValidationDatasetUploadInput,
       ): Promise<ValidationDatasetStoreResult<ValidationDatasetVersion>> {
-          if (createHash("sha256").update(input.bytes).digest("hex") !== input.expectedSha256) {
-            return { ok: false, reason: "hashMismatch" };
-          }
+        if (createHash("sha256").update(input.bytes).digest("hex") !== input.expectedSha256) {
+          return { ok: false, reason: "hashMismatch" };
+        }
         const id = "dataset-version-1";
         const storageKey = `applications/${input.applicationId}/validation-datasets/${input.datasetId}/versions/${id}.zip`;
         await storage.putArtifact(storageKey, input.bytes);
@@ -142,7 +151,12 @@ describe("private validation dataset delivery integration", () => {
       ): Promise<ValidationDatasetStoreResult<StoredManifestData>> {
         const version = versions.get(datasetVersionId);
         const dataset = version && datasets.get(version.datasetId);
-        if (!version || !dataset || dataset.applicationId !== applicationId || application.status !== "active") {
+        if (
+          !version ||
+          !dataset ||
+          dataset.applicationId !== applicationId ||
+          application.status !== "active"
+        ) {
           return { ok: false, reason: "notFound" };
         }
         return {
@@ -215,7 +229,7 @@ describe("private validation dataset delivery integration", () => {
 
     const completion = await app.request(
       "/applications/app-1/validation-datasets/dataset-1/versions/complete",
-        jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: expectedZipSha256 }),
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: expectedZipSha256 }),
     );
     expect(completion.status).toBe(201);
     await expect(completion.json()).resolves.toMatchObject({
@@ -223,10 +237,9 @@ describe("private validation dataset delivery integration", () => {
     });
     expect(objects.has(stagingKey)).toBe(false);
 
-    const manifestResponse = await app.request(
-      "/sdk/dataset-versions/dataset-version-1/manifest",
-      { headers: { authorization: `Bearer ${SDK_SECRET}` } },
-    );
+    const manifestResponse = await app.request("/sdk/dataset-versions/dataset-version-1/manifest", {
+      headers: { authorization: `Bearer ${SDK_SECRET}` },
+    });
     expect(manifestResponse.status).toBe(200);
     const { manifest } = SdkValidationDatasetManifestSchema.parse(await manifestResponse.json());
     expect(manifest).toMatchObject({
@@ -245,7 +258,8 @@ describe("private validation dataset delivery integration", () => {
     expect(manifest).not.toHaveProperty("applicationId");
     expect(manifest).not.toHaveProperty("storageKey");
     expect(signedDownloadKey).toBeDefined();
-    expect(objects.get(signedDownloadKey!)).toEqual(zipBytes);
+    if (!signedDownloadKey) throw new Error("Expected a signed download key.");
+    expect(objects.get(signedDownloadKey)).toEqual(zipBytes);
     expect(verifyCredential).toHaveBeenCalledWith(SDK_SECRET);
   });
 });

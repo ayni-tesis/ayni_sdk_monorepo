@@ -4,10 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { httpClient } from "@/lib/http-client";
-import {
-  type ValidationDatasetUploadResult,
-  uploadValidationDataset,
-} from "./validation-datasets";
+import { uploadValidationDataset, type ValidationDatasetUploadResult } from "./validation-datasets";
 
 type DatasetVersion = {
   id: string;
@@ -40,7 +37,8 @@ const STRICT_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 function errorDetails(error: unknown) {
   if (typeof error !== "object" || error === null || !("response" in error)) return {};
-  const response = (error as { response?: { data?: { code?: string; message?: string } } }).response;
+  const response = (error as { response?: { data?: { code?: string; message?: string } } })
+    .response;
   return response?.data ?? {};
 }
 
@@ -96,7 +94,9 @@ export function ValidationDatasetsPanel({
     event.preventDefault();
     if (!canEdit || creating) return;
     if (!name.trim() || !source.trim() || !license.trim() || !declaredRedistribution) {
-      setCreateError("Completa el nombre, la fuente, la licencia y la declaración de redistribución.");
+      setCreateError(
+        "Completa el nombre, la fuente, la licencia y la declaración de redistribución.",
+      );
       return;
     }
 
@@ -120,7 +120,7 @@ export function ValidationDatasetsPanel({
       setCreateError(
         details.code === "datasetExists"
           ? "Ya existe un dataset con ese nombre en esta aplicación."
-          : details.message ?? "No se pudo registrar el dataset.",
+          : (details.message ?? "No se pudo registrar el dataset."),
       );
     } finally {
       setCreating(false);
@@ -134,27 +134,43 @@ export function ValidationDatasetsPanel({
           Datasets de validación
         </h2>
         <p className="text-muted-foreground text-sm">
-          Administra paquetes ZIP privados que los dispositivos descargarán antes de ejecutar sus pruebas.
+          Administra paquetes ZIP privados que los dispositivos descargarán antes de ejecutar sus
+          pruebas.
         </p>
       </header>
 
-      {notice && <p role="status" className="text-sm">{notice}</p>}
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
 
       {canEdit && (
         <form className="space-y-4 rounded-lg border p-4" onSubmit={registerDataset} noValidate>
           <h3 className="font-semibold">Registrar dataset</h3>
           <div className="grid gap-4 md:grid-cols-3">
-            <label className="space-y-2 text-sm font-medium">
+            <label htmlFor="validation-dataset-name" className="space-y-2 font-medium text-sm">
               <span>Nombre del dataset</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} disabled={creating} />
+              <Input
+                id="validation-dataset-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={creating}
+              />
             </label>
-            <label className="space-y-2 text-sm font-medium">
+            <label htmlFor="validation-dataset-source" className="space-y-2 font-medium text-sm">
               <span>Fuente</span>
-              <Input value={source} onChange={(event) => setSource(event.target.value)} disabled={creating} />
+              <Input
+                id="validation-dataset-source"
+                value={source}
+                onChange={(event) => setSource(event.target.value)}
+                disabled={creating}
+              />
             </label>
-            <label className="space-y-2 text-sm font-medium">
+            <label htmlFor="validation-dataset-license" className="space-y-2 font-medium text-sm">
               <span>Licencia</span>
               <Input
+                id="validation-dataset-license"
                 value={license}
                 onChange={(event) => setLicense(event.target.value)}
                 disabled={creating}
@@ -169,15 +185,20 @@ export function ValidationDatasetsPanel({
               aria-label="Declaro que puedo redistribuir este dataset"
               onChange={(event) => setDeclaredRedistribution(event.target.checked)}
             />
-            <span>
-              Declaro que puedo redistribuir este dataset para la validación.
-            </span>
+            <span>Declaro que puedo redistribuir este dataset para la validación.</span>
           </label>
           <p className="text-muted-foreground text-sm">
-            Quien opera declara que puede redistribuir el dataset; el sistema no certifica cumplimiento legal.
+            Quien opera declara que puede redistribuir el dataset; el sistema no certifica
+            cumplimiento legal.
           </p>
-          {createError && <p role="alert" className="text-destructive text-sm">{createError}</p>}
-          <Button type="submit" disabled={creating}>{creating ? "Registrando…" : "Registrar dataset"}</Button>
+          {createError && (
+            <p role="alert" className="text-destructive text-sm">
+              {createError}
+            </p>
+          )}
+          <Button type="submit" disabled={creating}>
+            {creating ? "Registrando…" : "Registrar dataset"}
+          </Button>
         </form>
       )}
 
@@ -185,7 +206,9 @@ export function ValidationDatasetsPanel({
       {listError && (
         <div className="space-y-2" role="alert">
           <p>{listError}</p>
-          <Button type="button" variant="outline" onClick={() => void loadDatasets()}>Reintentar</Button>
+          <Button type="button" variant="outline" onClick={() => void loadDatasets()}>
+            Reintentar
+          </Button>
         </div>
       )}
       {!loading && !listError && datasets.length === 0 && (
@@ -199,7 +222,9 @@ export function ValidationDatasetsPanel({
           <article key={dataset.id} className="space-y-4 rounded-lg border p-4">
             <header className="space-y-1">
               <h3 className="font-semibold">{dataset.name}</h3>
-              <p className="text-sm"><span className="font-medium">Fuente:</span> {dataset.source}</p>
+              <p className="text-sm">
+                <span className="font-medium">Fuente:</span> {dataset.source}
+              </p>
               <p className="text-sm">
                 <span className="font-medium">Licencia declarada:</span> {dataset.license}
               </p>
@@ -222,9 +247,13 @@ export function ValidationDatasetsPanel({
                   <tbody>
                     {dataset.versions.map((datasetVersion) => (
                       <tr key={datasetVersion.id} className="border-b last:border-0">
-                        <td className="p-2">{datasetVersion.version} · {datasetVersion.partition}</td>
+                        <td className="p-2">
+                          {datasetVersion.version} · {datasetVersion.partition}
+                        </td>
                         <td className="p-2">{formatSize(datasetVersion.sizeBytes)}</td>
-                        <td className="max-w-56 break-all p-2 font-mono text-xs">{datasetVersion.sha256}</td>
+                        <td className="max-w-56 break-all p-2 font-mono text-xs">
+                          {datasetVersion.sha256}
+                        </td>
                         <td className="p-2">{formatDate(datasetVersion.createdAt)}</td>
                         <td className="p-2">Disponible</td>
                       </tr>
@@ -234,18 +263,18 @@ export function ValidationDatasetsPanel({
               </div>
             )}
 
-              {canEdit && (
-                <ValidationDatasetVersionUpload
-                  applicationId={applicationId}
-                  datasetId={dataset.id}
-                  onUploaded={async () => {
-                    setNotice(
-                      "ZIP verificado y publicado. Los dispositivos comprobarán el manifiesto y las imágenes antes de ejecutar.",
-                    );
-                    await loadDatasets();
-                  }}
-                />
-              )}
+            {canEdit && (
+              <ValidationDatasetVersionUpload
+                applicationId={applicationId}
+                datasetId={dataset.id}
+                onUploaded={async () => {
+                  setNotice(
+                    "ZIP verificado y publicado. Los dispositivos comprobarán el manifiesto y las imágenes antes de ejecutar.",
+                  );
+                  await loadDatasets();
+                }}
+              />
+            )}
           </article>
         ))}
       </div>
@@ -266,7 +295,9 @@ function ValidationDatasetVersionUpload({
   const [partition, setPartition] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadPhase, setUploadPhase] = useState<"starting" | "uploading" | "verifying">("starting");
+  const [uploadPhase, setUploadPhase] = useState<"starting" | "uploading" | "verifying">(
+    "starting",
+  );
   const [progress, setProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
@@ -284,7 +315,7 @@ function ValidationDatasetVersionUpload({
       setUploadError("Ingresa una partición válida de hasta 64 caracteres.");
       return;
     }
-    if (!file || !file.name.toLowerCase().endsWith(".zip") || file.size === 0) {
+    if (!file?.name.toLowerCase().endsWith(".zip") || file.size === 0) {
       setUploadError("Selecciona un archivo ZIP válido.");
       return;
     }
@@ -339,27 +370,39 @@ function ValidationDatasetVersionUpload({
     <div className="space-y-3 border-t pt-4">
       <h4 className="font-medium text-sm">Subir una versión ZIP</h4>
       <div className="grid gap-3 md:grid-cols-3">
-        <label className="space-y-2 text-sm font-medium">
+        <label
+          htmlFor={`validation-dataset-version-${datasetId}`}
+          className="space-y-2 font-medium text-sm"
+        >
           <span>Versión</span>
           <Input
+            id={`validation-dataset-version-${datasetId}`}
             value={version}
             placeholder="1.0.0"
             disabled={uploading}
             onChange={(event) => setVersion(event.target.value)}
           />
         </label>
-        <label className="space-y-2 text-sm font-medium">
+        <label
+          htmlFor={`validation-dataset-partition-${datasetId}`}
+          className="space-y-2 font-medium text-sm"
+        >
           <span>Partición</span>
           <Input
+            id={`validation-dataset-partition-${datasetId}`}
             value={partition}
             placeholder="test"
             disabled={uploading}
             onChange={(event) => setPartition(event.target.value)}
           />
         </label>
-        <label className="space-y-2 text-sm font-medium">
+        <label
+          htmlFor={`validation-dataset-zip-${datasetId}`}
+          className="space-y-2 font-medium text-sm"
+        >
           <span>Archivo ZIP</span>
           <Input
+            id={`validation-dataset-zip-${datasetId}`}
             ref={fileInputRef}
             type="file"
             accept=".zip,application/zip"
@@ -393,7 +436,11 @@ function ValidationDatasetVersionUpload({
         </div>
       )}
 
-      {uploadError && <p role="alert" className="text-destructive text-sm">{uploadError}</p>}
+      {uploadError && (
+        <p role="alert" className="text-destructive text-sm">
+          {uploadError}
+        </p>
+      )}
       {uploading ? (
         uploadPhase !== "verifying" && (
           <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}>

@@ -47,8 +47,11 @@ export function parseDashboardRoute(pathname: string | null): DashboardRoute {
     /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|validation-datasets|credentials|privacy|collection|traces|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
   );
   if (match) {
-    const parsedSection = (match[2] ?? match[4] ?? "overview") as ApplicationSection | "validation-datasets";
-    const section: ApplicationSection = parsedSection === "validation-datasets" ? "datasets" : parsedSection;
+    const parsedSection = (match[2] ?? match[4] ?? "overview") as
+      | ApplicationSection
+      | "validation-datasets";
+    const section: ApplicationSection =
+      parsedSection === "validation-datasets" ? "datasets" : parsedSection;
     if (match[3] && section !== "models") return { kind: "list" };
     const modelId = section === "models" ? match[3] : undefined;
     const workflowId = match[5];

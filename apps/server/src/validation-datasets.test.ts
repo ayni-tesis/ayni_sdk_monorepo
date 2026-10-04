@@ -40,7 +40,9 @@ const datasetVersion = {
 };
 
 const uploadUrl = "/applications/app-1/validation-datasets";
-const testZipSha256 = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
+const testZipSha256 = createHash("sha256")
+  .update(new Uint8Array([1, 2, 3]))
+  .digest("hex");
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -61,13 +63,14 @@ function makeApp({
   }),
   artifactSize = async () => 3,
   artifact = async () => new Uint8Array([1, 2, 3]),
-  uploadUrlResult = async (key: string, expiresIn: number) => `https://r2.test/${key}?ttl=${expiresIn}`,
+  uploadUrlResult = async (key: string, expiresIn: number) =>
+    `https://r2.test/${key}?ttl=${expiresIn}`,
   removeArtifact = async () => undefined,
 }: {
   session?: { user: { id: string } } | null;
   application?: TestApplication | null;
   membershipRole?: string | null;
-  datasets?: (typeof dataset & { versions: typeof datasetVersion[] })[];
+  datasets?: (typeof dataset & { versions: (typeof datasetVersion)[] })[];
   createDataset?: (
     input: CreateValidationDatasetInput,
   ) => Promise<ValidationDatasetStoreResult<ValidationDataset>>;
@@ -131,11 +134,14 @@ describe("validation dataset access and registration", () => {
     const { app, listMock, createDatasetMock } = makeApp({ session: null });
 
     const listing = await app.request(uploadUrl, { method: "GET" });
-    const creation = await app.request(uploadUrl, jsonRequest({
-      name: "Flores",
-      source: "Colección de tesis",
-      license: "CC BY 4.0",
-    }));
+    const creation = await app.request(
+      uploadUrl,
+      jsonRequest({
+        name: "Flores",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+      }),
+    );
 
     expect(listing.status).toBe(401);
     expect(creation.status).toBe(401);
@@ -149,7 +155,9 @@ describe("validation dataset access and registration", () => {
     const response = await app.request(uploadUrl, { method: "GET" });
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ datasets: [{ ...dataset, versions: [datasetVersion] }] });
+    await expect(response.json()).resolves.toEqual({
+      datasets: [{ ...dataset, versions: [datasetVersion] }],
+    });
     expect(listMock).toHaveBeenCalledWith("app-1");
   });
 
@@ -165,11 +173,14 @@ describe("validation dataset access and registration", () => {
   it("creates dataset metadata for administrators with a source and license declaration", async () => {
     const { app, createDatasetMock } = makeApp();
 
-    const response = await app.request(uploadUrl, jsonRequest({
-      name: "Flores",
-      source: "Colección de tesis",
-      license: "CC BY 4.0",
-    }));
+    const response = await app.request(
+      uploadUrl,
+      jsonRequest({
+        name: "Flores",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+      }),
+    );
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({ dataset });
@@ -187,11 +198,14 @@ describe("validation dataset access and registration", () => {
       createDataset: async (_input) => ({ ok: false, reason: "datasetExists" }),
     });
 
-    const response = await app.request(uploadUrl, jsonRequest({
-      name: "Flores",
-      source: "Colección de tesis",
-      license: "CC BY 4.0",
-    }));
+    const response = await app.request(
+      uploadUrl,
+      jsonRequest({
+        name: "Flores",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+      }),
+    );
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ code: "datasetExists" });
@@ -201,11 +215,14 @@ describe("validation dataset access and registration", () => {
   it("does not create dataset metadata for a member", async () => {
     const { app, createDatasetMock } = makeApp({ membershipRole: "member" });
 
-    const response = await app.request(uploadUrl, jsonRequest({
-      name: "Flores",
-      source: "Colección de tesis",
-      license: "CC BY 4.0",
-    }));
+    const response = await app.request(
+      uploadUrl,
+      jsonRequest({
+        name: "Flores",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+      }),
+    );
 
     expect(response.status).toBe(403);
     expect(createDatasetMock).not.toHaveBeenCalled();
@@ -216,11 +233,14 @@ describe("validation dataset access and registration", () => {
       application: { ...activeApplication, status: "archived" },
     });
 
-    const response = await app.request(uploadUrl, jsonRequest({
-      name: "Flores",
-      source: "Colección de tesis",
-      license: "CC BY 4.0",
-    }));
+    const response = await app.request(
+      uploadUrl,
+      jsonRequest({
+        name: "Flores",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+      }),
+    );
 
     expect(response.status).toBe(409);
     expect(createDatasetMock).not.toHaveBeenCalled();
@@ -229,7 +249,10 @@ describe("validation dataset access and registration", () => {
   it("requires nonempty source and license declarations", async () => {
     const { app, createDatasetMock } = makeApp();
 
-    const response = await app.request(uploadUrl, jsonRequest({ name: "Flores", source: " ", license: "" }));
+    const response = await app.request(
+      uploadUrl,
+      jsonRequest({ name: "Flores", source: " ", license: "" }),
+    );
 
     expect(response.status).toBe(400);
     expect(createDatasetMock).not.toHaveBeenCalled();
@@ -240,10 +263,13 @@ describe("direct-to-R2 validation dataset upload", () => {
   it("issues a short-lived URL only for an existing dataset and returns no storage-key field", async () => {
     const { app, createUploadUrlMock } = makeApp({ datasets: [{ ...dataset, versions: [] }] });
 
-    const response = await app.request(`${uploadUrl}/dataset-1/versions/upload-url`, jsonRequest({
-      version: "1.0.0",
-      partition: "test",
-    }));
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/upload-url`,
+      jsonRequest({
+        version: "1.0.0",
+        partition: "test",
+      }),
+    );
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -316,14 +342,19 @@ describe("direct-to-R2 validation dataset upload", () => {
   it("publishes a verified staged ZIP and always deletes the staging object", async () => {
     const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
     const bytes = new Uint8Array([1, 2, 3]);
-    const { app, completeUploadMock, removeArtifactMock } = makeApp({ artifact: async () => bytes });
+    const { app, completeUploadMock, removeArtifactMock } = makeApp({
+      artifact: async () => bytes,
+    });
 
-    const response = await app.request(`${uploadUrl}/dataset-1/versions/complete`, jsonRequest({
-      uploadId,
-      version: "1.0.0",
-      partition: "test",
-      sha256: testZipSha256,
-    }));
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/complete`,
+      jsonRequest({
+        uploadId,
+        version: "1.0.0",
+        partition: "test",
+        sha256: testZipSha256,
+      }),
+    );
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({ datasetVersion });
@@ -336,7 +367,9 @@ describe("direct-to-R2 validation dataset upload", () => {
       expectedSha256: testZipSha256,
       bytes,
     });
-    expect(removeArtifactMock).toHaveBeenCalledWith(`staging/app-1/validation-datasets/${uploadId}.zip`);
+    expect(removeArtifactMock).toHaveBeenCalledWith(
+      `staging/app-1/validation-datasets/${uploadId}.zip`,
+    );
   });
 
   it("rejects an absent ZIP and still attempts staging cleanup", async () => {
@@ -353,7 +386,9 @@ describe("direct-to-R2 validation dataset upload", () => {
     expect(response.status).toBe(400);
     expect(getArtifactMock).not.toHaveBeenCalled();
     expect(completeUploadMock).not.toHaveBeenCalled();
-    expect(removeArtifactMock).toHaveBeenCalledWith(`staging/app-1/validation-datasets/${uploadId}.zip`);
+    expect(removeArtifactMock).toHaveBeenCalledWith(
+      `staging/app-1/validation-datasets/${uploadId}.zip`,
+    );
   });
 
   it("rejects bytes whose downloaded length differs from the R2 metadata", async () => {
@@ -432,23 +467,22 @@ describe("direct-to-R2 validation dataset upload", () => {
     ["hash", 500],
     ["databaseFailed", 500],
     ["storageFailed", 500],
-  ] as const)(
-    "cleans staging after a %s completion failure",
-    async (reason, expectedStatus) => {
-      const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
-      const { app, removeArtifactMock } = makeApp({
-        completeUpload: async (_input) => ({ ok: false, reason }),
-      });
+  ] as const)("cleans staging after a %s completion failure", async (reason, expectedStatus) => {
+    const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
+    const { app, removeArtifactMock } = makeApp({
+      completeUpload: async (_input) => ({ ok: false, reason }),
+    });
 
-      const response = await app.request(
-        `${uploadUrl}/dataset-1/versions/complete`,
-        jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
-      );
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/complete`,
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
+    );
 
-      expect(response.status).toBe(expectedStatus);
-      expect(removeArtifactMock).toHaveBeenCalledWith(`staging/app-1/validation-datasets/${uploadId}.zip`);
-    },
-  );
+    expect(response.status).toBe(expectedStatus);
+    expect(removeArtifactMock).toHaveBeenCalledWith(
+      `staging/app-1/validation-datasets/${uploadId}.zip`,
+    );
+  });
 
   it("lets an application administrator delete a canceled staged ZIP", async () => {
     const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";

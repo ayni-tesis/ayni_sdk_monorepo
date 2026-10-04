@@ -66,7 +66,8 @@ export type RevokeSdkCredentialInput = {
 };
 
 export type RevokeSdkCredentialResult =
-  { ok: true; credential: RevokedSdkCredential } | { ok: false; reason: "forbidden" | "notFound" };
+  | { ok: true; credential: RevokedSdkCredential }
+  | { ok: false; reason: "forbidden" | "notFound" };
 
 export type RegeneratedSdkCredential = {
   id: string;
@@ -357,7 +358,8 @@ export async function listSdkCredentials(
       .from(application)
       .where(eq(application.id, applicationId));
     const foundApplication = applicationRows[0] as
-      { id: string; organizationId: string } | undefined;
+      | { id: string; organizationId: string }
+      | undefined;
 
     if (!foundApplication) return { ok: false, reason: "notFound" };
 
@@ -452,7 +454,7 @@ export async function useSdkCredential(
     if (foundApplication?.status === "archived" && options.reportArchivedApplication) {
       return { ok: false, code: "applicationArchived", message: INVALID_CREDENTIAL_MESSAGE };
     }
-    if (!foundApplication || foundApplication.status !== "active") {
+    if (foundApplication?.status !== "active") {
       return { ok: false, code: "invalidCredential", message: INVALID_CREDENTIAL_MESSAGE };
     }
 

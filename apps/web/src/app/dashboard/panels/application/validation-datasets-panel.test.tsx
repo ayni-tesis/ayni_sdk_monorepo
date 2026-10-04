@@ -40,7 +40,10 @@ const dataset = {
 function renderPanel({
   canManage = true,
   applicationStatus = "active",
-}: { canManage?: boolean; applicationStatus?: "active" | "archived" } = {}) {
+}: {
+  canManage?: boolean;
+  applicationStatus?: "active" | "archived";
+} = {}) {
   return render(
     <ValidationDatasetsPanel
       applicationId="app-1"
@@ -81,10 +84,13 @@ describe("ValidationDatasetsPanel", () => {
     await user.click(screen.getByRole("checkbox", { name: /declaro que puedo redistribuir/i }));
     await user.click(screen.getByRole("button", { name: "Registrar dataset" }));
 
-    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
-      "/applications/app-1/validation-datasets",
-      { name: "Prueba local", source: "Repositorio universitario", license: "CC BY 4.0" },
-    ));
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/applications/app-1/validation-datasets", {
+        name: "Prueba local",
+        source: "Repositorio universitario",
+        license: "CC BY 4.0",
+      }),
+    );
   });
 
   it("shows dataset metadata to members without upload controls", async () => {
@@ -96,7 +102,7 @@ describe("ValidationDatasetsPanel", () => {
     expect(screen.getByText("1.0.0 · test")).toBeInTheDocument();
     expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Registrar dataset" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Archivo ZIP" )).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Archivo ZIP")).not.toBeInTheDocument();
   });
 
   it("reports transfer progress and the verification phase", async () => {
@@ -172,8 +178,9 @@ describe("ValidationDatasetsPanel", () => {
     expect(flores).not.toBeNull();
     expect(aves).not.toBeNull();
 
-    const floresCard = within(flores!);
-    const avesCard = within(aves!);
+    if (!flores || !aves) throw new Error("Expected both dataset cards to be rendered.");
+    const floresCard = within(flores);
+    const avesCard = within(aves);
     await user.type(floresCard.getByLabelText("Versión"), "2.0.0");
     await user.type(floresCard.getByLabelText("Partición"), "flores");
     fireEvent.change(floresCard.getByLabelText("Archivo ZIP"), {
@@ -187,19 +194,26 @@ describe("ValidationDatasetsPanel", () => {
 
     await user.click(floresCard.getByRole("button", { name: "Subir versión" }));
 
-    expect(uploadMock).toHaveBeenCalledWith(expect.objectContaining({
-      datasetId: "dataset-1",
-      version: "2.0.0",
-      partition: "flores",
-      file: expect.objectContaining({ name: "flores.zip" }),
-    }));
+    expect(uploadMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        datasetId: "dataset-1",
+        version: "2.0.0",
+        partition: "flores",
+        file: expect.objectContaining({ name: "flores.zip" }),
+      }),
+    );
   });
 
   it("cancels an active transfer", async () => {
     const user = userEvent.setup();
-    uploadMock.mockImplementation(({ signal }) => new Promise((resolve) => {
-      signal.addEventListener("abort", () => resolve({ ok: false, code: "canceled", message: "" }));
-    }));
+    uploadMock.mockImplementation(
+      ({ signal }) =>
+        new Promise((resolve) => {
+          signal.addEventListener("abort", () =>
+            resolve({ ok: false, code: "canceled", message: "" }),
+          );
+        }),
+    );
     renderPanel();
 
     await screen.findByText("Flores");
