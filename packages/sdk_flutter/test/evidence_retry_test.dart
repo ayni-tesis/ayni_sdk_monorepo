@@ -313,6 +313,32 @@ void main() {
     ]);
   });
 
+  test('a lower limit after a restart fails the evidence already at it, '
+      'without another upload', () async {
+    await pendingEvidence([_firstId]);
+    await syncAt(sdk(), now);
+    await syncAt(sdk(), now.add(const Duration(hours: 1)));
+    expect(uploads, hasLength(2));
+
+    final restarted = sdk(maxEvidenceUploadAttempts: 2);
+    await syncAt(restarted, now.add(const Duration(days: 1)));
+
+    expect(uploads, hasLength(2));
+    expect(await restarted.evidenceStatusCounts(), counts(failed: 1));
+    expect(await restarted.pendingEvidenceCount(), 0);
+  });
+
+  test('a limit below 1 counts as 1', () async {
+    await pendingEvidence([_firstId]);
+    final client = sdk(maxEvidenceUploadAttempts: 0);
+
+    await syncAt(client, now);
+
+    expect(uploads, [_firstId]);
+    expect(events.last, EvidenceEvent.evidenceRetriesExhausted);
+    expect(await client.evidenceStatusCounts(), counts(failed: 1));
+  });
+
   test('a failed evidence does not hold the next one', () async {
     await pendingEvidence([_firstId]);
     final client = sdk(maxEvidenceUploadAttempts: 1);

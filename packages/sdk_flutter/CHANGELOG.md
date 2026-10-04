@@ -60,7 +60,9 @@
   duplicarla. La copia local de la evidencia recibida se conserva hasta
   `clearPendingEvidence()`.
 - Cada carga de evidencia que termina sin confirmación cuenta como un intento,
-  salvo con la credencial revocada. Después de un intento fallido la evidencia
+  salvo con la credencial revocada; un `sync()` que no llega a empezarla por la
+  política, la conexión o el tiempo disponible tampoco cuenta. Después de un
+  intento fallido la evidencia
   queda `EvidenceStatus.retrying` (`Reintentando`) y un `sync()` posterior la
   reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
   horas. El nuevo parámetro `maxEvidenceUploadAttempts` de `AyniSdk` y

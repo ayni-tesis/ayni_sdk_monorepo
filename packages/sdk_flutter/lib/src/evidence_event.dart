@@ -75,7 +75,7 @@ enum EvidenceEvent {
   /// `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`,
   /// `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`,
   /// `Subiendo evidencia…`, `Evidencia recibida.`,
-  /// `No se pudo enviar la evidencia; se reintentará cuando sea posible.`
+  /// `No se pudo enviar la evidencia; se reintentará cuando sea posible.`,
   /// `No se puede enviar evidencia porque la credencial fue revocada.`
   /// or
   /// `No se pudo enviar la evidencia después de varios intentos.`

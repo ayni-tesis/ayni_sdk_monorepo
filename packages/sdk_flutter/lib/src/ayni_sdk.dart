@@ -985,6 +985,7 @@ class AyniSdk {
   late final EvidenceStore _evidence = EvidenceStore(
     storageDirectory,
     writeFile: _evidenceFileWriter,
+    maxUploadAttempts: maxEvidenceUploadAttempts,
   );
 
   /// Prepares each evidence image; tests may replace it through
@@ -1990,11 +1991,7 @@ class AyniSdk {
     DateTime startedAt,
   ) async {
     try {
-      final attempts = await _evidence.recordFailedAttempt(
-        evidence,
-        startedAt,
-        limit: maxEvidenceUploadAttempts,
-      );
+      final attempts = await _evidence.recordFailedAttempt(evidence, startedAt);
       if (attempts.failed) return EvidenceEvent.evidenceRetriesExhausted;
     } on FileSystemException {
       // A full device, or a clearPendingEvidence() that deleted it.

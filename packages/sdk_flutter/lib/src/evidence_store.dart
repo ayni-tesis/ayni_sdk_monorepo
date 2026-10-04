@@ -115,17 +115,23 @@ bool isEvidenceStorageFull(Object error) =>
 /// evidence is US-072's. A `.tmp` directory left by a process that stopped
 /// mid-save is skipped, and only [clear] removes it.
 class EvidenceStore {
+  /// [maxUploadAttempts] is `AyniSdk.maxEvidenceUploadAttempts`: after that
+  /// many failed uploads an evidence is [EvidenceStatus.failed]. A value
+  /// below 1 counts as 1.
   EvidenceStore(
     Directory storageDirectory, {
     EvidenceFileWriter writeFile = writeEvidenceFile,
+    int maxUploadAttempts = 5,
   }) : _directory = Directory(
          '${storageDirectory.path}${Platform.pathSeparator}evidence',
        ),
-       _writeFile = writeFile;
+       _writeFile = writeFile,
+       _maxUploadAttempts = maxUploadAttempts < 1 ? 1 : maxUploadAttempts;
 
   static const _writingSuffix = '.tmp';
   final Directory _directory;
   final EvidenceFileWriter _writeFile;
+  final int _maxUploadAttempts;
   Future<void> _work = Future<void>.value();
 
   /// Prepares the evidence [evidenceId] with [prepare] and adds what it
@@ -207,7 +213,10 @@ class EvidenceStore {
   Future<EvidenceStatus> _status(Directory evidence) async {
     if (await _receivedFile(evidence).exists()) return EvidenceStatus.received;
     final recorded = await attempts(evidence);
-    if (recorded.failed) return EvidenceStatus.failed;
+    // A lower limit than the one in force when it was recorded fails it too.
+    if (recorded.failed || recorded.count >= _maxUploadAttempts) {
+      return EvidenceStatus.failed;
+    }
     return recorded.count > 0
         ? EvidenceStatus.retrying
         : EvidenceStatus.pending;
@@ -239,20 +248,19 @@ class EvidenceStore {
   }
 
   /// Records that an upload of [evidence] that started at [at] ended without
-  /// a confirmation, and returns the attempts it now has: [failed] once they
-  /// reach [limit] (US-071). It writes `upload-attempts.json`, through a
-  /// temporary file renamed into place, and leaves the rest of the directory
-  /// unchanged.
+  /// a confirmation, and returns the attempts it now has: failed once they
+  /// reach the store's `maxUploadAttempts` (US-071). It writes
+  /// `upload-attempts.json`, through a temporary file renamed into place, and
+  /// leaves the rest of the directory unchanged.
   Future<EvidenceUploadAttempts> recordFailedAttempt(
     Directory evidence,
-    DateTime at, {
-    required int limit,
-  }) async {
+    DateTime at,
+  ) async {
     final count = (await attempts(evidence)).count + 1;
     final recorded = (
       count: count,
       lastAttemptAt: at.toUtc(),
-      failed: count >= limit,
+      failed: count >= _maxUploadAttempts,
     );
     await _replace(
       _attemptsFile(evidence),

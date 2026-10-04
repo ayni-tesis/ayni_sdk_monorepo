@@ -128,7 +128,7 @@ void main() {
   group('recordFailedAttempt (US-071)', () {
     test('records each failed attempt apart from evidence.json and fails the '
         'evidence at the limit', () async {
-      final store = EvidenceStore(storageDirectory);
+      final store = EvidenceStore(storageDirectory, maxUploadAttempts: 2);
       await store.save('evidence-1', content);
       final evidence = Directory('${evidenceDirectory.path}/evidence-1');
       final attempts = File('${evidence.path}/upload-attempts.json');
@@ -136,7 +136,6 @@ void main() {
       final first = await store.recordFailedAttempt(
         evidence,
         DateTime.utc(2026, 10, 4, 12),
-        limit: 2,
       );
 
       expect(first, (
@@ -154,7 +153,6 @@ void main() {
       final second = await store.recordFailedAttempt(
         evidence,
         DateTime.utc(2026, 10, 4, 13),
-        limit: 2,
       );
 
       expect(second.failed, isTrue);

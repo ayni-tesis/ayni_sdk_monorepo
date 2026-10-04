@@ -262,6 +262,7 @@ describe("Datos y privacidad (US-147)", () => {
     );
     const defaultAttempts = /this\.maxEvidenceUploadAttempts = (\d+)/.exec(ayniSdkSource)?.[1];
 
+    expect(defaultAttempts, "the default limit changed; update this test").toBeDefined();
     expect(evidence).toContain("### Reintentos de la evidencia");
     expect(retries).toContain('<Code code={privacy.evidenceStatus} lang="dart" />');
     expect(retries).toContain(

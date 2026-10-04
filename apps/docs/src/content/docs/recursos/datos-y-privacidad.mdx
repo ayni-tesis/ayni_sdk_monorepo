@@ -298,8 +298,8 @@ y no espera a la evidencia que el SDK aún prepara o guarda: cuando avisa
 `evidenceQueued`, ya la cuenta.
 
 El SDK nunca marca una como enviada antes de que el servidor confirme que la
-recibió: hasta entonces sigue pendiente en `evidence/<evidenceId>/`, y la
-evidencia pendiente no vence. Si la persona retira su consentimiento, deja de
+recibió: hasta entonces sigue en `evidence/<evidenceId>/`, pendiente o, si
+agotó sus intentos, fallida, y no vence. Si la persona retira su consentimiento, deja de
 pasar `evidenceConsent: true` y elimina la evidencia guardada, también la que ya
 se envió:
 
@@ -400,23 +400,27 @@ Esta versión conserva la copia local de la evidencia recibida, con su
 
 Cada carga que termina sin la confirmación del servidor cuenta como un intento
 de esa evidencia: sin respuesta, por tiempo agotado, por un error del servidor
-o porque el servidor la rechazó. El SDK no puede saber si un rechazo es
+o porque el servidor la rechazó. También cuenta una evidencia cuyos archivos
+el SDK no puede leer o no describen una evidencia válida, que no se envía: así
+queda fallida en vez de pendiente para siempre. El SDK no puede saber si un rechazo es
 definitivo, y el servidor no duplica una evidencia que recibe dos veces con el
 mismo ID, así que también la reintenta, pero sigue con la siguiente. La
 credencial revocada no cuenta como intento, porque no es un fallo de la
 evidencia, y tampoco cuenta un `sync()` que no llega a empezar su carga por la
 política de recolección, por la conexión o porque no le queda tiempo. Una carga
 que se queda sin tiempo a mitad sí cuenta, como cualquier tiempo agotado: así,
-una imagen que nunca alcanza a subirse no gasta datos indefinidamente.
+una imagen que nunca alcanza a subirse no gasta datos indefinidamente. Si el
+SDK no puede guardar el registro del intento, por ejemplo porque el dispositivo
+no tiene espacio, ese intento no cuenta y la evidencia conserva su estado.
 
-Después de cada intento fallido, `sync()` avisa `evidenceUploadFailed` y la
-evidencia queda `Reintentando`: un `sync()` posterior la vuelve a subir con el
+Después de cada intento fallido que no alcanza el límite, `sync()` avisa
+`evidenceUploadFailed` y la evidencia queda `Reintentando`: un `sync()` posterior la vuelve a subir con el
 mismo ID cuando pasa una espera de 15 minutos después del primer fallo, el
 doble después de cada uno de los siguientes y como máximo 6 horas. Así, una app
 que llama a `sync()` a menudo no gasta datos ni batería en una carga que acaba
 de fallar, y una caída del servidor de unas horas no agota los intentos: con el
-límite por defecto, una evidencia queda fallida tras casi 4 horas de fallos. Mientras una
-evidencia espera, `sync()` sube las demás. Si el reloj del dispositivo retrocede,
+límite por defecto, una evidencia queda fallida tras casi 4 horas de fallos.
+Mientras una evidencia espera, `sync()` sube las demás. Si el reloj del dispositivo retrocede,
 la espera no retiene la evidencia.
 
 El límite es `maxEvidenceUploadAttempts` de `AyniSdk` o de `AyniConfig`, 5 si
