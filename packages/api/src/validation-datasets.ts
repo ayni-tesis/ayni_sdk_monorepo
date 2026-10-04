@@ -63,6 +63,25 @@ export const ValidationDatasetApiErrorSchema = z
   .object({ message: z.string(), code: z.string().optional() })
   .strict();
 
+export const SdkValidationDatasetManifestSchema = z
+  .object({
+    manifest: z
+      .object({
+        datasetVersionId: z.string(),
+        datasetId: z.string(),
+        version: z.string(),
+        partition: z.string(),
+        source: z.string(),
+        license: z.string(),
+        sha256: z.string().regex(/^[0-9a-f]{64}$/),
+        sizeBytes: z.number().int().positive(),
+        downloadUrl: z.string().url(),
+        downloadUrlExpiresAt: z.string().datetime(),
+      })
+      .strict(),
+  })
+  .strict();
+
 function errorResponse(description: string) {
   return {
     description,

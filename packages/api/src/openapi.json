@@ -2119,6 +2119,246 @@
         }
       }
     },
+    "/sdk/dataset-versions/{datasetVersionId}/manifest": {
+      "get": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "obtener-manifiesto-de-dataset-de-validacion",
+        "summary": "Obtener el manifiesto de un dataset privado",
+        "description": "Devuelve metadatos para verificar el ZIP y una URL privada que vence a los 15 minutos. La versión debe pertenecer a la aplicación activa de la credencial; las claves R2 no se exponen.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `404` | `datasetVersionNotFound` | El dataset de validación ya no está disponible. | La versión no existe, pertenece a otra aplicación o la aplicación está archivada. |\n| `500` | `datasetManifestUnavailable` | No se pudo preparar la descarga del dataset. | El servidor no pudo consultar el manifiesto o firmar una URL temporal. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/dataset-versions/de47be43-2b8c-41b0-9adb-a5841102d419/manifest \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Versión de dataset que el operador seleccionó para esta aplicación.",
+              "example": "de47be43-2b8c-41b0-9adb-a5841102d419"
+            },
+            "required": true,
+            "description": "Versión de dataset que el operador seleccionó para esta aplicación.",
+            "name": "datasetVersionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manifiesto para descargar y verificar el ZIP privado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "manifest": {
+                      "type": "object",
+                      "properties": {
+                        "datasetVersionId": {
+                          "type": "string"
+                        },
+                        "datasetId": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "license": {
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "sizeBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "downloadUrl": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "downloadUrlExpiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "datasetVersionId",
+                        "datasetId",
+                        "version",
+                        "partition",
+                        "source",
+                        "license",
+                        "sha256",
+                        "sizeBytes",
+                        "downloadUrl",
+                        "downloadUrlExpiresAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "manifest"
+                  ],
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "manifiesto": {
+                    "summary": "Versión verificada de dataset",
+                    "value": {
+                      "manifest": {
+                        "datasetVersionId": "de47be43-2b8c-41b0-9adb-a5841102d419",
+                        "datasetId": "8b6fcb85-3d1d-4a73-b8cb-8a2648571290",
+                        "version": "1.0.0",
+                        "partition": "validation",
+                        "source": "Colección de hojas para la tesis",
+                        "license": "CC BY 4.0",
+                        "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                        "sizeBytes": 184320,
+                        "downloadUrl": "https://r2.example/temporary-signed-download",
+                        "downloadUrlExpiresAt": "2026-10-04T12:15:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "invalidCredential",
+                        "credentialRevoked"
+                      ],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "code"
+                  ]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "datasetVersionNotFound"
+                      ],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "code"
+                  ]
+                },
+                "examples": {
+                  "datasetVersionNotFound": {
+                    "description": "La versión no existe, pertenece a otra aplicación o la aplicación está archivada.",
+                    "value": {
+                      "message": "El dataset de validación ya no está disponible.",
+                      "code": "datasetVersionNotFound"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No se pudo completar la solicitud por un fallo temporal del servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "datasetManifestUnavailable"
+                      ],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "code"
+                  ]
+                },
+                "examples": {
+                  "datasetManifestUnavailable": {
+                    "description": "El servidor no pudo consultar el manifiesto o firmar una URL temporal.",
+                    "value": {
+                      "message": "No se pudo preparar la descarga del dataset.",
+                      "code": "datasetManifestUnavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{applicationId}/validation-datasets": {
       "get": {
         "tags": [

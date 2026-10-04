@@ -120,27 +120,27 @@ git commit -m "feat: add validation dataset upload API"
 - Create: `apps/server/src/sdk-validation-datasets.ts`
 - Create: `apps/server/src/sdk-validation-datasets.test.ts`
 - Modify: `apps/server/src/hono-app.ts`
-- Modify: `packages/api/src/validation-datasets.ts` and OpenAPI tests if needed
+- Modify: `packages/api/src/validation-datasets.ts`, `packages/api/src/sdk-openapi.ts`, `packages/api/src/openapi.test.ts`, and generated `packages/api/src/openapi.json`
 
 **Interfaces:**
 - Consumes: Task 1's `getManifestData(applicationId, datasetVersionId)` and the existing SDK credential verifier and R2 download signer.
 - Produces: `GET /sdk/dataset-versions/:datasetVersionId/manifest`, authenticated only by strict `Authorization: Bearer ayni_sk_...`, returning `{ manifest: { datasetVersionId, datasetId, version, partition, source, license, sha256, sizeBytes, downloadUrl, downloadUrlExpiresAt } }`; `downloadUrlExpiresAt` is an ISO-8601 UTC timestamp.
 
-- [ ] **Step 1: Write failing route tests** for valid credential, missing/malformed credential, revoked credential, dataset from a different application, archived application, and a fresh 900-second expiry. Assert the signer is not called for unauthorized/unavailable versions, the expiry is in the future, and no response includes `storageKey`.
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 1: Write failing route tests** for valid credential, missing/malformed credential, revoked credential, dataset from a different application, archived application, and a fresh 900-second expiry. Assert the signer is not called for unauthorized/unavailable versions, the expiry is in the future, and no response includes `storageKey`.
+- [x] **Step 2: Run the focused tests**
 
 Run: `cd apps/server; bun run test -- src/sdk-validation-datasets.test.ts`
 
 Expected: FAIL because the manifest route is absent.
 
-- [ ] **Step 3: Implement the route** by following `sdk-model-versions.ts`: resolve the application only from the verified credential, return the same 404 `datasetVersionNotFound` for missing/foreign/archived dataset versions, sign only after the metadata lookup succeeds, and generate a new private R2 URL with a 900-second expiry for each successful request.
-- [ ] **Step 4: Run the focused tests and type check**
+- [x] **Step 3: Implement the route** by following `sdk-model-versions.ts`: resolve the application only from the verified credential, return the same 404 `datasetVersionNotFound` for missing/foreign/archived dataset versions, sign only after the metadata lookup succeeds, and generate a new private R2 URL with a 900-second expiry for each successful request.
+- [x] **Step 4: Run the focused tests and type check**
 
 Run: `cd apps/server && bun run test -- src/sdk-validation-datasets.test.ts && bun run check-types`
 
 Expected: tests PASS and TypeScript exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/server/src/sdk-validation-datasets.ts apps/server/src/sdk-validation-datasets.test.ts apps/server/src/hono-app.ts packages/api/src/validation-datasets.ts packages/api/src/openapi.test.ts

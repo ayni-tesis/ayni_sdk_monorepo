@@ -8,6 +8,7 @@ import { z } from "zod";
 import { sdkConsentReceiptSchema } from "./sdk-consent";
 import { sdkTelemetryPolicySchema } from "./sdk-telemetry-policy";
 import { SDK_TRACE_MAX_BYTES, sdkTraceSchema } from "./sdk-trace";
+import { SdkValidationDatasetManifestSchema as validationDatasetManifestSchema } from "./validation-datasets";
 
 extendZodWithOpenApi(z);
 
@@ -19,6 +20,7 @@ const SdkTraceAcknowledgementSchema = z
   .object({ traceId: z.uuid(), receivedAt: z.iso.datetime() })
   .openapi("SdkTraceAcknowledgement");
 const SdkWorkflowTraceSchema = sdkTraceSchema.extend({}).openapi("SdkWorkflowTrace");
+const SdkValidationDatasetManifestSchema = validationDatasetManifestSchema;
 
 export const SdkSyncWorkflowSchema = z
   .object({
@@ -125,6 +127,8 @@ export const SdkModelVersionManifestSchema = z
 
 const modelVersionId = "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a";
 const workflowVersionId = "5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d";
+const datasetVersionId = "de47be43-2b8c-41b0-9adb-a5841102d419";
+const datasetId = "8b6fcb85-3d1d-4a73-b8cb-8a2648571290";
 const sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 const contract = {
   input: { type: "image", width: 224, height: 224, channels: 3, normalization: "zero_to_one" },
@@ -183,9 +187,24 @@ const modelManifestExample = {
   },
 } satisfies z.infer<typeof SdkModelVersionManifestSchema>;
 
+const validationDatasetManifestExample = {
+  manifest: {
+    datasetVersionId,
+    datasetId,
+    version: "1.0.0",
+    partition: "validation",
+    source: "Colección de hojas para la tesis",
+    license: "CC BY 4.0",
+    sha256,
+    sizeBytes: 184320,
+    downloadUrl: "https://r2.example/temporary-signed-download",
+    downloadUrlExpiresAt: "2026-10-04T12:15:00.000Z",
+  },
+} satisfies z.infer<typeof SdkValidationDatasetManifestSchema>;
+
 /** An error an SDK endpoint answers with: its status, `code`, `message`, and cause. */
 type SdkError = {
-  status: "400" | "401" | "403" | "404" | "409" | "413" | "503";
+  status: "400" | "401" | "403" | "404" | "409" | "413" | "500" | "503";
   code: string;
   message: string;
   cause: string;
@@ -232,6 +251,8 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
                       ? "El cuerpo supera el tamaño máximo permitido."
                       : status === "503"
                         ? "El aviso de privacidad de Ayni todavía no está publicado."
+                        : status === "500"
+                          ? "No se pudo completar la solicitud por un fallo temporal del servidor."
                         : "Recurso no disponible.",
           content: {
             "application/json": {
@@ -604,6 +625,61 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         },
       },
       ...errorResponses(modelVersionErrors),
+    },
+  });
+
+  const validationDatasetErrors: SdkError[] = [
+    ...credentialErrors(revokedMessage),
+    {
+      status: "404",
+      code: "datasetVersionNotFound",
+      message: "El dataset de validación ya no está disponible.",
+      cause: "La versión no existe, pertenece a otra aplicación o la aplicación está archivada.",
+    },
+    {
+      status: "500",
+      code: "datasetManifestUnavailable",
+      message: "No se pudo preparar la descarga del dataset.",
+      cause: "El servidor no pudo consultar el manifiesto o firmar una URL temporal.",
+    },
+  ];
+  registry.registerPath({
+    method: "get",
+    path: "/sdk/dataset-versions/{datasetVersionId}/manifest",
+    tags: ["Endpoints"],
+    operationId: "obtener-manifiesto-de-dataset-de-validacion",
+    summary: "Obtener el manifiesto de un dataset privado",
+    description: describeWithErrors(
+      "Devuelve metadatos para verificar el ZIP y una URL privada que vence a los 15 minutos. " +
+        "La versión debe pertenecer a la aplicación activa de la credencial; las claves R2 no se exponen.",
+      validationDatasetErrors,
+    ),
+    security,
+    "x-codeSamples": curlSample("get", `/sdk/dataset-versions/${datasetVersionId}/manifest`),
+    request: {
+      params: z.object({
+        datasetVersionId: z
+          .string()
+          .describe("Versión de dataset que el operador seleccionó para esta aplicación.")
+          .openapi({ example: datasetVersionId }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Manifiesto para descargar y verificar el ZIP privado.",
+        content: {
+          "application/json": {
+            schema: SdkValidationDatasetManifestSchema,
+            examples: {
+              manifiesto: {
+                summary: "Versión verificada de dataset",
+                value: validationDatasetManifestExample,
+              },
+            },
+          },
+        },
+      },
+      ...errorResponses(validationDatasetErrors),
     },
   });
 }

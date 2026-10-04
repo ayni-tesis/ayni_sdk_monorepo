@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ValidationDatasetCreateRequestSchema,
   ValidationDatasetVersionUploadRequestSchema,
+  SdkValidationDatasetManifestSchema,
 } from "./validation-datasets";
 
 describe("validation dataset request schemas", () => {
@@ -52,4 +53,26 @@ describe("validation dataset request schemas", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it("describes the private SDK download manifest without exposing a storage key", () => {
+  const result = SdkValidationDatasetManifestSchema.safeParse({
+    manifest: {
+      datasetVersionId: "dataset-version-1",
+      datasetId: "dataset-1",
+      version: "1.0.0",
+      partition: "validation",
+      source: "Colección de tesis",
+      license: "CC BY 4.0",
+      sha256: "a".repeat(64),
+      sizeBytes: 42,
+      downloadUrl: "https://signed.example/private-dataset",
+      downloadUrlExpiresAt: "2026-10-04T12:15:00.000Z",
+    },
+  });
+
+  expect(result.success).toBe(true);
+  if (result.success) {
+    expect(JSON.stringify(result.data)).not.toContain("storageKey");
+  }
 });

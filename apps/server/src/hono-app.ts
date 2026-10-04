@@ -78,6 +78,7 @@ import {
 import { createSdkCredentialsApp } from "./sdk-credentials";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
+import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
 import {
@@ -828,6 +829,14 @@ app.route(
   createSdkModelVersionsApp({
     credentials: sdkModelVersions,
     modelVersions: sdkModelVersions,
+  }),
+);
+app.route(
+  "/",
+  createSdkValidationDatasetsApp({
+    credentials: sdkModelVersions,
+    datasets: validationDatasets,
+    storage: r2ValidationDatasetStorage,
   }),
 );
 app.route("/", createSdkSyncApp({ credentials: sdkSync, sync: sdkSync }));

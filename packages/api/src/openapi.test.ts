@@ -71,6 +71,12 @@ const sdkOperations = [
     notFound: "modelVersionNotFound",
     extraErrors: [],
   },
+  {
+    method: "get",
+    path: "/sdk/dataset-versions/{datasetVersionId}/manifest",
+    notFound: "datasetVersionNotFound",
+    extraErrors: [{ status: "500", code: "datasetManifestUnavailable" }],
+  },
 ] as const;
 
 function errorCodes(path: string, method: string, status: string) {

@@ -257,4 +257,32 @@ describe("createValidationDatasetStore", () => {
     expect(result).toEqual({ ok: false, reason: "notFound" });
     expect(storage.createDownloadUrl).not.toHaveBeenCalled();
   });
+
+  it("does not return manifest metadata when its application is archived", async () => {
+    const state = adminState({
+      application: { id: "app-1", organizationId: "org-1", status: "archived" },
+      datasets: [
+        {
+          id: "dataset-1",
+          applicationId: "app-1",
+          source: "Fuente",
+          license: "CC BY 4.0",
+        },
+      ],
+      versions: [
+        {
+          id: "version-1",
+          datasetId: "dataset-1",
+          storageKey: "applications/app-1/secret.zip",
+        },
+      ],
+    });
+    const { storage } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+
+    const result = await store.getManifestData("app-1", "version-1");
+
+    expect(result).toEqual({ ok: false, reason: "notFound" });
+    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
 });
