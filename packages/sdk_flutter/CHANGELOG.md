@@ -83,6 +83,12 @@
   solicitudes de red. Como el SDK elimina la evidencia confirmada, `received`
   solo cuenta la que todavía no pudo empezar a eliminar; una que quedó a medio
   eliminar ya no cuenta en ningún estado.
+- Al guardar una traza en la outbox y al leerla para enviarla, el SDK conserva
+  solo los campos del esquema de trazas, cada uno con su tipo: si un componente
+  le agrega la imagen de entrada, sus bytes u otro dato, el SDK descarta ese
+  adjunto y envía la traza solo con los metadatos permitidos. `dataset.capture`
+  sigue siendo el único mecanismo que recolecta imágenes: un workflow sin ese
+  nodo solo registra telemetría, aunque la app pase `evidenceConsent: true`.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega `POST /sdk/evidence` y
   `POST /sdk/evidence/<evidenceId>/complete`.
 
