@@ -16,6 +16,31 @@ void main() {
     expect(android, contains('minSdk = 26'));
   });
 
+  test('keeps app data out of Android backups and device transfers', () {
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    final extractionRules = File(
+      'android/app/src/main/res/xml/data_extraction_rules.xml',
+    ).readAsStringSync();
+    final legacyRules = File(
+      'android/app/src/main/res/xml/backup_rules.xml',
+    ).readAsStringSync();
+
+    expect(manifest, contains('android:allowBackup="false"'));
+    for (final domain in [
+      'root',
+      'file',
+      'database',
+      'sharedpref',
+      'external',
+    ]) {
+      final exclusion = '<exclude domain="$domain" path="." />';
+      expect(extractionRules.split(exclusion).length - 1, 2);
+      expect(legacyRules, contains(exclusion));
+    }
+  });
+
   test('declares selector and isolated compile-time modes', () {
     final buildMode = File(
       'lib/validation/validation_build_mode.dart',

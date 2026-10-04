@@ -9,6 +9,7 @@ import 'package:better_fullstack_app/validation/storage/validation_preferences.d
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,45 @@ void main() {
   });
 
   setUp(() => runtime = _FakeRuntime(planSource));
+
+  testWidgets('scrolls to lazy-list children in either direction', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ListView.builder(
+          key: const ValueKey('validation-home-scroll'),
+          scrollCacheExtent: const ScrollCacheExtent.pixels(3000),
+          itemCount: 100,
+          itemBuilder: (context, index) => SizedBox(
+            height: 100,
+            child: Text('row $index', key: ValueKey('row-$index')),
+          ),
+        ),
+      ),
+    );
+
+    final scrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('validation-home-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    await _scrollToFinder(tester, find.byKey(const ValueKey('row-90')));
+    final offsetAtRow90 = tester
+        .state<ScrollableState>(scrollable)
+        .position
+        .pixels;
+    await _scrollToFinder(tester, find.byKey(const ValueKey('row-70')));
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      lessThan(offsetAtRow90),
+    );
+
+    await _scrollToFinder(tester, find.byKey(const ValueKey('row-0')));
+    expect(find.byKey(const ValueKey('row-0')), findsOneWidget);
+  });
 
   testWidgets('disables execution until verified resources are prepared', (
     tester,
@@ -129,17 +169,22 @@ Future<void> _scrollToKey(WidgetTester tester, String key) async {
 }
 
 Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
-  await tester.scrollUntilVisible(
-    finder,
-    300,
-    scrollable: find
-        .descendant(
-          of: find.byKey(const ValueKey('validation-home-scroll')),
-          matching: find.byType(Scrollable),
-        )
-        .first,
-  );
-  await tester.ensureVisible(finder);
+  final scrollable = find
+      .descendant(
+        of: find.byKey(const ValueKey('validation-home-scroll')),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+
+  if (finder.evaluate().isEmpty) {
+    final position = tester.state<ScrollableState>(scrollable).position;
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+  }
+  if (finder.evaluate().isEmpty) {
+    await tester.scrollUntilVisible(finder, 300, scrollable: scrollable);
+  }
+  await tester.ensureVisible(finder.first);
   await tester.pump();
 }
 
