@@ -196,30 +196,32 @@ git commit -m "feat: add direct and ayni sdk validation runners"
 - Create: `apps/native/lib/validation/storage/validation_jsonl_store.dart`
 - Create: `apps/native/lib/validation/storage/validation_jsonl_exporter.dart`
 - Create: `apps/native/lib/validation/execution/validation_batch_controller.dart`
+- Modify: `apps/native/lib/validation/execution/validation_condition_runner.dart`, `direct_tflite_runner.dart`, and `ayni_sdk_runner.dart` for cancellation
+- Modify: `apps/native/lib/validation/models/validation_run_record.dart` to retain SDK trace-persistence status
 - Create: `apps/native/test/validation/storage/validation_jsonl_store_test.dart`
 - Create: `apps/native/test/validation/execution/validation_batch_controller_test.dart`
 
 **Interfaces:**
 - Consumes: Task 2's plan/record types and Task 4's `ValidationConditionRunner`.
-- Produces: `ValidationJsonlStore.append(ValidationRunRecord)` and `.readAll()`; `ValidationJsonlExporter.export(File jsonlFile)`; `ValidationBatchController.runPhase({required ExperimentPlan plan, required String pairRunId, required ValidationConditionRunner runner, required VerifiedDataset dataset, required String scenarioId, required ValidationPhase phase, required Future<bool> Function() isCancelled, required void Function(ValidationRunRecord) onRecord}) -> Future<BatchRunSummary>`.
+- Produces: `ValidationJsonlStore.append(ValidationRunRecord)` and `.readAll()`; `ValidationJsonlExporter.export(File jsonlFile)`; `ValidationBatchController.runPhase({required ExperimentPlan plan, required String pairRunId, required ValidationConditionRunner runner, required VerifiedDataset dataset, required String scenarioId, required ValidationPhase phase, required Future<bool> Function() isCancelled, required void Function(ValidationRunRecord) onRecord, bool captureTrace = false}) -> Future<BatchRunSummary>`.
 - Each attempted inference writes one append-only record with condition, run/repetition, phase, scenario/case, dataset/partition/hash, input hash, exact resource version/hash, CPU backend, duration, normalized output, and success/error/cancelled state. SDK traces are not copied to or uploaded from the JSONL by the SDK.
 
-- [ ] **Step 1: Write failing storage/batch tests** for JSONL round-trip, append after restart, corrupt final line recovery without data loss, exact repetition counts, offline-only run (fake network throws if called), cancellation during one inference, and no later case scheduled after cancellation.
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 1: Write failing storage/batch tests** for JSONL round-trip, append after a fresh store instance, corrupt final line recovery without data loss, exact repetition/block counts, verified-image rehash, local export, cancellation during one inference, and no later case scheduled after cancellation.
+- [x] **Step 2: Run focused tests**
 
 Run: `cd apps/native; flutter test test/validation/storage/validation_jsonl_store_test.dart test/validation/execution/validation_batch_controller_test.dart`
 
-Expected: FAIL because storage/controller are absent.
+RED confirmed: compilation fails because the JSONL store and batch controller do not exist.
 
-- [ ] **Step 3: Implement append-only local storage and batch execution**. Save under the application documents directory, flush each result record before advancing, retain warmup/fault/error/cancelled attempts, share the same verified input bytes across paired runs, and stop after the current inference finishes. Invoke SDK `cancelExecution` only when its active execution ID is available; cancellation never changes installed resources.
-- [ ] **Step 4: Implement JSONL export** through `share_plus`; include no trace outbox, credential, signed URL, or image/tensor data in the exported record.
-- [ ] **Step 5: Rerun focused tests**
+- [x] **Step 3: Implement append-only local storage and batch execution**. Save under the application documents directory, flush each result record before advancing, retain warmup/fault/error/cancelled attempts, share the same verified input bytes across paired runs, and stop after the current inference finishes. Invoke SDK `cancelExecution` only when its active execution ID is available; cancellation never changes installed resources. A corrupt final line is truncated back to the last complete record; corruption before the tail stops reading without rewriting earlier data. Warmup cycles the verified PERF-02 case set, and PERF-01 remains an external measurement handoff.
+- [x] **Step 4: Implement JSONL export** through `share_plus`; include no trace outbox, credential, signed URL, or image/tensor data in the exported record.
+- [x] **Step 5: Rerun focused tests**
 
 Run: `cd apps/native; flutter test test/validation/storage/validation_jsonl_store_test.dart test/validation/execution/validation_batch_controller_test.dart`
 
-Expected: PASS; each attempt is durable and cancellation schedules no subsequent case.
+Expected: PASS; each attempt is durable and cancellation schedules no subsequent case. The full `flutter test` suite and `flutter analyze` must also pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** (after full suite and analyzer pass)
 
 ```bash
 git add apps/native/lib/validation/storage apps/native/lib/validation/execution/validation_batch_controller.dart apps/native/test/validation/storage apps/native/test/validation/execution/validation_batch_controller_test.dart

@@ -86,6 +86,7 @@ class ConditionRunResult {
     required String errorMessage,
     String? workflowVersionId,
     String? workflowVersion,
+    bool tracePersistenceFailed = false,
   }) => ConditionRunResult._(
     outcome: ValidationRunOutcome.error,
     durationMicros: durationMicros,
@@ -96,7 +97,27 @@ class ConditionRunResult {
     workflowVersion: workflowVersion,
     errorCode: errorCode,
     errorMessage: errorMessage,
-    tracePersistenceFailed: false,
+    tracePersistenceFailed: tracePersistenceFailed,
+  );
+
+  factory ConditionRunResult.cancelled({
+    required int durationMicros,
+    required String modelVersionId,
+    required String modelSha256,
+    String? workflowVersionId,
+    String? workflowVersion,
+    bool tracePersistenceFailed = false,
+  }) => ConditionRunResult._(
+    outcome: ValidationRunOutcome.cancelled,
+    durationMicros: durationMicros,
+    modelVersionId: modelVersionId,
+    modelSha256: modelSha256,
+    normalizedOutput: const {},
+    workflowVersionId: workflowVersionId,
+    workflowVersion: workflowVersion,
+    errorCode: 'cancelled',
+    errorMessage: 'La ejecución fue cancelada.',
+    tracePersistenceFailed: tracePersistenceFailed,
   );
 
   final ValidationRunOutcome outcome;
@@ -117,6 +138,8 @@ abstract interface class ValidationConditionRunner {
   Future<void> prepare();
 
   Future<ConditionRunResult> runCase(ValidationRunRequest request);
+
+  Future<void> cancelActive();
 
   Future<void> close();
 }

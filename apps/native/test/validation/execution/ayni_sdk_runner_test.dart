@@ -90,6 +90,25 @@ void main() {
   );
 
   test(
+    'cancels the active SDK execution without waiting on the operation gate',
+    () async {
+      await runner.prepare();
+      sdk.runBarrier = Completer<void>();
+      sdk.runStarted = Completer<void>();
+      final running = runner.runCase(_request(Uint8List.fromList([5, 6, 7])));
+      await sdk.runStarted!.future;
+
+      await runner.cancelActive();
+      expect(sdk.cancelledExecutionIds, ['execution-1']);
+      sdk.runBarrier!.complete();
+
+      final result = await running;
+      expect(result.outcome, ValidationRunOutcome.cancelled);
+      expect(result.errorCode, 'cancelled');
+    },
+  );
+
+  test(
     'blocks preflight when the SDK ran a different workflow SemVer',
     () async {
       await runner.prepare();
@@ -239,6 +258,7 @@ class _FakeAyniSdkClient implements AyniSdkClient {
   AyniConfig? lastConfig;
   Uint8List? lastInputBytes;
   WorkflowTraceContext? lastTraceContext;
+  final cancelledExecutionIds = <String>[];
 
   @override
   Future<AyniInitializationResult> initialize(AyniConfig config) async {
@@ -260,18 +280,28 @@ class _FakeAyniSdkClient implements AyniSdkClient {
   Future<WorkflowResult> run(
     String workflowId,
     Uint8List inputBytes, {
+    void Function(String executionId)? onExecutionStarted,
     WorkflowTraceContext? traceContext,
   }) async {
     lastInputBytes = inputBytes;
     lastTraceContext = traceContext;
+    onExecutionStarted?.call('execution-1');
     runStarted?.complete();
     if (runBarrier != null) await runBarrier!.future;
+    if (cancelledExecutionIds.contains('execution-1')) {
+      throw const WorkflowError(WorkflowErrorCategory.cancelled);
+    }
     return WorkflowResult(
       executionId: 'execution-1',
       workflowId: 'workflow-1',
       workflowVersion: workflowVersion,
       outputs: outputs,
     );
+  }
+
+  @override
+  void cancelExecution(String executionId) {
+    cancelledExecutionIds.add(executionId);
   }
 
   @override

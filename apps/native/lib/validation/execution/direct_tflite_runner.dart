@@ -163,6 +163,9 @@ class DirectTfliteRunner implements ValidationConditionRunner {
 
   @override
   Future<void> close() async {}
+
+  @override
+  Future<void> cancelActive() async {}
 }
 
 List<ValidationTensor> _runTfliteCpu(

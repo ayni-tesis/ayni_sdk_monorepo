@@ -21,8 +21,11 @@ abstract interface class AyniSdkClient {
   Future<WorkflowResult> run(
     String workflowId,
     Uint8List inputBytes, {
+    void Function(String executionId)? onExecutionStarted,
     WorkflowTraceContext? traceContext,
   });
+
+  void cancelExecution(String executionId);
 
   Future<void> clearPendingTraces();
 }
@@ -39,9 +42,18 @@ class PublicAyniSdkClient implements AyniSdkClient {
   Future<WorkflowResult> run(
     String workflowId,
     Uint8List inputBytes, {
+    void Function(String executionId)? onExecutionStarted,
     WorkflowTraceContext? traceContext,
-  }) =>
-      AyniSdk.instance.run(workflowId, inputBytes, traceContext: traceContext);
+  }) => AyniSdk.instance.run(
+    workflowId,
+    inputBytes,
+    onExecutionStarted: onExecutionStarted,
+    traceContext: traceContext,
+  );
+
+  @override
+  void cancelExecution(String executionId) =>
+      AyniSdk.instance.cancelExecution(executionId);
 
   @override
   Future<void> clearPendingTraces() => AyniSdk.instance.clearPendingTraces();
@@ -80,6 +92,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
 
   bool _initialized = false;
   bool _workflowVerified = false;
+  String? _activeExecutionId;
+  bool _cancellationRequested = false;
+  bool _sdkRunActive = false;
   final _operationGate = _AsyncGate();
 
   @override
@@ -151,6 +166,8 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
 
   Future<ConditionRunResult> _runCase(ValidationRunRequest request) async {
     _requireReady();
+    _activeExecutionId = null;
+    _cancellationRequested = false;
     WorkflowTraceContext? traceContext;
     try {
       validateRequestDataset(request, _profile);
@@ -201,9 +218,14 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     }
     final stopwatch = Stopwatch()..start();
     try {
+      _sdkRunActive = true;
       final result = await _sdk.run(
         _profile.treatmentWorkflowId,
         request.inputBytes,
+        onExecutionStarted: (executionId) {
+          _activeExecutionId = executionId;
+          if (_cancellationRequested) _sdk.cancelExecution(executionId);
+        },
         traceContext: traceContext,
       );
       final output = _normalizeAndVerifyResult(result);
@@ -216,6 +238,29 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         workflowVersion: result.workflowVersion,
         normalizedOutput: output,
         tracePersistenceFailed: result.tracePersistenceFailed,
+      );
+    } on WorkflowError catch (error) {
+      stopwatch.stop();
+      if (error.category == WorkflowErrorCategory.cancelled) {
+        return ConditionRunResult.cancelled(
+          durationMicros: stopwatch.elapsedMicroseconds,
+          modelVersionId: _profile.treatmentModelVersionId,
+          modelSha256: _profile.treatmentModelSha256,
+          workflowVersionId: _profile.treatmentWorkflowVersionId,
+          workflowVersion: _profile.treatmentWorkflowVersion,
+          tracePersistenceFailed: error.tracePersistenceFailed,
+        );
+      }
+      return ConditionRunResult.failure(
+        durationMicros: stopwatch.elapsedMicroseconds,
+        modelVersionId: _profile.treatmentModelVersionId,
+        modelSha256: _profile.treatmentModelSha256,
+        workflowVersionId: _profile.treatmentWorkflowVersionId,
+        workflowVersion: _profile.treatmentWorkflowVersion,
+        errorCode: error.category.name,
+        errorMessage:
+            'El workflow local no pudo completarse (${error.category.name}).',
+        tracePersistenceFailed: error.tracePersistenceFailed,
       );
     } on ValidationExecutionException catch (error) {
       stopwatch.stop();
@@ -239,7 +284,19 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         errorCode: 'workflowExecutionFailed',
         errorMessage: 'No se pudo ejecutar el workflow local.',
       );
+    } finally {
+      _sdkRunActive = false;
+      _activeExecutionId = null;
+      _cancellationRequested = false;
     }
+  }
+
+  @override
+  Future<void> cancelActive() async {
+    if (!_sdkRunActive) return;
+    _cancellationRequested = true;
+    final executionId = _activeExecutionId;
+    if (executionId != null) _sdk.cancelExecution(executionId);
   }
 
   @override

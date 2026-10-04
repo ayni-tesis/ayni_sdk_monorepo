@@ -26,6 +26,7 @@ class ValidationRunRecord {
     required this.durationMicros,
     required this.outcome,
     required Map<String, Object?> normalizedOutput,
+    this.tracePersistenceFailed = false,
     this.errorCode,
     this.errorMessage,
     DateTime? recordedAtUtc,
@@ -98,6 +99,7 @@ class ValidationRunRecord {
   final int durationMicros;
   final ValidationRunOutcome outcome;
   final Map<String, Object?> normalizedOutput;
+  final bool tracePersistenceFailed;
   final String? errorCode;
   final String? errorMessage;
   final DateTime recordedAtUtc;
@@ -121,6 +123,7 @@ class ValidationRunRecord {
     'durationMicros': durationMicros,
     'outcome': outcome.name,
     'normalizedOutput': normalizedOutput,
+    'tracePersistenceFailed': tracePersistenceFailed,
     'errorCode': errorCode,
     'errorMessage': errorMessage,
     'recordedAtUtc': recordedAtUtc.toIso8601String(),
@@ -146,6 +149,7 @@ class ValidationRunRecord {
       'durationMicros',
       'outcome',
       'normalizedOutput',
+      'tracePersistenceFailed',
       'errorCode',
       'errorMessage',
       'recordedAtUtc',
@@ -187,6 +191,10 @@ class ValidationRunRecord {
         'outcome',
       ),
       normalizedOutput: _asObject(json['normalizedOutput'], 'normalizedOutput'),
+      tracePersistenceFailed: _asBoolean(
+        json['tracePersistenceFailed'],
+        'tracePersistenceFailed',
+      ),
       errorCode: _nullableString(json['errorCode'], 'errorCode'),
       errorMessage: _nullableString(json['errorMessage'], 'errorMessage'),
       recordedAtUtc: DateTime.parse(
@@ -242,6 +250,11 @@ String? _nullableString(Object? value, String name) {
 int _asInt(Object? value, String name) {
   if (value is! int) throw FormatException('$name must be an integer.');
   return value;
+}
+
+bool _asBoolean(Object? value, String name) {
+  if (value is bool) return value;
+  throw FormatException('$name must be a boolean.');
 }
 
 Map<String, Object?> _asObject(Object? value, String name) {
