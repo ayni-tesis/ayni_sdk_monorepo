@@ -247,6 +247,7 @@ void main() {
         expect(sdk.sync, isA<Future<SyncResult> Function()>());
         expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
         expect(sdk.clearPendingEvidence, isA<Future<void> Function()>());
+        expect(sdk.pendingEvidenceCount, isA<Future<int> Function()>());
         expect(sdk.resetInstallationId, isA<Future<void> Function()>());
         expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
         expect(

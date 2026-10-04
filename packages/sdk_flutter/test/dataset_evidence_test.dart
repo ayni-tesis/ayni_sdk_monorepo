@@ -1,6 +1,7 @@
 // US-066: a workflow that reaches `dataset.capture` creates local evidence
 // without delaying the result, and only with the app's consent. US-067: the
 // evidence keeps its image optimized with the collection policy's limits.
+// US-068: the evidence waits in a local queue, which a full device skips.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -10,6 +11,7 @@ import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
 import 'package:ayni_sdk/src/collection_policy_store.dart';
 import 'package:ayni_sdk/src/evidence_image_optimizer.dart';
+import 'package:ayni_sdk/src/evidence_store.dart';
 import 'package:ayni_sdk/src/telemetry_policy_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
@@ -23,6 +25,9 @@ const _queued = 'Evidencia guardada para envío posterior.';
 const _discarded =
     'No se pudo preparar una evidencia. El resultado del análisis no se vio '
     'afectado.';
+const _storageFull =
+    'No se pudo guardar una imagen para el dataset; el análisis se completó '
+    'normalmente.';
 
 const _savedEvents = [
   EvidenceEvent.evidenceOptimizing,
@@ -84,12 +89,16 @@ void main() {
     void Function(String message)? onProgress,
     List<double> scores = const [0.2, 0.8],
     EvidenceImageOptimizer? evidenceImageOptimizer,
+    EvidenceFileWriter? evidenceFileWriter,
+    Uri? serverUrl,
   }) => createAyniSdkForTesting(
-    serverUrl: Uri.parse('https://sdk.example.test'),
+    serverUrl: serverUrl ?? Uri.parse('https://sdk.example.test'),
     credential: 'ayni_sk_test',
     storageDirectory: storageDirectory,
+    allowInsecureLoopback: serverUrl != null,
     onProgress: onProgress,
     evidenceImageOptimizer: evidenceImageOptimizer,
+    evidenceFileWriter: evidenceFileWriter,
     workflowInferenceRunner:
         ({
           required modelPath,
@@ -124,10 +133,7 @@ void main() {
       evidenceConsent: true,
       onEvidence: (event) {
         events.add(event);
-        if (event == EvidenceEvent.evidenceQueued ||
-            event == EvidenceEvent.evidenceDiscarded) {
-          done.complete();
-        }
+        if (_lastEvents.contains(event)) done.complete();
       },
     );
     await done.future;
@@ -312,10 +318,10 @@ void main() {
         expect(result.outputs, contains('Resultado'));
         expect(events, [
           EvidenceEvent.evidenceOptimizing,
+          EvidenceEvent.evidencePrepared,
           EvidenceEvent.evidenceDiscarded,
         ]);
         expect(progress, contains(_discarded));
-        expect(progress, isNot(contains(_prepared)));
         expect(progress, isNot(contains(_queued)));
       },
     );
@@ -517,6 +523,163 @@ void main() {
     });
   });
 
+  group('local queue (US-068)', () {
+    test('leaves the evidence pending on the device, without a connection '
+        'and across a restart', () async {
+      await install();
+      final offline = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final serverUrl = Uri.parse('http://127.0.0.1:${offline.port}');
+      await offline.close(force: true);
+      final client = sdk(serverUrl: serverUrl);
+
+      await runAndWait(client, png());
+      final pending = savedEvidence().single;
+      expect(await client.pendingEvidenceCount(), 1);
+
+      expect((await client.sync()).status, SyncStatus.offline);
+      expect(await client.pendingEvidenceCount(), 1);
+
+      final restarted = sdk(serverUrl: serverUrl);
+      expect(await restarted.pendingEvidenceCount(), 1);
+      expect(savedEvidence().map((evidence) => evidence.path), [pending.path]);
+      expect(File('${pending.path}/image').existsSync(), isTrue);
+      expect(File('${pending.path}/evidence.json').existsSync(), isTrue);
+    });
+
+    test('reports evidenceQueued only once the evidence is pending in the '
+        'queue', () async {
+      await install();
+      final release = Completer<void>();
+      final counts = <EvidenceEvent, Future<int>>{};
+      late final AyniSdk client;
+      client = sdk(
+        evidenceFileWriter: (file, bytes) async {
+          await release.future;
+          await file.writeAsBytes(bytes, flush: true);
+        },
+      );
+      final prepared = Completer<void>();
+      final queued = Completer<void>();
+
+      await client.run(
+        'workflow-1',
+        png(),
+        evidenceConsent: true,
+        onEvidence: (event) {
+          counts[event] = client.pendingEvidenceCount();
+          if (event == EvidenceEvent.evidencePrepared) prepared.complete();
+          if (event == EvidenceEvent.evidenceQueued) queued.complete();
+        },
+      );
+      await prepared.future;
+      expect(await counts[EvidenceEvent.evidencePrepared], 0);
+      release.complete();
+      await queued.future;
+
+      expect(await counts[EvidenceEvent.evidenceQueued], 1);
+    });
+
+    test(
+      'does not block later runs while an evidence is being saved',
+      () async {
+        await install();
+        final release = Completer<void>();
+        final client = sdk(
+          evidenceFileWriter: (file, bytes) async {
+            await release.future;
+            await file.writeAsBytes(bytes, flush: true);
+          },
+        );
+        var queued = 0;
+        final bothQueued = Completer<void>();
+        void onEvidence(EvidenceEvent event) {
+          if (event == EvidenceEvent.evidenceQueued && ++queued == 2) {
+            bothQueued.complete();
+          }
+        }
+
+        await client.run(
+          'workflow-1',
+          png(),
+          evidenceConsent: true,
+          onEvidence: onEvidence,
+        );
+        final second = await client.run(
+          'workflow-1',
+          png(),
+          evidenceConsent: true,
+          onEvidence: onEvidence,
+        );
+
+        expect(
+          (second.outputs['Resultado']! as ClassificationResult).label,
+          'gato',
+        );
+        expect(await client.pendingEvidenceCount(), 0);
+        release.complete();
+        await bothQueued.future;
+        expect(await client.pendingEvidenceCount(), 2);
+      },
+    );
+
+    group('when the device has no space left', () {
+      test('discards that evidence without partial files and reports '
+          'evidenceStorageFull, without failing the inference', () async {
+        await install();
+        final progress = <String>[];
+        var writes = 0;
+
+        final (result, events) = await runAndWait(
+          sdk(
+            onProgress: progress.add,
+            evidenceFileWriter: (file, bytes) async {
+              writes++;
+              await file.writeAsBytes(bytes.sublist(0, 1), flush: true);
+              if (writes == 2) throw _noSpace(file.path);
+            },
+          ),
+          png(),
+        );
+
+        expect(
+          (result.outputs['Resultado']! as ClassificationResult).label,
+          'gato',
+        );
+        expect(events, [
+          EvidenceEvent.evidenceOptimizing,
+          EvidenceEvent.evidencePrepared,
+          EvidenceEvent.evidenceStorageFull,
+        ]);
+        expect(EvidenceEvent.evidenceStorageFull.message, _storageFull);
+        expect(progress.where((message) => message != _usingLocal), [
+          _optimizing,
+          _prepared,
+          _storageFull,
+        ]);
+        expect(evidenceDirectory.listSync(), isEmpty);
+      });
+
+      test('keeps the evidence already pending', () async {
+        await install();
+        final client = sdk();
+        await runAndWait(client, png());
+        final kept = savedEvidence().single;
+
+        final (_, events) = await runAndWait(
+          sdk(
+            evidenceFileWriter: (file, bytes) async =>
+                throw _noSpace(file.path),
+          ),
+          png(),
+        );
+
+        expect(events.last, EvidenceEvent.evidenceStorageFull);
+        expect(savedEvidence().map((evidence) => evidence.path), [kept.path]);
+        expect(await client.pendingEvidenceCount(), 1);
+      });
+    });
+  });
+
   group('without the consent of the app', () {
     test('returns the result and keeps no image', () async {
       await install();
@@ -613,6 +776,20 @@ void main() {
 }
 
 const _usingLocal = 'Usando recursos guardados en este dispositivo.';
+
+/// The events that end the work on one evidence.
+const _lastEvents = {
+  EvidenceEvent.evidenceQueued,
+  EvidenceEvent.evidenceDiscarded,
+  EvidenceEvent.evidenceStorageFull,
+};
+
+/// The error a write fails with when the device has no space left.
+FileSystemException _noSpace(String path) => FileSystemException(
+  'Cannot write file',
+  path,
+  OSError('No space left on device', Platform.isWindows ? 112 : 28),
+);
 
 OptimizedEvidenceImage _failingOptimizer(
   Uint8List image,

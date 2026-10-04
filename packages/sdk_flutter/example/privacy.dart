@@ -45,6 +45,20 @@ Future<WorkflowResult> runWithEvidence(
   return result;
 }
 
+/// Shows `Evidencia pendiente de envío` while evidence waits on this device
+/// for its upload.
+Future<void> showPendingEvidence(
+  AyniSdk sdk, {
+  required void Function(String status) showStatus,
+}) async {
+  // #region evidencia-pendiente
+  final pending = await sdk.pendingEvidenceCount();
+  if (pending > 0) {
+    showStatus('Evidencia pendiente de envío ($pending)');
+  }
+  // #endregion evidencia-pendiente
+}
+
 /// Deletes the evidence kept on this device after the person withdraws their
 /// consent for evidence collection.
 Future<void> withdrawEvidenceConsent(AyniSdk sdk) async {
