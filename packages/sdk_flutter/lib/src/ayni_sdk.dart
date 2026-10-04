@@ -937,6 +937,10 @@ class AyniSdk {
   );
   late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
   late final EvidenceStore _evidence = EvidenceStore(storageDirectory);
+
+  /// Grows with each [clearPendingEvidence], so a [run] active at that moment
+  /// keeps none of its captures.
+  var _evidenceGeneration = 0;
   Future<void> _consentWork = Future<void>.value();
   var _traceOutboxGeneration = 0;
   var _traceUploadsPaused = false;
@@ -981,12 +985,15 @@ class AyniSdk {
   /// Deletes the evidence for datasets saved on this device (US-066).
   ///
   /// Call it when the person withdraws the consent the app passes to [run]
-  /// as `evidenceConsent`: first stop passing `evidenceConsent: true` and
-  /// wait for active [run] calls. It waits for the evidence the SDK is still
-  /// saving and then deletes it too, so no image of a capture stays on the
-  /// device. It does not affect installed workflows and models or pending
-  /// traces.
-  Future<void> clearPendingEvidence() => _evidence.clear();
+  /// as `evidenceConsent`, after it stops passing `evidenceConsent: true`. It
+  /// waits for the evidence the SDK is still saving and then deletes it too,
+  /// and a [run] already active when it is called saves no evidence, so no
+  /// image of a capture stays on the device. It does not affect installed
+  /// workflows and models or pending traces.
+  Future<void> clearPendingEvidence() {
+    _evidenceGeneration++;
+    return _evidence.clear();
+  }
 
   void _queueEvidence(
     List<WorkflowCapture> captures, {
@@ -1130,6 +1137,7 @@ class AyniSdk {
       throw UnsupportedError('Esta plataforma no es compatible con ayni_sdk.');
     }
     final traceGeneration = _traceOutboxGeneration;
+    final evidenceGeneration = _evidenceGeneration;
     final startedAt = DateTime.now().toUtc();
     final stopwatch = Stopwatch()..start();
     final captureTrace =
@@ -1230,7 +1238,7 @@ class AyniSdk {
         outputs: result.outputs,
       );
       final persisted = await _persistTrace(trace, traceGeneration);
-      if (captures.isNotEmpty) {
+      if (captures.isNotEmpty && evidenceGeneration == _evidenceGeneration) {
         _queueEvidence(
           captures,
           // A copy: the app may reuse its buffer once the result arrives.

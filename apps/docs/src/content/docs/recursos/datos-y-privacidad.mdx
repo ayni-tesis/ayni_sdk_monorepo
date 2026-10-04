@@ -234,13 +234,14 @@ cancela o no ejecuta el modelo que alimenta la captura no crea evidencia.
 
 Esta versión no envía la evidencia: cada una queda en
 `evidence/<evidenceId>/` dentro de `storageDirectory` y no vence. Si la persona
-retira su consentimiento, deja de pasar `evidenceConsent: true`, espera a que
-terminen los `run()` en curso y elimina la evidencia guardada:
+retira su consentimiento, deja de pasar `evidenceConsent: true` y elimina la
+evidencia guardada:
 
 <Code code={privacy.deleteEvidence} lang="dart" />
 
 `clearPendingEvidence()` espera también a la evidencia que el SDK aún está
-guardando y no elimina workflows, modelos ni trazas pendientes.
+guardando y la elimina, y un `run()` que ya estaba en curso no guarda la suya.
+No elimina workflows, modelos ni trazas pendientes.
 
 ## Restablecer el identificador de instalación
 

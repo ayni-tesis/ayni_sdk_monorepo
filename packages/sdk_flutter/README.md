@@ -310,8 +310,8 @@ el modelo; luego llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
 `onProgress` con `Evidencia guardada para envío posterior.` Sin consentimiento,
 el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
 la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
-deja de pasar `evidenceConsent: true`, espera a que terminen los `run()` en
-curso y elimina la evidencia guardada:
+deja de pasar `evidenceConsent: true` y elimina la evidencia guardada; un
+`run()` que ya estaba en curso tampoco guarda la suya:
 
 ```dart
 await sdk.clearPendingEvidence();

@@ -143,6 +143,7 @@ consent (the default), it skips the capture and keeps no image.</p>
     throw UnsupportedError(&#39;Esta plataforma no es compatible con ayni_sdk.&#39;);
   }
   final traceGeneration = _traceOutboxGeneration;
+  final evidenceGeneration = _evidenceGeneration;
   final startedAt = DateTime.now().toUtc();
   final stopwatch = Stopwatch()..start();
   final captureTrace =
@@ -243,7 +244,7 @@ consent (the default), it skips the capture and keeps no image.</p>
       outputs: result.outputs,
     );
     final persisted = await _persistTrace(trace, traceGeneration);
-    if (captures.isNotEmpty) {
+    if (captures.isNotEmpty &amp;&amp; evidenceGeneration == _evidenceGeneration) {
       _queueEvidence(
         captures,
         &#47;&#47; A copy: the app may reuse its buffer once the result arrives.

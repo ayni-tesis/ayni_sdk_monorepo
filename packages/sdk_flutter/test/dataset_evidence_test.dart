@@ -351,6 +351,52 @@ void main() {
   });
 
   group('clearPendingEvidence', () {
+    test(
+      'also drops the evidence of a run active when it was called',
+      () async {
+        await install();
+        final inferenceStarted = Completer<void>();
+        final releaseInference = Completer<void>();
+        final client = createAyniSdkForTesting(
+          serverUrl: Uri.parse('https://sdk.example.test'),
+          credential: 'ayni_sk_test',
+          storageDirectory: storageDirectory,
+          workflowInferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async {
+                inferenceStarted.complete();
+                await releaseInference.future;
+                return (
+                  error: null,
+                  outputs: [
+                    (shape: [1, 2], values: Float32List.fromList([0.2, 0.8])),
+                  ],
+                );
+              },
+        );
+        final events = <EvidenceEvent>[];
+
+        final running = client.run(
+          'workflow-1',
+          png(),
+          evidenceConsent: true,
+          onEvidence: events.add,
+        );
+        await inferenceStarted.future;
+        await client.clearPendingEvidence();
+        releaseInference.complete();
+        final result = await running;
+        await client.clearPendingEvidence();
+
+        expect(result.outputs, contains('Resultado'));
+        expect(events, isEmpty);
+        expect(evidenceDirectory.existsSync(), isFalse);
+      },
+    );
+
     test('deletes the saved evidence after the saves in progress', () async {
       await install();
       final client = sdk();

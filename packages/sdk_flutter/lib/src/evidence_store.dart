@@ -10,8 +10,9 @@ import 'dart:typed_data';
 ///
 /// Each evidence is written to `<evidenceId>.tmp` and renamed into place, so
 /// a directory named after an evidence ID is always complete. Sending it
-/// (US-068 to US-072) reads those directories and removes each one once the
-/// server confirms it.
+/// (US-068 to US-072) reads those directories, skipping a `.tmp` one left by
+/// a process that stopped mid-save, and removes each one once the server
+/// confirms it.
 class EvidenceStore {
   EvidenceStore(Directory storageDirectory)
     : _directory = Directory(
