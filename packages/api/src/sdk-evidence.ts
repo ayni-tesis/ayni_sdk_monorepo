@@ -112,7 +112,7 @@ export const sdkEvidenceUploadSchema = z.strictObject({
   uploadUrl: z
     .string()
     .describe(
-      "URL firmada para subir la imagen con `PUT`, sin la credencial; solo acepta exactamente `image.byteSize` bytes.",
+      "URL firmada para subir la imagen con `PUT`, `Content-Type: image/jpeg` y sin la credencial; la firma incluye `Content-Length`, así que solo acepta exactamente `image.byteSize` bytes.",
     ),
   uploadUrlExpiresAt: z.iso.datetime().describe("Vencimiento de `uploadUrl` (ISO 8601)."),
 });
