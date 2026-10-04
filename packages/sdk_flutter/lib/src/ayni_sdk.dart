@@ -1842,11 +1842,6 @@ class AyniSdk {
       // Policy refresh is optional; a failed refresh keeps the last valid cache.
     }
     try {
-      await _refreshCollectionPolicy(client, deadline);
-    } on Exception {
-      // Optional too: evidence keeps using the last valid collection policy.
-    }
-    try {
       await _syncConsentReceipts(client, deadline: deadline);
     } on Exception {
       // A pending optional-use receipt must not block required resource sync.
@@ -1856,6 +1851,12 @@ class AyniSdk {
       await _sendPendingTraces(client, deadline: deadline);
     } on Exception {
       // A failed optional upload keeps traces local.
+    }
+    try {
+      // Last of the optional work, so it only takes what the others left.
+      await _refreshCollectionPolicy(client, deadline);
+    } on Exception {
+      // Optional too: evidence keeps using the last valid collection policy.
     }
     if (deadline.expired) return const SyncResult(SyncStatus.error);
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));

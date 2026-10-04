@@ -119,7 +119,12 @@ void main() {
       '/sdk/sync',
     ]);
     expect(
-      requests[1].headers.value(HttpHeaders.authorizationHeader),
+      requests
+          .singleWhere(
+            (request) => request.uri.path == '/sdk/collection-policy',
+          )
+          .headers
+          .value(HttpHeaders.authorizationHeader),
       'Bearer ayni_sk_test',
     );
     expect(jsonDecode(await cache.readAsString()), {

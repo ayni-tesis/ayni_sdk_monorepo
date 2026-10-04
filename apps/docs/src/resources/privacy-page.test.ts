@@ -168,8 +168,9 @@ describe("Datos y privacidad (US-147)", () => {
 
   it("gives the size and quality ranges and defaults that the server and the SDK apply", () => {
     const range = (source: string, pattern: RegExp) => {
-      const [, min, max] = pattern.exec(source) ?? [];
-      return { min: Number(min), max: Number(max) };
+      const match = pattern.exec(source);
+      if (!match) throw new Error(`No range matches ${pattern} any more; update this test.`);
+      return { min: Number(match[1]), max: Number(match[2]) };
     };
     const defaults = /DEFAULT_COLLECTION_POLICY[^{]*\{([^}]*)\}/.exec(collectionPolicySource)?.[1];
     const size = range(

@@ -291,8 +291,8 @@ void main() {
         expect(await syncStatus(sdk()), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
-          '/sdk/collection-policy',
           '/sdk/consents',
+          '/sdk/collection-policy',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
@@ -316,8 +316,8 @@ void main() {
         expect(await syncStatus(client), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
-          '/sdk/collection-policy',
           '/sdk/consents',
+          '/sdk/collection-policy',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
@@ -544,11 +544,11 @@ void main() {
         );
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
           '/sdk/collection-policy',
-          '/sdk/telemetry-policy',
-          '/sdk/traces',
-          '/sdk/telemetry-policy',
-          '/sdk/traces',
           '/sdk/sync',
         ]);
         expect(await outbox.pending(), isEmpty);
@@ -577,10 +577,10 @@ void main() {
 
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
-          '/sdk/collection-policy',
           '/sdk/consents',
           '/sdk/telemetry-policy',
           '/sdk/traces',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
         expect(traceBodies.single['traceId'], trace['traceId']);
@@ -630,9 +630,9 @@ void main() {
           expect(await outbox.pending(), hasLength(2));
           expect(requests.map((request) => request.uri.path), [
             '/sdk/telemetry-policy',
-            '/sdk/collection-policy',
             '/sdk/telemetry-policy',
             '/sdk/traces',
+            '/sdk/collection-policy',
             '/sdk/sync',
           ]);
         },
@@ -691,11 +691,11 @@ void main() {
         );
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
+          '/sdk/telemetry-policy',
+          '/sdk/traces',
           '/sdk/collection-policy',
-          '/sdk/telemetry-policy',
-          '/sdk/traces',
-          '/sdk/telemetry-policy',
-          '/sdk/traces',
           '/sdk/sync',
         ]);
       },
@@ -750,8 +750,8 @@ void main() {
         expect((await outbox.pending()).single['traceId'], trace['traceId']);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
-          '/sdk/collection-policy',
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
       },

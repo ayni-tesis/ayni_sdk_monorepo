@@ -39,6 +39,11 @@ void main() {
         } else {
           request.response.write(policyBody);
         }
+      } else if (request.uri.path == '/sdk/collection-policy') {
+        request.response.write(
+          '{"enabled":false,"consentRequired":false,"network":"wifi",'
+          '"maxImageSize":1024,"imageQuality":80}',
+        );
       } else if (request.uri.path == '/sdk/sync') {
         request.response.write('{"workflows":[],"models":[]}');
       }

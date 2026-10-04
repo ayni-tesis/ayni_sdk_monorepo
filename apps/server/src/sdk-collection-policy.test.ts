@@ -75,6 +75,7 @@ describe("GET /sdk/collection-policy", () => {
       headers: { Authorization: `Bearer ${SECRET}` },
     });
 
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       enabled: false,
       consentRequired: false,

@@ -50,7 +50,7 @@ espera el acuse del servidor antes de retirar esa traza de la outbox.
 | --- | --- | --- | --- |
 | La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()`. | `POST /sdk/sync`, en el servidor de Ayni (`serverUrl`). | No |
 | La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()` y antes de cada traza pendiente, para refrescar la política de captura y envío. | `GET /sdk/telemetry-policy`, en el servidor de Ayni (`serverUrl`). | No |
-| La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()`, para refrescar el tamaño máximo y la calidad con que el SDK optimiza cada imagen de evidencia. | `GET /sdk/collection-policy`, en el servidor de Ayni (`serverUrl`). | No |
+| La credencial del SDK, en el encabezado `Authorization` | En cada `sync()`, justo antes de pedir el manifiesto, para refrescar el tamaño máximo y la calidad con que el SDK optimiza cada imagen de evidencia. | `GET /sdk/collection-policy`, en el servidor de Ayni (`serverUrl`). | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de workflow, en la ruta | Durante `sync()`, por cada versión de workflow publicada que aún no está en el dispositivo. | `GET /sdk/workflow-versions/<workflowVersionId>`, en el servidor de Ayni. | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de modelo, en la ruta | Durante `sync()`, por cada modelo que necesita un workflow nuevo y que aún no está en el dispositivo. | `GET /sdk/model-versions/<modelVersionId>/manifest`, en el servidor de Ayni. | No |
 | Solo la solicitud de descarga del archivo del modelo, sin credencial | Justo después de recibir el manifiesto de ese modelo. | `GET <downloadUrl>`: la URL firmada del almacenamiento de objetos que indica el manifiesto, un host distinto del servidor. | No |
@@ -225,12 +225,15 @@ para datasets», y solo entonces un administrador puede agregar el nodo a un
 workflow. Esa política exige también «Exigir el consentimiento del usuario
 antes de capturar». Su «Tamaño máximo» (el lado mayor de la imagen, de 128 a
 4096 píxeles, 1024 si nadie lo cambió) y su «Calidad» (de 10 a 100, 80 si nadie
-la cambió) fijan cómo el SDK optimiza cada imagen. Al comenzar cada `sync()`,
-el SDK consulta la política en `GET /sdk/collection-policy` y guarda esos dos
+la cambió) fijan cómo el SDK optimiza cada imagen. En cada `sync()`, justo antes
+de pedir el manifiesto, el SDK consulta la política en `GET /sdk/collection-policy` y guarda esos dos
 valores en `diagnostics/collection-policy.json`; `run()` usa los últimos que
 guardó, también sin conexión. Si la consulta falla, conserva los anteriores.
 Mientras ningún `sync()` los haya guardado, el SDK descarta cada evidencia.
-Esta versión todavía no aplica la red de la política en el dispositivo.
+Esta versión todavía no aplica en el dispositivo la red de la política ni su
+habilitación o su exigencia de consentimiento: deshabilitar la recolección en el
+dashboard no detiene la captura local, que depende solo de que el workflow
+incluya `dataset.capture` y de que la app pase `evidenceConsent: true`.
 
 El SDK no presenta avisos ni registra el consentimiento de recolección: lo
 gestiona tu app, igual que el permiso de las trazas de validación. Pasa
