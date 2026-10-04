@@ -362,7 +362,7 @@ void main() {
     });
   });
 
-  group('uploading (US-072)', () {
+  group('uploadingEvidence (US-072)', () {
     test(
       'counts the evidence being uploaded as uploading and pending',
       () async {
@@ -370,13 +370,15 @@ void main() {
         await store.save('evidence-1', content);
         await store.save('evidence-2', content);
 
-        store.uploading = Directory('${evidenceDirectory.path}/evidence-1');
+        store.uploadingEvidence = Directory(
+          '${evidenceDirectory.path}/evidence-1',
+        );
 
         expect((await store.statusCounts())[EvidenceStatus.uploading], 1);
         expect((await store.statusCounts())[EvidenceStatus.pending], 1);
         expect(await store.pendingCount(), 2);
 
-        store.uploading = null;
+        store.uploadingEvidence = null;
 
         expect((await store.statusCounts())[EvidenceStatus.pending], 2);
       },

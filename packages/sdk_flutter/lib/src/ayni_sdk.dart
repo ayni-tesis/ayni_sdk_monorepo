@@ -1969,36 +1969,42 @@ class AyniSdk {
       // An upload that cannot even start uses up no attempt.
       if (deadline.optionalRequestBudget <= Duration.zero) return;
       final startedAt = _now();
-      final EvidenceUploadOutcome outcome;
-      final EvidenceEvent event;
+      final ({EvidenceEvent event, bool stopQueue}) ending;
       // `Enviando` until the upload ends and its outcome is recorded.
-      _evidence.uploading = evidence;
+      _evidence.uploadingEvidence = evidence;
       try {
         report(EvidenceEvent.evidenceUploading);
         final result = await upload(evidence);
         // clearPendingEvidence() deleted it: there is nothing left to report.
         if (cleared()) return;
-        outcome = result.outcome;
-        event = switch (outcome) {
-          EvidenceUploadOutcome.received => await _removeReceivedEvidence(
-            evidence,
-            result.receivedAt ?? _now(),
+        ending = switch (result.outcome) {
+          EvidenceUploadOutcome.received => (
+            event: await _removeReceivedEvidence(
+              evidence,
+              result.receivedAt ?? _now(),
+            ),
+            stopQueue: false,
           ),
-          EvidenceUploadOutcome.rejected || EvidenceUploadOutcome.failed =>
-            await _recordFailedUpload(evidence, startedAt),
+          // Only this evidence: the next one still goes.
+          EvidenceUploadOutcome.rejected => (
+            event: await _recordFailedUpload(evidence, startedAt),
+            stopQueue: false,
+          ),
+          EvidenceUploadOutcome.failed => (
+            event: await _recordFailedUpload(evidence, startedAt),
+            stopQueue: true,
+          ),
           // Not a failure of this evidence: it uses up no attempt.
-          EvidenceUploadOutcome.credentialRevoked =>
-            EvidenceEvent.evidenceCredentialRevoked,
+          EvidenceUploadOutcome.credentialRevoked => (
+            event: EvidenceEvent.evidenceCredentialRevoked,
+            stopQueue: true,
+          ),
         };
       } finally {
-        _evidence.uploading = null;
+        _evidence.uploadingEvidence = null;
       }
-      report(event);
-      // A rejection concerns only this evidence: the next one still goes.
-      if (outcome == EvidenceUploadOutcome.failed ||
-          outcome == EvidenceUploadOutcome.credentialRevoked) {
-        return;
-      }
+      report(ending.event);
+      if (ending.stopQueue) return;
     }
   }
 

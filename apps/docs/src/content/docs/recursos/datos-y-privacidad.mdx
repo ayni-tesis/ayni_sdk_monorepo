@@ -476,10 +476,12 @@ El SDK solo elimina el directorio de esa evidencia dentro de `evidence/`, y
 solo si su nombre es un ID de evidencia: no toca workflows, modelos
 instalados, trazas ni otros archivos de `storageDirectory`, y no sigue enlaces.
 Primero lo renombra a `evidence/<evidenceId>.tmp/`, que nunca cuenta como
-pendiente, y después lo borra. Si no puede eliminarlo, por ejemplo porque un
-archivo está bloqueado, la evidencia conserva `received.json`: no vuelve a la
-cola ni se sube otra vez, y `evidenceStatusCounts()` la cuenta como `Enviada`
-hasta que un `sync()` posterior la elimina. Antes de subir evidencia, cada
+pendiente, y después lo borra. Si no puede renombrarlo, por ejemplo porque un
+archivo está bloqueado, la evidencia conserva el `received.json` que acaba de
+escribir: no vuelve a la cola ni se sube otra vez, y `evidenceStatusCounts()` la cuenta como `Enviada`
+hasta que un `sync()` posterior la elimina. Si lo renombra pero no puede
+borrarlo, queda `evidence/<evidenceId>.tmp/`, que ya no cuenta en ningún estado
+y que un `sync()` posterior borra. Antes de subir evidencia, cada
 `sync()` elimina también la evidencia confirmada que quedó porque la app se
 cerró entre la confirmación y el borrado, y los directorios
 `evidence/<evidenceId>.tmp/` de una evidencia que quedó a medio guardar o a

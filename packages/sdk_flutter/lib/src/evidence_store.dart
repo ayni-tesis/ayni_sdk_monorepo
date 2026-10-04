@@ -142,7 +142,7 @@ class EvidenceStore {
 
   /// The evidence `AyniSdk.sync` is uploading now, which [statusCounts]
   /// counts as [EvidenceStatus.uploading] until the upload ends (US-072).
-  Directory? uploading;
+  Directory? uploadingEvidence;
 
   /// Prepares the evidence [evidenceId] with [prepare] and adds what it
   /// returns to the queue. Both run after the saves already requested, one at
@@ -233,7 +233,7 @@ class EvidenceStore {
     if (recorded.failed || recorded.count >= _maxUploadAttempts) {
       return EvidenceStatus.failed;
     }
-    final current = uploading;
+    final current = uploadingEvidence;
     if (current != null && _evidenceId(current) == _evidenceId(evidence)) {
       return EvidenceStatus.uploading;
     }
