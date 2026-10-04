@@ -4015,25 +4015,46 @@ describe("ApplicationDetailPanel", () => {
       expect(client.post).not.toHaveBeenCalled();
     });
 
-    it("keeps the canvas unchanged and shows why when the server refuses the capture", async () => {
-      await openWorkflow(true);
-      client.post.mockRejectedValueOnce({
-        isAxiosError: true,
-        response: {
-          status: 409,
-          data: { message: COLLECTION_DISABLED, code: "collectionDisabled" },
-        },
-      });
+    it.each([
+      ["from the bar", false],
+      ["after the detection result", true],
+    ])(
+      "keeps the canvas unchanged, says why and disables the capture when collection was disabled meanwhile (%s)",
+      async (_case, afterResult) => {
+        await openWorkflow(true);
+        client.post.mockRejectedValueOnce({
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: { message: COLLECTION_DISABLED, code: "collectionDisabled" },
+          },
+        });
 
-      const panel = await openAddNode();
-      const capture = within(panel).getByRole("button", { name: "Capturar para dataset" });
-      await waitFor(() => expect(capture.getAttribute("aria-disabled")).toBe("false"));
-      fireEvent.click(capture);
+        if (afterResult)
+          fireEvent.click(
+            within(screen.getByTestId("workflow-node-detector-node")).getByRole("button", {
+              name: "Agregar nodo después de Resultado",
+            }),
+          );
+        const panel = afterResult
+          ? screen.getByRole("complementary", { name: "Agregar nodo" })
+          : await openAddNode();
+        const capture = await within(panel).findByRole("button", { name: "Capturar para dataset" });
+        await waitFor(() => expect(capture.getAttribute("aria-disabled")).toBe("false"));
+        fireEvent.click(capture);
 
-      await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(COLLECTION_DISABLED));
-      expect(toastMock.success).not.toHaveBeenCalled();
-      expect(screen.queryByTestId("workflow-node-capture-node")).toBeNull();
-    });
+        await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(COLLECTION_DISABLED));
+        expect(toastMock.success).not.toHaveBeenCalled();
+        expect(screen.queryByTestId("workflow-node-capture-node")).toBeNull();
+        await waitFor(() =>
+          expect(
+            within(screen.getByRole("complementary", { name: "Agregar nodo" }))
+              .getByRole("button", { name: "Capturar para dataset" })
+              .getAttribute("aria-disabled"),
+          ).toBe("true"),
+        );
+      },
+    );
   });
 
   describe("US-037: Archivar un workflow", () => {

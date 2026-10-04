@@ -1,3 +1,4 @@
+import { COLLECTION_DISABLED_MESSAGE } from "@ayni/api/collection-policy";
 import { workflowOutputPortType } from "@ayni/api/workflow-graph";
 import type {
   WorkflowCanvasDraft,
@@ -72,8 +73,6 @@ const MODEL_DESCRIPTIONS = {
 export const CONDITION_SOURCE_MISSING_MESSAGE =
   "Agrega primero al lienzo una versión contratada de un modelo de clasificación.";
 const OUTPUT_SOURCE_MISSING_MESSAGE = "Agrega primero al lienzo un modelo o una condición.";
-export const COLLECTION_DISABLED_MESSAGE =
-  "Habilita la recolección de evidencia en la configuración de la aplicación.";
 
 /** The classification models on the canvas, which a condition can read. */
 export function workflowConditionSources(draft: WorkflowCanvasDraft): ModelNode[] {

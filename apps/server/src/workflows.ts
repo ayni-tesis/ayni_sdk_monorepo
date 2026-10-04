@@ -1,3 +1,4 @@
+import { COLLECTION_DISABLED_MESSAGE } from "@ayni/api/collection-policy";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -65,8 +66,6 @@ const CONDITION_INCOMPATIBLE_MESSAGE =
 const OUTPUT_INCOMPATIBLE_MESSAGE = "El resultado seleccionado no es compatible con la salida.";
 const DRAFT_CONFLICT_MESSAGE = "Otra persona modificó este borrador. Recarga para ver los cambios.";
 const DRAFT_REVISION_REQUIRED_MESSAGE = "Recarga el borrador e inténtalo nuevamente.";
-const COLLECTION_DISABLED_MESSAGE =
-  "Habilita la recolección de evidencia en la configuración de la aplicación.";
 
 const workflowNameSchema = z.object({
   name: z.string().trim().min(1),

@@ -704,8 +704,17 @@ export function WorkflowDetailView({
       toast.success(messages.success);
     } catch (addError) {
       if (staleDraftChange(addError)) return;
+      // Collection was disabled since the policy loaded: say why, and disable the capture.
+      const collectionDisabled =
+        axios.isAxiosError<{ code?: string }>(addError) &&
+        addError.response?.data?.code === "collectionDisabled";
+      if (collectionDisabled) setCollectionEnabled(false);
       // US-128 names a single failure message for a node added after a port.
-      toast.error(connected ? messages.failure : errorMessage(addError, messages.failure));
+      toast.error(
+        connected && !collectionDisabled
+          ? messages.failure
+          : errorMessage(addError, messages.failure),
+      );
       void loadDetail(application.id, workflowId);
     } finally {
       addingNodeRef.current = false;

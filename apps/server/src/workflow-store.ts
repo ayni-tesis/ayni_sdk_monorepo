@@ -1,3 +1,4 @@
+import { DEFAULT_COLLECTION_POLICY } from "@ayni/api/collection-policy";
 import {
   areWorkflowPortsCompatible,
   findWorkflowCycle,
@@ -5,7 +6,6 @@ import {
   isOutputSourceCompatible,
   withWorkflowSource,
   workflowNodesToDelete,
-  workflowOutputPortType,
   workflowPortCompatibility,
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
@@ -645,15 +645,17 @@ export async function addDatasetCaptureNode(
     database,
     input,
     async (draft, tx, applicationId) => {
-      // The application row is locked, as when its policy is saved, so the policy
-      // read here holds until the draft is saved.
+      // Read in this transaction, not with getCollectionPolicy, which opens its
+      // own: the application row locked here is also locked while its policy is
+      // saved, so the policy read holds until the draft is saved.
       const policies = await (tx as unknown as CollectionPolicyLookupExecutor)
         .select({ enabled: applicationCollectionPolicy.enabled })
         .from(applicationCollectionPolicy)
         .where(eq(applicationCollectionPolicy.applicationId, applicationId))
         .limit(1)
         .for("update");
-      if (!policies[0]?.enabled) return { reason: "collectionDisabled" as const };
+      if (!(policies[0]?.enabled ?? DEFAULT_COLLECTION_POLICY.enabled))
+        return { reason: "collectionDisabled" as const };
 
       const node: DatasetCaptureNode = {
         id: crypto.randomUUID(),
@@ -661,22 +663,19 @@ export async function addDatasetCaptureNode(
         inputs: { imagen: "image", resultado: "inferenceResult" },
       };
       if (!source) return { draft: appendWorkflowNode(draft, node, position) };
-      const sourceType = workflowOutputPortType(
-        draft.nodes.find((item) => item.id === source.nodeId),
-        source.port,
-      );
-      if (sourceType !== "classification" && sourceType !== "detection")
+      const result: WorkflowConnection = {
+        sourceNodeId: source.nodeId,
+        sourcePort: source.port,
+        targetNodeId: node.id,
+        targetPort: "resultado",
+      };
+      if (!areWorkflowPortsCompatible(appendWorkflowNode(draft, node), result))
         return { reason: "incompatibleSource" as const };
       const modelImage = draft.connections?.find(
         (edge) => edge.targetNodeId === source.nodeId && edge.targetPort === "image",
       );
       const added: WorkflowConnection[] = [
-        {
-          sourceNodeId: source.nodeId,
-          sourcePort: source.port,
-          targetNodeId: node.id,
-          targetPort: "resultado",
-        },
+        result,
         ...(modelImage
           ? [
               {
