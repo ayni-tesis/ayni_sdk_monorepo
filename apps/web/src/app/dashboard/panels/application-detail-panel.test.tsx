@@ -4076,7 +4076,10 @@ describe("ApplicationDetailPanel", () => {
         'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
     };
 
-    async function validateCaptureWorkflow(validation: unknown) {
+    async function validateCaptureWorkflow(
+      validation: unknown,
+      nodes: unknown[] = [imageNode, captureNode],
+    ) {
       client.get.mockImplementation(async (url: string) => {
         if (url === validationUrl) return { data: validation };
         if (url.endsWith("/workflows/workflow-1"))
@@ -4090,7 +4093,7 @@ describe("ApplicationDetailPanel", () => {
                 createdAt: "2026-09-21T15:00:00.000Z",
                 updatedAt: "2026-09-21T16:00:00.000Z",
               },
-              draft: { nodes: [imageNode, captureNode], connections: [] },
+              draft: { nodes, connections: [] },
               versions: [],
             },
           };
@@ -4174,6 +4177,28 @@ describe("ApplicationDetailPanel", () => {
       expect(rowCells(panel)).toEqual([["Workflow", "—", unpublishableCapture.message]]);
       expect(client.post).not.toHaveBeenCalled();
       expect(client.patch).not.toHaveBeenCalled();
+    });
+
+    it("does not confirm the captures while one of several still misses a port", async () => {
+      const panel = await validateCaptureWorkflow(
+        {
+          publishable: false,
+          errors: [
+            {
+              code: "requiredInput",
+              nodeId: "capture-node-2",
+              nodeName: "Capturar evidencia",
+              port: "imagen",
+              message: 'El nodo "Capturar evidencia" necesita una imagen.',
+            },
+            unpublishableCapture,
+          ],
+        },
+        [imageNode, captureNode, { ...captureNode, id: "capture-node-2" }],
+      );
+
+      expect(rowCells(panel)).toHaveLength(2);
+      expect(screen.queryByText("El nodo de captura está listo.")).toBeNull();
     });
   });
 
