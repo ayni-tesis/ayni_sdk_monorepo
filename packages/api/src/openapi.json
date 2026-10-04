@@ -673,7 +673,7 @@
           },
           "uploadUrl": {
             "type": "string",
-            "description": "URL firmada para subir la imagen con `PUT` y `Content-Type: image/jpeg`, sin la credencial."
+            "description": "URL firmada para subir la imagen con `PUT`, sin la credencial; solo acepta exactamente `image.byteSize` bytes."
           },
           "uploadUrlExpiresAt": {
             "type": "string",

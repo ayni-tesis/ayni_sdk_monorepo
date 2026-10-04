@@ -254,12 +254,15 @@ export async function getUploadUrl(
   options?: {
     expiresIn?: number; // seconds, default 3600 (1 hour)
     contentType?: string;
+    /** Signed too, so the upload must have exactly this many bytes. */
+    contentLength?: number;
   },
 ): Promise<string> {
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
     ContentType: options?.contentType,
+    ContentLength: options?.contentLength,
   });
 
   return getSignedUrl(r2Client, command, {

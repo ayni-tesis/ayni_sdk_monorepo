@@ -56,7 +56,8 @@ export type SdkEvidenceRepository = {
 
 /** Where evidence images live: a staging key the SDK uploads to and a final one. */
 export type EvidenceStorage = {
-  createUploadUrl(key: string, expiresIn: number): Promise<string>;
+  /** A signed `PUT` to `key` that only accepts exactly `byteSize` bytes. */
+  createUploadUrl(key: string, expiresIn: number, byteSize: number): Promise<string>;
   /** The size of the object at `key`, or `null` when there is none. */
   getSize(key: string): Promise<number | null>;
   read(key: string): Promise<Uint8Array>;
@@ -187,6 +188,7 @@ export function createSdkEvidenceService({
       const uploadUrl = await storage.createUploadUrl(
         evidenceStagingKey(applicationId, evidence.evidenceId),
         EVIDENCE_UPLOAD_URL_TTL_SECONDS,
+        evidence.image.byteSize,
       );
       return {
         ok: true,

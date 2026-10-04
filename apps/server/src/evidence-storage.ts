@@ -9,13 +9,17 @@ import {
 import type { EvidenceStorage } from "./sdk-evidence-store";
 
 /**
- * Evidence images in R2 (US-070). The SDK uploads each one with a signed `PUT`
- * whose `Content-Type` must be `image/jpeg`, so it never sends the image
- * through a server function, whose request body is limited.
+ * Evidence images in R2 (US-070). The SDK uploads each one with a signed `PUT`,
+ * so it never sends the image through a server function, whose request body
+ * is limited. The URL signs the declared size, so the upload cannot be larger.
  */
 export const r2EvidenceStorage: EvidenceStorage = {
-  createUploadUrl: (key, expiresIn) =>
-    getUploadUrl(key, { expiresIn, contentType: EVIDENCE_IMAGE_MEDIA_TYPE }),
+  createUploadUrl: (key, expiresIn, byteSize) =>
+    getUploadUrl(key, {
+      expiresIn,
+      contentType: EVIDENCE_IMAGE_MEDIA_TYPE,
+      contentLength: byteSize,
+    }),
   async getSize(key) {
     return (await getFileMetadata(key))?.contentLength ?? null;
   },

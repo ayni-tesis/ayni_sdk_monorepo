@@ -109,8 +109,8 @@ function memory({
     },
   };
   const storage: EvidenceStorage = {
-    createUploadUrl: async (key, expiresIn) => {
-      const url = `https://storage.example/${key}?expires=${expiresIn}`;
+    createUploadUrl: async (key, expiresIn, byteSize) => {
+      const url = `https://storage.example/${key}?expires=${expiresIn}&bytes=${byteSize}`;
       uploadUrls.push(url);
       return url;
     },
@@ -147,7 +147,7 @@ describe("starting an evidence upload (US-070)", () => {
     expect(result).toEqual({
       ok: true,
       status: "uploadRequired",
-      uploadUrl: `https://storage.example/${stagingKey}?expires=900`,
+      uploadUrl: `https://storage.example/${stagingKey}?expires=900&bytes=${image.length}`,
       uploadUrlExpiresAt: "2026-10-03T12:16:00.000Z",
     });
     expect(rows.get(`app-1/${EVIDENCE_ID}`)).toMatchObject({
