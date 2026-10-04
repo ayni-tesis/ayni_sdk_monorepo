@@ -299,6 +299,23 @@ describe("a dataset capture behind a condition", () => {
     ).toBe("compatible");
   });
 
+  it("keeps a condition a capture hangs from on the model the capture takes", () => {
+    const gated: WorkflowPortDraft = {
+      ...draft,
+      connections: [
+        ...(draft.connections ?? []),
+        connect("condition", "true", "capture", "condicion"),
+      ],
+    };
+    expect(
+      workflowPortCompatibility(gated, connect("other", "result", "condition", "source")),
+    ).toBe("incompatible");
+    // A condition no capture hangs from may still take another source.
+    expect(
+      workflowPortCompatibility(draft, connect("other", "result", "condition", "source")),
+    ).toBe("compatible");
+  });
+
   it("tells whether the condition of a capture evaluates the result it captures", () => {
     expect(isCaptureConditionCompatible(draft, "capture")).toBe(true);
     expect(

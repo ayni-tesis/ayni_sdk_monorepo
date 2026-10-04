@@ -103,6 +103,12 @@ describe("a condition a capture hangs from (US-074)", () => {
     expect(within(card("condition")).getByText("Capturar solo cuando perro ≥ 0,8")).toBeTruthy();
     expect(within(portRow("condition", "true")).getByText("Capturar evidencia")).toBeTruthy();
     expect(within(portRow("condition", "false")).getByText("No capturar")).toBeTruthy();
+    // Screen readers hear it too, in the name of the condition's select button.
+    expect(
+      screen.getByRole("button", {
+        name: "Condición perro ≥ 0,8 Capturar solo cuando perro ≥ 0,8",
+      }),
+    ).toBeTruthy();
   });
 
   it("states the rule of the false branch when the capture hangs from it", () => {

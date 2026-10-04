@@ -500,6 +500,7 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
   const { label: typeLabel, Icon: TypeIcon } = WORKFLOW_NODE_TYPES[node.type];
   const typeId = useId();
   const summaryId = useId();
+  const captureWhenId = useId();
   // A condition some capture hangs from says which branch captures (US-074).
   const captureBranches =
     node.type === "condition" ? workflowCaptureBranches(data.draft, node.id) : [];
@@ -522,7 +523,7 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
           {workflowConditionRule(node)}
         </p>
         {captureBranch && (
-          <p className="text-muted-foreground text-xs">
+          <p id={captureWhenId} className="text-muted-foreground text-xs">
             {CAPTURE_ONLY_WHEN_LABEL}{" "}
             {workflowConditionRule(conditionOnBranch(node, captureBranch))}
           </p>
@@ -551,7 +552,9 @@ function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowFlowNode>) {
         <button
           type="button"
           className={`nodrag flex min-w-0 flex-1 items-center gap-2 text-left font-medium text-sm ${selected ? "text-cyan-700 dark:text-cyan-400" : ""}`}
-          aria-labelledby={summary ? `${typeId} ${summaryId}` : typeId}
+          aria-labelledby={
+            summary ? `${typeId} ${summaryId}${captureBranch ? ` ${captureWhenId}` : ""}` : typeId
+          }
           aria-pressed={selected}
           disabled={!canSelect}
           title={canSelect ? "Ctrl o Cmd + clic agrega o quita el nodo de la selección" : undefined}

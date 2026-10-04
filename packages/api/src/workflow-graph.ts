@@ -267,7 +267,24 @@ export function workflowPortCompatibility(
         ? connection.sourcePort === "result" &&
           isConditionSourceCompatible(source, sourceTarget.label)
         : isOutputSourceCompatible(source, connection.sourcePort, sourceTarget.resultType);
-    return accepted ? "compatible" : "incompatible";
+    if (!accepted) return "incompatible";
+    if (sourceTarget.type !== "condition") return "compatible";
+    // The captures that hang from the condition must keep capturing the
+    // result it evaluates (US-074).
+    const moved: WorkflowPortDraft = {
+      ...draft,
+      nodes: draft.nodes.map((node) =>
+        node.id === sourceTarget.id ? withWorkflowSource(sourceTarget, connection) : node,
+      ),
+    };
+    return (draft.connections ?? []).every(
+      (edge) =>
+        edge.sourceNodeId !== sourceTarget.id ||
+        edge.targetPort !== "condicion" ||
+        isCaptureConditionCompatible(moved, edge.targetNodeId),
+    )
+      ? "compatible"
+      : "incompatible";
   }
   if (!areWorkflowPortsCompatible(draft, connection)) return "incompatible";
   const connections = draft.connections ?? [];
