@@ -1,6 +1,11 @@
 import { createOpenApiDocument } from "@ayni/api";
 import { sdkCollectionPolicySchema } from "@ayni/api/sdk-collection-policy";
 import {
+  sdkEvidenceReceiptSchema,
+  sdkEvidenceSchema,
+  sdkEvidenceStartSchema,
+} from "@ayni/api/sdk-evidence";
+import {
   SdkModelVersionManifestSchema,
   SdkSyncManifestSchema,
   SdkWorkflowVersionDefinitionSchema,
@@ -16,6 +21,11 @@ import {
   SDK_CREDENTIAL_REVOKED_MESSAGE,
   type VerifySdkCredentialResult,
 } from "./sdk-credential-store";
+import {
+  type CompleteSdkEvidenceResult,
+  createSdkEvidenceApp,
+  type StartSdkEvidenceResult,
+} from "./sdk-evidence";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import type { SdkSyncManifest } from "./sdk-sync-manifest-store";
@@ -234,4 +244,259 @@ it("documents the same manifest types the stores return", () => {
   expectTypeOf<z.infer<typeof SdkModelVersionManifestSchema>>().toEqualTypeOf<{
     manifest: SdkModelVersionManifest;
   }>();
+});
+
+describe("the evidence endpoints (US-070) match the OpenAPI document", () => {
+  const evidenceId = "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f";
+  const evidenceBody = {
+    evidenceSchemaVersion: 1,
+    evidenceId,
+    capturedAt: "2026-10-03T12:00:00.000Z",
+    workflowId: "workflow-1",
+    workflowVersionId: "workflow-version-1",
+    workflowVersion: "1.0.0",
+    captureNodeId: "captura",
+    model: { modelVersionId: "model-version-1", version: "2.0.0", sha256: "a".repeat(64) },
+    result: {
+      type: "classification",
+      nodeId: "modelo",
+      label: "sana",
+      confidence: 0.9,
+      confidences: { sana: 0.9 },
+    },
+    image: {
+      mediaType: "image/jpeg",
+      width: 640,
+      height: 480,
+      maxImageSize: 1024,
+      imageQuality: 80,
+      byteSize: 2048,
+      sha256: "b".repeat(64),
+    },
+  };
+  const received = { ok: true, receivedAt: "2026-10-03T12:01:00.000Z" } as const;
+
+  function evidenceApp({
+    verify = active,
+    enabled = true,
+    start = async (): Promise<StartSdkEvidenceResult> => ({
+      ok: true,
+      status: "uploadRequired",
+      uploadUrl: "https://signed.example/staging/evidence.jpg",
+      uploadUrlExpiresAt: "2026-10-03T12:16:00.000Z",
+    }),
+    complete = async (): Promise<CompleteSdkEvidenceResult> => received,
+  }: {
+    verify?: Verify;
+    enabled?: boolean;
+    start?: () => Promise<StartSdkEvidenceResult>;
+    complete?: () => Promise<CompleteSdkEvidenceResult>;
+  } = {}) {
+    return createSdkEvidenceApp({
+      credentials: { verify },
+      policies: {
+        get: async (applicationId) => ({
+          applicationId,
+          enabled,
+          consentRequired: true,
+          network: "wifi",
+          maxImageSize: 1024,
+          imageQuality: 80,
+          updatedAt: null,
+        }),
+      },
+      evidence: { start, complete },
+    });
+  }
+
+  async function request(app: Hono, url: string, body?: unknown, authorization?: string) {
+    const response = await app.request(url, {
+      method: "POST",
+      headers: {
+        ...(authorization === undefined ? { Authorization: `Bearer ${SECRET}` } : {}),
+        ...(authorization ? { Authorization: authorization } : {}),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: String(response.status), body: await response.json() };
+  }
+
+  const startUrl = "/sdk/evidence";
+  const completeUrl = `/sdk/evidence/${evidenceId}/complete`;
+  const completePath = "/sdk/evidence/{evidenceId}/complete";
+
+  it("answers each 200 with a body of the documented schema", async () => {
+    const upload = await request(evidenceApp(), startUrl, evidenceBody);
+    const again = await request(
+      evidenceApp({ start: async () => ({ ...received, status: "received" }) }),
+      startUrl,
+      evidenceBody,
+    );
+    const completed = await request(evidenceApp(), completeUrl);
+
+    expect(sdkEvidenceSchema.parse(evidenceBody)).toEqual(evidenceBody);
+    for (const { status, body } of [upload, again]) {
+      expect(status).toBe("200");
+      expect(sdkEvidenceStartSchema.parse(body)).toEqual(body);
+    }
+    expect(completed.status).toBe("200");
+    expect(sdkEvidenceReceiptSchema.parse(completed.body)).toEqual(completed.body);
+  });
+
+  const cases: [
+    string,
+    string,
+    string,
+    string,
+    () => Promise<{ status: string; body: unknown }>,
+  ][] = [
+    [
+      startUrl,
+      startUrl,
+      "401",
+      "invalidCredential",
+      () => request(evidenceApp(), startUrl, evidenceBody, ""),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "401",
+      "credentialRevoked",
+      () => request(evidenceApp({ verify: revoked }), startUrl, evidenceBody),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "403",
+      "collectionDisabled",
+      () => request(evidenceApp({ enabled: false }), startUrl, evidenceBody),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "400",
+      "invalidEvidence",
+      () => request(evidenceApp(), startUrl, { ...evidenceBody, extra: true }),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "413",
+      "evidenceTooLarge",
+      () =>
+        request(evidenceApp(), startUrl, {
+          ...evidenceBody,
+          image: { ...evidenceBody.image, byteSize: 64 * 1024 * 1024 },
+        }),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "404",
+      "evidenceSourceNotFound",
+      () =>
+        request(
+          evidenceApp({ start: async () => ({ ok: false, reason: "sourceNotFound" }) }),
+          startUrl,
+          evidenceBody,
+        ),
+    ],
+    [
+      startUrl,
+      startUrl,
+      "409",
+      "evidenceConflict",
+      () =>
+        request(
+          evidenceApp({ start: async () => ({ ok: false, reason: "conflict" }) }),
+          startUrl,
+          evidenceBody,
+        ),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "401",
+      "invalidCredential",
+      () => request(evidenceApp({ verify: unknown }), completeUrl),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "401",
+      "credentialRevoked",
+      () => request(evidenceApp({ verify: revoked }), completeUrl),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "403",
+      "collectionDisabled",
+      () => request(evidenceApp({ enabled: false }), completeUrl),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "404",
+      "evidenceNotFound",
+      () =>
+        request(
+          evidenceApp({ complete: async () => ({ ok: false, reason: "notFound" }) }),
+          completeUrl,
+        ),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "409",
+      "evidenceImageMissing",
+      () =>
+        request(
+          evidenceApp({ complete: async () => ({ ok: false, reason: "imageMissing" }) }),
+          completeUrl,
+        ),
+    ],
+    [
+      completePath,
+      completeUrl,
+      "400",
+      "invalidEvidenceImage",
+      () =>
+        request(
+          evidenceApp({ complete: async () => ({ ok: false, reason: "invalidImage" }) }),
+          completeUrl,
+        ),
+    ],
+  ];
+
+  it.each(cases)(
+    "%s answers %s %s %s with its documented example",
+    async (path, _, status, code, send) => {
+      const response = await send();
+
+      expect(response.status).toBe(status);
+      expect(response.body).toEqual(documentedErrors(path, "post", status)[code]?.value);
+    },
+  );
+
+  it("documents exactly the errors the handlers answer", () => {
+    for (const path of [startUrl, completePath]) {
+      const operations = document.paths?.[path] as
+        | { post: { responses: Record<string, unknown> } }
+        | undefined;
+      const documented = Object.entries(operations?.post.responses ?? {})
+        .filter(([status]) => status !== "200")
+        .flatMap(([status]) =>
+          Object.keys(documentedErrors(path, "post", status)).map((code) => `${status} ${code}`),
+        )
+        .sort();
+      const tested = cases
+        .filter(([casePath]) => casePath === path)
+        .map(([, , status, code]) => `${status} ${code}`)
+        .sort();
+
+      expect(documented).toEqual(tested);
+    }
+  });
 });

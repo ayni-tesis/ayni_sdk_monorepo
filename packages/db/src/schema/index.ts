@@ -9,6 +9,7 @@ export * from "./privacy-rights-request";
 export * from "./privacy-treatment-map";
 export * from "./sdk-consent-receipt";
 export * from "./sdk-credential";
+export * from "./sdk-evidence";
 export * from "./sdk-trace";
 export * from "./task";
 export * from "./telemetry-policy";
