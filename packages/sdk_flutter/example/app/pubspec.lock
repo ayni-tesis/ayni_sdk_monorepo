@@ -20,11 +20,10 @@ packages:
   ayni_sdk:
     dependency: "direct main"
     description:
-      name: ayni_sdk
-      sha256: ede03fcd3758ad8c7ce788ee574c918be91543e08f1280ee5da1c8666e21dbe8
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0"
+      path: "../.."
+      relative: true
+    source: path
+    version: "0.2.0"
   boolean_selector:
     dependency: transitive
     description:

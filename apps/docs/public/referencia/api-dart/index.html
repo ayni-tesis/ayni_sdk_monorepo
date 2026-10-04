@@ -24,7 +24,7 @@
 <header id="title">
   <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
   <ol class="breadcrumbs gt-separated dark hidden-xs">
-    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.1.0</li>
+    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.2.0</li>
   </ol>
   <div class="self-name">ayni_sdk</div>
   <form class="search navbar-right" role="search">
@@ -47,10 +47,11 @@
 <p>Offline-first SDK primitives for Ayni Flutter integrations.</p>
 <p>El paquete <code>ayni_sdk</code> permite integrar modelos de IA en aplicaciones Flutter con arquitectura offline-first. Los workflows versionados se sincronizan desde la plataforma y se ejecutan localmente en el dispositivo sin conexión obligatoria a internet ni dependencias en tiempo de compilación con el dashboard.</p>
 <h2 id="instalacin">Instalación</h2>
-<p>Android 8.0 (API 26) o posterior es obligatorio; configura <code>minSdkVersion 26</code> en la app Flutter.</p>
+<p>Usa Flutter 3.32.0 o posterior. Android 8.0 (API 26) o posterior es obligatorio;
+configura <code>minSdkVersion 26</code> en la app Flutter.</p>
 <p>Agrega <code>ayni_sdk</code> a las dependencias de tu proyecto Flutter en <code>pubspec.yaml</code>:</p>
 <pre class="language-yaml"><code class="language-yaml">dependencies:
-  ayni_sdk: ^0.1.0
+  ayni_sdk: ^0.2.0
 </code></pre>
 <p>Resuelve las dependencias desde la carpeta de tu aplicación:</p>
 <pre class="language-sh"><code class="language-sh">flutter pub get
@@ -61,7 +62,8 @@ de ejemplo está en <code>example/app</code>: solicita una credencial de prueba,
 el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md">README del ejemplo</a>
-y fija la versión resuelta en su <code>pubspec.lock</code>.</p>
+y usa una dependencia local <code>path: ../..</code> para verificar este checkout antes
+de publicar. Una aplicación consumidora debe resolver <code>^0.2.0</code> desde pub.dev.</p>
 <p>Consulta las notas de cada versión en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md">changelog del repositorio</a>.</p>
 <h2 id="api-pblica">API Pública</h2>
@@ -195,7 +197,8 @@ servidor acepta cuerpos de hasta 2 MiB. <code>sync()</code> procesa la outbox de
 un presupuesto opcional que reserva tiempo para actualizar workflows y modelos;
 si una traza individual se rechaza, conserva esa entrada y continúa con las
 siguientes mientras quede presupuesto.</p>
-<p>La outbox contiene trazas de validación autorizadas por la app; no son datos de
+<p>La outbox contiene trazas de validación autorizadas por la app, no resultados
+ni capturas de la aplicación; no son datos de
 la finalidad <code>sdkImprovement</code>. Al retirar el permiso o consentimiento de
 validación, desactiva primero la captura, espera a que terminen los <code>run()</code> en
 curso y llama a <code>await sdk.clearPendingTraces()</code>. El SDK pausa los envíos y
@@ -275,7 +278,7 @@ sdk.cancelExecution(executionId);
 <li><code>bin/package.dart</code>: Herramienta de empaquetado y verificación de reglas de distribución.</li>
 </ul>
 <h2 id="plataformas-compatibles">Plataformas compatibles</h2>
-<p>Plataformas compatibles con ayni_sdk 0.1.0: Android e iOS.</p>
+<p>Plataformas compatibles con ayni_sdk 0.2.0: Android e iOS.</p>
 <ul>
 <li>Android 8.0 (API 26) o posterior.</li>
 <li>iOS 11.0 o posterior.</li>
@@ -362,7 +365,7 @@ sdk.cancelExecution(executionId);
 <footer>
   <span class="no-break">
     ayni_sdk
-      0.1.0
+      0.2.0
   </span>
   
 </footer>

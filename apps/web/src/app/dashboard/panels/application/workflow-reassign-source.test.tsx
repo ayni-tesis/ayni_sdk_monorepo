@@ -266,7 +266,7 @@ describe("US-131: reassigning the Origen of a condition or an output", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.",
     );
-    expect(edgePath("model-a", "result", "condition")).not.toBeNull();
+    await waitFor(() => expect(edgePath("model-a", "result", "condition")).not.toBeNull());
     expect(edgePath("model-b", "result", "condition")).toBeNull();
   });
 
