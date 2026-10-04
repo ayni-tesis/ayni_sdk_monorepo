@@ -1,3 +1,4 @@
+import { COLLECTION_DISABLED_MESSAGE } from "@ayni/api/collection-policy";
 import { workflowOutputPortType } from "@ayni/api/workflow-graph";
 import type {
   WorkflowCanvasDraft,
@@ -21,7 +22,7 @@ export type WorkflowModelOption = {
   versions: { id: string; version: string; contract: WorkflowModelVersionContract | null }[];
 };
 
-export type WorkflowNodeCatalogCategory = "input" | "models" | "logic" | "output";
+export type WorkflowNodeCatalogCategory = "input" | "models" | "logic" | "output" | "dataset";
 
 /** One type the Agregar nodo panel offers. */
 export type WorkflowNodeCatalogItem = {
@@ -51,8 +52,9 @@ export type WorkflowNodeOrigin = { sourceNodeId: string; sourcePort: string };
 /** A node to add, as the server creates it; the canvas decides its position. */
 export type WorkflowNewNode =
   | WorkflowPaletteNode
-  // A model added after the image output is saved together with its connection.
-  | (Extract<WorkflowPaletteNode, { type: "model.tflite" }> & WorkflowNodeOrigin)
+  // A model or a capture added after an output is saved together with its connection.
+  | (Extract<WorkflowPaletteNode, { type: "model.tflite" | "dataset.capture" }> &
+      WorkflowNodeOrigin)
   | Pick<ConditionNode, "type" | "sourceNodeId" | "label" | "operator" | "threshold">
   | Pick<OutputNode, "type" | "name" | "sourceNodeId" | "sourcePort" | "resultType" | "sources">;
 
@@ -108,15 +110,17 @@ export function workflowOutputSources(draft: WorkflowCanvasDraft): WorkflowOutpu
 /**
  * The types Agregar nodo offers. After an output port (`origin`), only the types
  * that port can feed, with the DAG's rules: models after the image, conditions
- * and outputs after a classification result, and outputs after a detection
- * result or a condition branch.
+ * and outputs after a classification result, outputs after a detection result
+ * or a condition branch, and the dataset capture after a model's result.
+ * The capture is offered only if the application enabled collection (US-064).
  */
 export function workflowNodeCatalog(
   draft: WorkflowCanvasDraft,
   models: WorkflowModelOption[],
   origin?: WorkflowNodeOrigin,
+  collectionEnabled = false,
 ): WorkflowNodeCatalogItem[] {
-  const catalog = fullWorkflowNodeCatalog(draft, models);
+  const catalog = fullWorkflowNodeCatalog(draft, models, collectionEnabled);
   if (!origin) return catalog;
   const source = draft.nodes.find((node) => node.id === origin.sourceNodeId);
   const type = workflowOutputPortType(source, origin.sourcePort);
@@ -124,19 +128,23 @@ export function workflowNodeCatalog(
     type === "image"
       ? ["models"]
       : type === "classification"
-        ? ["logic", "output"]
-        : type === "detection" || type === "boolean"
-          ? ["output"]
-          : [];
-  // The port itself is the source, so nothing is missing from the canvas.
+        ? ["logic", "output", "dataset"]
+        : type === "detection"
+          ? ["output", "dataset"]
+          : type === "boolean"
+            ? ["output"]
+            : [];
+  // The port itself is the source, so nothing is missing from the canvas; only
+  // the collection policy can still keep the capture out.
   return catalog
     .filter((item) => accepted.includes(item.category))
-    .map((item) => ({ ...item, disabledReason: undefined }));
+    .map((item) => (item.category === "dataset" ? item : { ...item, disabledReason: undefined }));
 }
 
 function fullWorkflowNodeCatalog(
   draft: WorkflowCanvasDraft,
   models: WorkflowModelOption[],
+  collectionEnabled: boolean,
 ): WorkflowNodeCatalogItem[] {
   return [
     {
@@ -187,6 +195,16 @@ function fullWorkflowNodeCatalog(
       disabledReason:
         workflowOutputSources(draft).length === 0 ? OUTPUT_SOURCE_MISSING_MESSAGE : undefined,
       configure: "output",
+    },
+    {
+      key: "dataset.capture",
+      category: "dataset",
+      typeName: "Capturar para dataset",
+      name: "Capturar para dataset",
+      description:
+        "Guarda la imagen y el resultado de la inferencia como evidencia para un dataset.",
+      disabledReason: collectionEnabled ? undefined : COLLECTION_DISABLED_MESSAGE,
+      node: { type: "dataset.capture" },
     },
   ];
 }

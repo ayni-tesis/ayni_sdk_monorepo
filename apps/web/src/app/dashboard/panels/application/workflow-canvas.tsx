@@ -6,6 +6,7 @@ import { workflowEdges, workflowPortCompatibility } from "@ayni/api/workflow-gra
 import {
   IconAlertTriangle,
   IconBan,
+  IconCamera,
   IconCheck,
   IconCpu,
   IconFlag,
@@ -96,6 +97,12 @@ export type WorkflowCanvasConnection = {
 };
 export type WorkflowCanvasNode =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
+  // Takes the image on imagen and an inference result on resultado (US-064).
+  | {
+      id: string;
+      type: "dataset.capture";
+      inputs: { imagen: "image"; resultado: "inferenceResult" };
+    }
   | {
       id: string;
       type: "model.tflite";
@@ -148,7 +155,8 @@ export type WorkflowCanvasNodeType = WorkflowCanvasNode["type"];
 /** A node that needs no settings, so it can be dragged from Agregar nodo onto the canvas. */
 export type WorkflowPaletteNode =
   | { type: "input.image" }
-  | { type: "model.tflite"; modelVersionId: string };
+  | { type: "model.tflite"; modelVersionId: string }
+  | { type: "dataset.capture" };
 
 export type WorkflowCanvasPositions = Record<string, WorkflowCanvasPosition>;
 
@@ -298,7 +306,9 @@ export function workflowNodeTitle(node: WorkflowCanvasNode): string {
       ? `${node.modelName} · ${node.version}`
       : node.type === "condition"
         ? `Condición: ${node.label}`
-        : `Salida: ${node.name}`;
+        : node.type === "dataset.capture"
+          ? "Capturar evidencia"
+          : `Salida: ${node.name}`;
 }
 
 // Each type has its own icon as well as its name, so it is never told apart by color alone.
@@ -310,6 +320,7 @@ const WORKFLOW_NODE_TYPES: Record<
   "model.tflite": { label: "Modelo", Icon: IconCpu },
   condition: { label: "Condición", Icon: IconGitBranch },
   output: { label: "Salida", Icon: IconFlag },
+  "dataset.capture": { label: "Capturar evidencia", Icon: IconCamera },
 };
 export const CONDITION_OPERATOR_SYMBOLS = { gte: "≥", gt: ">", lte: "≤", lt: "<" } as const;
 export const WORKFLOW_RESULT_TYPE_LABELS = {
@@ -353,6 +364,7 @@ function readPaletteNode(event: DragEvent<HTMLElement>): WorkflowPaletteNode | n
   try {
     const node = JSON.parse(event.dataTransfer.getData(PALETTE_MIME));
     if (node?.type === "input.image") return { type: "input.image" };
+    if (node?.type === "dataset.capture") return { type: "dataset.capture" };
     if (node?.type === "model.tflite" && typeof node.modelVersionId === "string")
       return { type: "model.tflite", modelVersionId: node.modelVersionId };
     return null;

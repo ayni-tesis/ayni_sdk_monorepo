@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { WorkflowConnection, WorkflowDraft, WorkflowNode } from "./workflow-store";
+import type {
+  WorkflowConnection,
+  WorkflowDraft,
+  WorkflowDraftNode,
+  WorkflowNode,
+} from "./workflow-store";
 import { validateWorkflowDraft } from "./workflow-validation";
 
 const input: WorkflowNode = { id: "input", type: "input.image", outputs: { imagen: "image" } };
@@ -348,6 +353,47 @@ describe("validateWorkflowDraft", () => {
         message: "El workflow tiene una conexión entre nodos que ya no existen.",
       },
     ]);
+  });
+
+  // US-064: no SDK runs a capture yet, so a draft that holds one is not published.
+  it("keeps a draft with a dataset capture from being published, its typed inputs aside", () => {
+    const capture: WorkflowDraftNode = {
+      id: "capture",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+    const draft: WorkflowDraft = {
+      nodes: [input, classifier, diagnosis, capture],
+      connections: [
+        inputToClassifier,
+        {
+          sourceNodeId: "input",
+          sourcePort: "imagen",
+          targetNodeId: "capture",
+          targetPort: "imagen",
+        },
+        {
+          sourceNodeId: "classifier",
+          sourcePort: "result",
+          targetNodeId: "capture",
+          targetPort: "resultado",
+        },
+      ],
+    };
+
+    expect(validateWorkflowDraft(draft)).toEqual({
+      publishable: false,
+      errors: [
+        {
+          code: "unpublishableNode",
+          nodeId: "capture",
+          nodeName: "Capturar evidencia",
+          port: null,
+          message:
+            'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
+        },
+      ],
+    });
   });
 
   it("does not modify the draft", () => {

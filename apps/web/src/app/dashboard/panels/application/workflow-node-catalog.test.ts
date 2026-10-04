@@ -114,6 +114,38 @@ describe("workflowNodeCatalog", () => {
   });
 });
 
+describe("the dataset capture in workflowNodeCatalog (US-064)", () => {
+  const capture = (collectionEnabled: boolean) =>
+    workflowNodeCatalog(empty, [], undefined, collectionEnabled).filter(
+      (item) => item.category === "dataset",
+    );
+
+  it("offers Capturar para dataset once the application enabled collection", () => {
+    expect(capture(true)).toEqual([
+      {
+        key: "dataset.capture",
+        category: "dataset",
+        typeName: "Capturar para dataset",
+        name: "Capturar para dataset",
+        description:
+          "Guarda la imagen y el resultado de la inferencia como evidencia para un dataset.",
+        disabledReason: undefined,
+        node: { type: "dataset.capture" },
+      },
+    ]);
+  });
+
+  it("disables it with the reason while collection is not enabled", () => {
+    expect(capture(false)).toMatchObject([
+      {
+        key: "dataset.capture",
+        disabledReason:
+          "Habilita la recolección de evidencia en la configuración de la aplicación.",
+      },
+    ]);
+  });
+});
+
 describe("workflowNodeCatalog after an output port (US-128)", () => {
   const condition: WorkflowCanvasNode = {
     id: "condition",
@@ -137,29 +169,49 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
       ],
     },
   ];
-  const after = (sourceNodeId: string, sourcePort: string) =>
-    workflowNodeCatalog(draft, models, { sourceNodeId, sourcePort }).map((item) => ({
-      key: item.key,
-      disabledReason: item.disabledReason,
-    }));
+  const after = (sourceNodeId: string, sourcePort: string, collectionEnabled = true) =>
+    workflowNodeCatalog(draft, models, { sourceNodeId, sourcePort }, collectionEnabled).map(
+      (item) => ({
+        key: item.key,
+        disabledReason: item.disabledReason,
+      }),
+    );
 
   it("offers only the contracted model versions after the image", () => {
     expect(after("image", "imagen")).toEqual([{ key: "model:leaf-1", disabledReason: undefined }]);
   });
 
-  it("offers conditions and outputs after a classification result", () => {
+  it("offers conditions, outputs and the capture after a classification result", () => {
     expect(after("leaf", "result")).toEqual([
       { key: "condition", disabledReason: undefined },
       { key: "output", disabledReason: undefined },
+      { key: "dataset.capture", disabledReason: undefined },
+    ]);
+  });
+
+  it("offers outputs and the capture after a detection result", () => {
+    expect(after("pests", "result")).toEqual([
+      { key: "output", disabledReason: undefined },
+      { key: "dataset.capture", disabledReason: undefined },
     ]);
   });
 
   it.each([
-    ["a detection result", "pests", "result"],
     ["Verdadero", "condition", "true"],
     ["Falso", "condition", "false"],
   ])("offers only outputs after %s", (_port, sourceNodeId, sourcePort) => {
     expect(after(sourceNodeId, sourcePort)).toEqual([{ key: "output", disabledReason: undefined }]);
+  });
+
+  it("keeps the capture disabled after a result while collection is not enabled", () => {
+    expect(after("pests", "result", false)).toEqual([
+      { key: "output", disabledReason: undefined },
+      {
+        key: "dataset.capture",
+        disabledReason:
+          "Habilita la recolección de evidencia en la configuración de la aplicación.",
+      },
+    ]);
   });
 
   it("offers nothing after a port or node that is not on the canvas", () => {
@@ -197,6 +249,7 @@ describe("searchWorkflowNodeCatalog", () => {
 
   it("finds a type by its description", () => {
     expect(found("detecta objetos")).toEqual(["0.1.0"]);
+    expect(found("evidencia")).toEqual(["Capturar para dataset"]);
     expect(found("imagen que procesa")).toEqual(["Entrada de imagen"]);
   });
 

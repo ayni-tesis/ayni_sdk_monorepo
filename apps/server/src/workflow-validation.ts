@@ -5,7 +5,7 @@ import {
   type WorkflowEdge,
   workflowEdges,
 } from "@ayni/api/workflow-graph";
-import type { WorkflowDraft, WorkflowNode } from "./workflow-store";
+import type { WorkflowDraft, WorkflowDraftNode } from "./workflow-store";
 
 export type WorkflowValidationError = {
   code:
@@ -16,7 +16,8 @@ export type WorkflowValidationError = {
     | "missingTarget"
     | "incompatibleType"
     | "cycle"
-    | "unreachableOutput";
+    | "unreachableOutput"
+    | "unpublishableNode";
   nodeId: string | null;
   nodeName: string | null;
   port: string | null;
@@ -28,8 +29,9 @@ export type WorkflowValidationResult = {
   errors: WorkflowValidationError[];
 };
 
-function workflowNodeName(node: WorkflowNode) {
+function workflowNodeName(node: WorkflowDraftNode) {
   if (node.type === "input.image") return "Imagen de entrada";
+  if (node.type === "dataset.capture") return "Capturar evidencia";
   if (node.type === "model.tflite") return node.modelName;
   if (node.type === "condition") return `Condición: ${node.label}`;
   return node.name;
@@ -54,7 +56,8 @@ function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
 /**
  * Checks whether a workflow draft can be published: it needs an image input
  * and an output, every model image input connected, compatible types on every
- * edge, no cycles, and every output reachable from the image input. Each error
+ * edge, no cycles, every output reachable from the image input, and only nodes
+ * the SDK runs, so no dataset capture yet. Each error
  * names the node and port that cause it. The draft is never modified.
  */
 export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationResult {
@@ -64,7 +67,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
   // A null node marks a workflow-level error.
   const addError = (
     code: WorkflowValidationError["code"],
-    node: WorkflowNode | null,
+    node: WorkflowDraftNode | null,
     port: string | null,
     message: string,
   ) => {
@@ -137,6 +140,16 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
           "image",
           `El nodo "${name}" necesita una imagen de entrada.`,
         );
+      continue;
+    }
+    if (node.type === "dataset.capture") {
+      // No SDK runs a capture yet (US-064), so a draft that holds one stays a draft.
+      addError(
+        "unpublishableNode",
+        node,
+        null,
+        `El nodo "${name}" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.`,
+      );
       continue;
     }
     if (node.type === "condition") {

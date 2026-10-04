@@ -3774,7 +3774,8 @@ describe("ApplicationDetailPanel", () => {
       });
 
       const panel = await addAfter("model-node", "Resultado");
-      expect(panelItems(panel)).toEqual(["Condición", "Salida"]);
+      // The capture is listed too, disabled while collection is not enabled (US-064).
+      expect(panelItems(panel)).toEqual(["Condición", "Salida", "Capturar para dataset"]);
       fireEvent.click(within(panel).getByRole("button", { name: "Condición" }));
       const source = within(panel).getByLabelText("Resultado de origen") as HTMLSelectElement;
       expect(source.disabled).toBe(true);
@@ -3863,6 +3864,197 @@ describe("ApplicationDetailPanel", () => {
 
       expect(screen.queryByRole("button", { name: /Agregar nodo después de/ })).toBeNull();
     });
+  });
+
+  describe("US-064: Agregar un nodo de captura para dataset", () => {
+    stubWorkflowCanvasLayout();
+
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const detectorNode = {
+      id: "detector-node",
+      type: "model.tflite",
+      modelVersionId: "pests-1",
+      modelName: "Detector de plagas",
+      version: "1.0.0",
+      inputs: {
+        image: { type: "image", width: 320, height: 320, channels: 3, normalization: "none" },
+      },
+      outputs: { result: { type: "detection", labels: ["broca"], scoreThreshold: 0.5 } },
+    };
+    const captureNode = {
+      id: "capture-node",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+    const imageToDetector = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "detector-node",
+      targetPort: "image",
+    };
+    const layout = { "image-node": { x: 0, y: 0 }, "detector-node": { x: 400, y: 0 } };
+    const workflow = {
+      id: "workflow-1",
+      applicationId: "app-1",
+      name: "Detección de broca",
+      status: "draft",
+      createdAt: "2026-09-21T15:00:00.000Z",
+      updatedAt: "2026-09-21T16:00:00.000Z",
+    };
+    const COLLECTION_DISABLED =
+      "Habilita la recolección de evidencia en la configuración de la aplicación.";
+
+    async function openWorkflow(collectionEnabled: boolean) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: {
+              workflow,
+              draft: { nodes: [imageNode, detectorNode], connections: [imageToDetector], layout },
+              versions: [],
+            },
+          };
+        if (url === "/applications/app-1/collection-policy")
+          return { data: { policy: { applicationId: "app-1", enabled: collectionEnabled } } };
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: { versions: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+      await waitFor(() =>
+        expect(client.get).toHaveBeenCalledWith("/applications/app-1/collection-policy"),
+      );
+    }
+
+    async function openAddNode() {
+      fireEvent.click(screen.getByRole("button", { name: "Agregar nodo" }));
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
+      await waitFor(() => expect(within(panel).queryByText("Cargando modelos…")).toBeNull());
+      return panel;
+    }
+
+    it("adds a capture after the detection result, taking the image and the result", async () => {
+      await openWorkflow(true);
+      client.post.mockResolvedValueOnce({
+        data: {
+          draft: {
+            nodes: [imageNode, detectorNode, captureNode],
+            connections: [
+              imageToDetector,
+              {
+                sourceNodeId: "detector-node",
+                sourcePort: "result",
+                targetNodeId: "capture-node",
+                targetPort: "resultado",
+              },
+              {
+                sourceNodeId: "image-node",
+                sourcePort: "imagen",
+                targetNodeId: "capture-node",
+                targetPort: "imagen",
+              },
+            ],
+            layout: { ...layout, "capture-node": { x: 740, y: 0 } },
+          },
+          draftRevision: 1,
+        },
+      });
+
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-detector-node")).getByRole("button", {
+          name: "Agregar nodo después de Resultado",
+        }),
+      );
+      const panel = screen.getByRole("complementary", { name: "Agregar nodo" });
+      const capture = await within(panel).findByRole("button", { name: "Capturar para dataset" });
+      await waitFor(() => expect(capture.getAttribute("aria-disabled")).toBe("false"));
+      fireEvent.click(capture);
+
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        expect.objectContaining({
+          type: "dataset.capture",
+          sourceNodeId: "detector-node",
+          sourcePort: "result",
+        }),
+      );
+      const card = await screen.findByTestId("workflow-node-capture-node");
+      expect(within(card).getByText("Capturar evidencia")).toBeTruthy();
+      expect(
+        within(card).getByRole("button", { name: "Conectar imagen de Capturar evidencia" }),
+      ).toBeTruthy();
+      expect(
+        within(card).getByRole("button", { name: "Conectar resultado de Capturar evidencia" }),
+      ).toBeTruthy();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado y conectado.");
+    });
+
+    it("disables Capturar para dataset with the reason while collection is not enabled", async () => {
+      await openWorkflow(false);
+
+      const panel = await openAddNode();
+      const capture = within(panel).getByRole("button", { name: "Capturar para dataset" });
+
+      expect(capture.getAttribute("aria-disabled")).toBe("true");
+      expect(capture.getAttribute("draggable")).toBe("false");
+      expect(within(capture).getByText(COLLECTION_DISABLED)).toBeTruthy();
+      fireEvent.click(capture);
+      expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["from the bar", false],
+      ["after the detection result", true],
+    ])(
+      "keeps the canvas unchanged, says why and disables the capture when collection was disabled meanwhile (%s)",
+      async (_case, afterResult) => {
+        await openWorkflow(true);
+        client.post.mockRejectedValueOnce({
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: { message: COLLECTION_DISABLED, code: "collectionDisabled" },
+          },
+        });
+
+        if (afterResult)
+          fireEvent.click(
+            within(screen.getByTestId("workflow-node-detector-node")).getByRole("button", {
+              name: "Agregar nodo después de Resultado",
+            }),
+          );
+        const panel = afterResult
+          ? screen.getByRole("complementary", { name: "Agregar nodo" })
+          : await openAddNode();
+        const capture = await within(panel).findByRole("button", { name: "Capturar para dataset" });
+        await waitFor(() => expect(capture.getAttribute("aria-disabled")).toBe("false"));
+        fireEvent.click(capture);
+
+        await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith(COLLECTION_DISABLED));
+        expect(toastMock.success).not.toHaveBeenCalled();
+        expect(screen.queryByTestId("workflow-node-capture-node")).toBeNull();
+        await waitFor(() =>
+          expect(
+            within(screen.getByRole("complementary", { name: "Agregar nodo" }))
+              .getByRole("button", { name: "Capturar para dataset" })
+              .getAttribute("aria-disabled"),
+          ).toBe("true"),
+        );
+      },
+    );
   });
 
   describe("US-037: Archivar un workflow", () => {

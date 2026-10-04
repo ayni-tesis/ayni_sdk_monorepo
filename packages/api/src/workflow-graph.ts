@@ -12,7 +12,7 @@ export type WorkflowEdge = {
 };
 
 type WorkflowGraphNode =
-  | { id: string; type: "input.image" | "model.tflite" }
+  | { id: string; type: "input.image" | "model.tflite" | "dataset.capture" }
   | { id: string; type: "condition"; sourceNodeId: string }
   | {
       id: string;
@@ -97,6 +97,8 @@ export function workflowNodesToDelete(
 /** What the port rules read from a node; server and dashboard nodes both fit it. */
 export type WorkflowPortNode =
   | { id: string; type: "input.image" }
+  /** Takes the image on `imagen` and an inference result on `resultado` (US-064). */
+  | { id: string; type: "dataset.capture" }
   | {
       id: string;
       type: "model.tflite";
@@ -139,14 +141,32 @@ export function workflowOutputPortType(node: WorkflowPortNode | undefined, sourc
   return undefined;
 }
 
-/** Whether `connection` joins ports of the same type; only a model's image input takes one. */
+/**
+ * The types an input port takes from a connection, or none if the node has no
+ * such input: a model's `image`, and a capture's `imagen` and `resultado`, the
+ * result of a classification or detection model.
+ */
+export function workflowInputPortTypes(
+  node: WorkflowPortNode | undefined,
+  targetPort: string,
+): readonly ("image" | "classification" | "detection")[] {
+  if (node?.type === "model.tflite" && targetPort === "image") return ["image"];
+  if (node?.type === "dataset.capture" && targetPort === "imagen") return ["image"];
+  if (node?.type === "dataset.capture" && targetPort === "resultado")
+    return ["classification", "detection"];
+  return [];
+}
+
+/** Whether `connection` joins an output to an input that takes its type. */
 export function areWorkflowPortsCompatible(draft: WorkflowPortDraft, connection: WorkflowEdge) {
   const source = draft.nodes.find((node) => node.id === connection.sourceNodeId);
   const target = draft.nodes.find((node) => node.id === connection.targetNodeId);
   const outputType = workflowOutputPortType(source, connection.sourcePort);
-  const inputType =
-    target?.type === "model.tflite" && connection.targetPort === "image" ? "image" : undefined;
-  return Boolean(outputType && outputType === inputType);
+  return (
+    outputType !== undefined &&
+    outputType !== "boolean" &&
+    workflowInputPortTypes(target, connection.targetPort).includes(outputType)
+  );
 }
 
 /** A condition needs the result of a classification model that produces its label. */

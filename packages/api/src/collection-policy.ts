@@ -39,6 +39,10 @@ export const DEFAULT_COLLECTION_POLICY: CollectionPolicySettings = {
   imageQuality: 80,
 };
 
+/** Why a dataset capture cannot be added while collection is not enabled (US-064). */
+export const COLLECTION_DISABLED_MESSAGE =
+  "Habilita la recolección de evidencia en la configuración de la aplicación.";
+
 export function isCollectionNetwork(value: unknown): value is CollectionNetwork {
   return COLLECTION_NETWORKS.some((network) => network === value);
 }

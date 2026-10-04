@@ -1,3 +1,4 @@
+import { COLLECTION_DISABLED_MESSAGE } from "@ayni/api/collection-policy";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -5,6 +6,8 @@ import { type Application, getApplicationForMember } from "./applications";
 import type {
   AddConditionNodeInput,
   AddConditionNodeResult,
+  AddDatasetCaptureNodeInput,
+  AddDatasetCaptureNodeResult,
   AddImageInputInput,
   AddImageInputResult,
   AddModelNodeInput,
@@ -150,6 +153,9 @@ type Dependencies = {
     addModelNode: (input: AddModelNodeInput) => Promise<AddModelNodeResult>;
     addConditionNode: (input: AddConditionNodeInput) => Promise<AddConditionNodeResult>;
     addOutputNode: (input: AddOutputNodeInput) => Promise<AddOutputNodeResult>;
+    addDatasetCaptureNode: (
+      input: AddDatasetCaptureNodeInput,
+    ) => Promise<AddDatasetCaptureNodeResult>;
     addConnection: (
       input: ChangeWorkflowConnectionInput,
     ) => Promise<ChangeWorkflowConnectionResult>;
@@ -363,7 +369,7 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
     if (
       typeof body !== "object" ||
       body === null ||
-      !["input.image", "model.tflite", "condition", "output"].includes(
+      !["input.image", "model.tflite", "condition", "output", "dataset.capture"].includes(
         (body as { type?: string }).type ?? "",
       )
     ) {
@@ -436,14 +442,35 @@ export function createWorkflowsApp({ getSession, applications, workflows }: Depe
       return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     }
     let source: { nodeId: string; port: string } | undefined;
-    if (nodeType === "model.tflite") {
-      // A model added after an output port (US-128) names that port; both or neither.
+    if (nodeType === "model.tflite" || nodeType === "dataset.capture") {
+      // A node added after an output port (US-128) names that port; both or neither.
       const { sourceNodeId, sourcePort } = body as { sourceNodeId?: unknown; sourcePort?: unknown };
       if (sourceNodeId !== undefined || sourcePort !== undefined) {
         const parsedSource = modelSourceSchema.safeParse({ sourceNodeId, sourcePort });
         if (!parsedSource.success) return c.json({ message: "Selecciona puertos válidos." }, 400);
         source = { nodeId: parsedSource.data.sourceNodeId, port: parsedSource.data.sourcePort };
       }
+    }
+    if (nodeType === "dataset.capture") {
+      // Only the position and the source are read: the server builds the node,
+      // so it never holds anything else, such as code (US-064).
+      const result = await workflows.addDatasetCaptureNode({ ...workflowInput, position, source });
+      if (result.ok) return c.json({ draft: result.draft, draftRevision: result.draftRevision });
+      if (result.reason === "draftConflict") return draftConflict(c);
+      if (result.reason === "forbidden")
+        return c.json({ message: "No tienes permiso para editar este workflow." }, 403);
+      if (result.reason === "archived")
+        return c.json(
+          { message: WORKFLOW_RENAME_ARCHIVED_MESSAGE, code: "applicationArchived" },
+          409,
+        );
+      if (result.reason === "collectionDisabled")
+        return c.json({ message: COLLECTION_DISABLED_MESSAGE, code: "collectionDisabled" }, 409);
+      if (result.reason === "incompatibleSource")
+        return c.json({ message: "Estos puertos no son compatibles." }, 409);
+      if (result.reason === "workflowNotFound")
+        return c.json({ message: WORKFLOW_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
     }
     const result =
       nodeType === "model.tflite"

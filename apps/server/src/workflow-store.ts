@@ -1,3 +1,4 @@
+import { DEFAULT_COLLECTION_POLICY } from "@ayni/api/collection-policy";
 import {
   areWorkflowPortsCompatible,
   findWorkflowCycle,
@@ -9,6 +10,7 @@ import {
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
 import {
+  applicationCollectionPolicy,
   type ModelVersionContract,
   model,
   modelVersion,
@@ -70,6 +72,7 @@ export function toWorkflowVersion(row: WorkflowVersionRow): WorkflowVersion {
   };
 }
 
+/** The nodes a published version holds, the ones the SDK runs. */
 export type WorkflowNode =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
   | {
@@ -103,6 +106,19 @@ export type WorkflowNode =
         resultType: "classification" | "detection" | "boolean";
       }[];
     };
+/**
+ * A dataset capture (US-064): it takes the image on `imagen` and a model's
+ * inference result on `resultado`, and holds nothing else, so never any code.
+ * Only drafts hold it for now: no SDK runs it yet, so validation keeps a
+ * draft with a capture from being published.
+ */
+export type DatasetCaptureNode = {
+  id: string;
+  type: "dataset.capture";
+  inputs: { imagen: "image"; resultado: "inferenceResult" };
+};
+/** A node of a draft: those a version publishes, and those only a draft holds yet. */
+export type WorkflowDraftNode = WorkflowNode | DatasetCaptureNode;
 export type WorkflowConnection = {
   sourceNodeId: string;
   sourcePort: string;
@@ -111,14 +127,14 @@ export type WorkflowConnection = {
 };
 export type WorkflowNodePosition = { x: number; y: number };
 export type WorkflowDraft = {
-  nodes: WorkflowNode[];
+  nodes: WorkflowDraftNode[];
   connections?: WorkflowConnection[];
   layout?: Record<string, WorkflowNodePosition>;
 };
 
 function appendWorkflowNode(
   draft: WorkflowDraft,
-  node: WorkflowNode,
+  node: WorkflowDraftNode,
   position?: WorkflowNodePosition,
 ): WorkflowDraft {
   return {
@@ -594,6 +610,91 @@ export async function addModelNode(
       if (!areWorkflowPortsCompatible(updatedDraft, connection))
         return { reason: "incompatibleSource" as const };
       return { draft: updatedDraft };
+    },
+  );
+}
+
+export type AddDatasetCaptureNodeInput = WorkflowDraftChangeInput & {
+  position?: WorkflowNodePosition;
+  /** The output the capture is added after (US-128); it is connected in the same write. */
+  source?: { nodeId: string; port: string };
+};
+type AddDatasetCaptureNodeRefusal = { reason: "collectionDisabled" | "incompatibleSource" };
+export type AddDatasetCaptureNodeResult = WorkflowDraftChangeResult<AddDatasetCaptureNodeRefusal>;
+
+type CollectionPolicyLookupExecutor = {
+  select: (fields: Record<string, unknown>) => {
+    from: (table: unknown) => {
+      where: (condition: unknown) => {
+        limit: (count: number) => { for: (strength: "update") => Promise<{ enabled: boolean }[]> };
+      };
+    };
+  };
+};
+
+/**
+ * Adds a dataset capture, only if the application enabled evidence collection
+ * (US-064). Added after a model's result, it takes that result and the image
+ * the model reads, if the model has one.
+ */
+export async function addDatasetCaptureNode(
+  database: WorkflowDatabase,
+  { position, source, ...input }: AddDatasetCaptureNodeInput,
+): Promise<AddDatasetCaptureNodeResult> {
+  return changeWorkflowDraft<AddDatasetCaptureNodeRefusal>(
+    database,
+    input,
+    async (draft, tx, applicationId) => {
+      // Read in this transaction, not with getCollectionPolicy, which opens its
+      // own: the application row locked here is also locked while its policy is
+      // saved, so the policy read holds until the draft is saved.
+      const policies = await (tx as unknown as CollectionPolicyLookupExecutor)
+        .select({ enabled: applicationCollectionPolicy.enabled })
+        .from(applicationCollectionPolicy)
+        .where(eq(applicationCollectionPolicy.applicationId, applicationId))
+        .limit(1)
+        .for("update");
+      if (!(policies[0]?.enabled ?? DEFAULT_COLLECTION_POLICY.enabled))
+        return { reason: "collectionDisabled" as const };
+
+      const node: DatasetCaptureNode = {
+        id: crypto.randomUUID(),
+        type: "dataset.capture",
+        inputs: { imagen: "image", resultado: "inferenceResult" },
+      };
+      if (!source) return { draft: appendWorkflowNode(draft, node, position) };
+      const result: WorkflowConnection = {
+        sourceNodeId: source.nodeId,
+        sourcePort: source.port,
+        targetNodeId: node.id,
+        targetPort: "resultado",
+      };
+      if (!areWorkflowPortsCompatible(appendWorkflowNode(draft, node), result))
+        return { reason: "incompatibleSource" as const };
+      const modelImage = draft.connections?.find(
+        (edge) => edge.targetNodeId === source.nodeId && edge.targetPort === "image",
+      );
+      const added: WorkflowConnection[] = [
+        result,
+        ...(modelImage
+          ? [
+              {
+                sourceNodeId: modelImage.sourceNodeId,
+                sourcePort: modelImage.sourcePort,
+                targetNodeId: node.id,
+                targetPort: "imagen",
+              },
+            ]
+          : []),
+      ];
+      // The capture is new and has no outputs, so its connections close no cycle.
+      return {
+        draft: appendWorkflowNode(
+          { ...draft, connections: [...(draft.connections ?? []), ...added] },
+          node,
+          position,
+        ),
+      };
     },
   );
 }

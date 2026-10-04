@@ -32,6 +32,7 @@ const CATEGORIES: { id: WorkflowNodeCatalogCategory; title: string }[] = [
   { id: "models", title: "Modelos" },
   { id: "logic", title: "Lógica" },
   { id: "output", title: "Salida" },
+  { id: "dataset", title: "Dataset" },
 ];
 const OUTPUT_SOURCE_REQUIRED_MESSAGE = "Selecciona un tipo de resultado para la salida.";
 const NO_COMPATIBLE_NODES_MESSAGE = "No hay nodos compatibles con esta salida.";
@@ -47,6 +48,8 @@ export type WorkflowAddNodePanelProps = {
   modelsLoading: boolean;
   modelsError: string;
   onRetryModels: () => void;
+  /** Whether the application enabled evidence collection, which a capture needs (US-064). */
+  collectionEnabled: boolean;
   /** True while a node is being added or positions save or arrange: nothing can be added. */
   busy: boolean;
   /** The output the node is added after (US-128): only compatible types, with it as their source. */
@@ -61,6 +64,7 @@ export function WorkflowAddNodePanel({
   modelsLoading,
   modelsError,
   onRetryModels,
+  collectionEnabled,
   busy,
   origin,
   onAdd,
@@ -72,7 +76,7 @@ export function WorkflowAddNodePanel({
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
 
-  const catalog = workflowNodeCatalog(draft, models, origin);
+  const catalog = workflowNodeCatalog(draft, models, origin, collectionEnabled);
   const found = searchWorkflowNodeCatalog(catalog, query);
   const searching = query.trim() !== "";
   const originNode = origin && draft.nodes.find((node) => node.id === origin.sourceNodeId);
@@ -83,9 +87,13 @@ export function WorkflowAddNodePanel({
 
   function choose(item: WorkflowNodeCatalogItem) {
     if (item.disabledReason || busy) return;
-    // A model added after the image is connected to it as it is saved.
+    // A model or a capture added after an output is connected to it as it is saved.
     if (item.node)
-      onAdd(origin && item.node.type === "model.tflite" ? { ...item.node, ...origin } : item.node);
+      onAdd(
+        origin && (item.node.type === "model.tflite" || item.node.type === "dataset.capture")
+          ? { ...item.node, ...origin }
+          : item.node,
+      );
     else if (item.configure) setForm(item.configure);
   }
 
