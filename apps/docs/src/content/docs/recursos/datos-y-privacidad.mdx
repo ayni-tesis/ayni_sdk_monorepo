@@ -354,9 +354,11 @@ Cuando la condición toma la otra rama, el SDK no copia la imagen, no crea
 evidencia ni llama a `onEvidence`, y devuelve el mismo resultado. La traza de
 esa ejecución, si la telemetría está habilitada, registra la condición como
 completada y la captura como omitida (`skipped`), sin la imagen. Lo mismo pasa,
-sin que falle la ejecución, si la condición no se puede evaluar o si su modelo
-no se ejecutó porque ninguna salida lo lee: la traza registra entonces la
-condición y la captura como omitidas.
+sin que falle la ejecución, si su modelo no se ejecutó porque ninguna salida lo
+lee, o si ninguna salida lee la condición y esta no se puede evaluar: la traza
+registra entonces la condición y la captura como omitidas. Una condición que
+también lee una salida y no se puede evaluar hace fallar la ejecución, como
+antes.
 
 ### Evidencia pendiente de envío
 

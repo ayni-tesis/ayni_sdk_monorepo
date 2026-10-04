@@ -1285,9 +1285,10 @@ class AyniSdk {
   /// evidence for a dataset only if [evidenceConsent] is `true`. A capture
   /// that hangs from a branch of a condition, for example to keep only
   /// low-confidence predictions, is reached only when the condition takes
-  /// that branch. When it takes the other branch or cannot be evaluated, the
-  /// SDK creates no evidence, reports no [EvidenceEvent], marks the capture
-  /// as skipped in the trace, and the result does not change. Pass [evidenceConsent] only while the person has given the
+  /// that branch. When it takes the other branch, or when a condition that no
+  /// output reads cannot be evaluated, the SDK creates no evidence, reports
+  /// no [EvidenceEvent], marks the capture as skipped in the trace, and the
+  /// result does not change. Pass [evidenceConsent] only while the person has given the
   /// consent your app requires for evidence collection. After returning the
   /// result, without delaying it or failing it, the SDK reduces and
   /// compresses a copy of [input] to a JPEG with the maximum size and
