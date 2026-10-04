@@ -73,9 +73,8 @@ function argument(source: string, open: number): string {
 function requestHeaders(request: string, name: string): string[] {
   return [...request.matchAll(new RegExp(`\\b${name}\\.headers\\b[^;]*;`, "g"))].flatMap(
     ([statement]) =>
-      [...statement.matchAll(/\.(?:set|add)\(\s*([^,]+),|\.contentType\s*=/g)].map(
-        ([call, header = ""]) =>
-          call.includes("contentType") ? "HttpHeaders.contentTypeHeader" : header.trim(),
+      [...statement.matchAll(/\.(?:set|add)\(\s*([^,]+),|\.contentType\s*=/g)].map(([, header]) =>
+        header === undefined ? "HttpHeaders.contentTypeHeader" : header.trim(),
       ),
   );
 }
@@ -116,7 +115,8 @@ export function sdkRequests(source: string): SdkRequest[] {
     if (serverPath === undefined && variable === undefined) {
       throw unreadable(`${method}Url(${url})`);
     }
-    const name = /(\w+)\s*=\s*await\s+\w+(?:\.\w+)*$/.exec(code.slice(0, match.index))?.[1];
+    // `dart format` may break the chain before `.postUrl(`.
+    const name = /(\w+)\s*=\s*await\s+\w+(?:\s*\.\w+)*\s*$/.exec(code.slice(0, match.index))?.[1];
     if (!name) throw unreadable(`${method}Url( without a request variable`);
     const close = new RegExp(`\\b${name}\\.close\\(\\)`).exec(code.slice(open));
     if (!close) throw unreadable(`${name}.close()`);

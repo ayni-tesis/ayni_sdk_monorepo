@@ -148,9 +148,10 @@ cliente; Ayni publicará su propio canal cuando su aviso esté vigente.
 Como en cualquier conexión HTTP, el servidor y el almacenamiento de objetos
 reciben la dirección IP del dispositivo y el encabezado `User-Agent`
 predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
-Además de `Authorization`, el SDK solo agrega el encabezado `Content-Type` a las
-solicitudes con cuerpo: `application/json` para los datos y `image/jpeg` para la
-imagen de una evidencia.
+Además de `Authorization`, el SDK solo declara el cuerpo de las solicitudes que
+lo llevan: su tipo en `Content-Type` (`application/json` para los datos e
+`image/jpeg` para la imagen de una evidencia) y, como cualquier cliente HTTP, su
+tamaño en `Content-Length`.
 
 ## Lo que el SDK no hace
 
@@ -375,7 +376,11 @@ Solo la confirmación del servidor, o su respuesta de que ya la había recibido,
 cuenta como envío: entonces el SDK agrega `received.json` (el ID de la
 evidencia y la fecha en que el servidor la recibió) a su directorio, sin cambiar
 `evidence.json` ni la imagen, y la evidencia deja de estar pendiente; un
-`sync()` posterior no la vuelve a subir. Sin esa confirmación, por ejemplo sin
+`sync()` posterior no la vuelve a subir. Si el SDK no puede escribir
+`received.json`, por ejemplo porque el dispositivo no tiene espacio, la
+evidencia sigue pendiente: el siguiente `sync()` vuelve a avisar
+`evidenceUploading`, y el servidor responde que ya la recibió sin que el SDK
+suba la imagen otra vez. Sin esa confirmación, por ejemplo sin
 red, con la credencial revocada, con la aplicación archivada o con la
 recolección deshabilitada en el servidor, la evidencia sigue pendiente y un
 `sync()` posterior la vuelve a intentar con el mismo ID, sin duplicarla en el

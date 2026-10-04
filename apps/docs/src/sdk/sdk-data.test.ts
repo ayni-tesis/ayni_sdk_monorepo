@@ -94,6 +94,30 @@ describe("sdkRequests", () => {
     ]);
   });
 
+  it("keeps a custom header whose name mentions contentType", () => {
+    const source = [
+      "final request = await client.getUrl(serverUrl.resolve('/sdk/sync'));",
+      "request.headers.set('x-contentType-hint', 'jpeg');",
+      "await request.close();",
+    ].join("\n");
+
+    expect(sdkRequests(source)[0]?.headers).toEqual(["'x-contentType-hint'"]);
+  });
+
+  it("reads a request whose creation dart format splits across lines", () => {
+    const source = [
+      "final start = await _client",
+      "    .postUrl(serverUrl.resolve('/sdk/evidence'))",
+      "    .timeout(_requestTimeout());",
+      "start.followRedirects = false;",
+      "await start.close();",
+    ].join("\n");
+
+    expect(sdkRequests(source)).toEqual([
+      expect.objectContaining({ method: "POST", target: "/sdk/evidence", followsRedirects: false }),
+    ]);
+  });
+
   it("notices a credential sent without the Authorization header constant", () => {
     const source = [
       "final request = await client.getUrl(manifest.downloadUrl);",
