@@ -334,26 +334,30 @@ void main() {
       });
     });
 
-    test('keeps the evidence being written', () async {
-      final release = Completer<void>();
-      final writing = Completer<void>();
-      final store = EvidenceStore(
-        storageDirectory,
-        writeFile: (file, bytes) async {
-          if (!writing.isCompleted) writing.complete();
-          await release.future;
-          await file.writeAsBytes(bytes, flush: true);
-        },
-      );
-      final saving = store.save(pending, content);
-      await writing.future;
+    for (final (name, otherStore) in [('this', false), ('another', true)]) {
+      test('keeps the evidence $name store is writing', () async {
+        final release = Completer<void>();
+        final writing = Completer<void>();
+        final store = EvidenceStore(
+          storageDirectory,
+          writeFile: (file, bytes) async {
+            if (!writing.isCompleted) writing.complete();
+            await release.future;
+            await file.writeAsBytes(bytes, flush: true);
+          },
+        );
+        final saving = store.save(pending, content);
+        await writing.future;
 
-      await store.removeLeftovers();
-      release.complete();
-      await saving;
+        // An app that initializes the SDK again gets another store.
+        await (otherStore ? EvidenceStore(storageDirectory) : store)
+            .removeLeftovers();
+        release.complete();
+        await saving;
 
-      expect(await store.pendingCount(), 1);
-    });
+        expect(await store.pendingCount(), 1);
+      });
+    }
 
     test('deletes nothing when the queue directory is a link', () async {
       final outside = Directory('${storageDirectory.path}/outside')

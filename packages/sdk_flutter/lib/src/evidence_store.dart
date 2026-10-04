@@ -136,9 +136,11 @@ class EvidenceStore {
   final int _maxUploadAttempts;
   Future<void> _work = Future<void>.value();
 
-  /// The ID of the evidence a [save] is writing to its `.tmp` directory now,
-  /// which [removeLeftovers] keeps.
-  String? _writingId;
+  /// The IDs of the evidence a [save] of any store of this isolate is
+  /// writing to its `.tmp` directory now, which [removeLeftovers] keeps: an
+  /// app that initializes the SDK again while an earlier instance still saves
+  /// an evidence must not lose it.
+  static final Set<String> _writingIds = {};
 
   /// The evidence `AyniSdk.sync` is uploading now, which [statusCounts]
   /// counts as [EvidenceStatus.uploading] until the upload ends (US-072).
@@ -155,7 +157,7 @@ class EvidenceStore {
     final temporary = Directory(
       '${_directory.path}${Platform.pathSeparator}$evidenceId$_writingSuffix',
     );
-    _writingId = evidenceId;
+    _writingIds.add(evidenceId);
     try {
       await temporary.create(recursive: true);
       await _writeFile(
@@ -179,7 +181,7 @@ class EvidenceStore {
       }
       rethrow;
     } finally {
-      _writingId = null;
+      _writingIds.remove(evidenceId);
     }
   });
 
@@ -337,8 +339,8 @@ class EvidenceStore {
 
   /// Deletes what a stopped process or a failed [remove] left in the queue
   /// (US-072): each evidence the server confirmed, which has
-  /// `received.json`, and each `<evidenceId>.tmp/` directory, except the one
-  /// a [save] of this store is writing now. It keeps the pending, retrying
+  /// `received.json`, and each `<evidenceId>.tmp/` directory, except those
+  /// a [save] of any store of this isolate is writing now. It keeps the pending, retrying
   /// and failed evidence, skips anything not named after an evidence ID and
   /// never follows a link, not even when `evidence/` itself is one. It does
   /// not fail: what it cannot delete stays for a later call.
@@ -352,7 +354,9 @@ class EvidenceStore {
         final name = _evidenceId(entity);
         if (name.endsWith(_writingSuffix)) {
           final id = name.substring(0, name.length - _writingSuffix.length);
-          if (isUuidV4(id) && id != _writingId) halfDone.add(entity);
+          if (isUuidV4(id) && !_writingIds.contains(id)) {
+            halfDone.add(entity);
+          }
         } else if (isUuidV4(name) && await _receivedFile(entity).exists()) {
           received.add(entity);
         }
