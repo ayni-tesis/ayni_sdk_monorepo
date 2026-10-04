@@ -12,6 +12,13 @@ typedef EvidenceContent = ({Uint8List image, Map<String, Object?> record});
 /// Writes one file of an evidence; tests replace it to simulate a full device.
 typedef EvidenceFileWriter = Future<void> Function(File file, List<int> bytes);
 
+/// Sends the pending evidence in [evidence], one of [EvidenceStore.pending],
+/// and completes with whether the server confirmed it (US-069 seam). The SDK
+/// calls it only once the collection policy, consulted right before, allows
+/// sending over the current network. The upload itself is US-070's: until
+/// then the SDK has none, so the queue only waits.
+typedef EvidenceUploader = Future<bool> Function(Directory evidence);
+
 /// The [EvidenceFileWriter] the SDK uses: writes [bytes] to [file] and
 /// flushes them to the device.
 Future<void> writeEvidenceFile(File file, List<int> bytes) =>
