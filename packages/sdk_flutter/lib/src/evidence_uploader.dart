@@ -74,9 +74,18 @@ class EvidenceUploadClient {
   );
 
   Future<EvidenceUploadResult> upload(Directory evidence) async {
+    final ({String evidenceId, Uint8List image, Map<String, Object?> body})?
+    read;
     try {
-      final read = await _read(evidence);
-      if (read == null) return _rejected;
+      read = await _read(evidence);
+    } on FileSystemException {
+      // A file of this evidence is missing or unreadable: only this one
+      // cannot go, so the next one still may. A clearPendingEvidence() that
+      // deleted it meanwhile is noticed by the queue itself.
+      return _rejected;
+    }
+    if (read == null) return _rejected;
+    try {
       return await _upload(read.evidenceId, read.image, read.body);
     } on TimeoutException {
       return _failed;

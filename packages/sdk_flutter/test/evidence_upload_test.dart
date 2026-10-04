@@ -402,6 +402,30 @@ void main() {
     );
   });
 
+  test('rejects an evidence that lost its image, without a request, and goes '
+      'on with the next one', () async {
+    await pendingEvidence([_firstId, _secondId]);
+    await File('${evidenceDirectory(_firstId).path}/image').delete();
+    final events = <EvidenceEvent>[];
+    final client = sdk();
+
+    await client.sync(onEvidence: events.add);
+
+    expect(
+      events.where((event) => event == EvidenceEvent.evidenceUploadFailed),
+      hasLength(1),
+    );
+    expect(
+      events.where((event) => event == EvidenceEvent.evidenceReceived),
+      hasLength(1),
+    );
+    expect(
+      evidenceRequests().where((r) => r == 'POST /sdk/evidence'),
+      hasLength(1),
+    );
+    expect(await client.pendingEvidenceCount(), 1);
+  });
+
   test('reports nothing more for an evidence the app cleared while it was '
       'being uploaded', () async {
     await pendingEvidence([_firstId]);
