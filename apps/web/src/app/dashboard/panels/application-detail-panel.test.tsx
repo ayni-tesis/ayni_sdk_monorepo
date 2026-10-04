@@ -4067,14 +4067,6 @@ describe("ApplicationDetailPanel", () => {
       inputs: { imagen: "image", resultado: "inferenceResult" },
     };
     const validationUrl = "/applications/app-1/workflows/workflow-1/validation";
-    const unpublishableCapture = {
-      code: "unpublishableNode",
-      nodeId: null,
-      nodeName: null,
-      port: null,
-      message:
-        'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
-    };
 
     async function validateCaptureWorkflow(
       validation: unknown,
@@ -4118,7 +4110,6 @@ describe("ApplicationDetailPanel", () => {
       );
       await screen.findByRole("region", { name: "Lienzo del workflow" });
       fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
-      return screen.findByRole("region", { name: "Errores de validación" });
     }
 
     function rowCells(panel: HTMLElement) {
@@ -4133,7 +4124,7 @@ describe("ApplicationDetailPanel", () => {
     }
 
     it("lists the missing image and inference result ports of the capture", async () => {
-      const panel = await validateCaptureWorkflow({
+      await validateCaptureWorkflow({
         publishable: false,
         errors: [
           {
@@ -4150,9 +4141,9 @@ describe("ApplicationDetailPanel", () => {
             port: "resultado",
             message: 'El nodo "Capturar evidencia" necesita un resultado de inferencia.',
           },
-          unpublishableCapture,
         ],
       });
+      const panel = await screen.findByRole("region", { name: "Errores de validación" });
 
       expect(rowCells(panel)).toEqual([
         ["Capturar evidencia", "imagen", 'El nodo "Capturar evidencia" necesita una imagen.'],
@@ -4161,26 +4152,24 @@ describe("ApplicationDetailPanel", () => {
           "resultado",
           'El nodo "Capturar evidencia" necesita un resultado de inferencia.',
         ],
-        ["Workflow", "—", unpublishableCapture.message],
       ]);
       expect(screen.queryByText("El nodo de captura está listo.")).toBeNull();
       expect(screen.queryByText("El workflow está listo para publicarse.")).toBeNull();
     });
 
     it("confirms a capture with its image and result connected, without changing the draft", async () => {
-      const panel = await validateCaptureWorkflow({
-        publishable: false,
-        errors: [unpublishableCapture],
-      });
+      // The SDK creates the evidence since US-066, so the workflow can be published.
+      await validateCaptureWorkflow({ publishable: true, errors: [] });
 
-      expect(screen.getByText("El nodo de captura está listo.")).toBeTruthy();
-      expect(rowCells(panel)).toEqual([["Workflow", "—", unpublishableCapture.message]]);
+      expect(await screen.findByText("El nodo de captura está listo.")).toBeTruthy();
+      expect(screen.getByText("El workflow está listo para publicarse.")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Errores de validación" })).toBeNull();
       expect(client.post).not.toHaveBeenCalled();
       expect(client.patch).not.toHaveBeenCalled();
     });
 
     it("does not confirm the captures while one of several still misses a port", async () => {
-      const panel = await validateCaptureWorkflow(
+      await validateCaptureWorkflow(
         {
           publishable: false,
           errors: [
@@ -4191,13 +4180,13 @@ describe("ApplicationDetailPanel", () => {
               port: "imagen",
               message: 'El nodo "Capturar evidencia" necesita una imagen.',
             },
-            unpublishableCapture,
           ],
         },
         [imageNode, captureNode, { ...captureNode, id: "capture-node-2" }],
       );
+      const panel = await screen.findByRole("region", { name: "Errores de validación" });
 
-      expect(rowCells(panel)).toHaveLength(2);
+      expect(rowCells(panel)).toHaveLength(1);
       expect(screen.queryByText("El nodo de captura está listo.")).toBeNull();
     });
   });

@@ -47,6 +47,7 @@ void main() {
       'model.tflite',
       'condition',
       'output',
+      'dataset.capture',
     });
   });
 }

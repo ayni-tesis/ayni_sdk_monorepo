@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  WorkflowConnection,
-  WorkflowDraft,
-  WorkflowDraftNode,
-  WorkflowNode,
-} from "./workflow-store";
+import type { WorkflowConnection, WorkflowDraft, WorkflowNode } from "./workflow-store";
 import { validateWorkflowDraft } from "./workflow-validation";
 
 const input: WorkflowNode = { id: "input", type: "input.image", outputs: { imagen: "image" } };
@@ -356,7 +351,7 @@ describe("validateWorkflowDraft", () => {
   });
 
   describe("with a dataset capture (US-065)", () => {
-    const capture: WorkflowDraftNode = {
+    const capture: WorkflowNode = {
       id: "capture",
       type: "dataset.capture",
       inputs: { imagen: "image", resultado: "inferenceResult" },
@@ -372,15 +367,6 @@ describe("validateWorkflowDraft", () => {
       sourcePort: "result",
       targetNodeId: "capture",
       targetPort: "resultado",
-    };
-    // No SDK runs a capture yet (US-066), so the workflow stays a draft.
-    const unpublishableCapture = {
-      code: "unpublishableNode",
-      nodeId: null,
-      nodeName: null,
-      port: null,
-      message:
-        'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
     };
     const missingImage = {
       code: "requiredInput",
@@ -405,7 +391,7 @@ describe("validateWorkflowDraft", () => {
 
       expect(validateWorkflowDraft(draft)).toEqual({
         publishable: false,
-        errors: [missingImage, unpublishableCapture],
+        errors: [missingImage],
       });
     });
 
@@ -415,7 +401,7 @@ describe("validateWorkflowDraft", () => {
         connections: [inputToClassifier, imageToCapture],
       };
 
-      expect(validateWorkflowDraft(draft).errors).toEqual([missingResult, unpublishableCapture]);
+      expect(validateWorkflowDraft(draft).errors).toEqual([missingResult]);
     });
 
     it("reports both ports of a capture left unconnected", () => {
@@ -424,11 +410,7 @@ describe("validateWorkflowDraft", () => {
         connections: [inputToClassifier],
       };
 
-      expect(validateWorkflowDraft(draft).errors).toEqual([
-        missingImage,
-        missingResult,
-        unpublishableCapture,
-      ]);
+      expect(validateWorkflowDraft(draft).errors).toEqual([missingImage, missingResult]);
     });
 
     it("considers a capture that receives an image and a compatible inference result valid", () => {
@@ -437,11 +419,8 @@ describe("validateWorkflowDraft", () => {
         connections: [inputToClassifier, imageToCapture, resultToCapture],
       };
 
-      // Only the SDK support block remains, and it belongs to no node.
-      expect(validateWorkflowDraft(draft)).toEqual({
-        publishable: false,
-        errors: [unpublishableCapture],
-      });
+      // The SDK creates the evidence (US-066), so nothing blocks publishing.
+      expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
     });
 
     it("reports a condition branch connected as the inference result", () => {
@@ -462,12 +441,11 @@ describe("validateWorkflowDraft", () => {
           port: "resultado",
           message: 'El nodo "Capturar evidencia" recibe un tipo incompatible en este puerto.',
         },
-        unpublishableCapture,
       ]);
     });
 
-    it("reports the SDK support block once for several captures", () => {
-      const second: WorkflowDraftNode = { ...capture, id: "capture-2" };
+    it("considers several ready captures publishable", () => {
+      const second: WorkflowNode = { ...capture, id: "capture-2" };
       const draft: WorkflowDraft = {
         nodes: [input, classifier, diagnosis, capture, second],
         connections: [
@@ -479,7 +457,7 @@ describe("validateWorkflowDraft", () => {
         ],
       };
 
-      expect(validateWorkflowDraft(draft).errors).toEqual([unpublishableCapture]);
+      expect(validateWorkflowDraft(draft)).toEqual({ publishable: true, errors: [] });
     });
 
     it("does not modify a draft with a capture", () => {

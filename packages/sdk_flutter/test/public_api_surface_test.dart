@@ -36,6 +36,7 @@ const Map<String, Set<String>> expectedExports = {
     'ConsentStatus',
   },
   'src/device_profile.dart': {'DeviceProfile'},
+  'src/evidence_event.dart': {'EvidenceEvent'},
   'src/workflow_trace.dart': {
     'TraceMeasurement',
     'TraceModel',
@@ -210,6 +211,7 @@ void main() {
         'ConsentResult': ConsentResult,
         'ConsentStatus': ConsentStatus,
         'DeviceProfile': DeviceProfile,
+        'EvidenceEvent': EvidenceEvent,
         'TraceMeasurement': TraceMeasurement,
         'TraceModel': TraceModel,
         'TraceNodeExecution': TraceNodeExecution,
@@ -230,7 +232,7 @@ void main() {
     });
 
     test(
-      'initialize, sync, run, trace revocation and installation reset keep published signatures',
+      'initialize, sync, run, trace and evidence revocation and installation reset keep published signatures',
       () {
         expect(
           AyniSdk.initialize,
@@ -244,6 +246,7 @@ void main() {
         );
         expect(sdk.sync, isA<Future<SyncResult> Function()>());
         expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
+        expect(sdk.clearPendingEvidence, isA<Future<void> Function()>());
         expect(sdk.resetInstallationId, isA<Future<void> Function()>());
         expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
         expect(
@@ -286,6 +289,8 @@ void main() {
               Uint8List, {
               void Function(String)? onExecutionStarted,
               WorkflowTraceContext? traceContext,
+              bool evidenceConsent,
+              void Function(EvidenceEvent)? onEvidence,
             })
           >(),
         );

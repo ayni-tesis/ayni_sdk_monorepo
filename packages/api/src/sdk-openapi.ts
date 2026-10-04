@@ -59,7 +59,7 @@ export const SdkWorkflowNodeSchema = z
   .object({
     id: z.string().describe("Identificador del nodo dentro del workflow."),
     type: z
-      .enum(["input.image", "model.tflite", "condition", "output"])
+      .enum(["input.image", "model.tflite", "condition", "output", "dataset.capture"])
       .describe("Tipo de nodo; los demás campos dependen del tipo."),
   })
   .loose()

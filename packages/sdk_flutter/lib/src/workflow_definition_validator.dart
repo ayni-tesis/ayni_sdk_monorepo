@@ -37,7 +37,8 @@ enum WorkflowValidationStatus {
 /// before the SDK installs it: the exact schema the server publishes (no
 /// unknown or missing fields on the definition, its nodes, or its connections),
 /// only the supported node types, edges that join compatible ports (a model
-/// image input taking a single connection), an acyclic graph counting each
+/// image input taking a single connection, a capture taking one image and one
+/// result), an acyclic graph counting each
 /// condition's and output's stored source as an edge, and model versions
 /// declared in the manifest.
 ///
@@ -54,13 +55,18 @@ enum WorkflowValidationStatus {
 /// the node types in `apps/server/src/workflow-store.ts` (`WorkflowNode`).
 class WorkflowDefinitionValidator {
   /// The workflow schema versions supported by this validator (US-098).
-  static const supportedSchemaVersions = {'1', '2'};
+  ///
+  /// Schema 2 adds outputs with several `sources`; schema 3 adds
+  /// `dataset.capture` (US-066), so an SDK that cannot run a capture rejects
+  /// it as a newer schema instead of an unknown node.
+  static const supportedSchemaVersions = {'1', '2', '3'};
 
   static const _nodeTypes = {
     'input.image',
     'model.tflite',
     'condition',
     'output',
+    'dataset.capture',
   };
 
   /// The exact fields a published node carries per type; anything unknown or
@@ -93,6 +99,7 @@ class WorkflowDefinitionValidator {
       'sourcePort',
       'resultType',
     },
+    'dataset.capture': {'id', 'type', 'inputs'},
   };
   static const _multiSourceOutputFields = {'id', 'type', 'name', 'sources'};
   static const _outputSourceFields = {
@@ -216,7 +223,12 @@ class WorkflowDefinitionValidator {
       if (nodes.containsKey(node.id)) {
         return _ParsedNodes.invalid();
       }
-      if (node.outputSources.length > 1 && schemaVersion != '2') {
+      if (node.outputSources.length > 1 &&
+          schemaVersion != '2' &&
+          schemaVersion != '3') {
+        return _ParsedNodes.invalid();
+      }
+      if (node.type == 'dataset.capture' && schemaVersion != '3') {
         return _ParsedNodes.invalid();
       }
       nodes[node.id] = node;
@@ -253,6 +265,7 @@ class WorkflowDefinitionValidator {
       'model.tflite' => _readModel(node, item, declaredModelVersionIds),
       'condition' => _readCondition(node, item),
       'output' => _readOutput(node, item),
+      'dataset.capture' => _readCapture(item),
       _ => WorkflowValidationStatus.unknownNodeType,
     };
     if (failure != null) {
@@ -393,6 +406,19 @@ class WorkflowDefinitionValidator {
     return null;
   }
 
+  /// A capture (US-064) holds only its typed inputs: the image on `imagen` and
+  /// an inference result on `resultado`, never code or other settings.
+  WorkflowValidationStatus? _readCapture(Map item) {
+    final inputs = item['inputs'];
+    if (inputs is! Map ||
+        !_hasExactFields(inputs, const {'imagen', 'resultado'}) ||
+        inputs['imagen'] != 'image' ||
+        inputs['resultado'] != 'inferenceResult') {
+      return WorkflowValidationStatus.invalidSchema;
+    }
+    return null;
+  }
+
   _Connection? _readConnection(Object? item) {
     if (item is! Map ||
         !_hasExactFields(item, _connectionFields) ||
@@ -407,25 +433,41 @@ class WorkflowDefinitionValidator {
     );
   }
 
-  /// Port rules mirroring `workflowPortCompatibility` and
-  /// `areWorkflowPortsCompatible`: every connection is the image output of the
-  /// input feeding a model's single image input; every condition reads a
-  /// classification label off its source model; every output reads a
-  /// compatible result or boolean branch off its source.
+  /// Port rules mirroring `workflowInputPortTypes` and
+  /// `areWorkflowPortsCompatible`: every connection takes the image output of
+  /// the input to a model's `image` or a capture's `imagen`, or a model's
+  /// result to a capture's `resultado`, each input holding one connection and
+  /// a capture both; every condition reads a classification label off its
+  /// source model; every output reads a compatible result or boolean branch
+  /// off its source.
   WorkflowValidationStatus? _checkPorts(
     Map<String, _Node> nodes,
     List<_Connection> connections,
   ) {
-    final takenImageInputs = <String>{};
+    final takenInputs = <String>{};
     for (final connection in connections) {
       final source = nodes[connection.sourceNodeId]!;
       final target = nodes[connection.targetNodeId]!;
-      final compatible =
-          source.type == 'input.image' &&
-          connection.sourcePort == 'imagen' &&
-          target.type == 'model.tflite' &&
-          connection.targetPort == 'image';
-      if (!compatible || !takenImageInputs.add(connection.targetNodeId)) {
+      final takesImage =
+          source.type == 'input.image' && connection.sourcePort == 'imagen';
+      final compatible = switch ((target.type, connection.targetPort)) {
+        ('model.tflite', 'image') ||
+        ('dataset.capture', 'imagen') => takesImage,
+        ('dataset.capture', 'resultado') =>
+          source.type == 'model.tflite' && connection.sourcePort == 'result',
+        _ => false,
+      };
+      if (!compatible ||
+          !takenInputs.add(
+            '${connection.targetNodeId}:${connection.targetPort}',
+          )) {
+        return WorkflowValidationStatus.incompatiblePort;
+      }
+    }
+    for (final node in nodes.values) {
+      if (node.type == 'dataset.capture' &&
+          (!takenInputs.contains('${node.id}:imagen') ||
+              !takenInputs.contains('${node.id}:resultado'))) {
         return WorkflowValidationStatus.incompatiblePort;
       }
     }

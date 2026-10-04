@@ -216,8 +216,13 @@ describe("publishWorkflowVersion", () => {
     expect(store.inserted).toHaveLength(0);
   });
 
-  // US-065: a capture is published only with both inputs connected, and only
-  // once an SDK runs it (US-066), so for now it never is.
+  // US-065: a capture is published only with both inputs connected; the SDK
+  // runs it since US-066, under schema 3 so an older SDK asks for an update.
+  const capture = {
+    id: "capture",
+    type: "dataset.capture" as const,
+    inputs: { imagen: "image" as const, resultado: "inferenceResult" as const },
+  };
   const imageToCapture = {
     sourceNodeId: "input",
     sourcePort: "imagen",
@@ -230,22 +235,12 @@ describe("publishWorkflowVersion", () => {
     targetNodeId: "capture",
     targetPort: "resultado",
   };
-  it.each([
-    ["without its image", [resultToCapture], [{ code: "requiredInput", port: "imagen" }]],
-    ["with its image and result", [imageToCapture, resultToCapture], []],
-  ])("refuses to publish a dataset capture %s", async (_, captureConnections, nodeErrors) => {
+  it("refuses to publish a dataset capture without its image", async () => {
     const store = makePublishDb({
       draft: {
         ...publishableDraft,
-        nodes: [
-          ...publishableDraft.nodes,
-          {
-            id: "capture",
-            type: "dataset.capture",
-            inputs: { imagen: "image", resultado: "inferenceResult" },
-          },
-        ],
-        connections: [...(publishableDraft.connections ?? []), ...captureConnections],
+        nodes: [...publishableDraft.nodes, capture],
+        connections: [...(publishableDraft.connections ?? []), resultToCapture],
       },
     });
 
@@ -253,11 +248,28 @@ describe("publishWorkflowVersion", () => {
 
     if (result.ok || result.reason !== "invalidDraft")
       throw new Error("Expected the draft to be refused");
-    expect(result.errors.filter((error) => error.nodeId === "capture")).toEqual(
-      nodeErrors.map((error) => expect.objectContaining(error)),
-    );
-    expect(result.errors).toContainEqual(expect.objectContaining({ code: "unpublishableNode" }));
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "requiredInput", nodeId: "capture", port: "imagen" }),
+    ]);
     expect(store.inserted).toHaveLength(0);
+  });
+
+  it("publishes a dataset capture with its image and result as schema 3", async () => {
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, capture],
+      connections: [...(publishableDraft.connections ?? []), imageToCapture, resultToCapture],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result.ok).toBe(true);
+    expect(store.inserted[0]?.definition).toEqual({
+      schemaVersion: "3",
+      nodes: draft.nodes,
+      connections: draft.connections,
+    });
   });
 
   it("rejects a version identifier already used by the workflow, keeping the existing versions", async () => {

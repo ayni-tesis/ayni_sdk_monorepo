@@ -56,6 +56,7 @@ const NODE_TYPE_LABELS: Record<Trace["nodes"][number]["type"], string> = {
   "model.tflite": "Modelo",
   condition: "Condición",
   output: "Salida",
+  "dataset.capture": "Capturar evidencia",
 };
 
 const PLATFORM_LABELS: Record<Trace["profile"]["platform"], string> = {

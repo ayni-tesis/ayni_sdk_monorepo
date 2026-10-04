@@ -8,6 +8,8 @@ import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
+import 'evidence_event.dart';
+import 'evidence_store.dart';
 import 'installation_id_store.dart';
 import 'sdk_consent.dart';
 import 'telemetry_policy_store.dart';
@@ -934,6 +936,7 @@ class AyniSdk {
     storageDirectory,
   );
   late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
+  late final EvidenceStore _evidence = EvidenceStore(storageDirectory);
   Future<void> _consentWork = Future<void>.value();
   var _traceOutboxGeneration = 0;
   var _traceUploadsPaused = false;
@@ -972,6 +975,59 @@ class AyniSdk {
       await syncInProgress;
     } finally {
       _traceClearsInProgress--;
+    }
+  }
+
+  /// Deletes the evidence for datasets saved on this device (US-066).
+  ///
+  /// Call it when the person withdraws the consent the app passes to [run]
+  /// as `evidenceConsent`: first stop passing `evidenceConsent: true` and
+  /// wait for active [run] calls. It waits for the evidence the SDK is still
+  /// saving and then deletes it too, so no image of a capture stays on the
+  /// device. It does not affect installed workflows and models or pending
+  /// traces.
+  Future<void> clearPendingEvidence() => _evidence.clear();
+
+  void _queueEvidence(
+    List<WorkflowCapture> captures, {
+    required Uint8List image,
+    required _Workflow workflow,
+    required _Inventory inventory,
+    required DateTime capturedAt,
+    void Function(EvidenceEvent event)? onEvidence,
+  }) {
+    for (final capture in captures) {
+      final evidenceId = createUuidV4();
+      final model = inventory.models[capture.modelVersionId];
+      unawaited(
+        _evidence
+            .save(evidenceId, image, {
+              'evidenceSchemaVersion': 1,
+              'evidenceId': evidenceId,
+              'capturedAt': capturedAt.toIso8601String(),
+              'workflowId': workflow.id,
+              'workflowVersionId': workflow.workflowVersionId,
+              'workflowVersion': workflow.version,
+              'captureNodeId': capture.nodeId,
+              'model': {
+                'modelVersionId': capture.modelVersionId,
+                if (model != null) 'version': model.version,
+                if (model != null) 'sha256': model.sha256,
+              },
+              'result': WorkflowTrace.encodeOutputs({
+                'result': capture.result,
+              })['result'],
+            })
+            .then(
+              (_) {
+                onProgress?.call(EvidenceEvent.evidenceQueued.message);
+                onEvidence?.call(EvidenceEvent.evidenceQueued);
+              },
+              // The result was already returned; a capture that cannot be
+              // saved is dropped without affecting it.
+              onError: (Object _) {},
+            ),
+      );
     }
   }
 
@@ -1021,6 +1077,16 @@ class AyniSdk {
   /// [cancelExecution] while this call is active. Cancellation stops pending
   /// nodes after any currently running inference finishes.
   ///
+  /// When the workflow reaches a `dataset.capture` node, the SDK creates
+  /// evidence for a dataset only if [evidenceConsent] is `true`: pass it only
+  /// while the person has given the consent your app requires for evidence
+  /// collection. The SDK saves a copy of [input] with the captured inference
+  /// result, the workflow version, and the model in [storageDirectory] after
+  /// returning the result, without delaying it or failing it, and then
+  /// reports [EvidenceEvent.evidenceQueued] to [onEvidence] and its message,
+  /// `Evidencia guardada para envío posterior.`, to [onProgress]. Without
+  /// consent (the default), it skips the capture and keeps no image.
+  ///
   /// ```dart
   /// try {
   ///   final result = await sdk.run(workflowId, image);
@@ -1047,6 +1113,8 @@ class AyniSdk {
     Uint8List input, {
     void Function(String executionId)? onExecutionStarted,
     WorkflowTraceContext? traceContext,
+    bool evidenceConsent = false,
+    void Function(EvidenceEvent event)? onEvidence,
   }) async {
     if (platform.isUnsupportedAndroid) {
       throw UnsupportedError(
@@ -1137,6 +1205,7 @@ class AyniSdk {
         }
       }
       onProgress?.call('Usando recursos guardados en este dispositivo.');
+      final captures = <WorkflowCapture>[];
       final result = await executor.execute(
         executionId: executionId,
         workflowId: workflowId,
@@ -1145,6 +1214,8 @@ class AyniSdk {
         imageBytes: input,
         isCancelled: () => execution.cancelled,
         onNodeFinished: captureTrace ? traceNodes.add : null,
+        // Without consent the SDK does not even note a capture (US-066).
+        onCapture: evidenceConsent ? captures.add : null,
       );
       _throwIfCancelled(execution);
       stopwatch.stop();
@@ -1159,6 +1230,17 @@ class AyniSdk {
         outputs: result.outputs,
       );
       final persisted = await _persistTrace(trace, traceGeneration);
+      if (captures.isNotEmpty) {
+        _queueEvidence(
+          captures,
+          // A copy: the app may reuse its buffer once the result arrives.
+          image: Uint8List.fromList(input),
+          workflow: workflow,
+          inventory: inventory,
+          capturedAt: startedAt,
+          onEvidence: onEvidence,
+        );
+      }
       return result.withTrace(
         trace,
         tracePersistenceFailed: trace != null && !persisted,

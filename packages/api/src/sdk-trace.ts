@@ -265,7 +265,7 @@ export const sdkTraceSchema = z.strictObject({
   nodes: z.array(
     z.strictObject({
       nodeId: boundedId,
-      type: z.enum(["input.image", "model.tflite", "condition", "output"]),
+      type: z.enum(["input.image", "model.tflite", "condition", "output", "dataset.capture"]),
       status: z.enum(["completed", "skipped", "failed"]),
       durationMs: z.number().int().nonnegative().optional(),
       modelVersionId: boundedId.optional(),
