@@ -244,7 +244,7 @@ Cada uno tiene su propia política, consentimiento y retención:
 | Aspecto | Telemetría (trazas) | Evidencia para datasets |
 | --- | --- | --- |
 | Qué guarda y envía | Metadatos de la ejecución, sin imágenes ni bytes de entrada. | Una copia optimizada de la imagen y el resultado de inferencia que recibió el nodo. |
-| Política que la habilita | «Permitir telemetría técnica», en `Privacidad y telemetría`. Un nodo `dataset.capture` en el workflow, que un administrador solo puede agregar con «Permitir captura de imágenes para datasets» activado en «Recolección de evidencia». Esa política habilita el envío; esta versión no la aplica a la captura local. |
+| Política que la habilita | «Permitir telemetría técnica», en `Privacidad y telemetría`. | Un nodo `dataset.capture` en el workflow, que un administrador solo puede agregar con «Permitir captura de imágenes para datasets» activado en «Recolección de evidencia». Esa política habilita el envío; esta versión no la aplica a la captura local. |
 | Consentimiento | El permiso de validación que gestiona la app antes de pasar `traceContext` a `run()`; `sdkImprovement` no lo cubre. | El consentimiento de recolección que gestiona la app, con `evidenceConsent: true`. |
 | Retención en el dispositivo | Hasta el acuse del servidor o hasta `clearPendingTraces()`. | Hasta que el servidor confirma su recepción o hasta `clearPendingEvidence()`. |
 | Retención en el servidor | 7, 30 o 90 días desde su recepción (ver [Retención de las trazas en el servidor](#retención-de-las-trazas-en-el-servidor)). | Sin retención definida (ver [Retención de la evidencia en el servidor](#retención-de-la-evidencia-en-el-servidor)). |
