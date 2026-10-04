@@ -273,21 +273,21 @@ git commit -m "feat: add validation operator screen"
 - Consumes: Complete app from Tasks 1–6 and the published `ayni_sdk` 0.2.0 package.
 - Produces: reproducible Android release builds for the common selector APK and isolated `control`/`treatment` variants; README lists actual commands, resolved SDK version, hashes, and environment/device prerequisites.
 
-- [ ] **Step 1: Add a failing build-configuration check** that rejects SDK dependency drift from 0.2.0, `minSdk < 26`, non-CPU runner configuration, and a variant that accidentally activates both run adapters.
+- [x] **Step 1: Add a build-configuration check** for SDK 0.2.0, `minSdk = 26`, CPU inference, and the selector/control/treatment runner-routing matrix.
 - [ ] **Step 2: Run the focused build-configuration check**
 
 Run: `cd apps/native; flutter test test/validation/build_configuration_test.dart`
 
-Expected: FAIL because the isolated build variants are not configured yet.
+The test command was attempted after implementation. Windows Application Control blocked `dartaotruntime.exe` before the test compiler loaded the file, so test assertions did not run.
 
-- [ ] **Step 3: Implement build-time mode isolation** using one compile-time mode define with separate direct/treatment entry paths, while retaining the runtime selector in the common APK. Build with `--dart-define=VALIDATION_CONDITION=control` and `--dart-define=VALIDATION_CONDITION=treatment`; record each APK's actual byte size and SHA-256. Never label the common selector APK as two different sizes.
+- [ ] **Step 3: Implement build-time mode isolation** using one compile-time mode define with separate direct/treatment entry paths, while retaining the runtime selector in the common APK. The selector/control/treatment routing is implemented and rejects a condition that does not belong to an isolated APK. Build with `--dart-define=VALIDATION_CONDITION=control` and `--dart-define=VALIDATION_CONDITION=treatment`; record each APK's actual byte size and SHA-256. Never label the common selector APK as two different sizes.
 - [ ] **Step 4: Run all Flutter, release, and device checks**
 
 Run: `cd apps/native && flutter test && flutter analyze && flutter build apk --release && flutter build apk --release --dart-define=VALIDATION_CONDITION=control && flutter build apk --release --dart-define=VALIDATION_CONDITION=treatment && flutter devices`
 
-Expected: tests/analyzer and all three builds succeed; if a physical Android device is connected, install and smoke-test both conditions, verified offline execution, cancel, trace off/on, revoke, and JSONL export. Otherwise document that the physical-device pilot is pending.
+`flutter analyze` passes. The focused Flutter test and selector release build were attempted, but Windows Application Control blocked `dartaotruntime.exe` before Flutter could compile either one. No APK was produced, so APK sizes and SHA-256 values are not available. `flutter devices` lists Windows, Chrome, and Edge only; the physical Android pilot remains pending.
 
-- [ ] **Step 5: Update environment/setup documentation and commit**. README must instruct enabling Android `cmdline-tools`, accepting Android SDK licenses, setting SDK server URL/credential, preparing the private R2 dataset and published model/workflow resources, and keeping device network state changes external to the measured batch.
+- [x] **Step 5: Update environment/setup documentation and commit**. README instructs enabling Android `cmdline-tools`, accepting Android SDK licenses, setting SDK server URL/credential, preparing the private R2 dataset and published model/workflow resources, and keeping device network state changes external to the measured batch. It also explains the Windows Application Control blocker and requires administrator handling.
 
 ```bash
 git add apps/native
@@ -299,4 +299,4 @@ git commit -m "test: verify android validation app release builds"
 - Spec coverage: both conditions, paired IDs, batch phases, cold-start handoff, same inputs/contracts, private dataset download/hash/path checks, offline execution, model/workflow preparation, CPU, local JSONL, explicit trace disclosure and revocation, SDK sync, cancellation, export, Android API floor, and size variants each appear in Tasks 1–7.
 - Type consistency: the `ValidationConditionRunner`, `ValidationRunRequest`, `ConditionRunResult`, `VerifiedDataset`, and `ValidationRunRecord` names introduced in Tasks 2–4 are consumed unchanged by Tasks 5–6.
 - Scope: no training, image/model/workflow editing, result upload, image/tensor transfer, iOS target, `dataset.capture`, or Macrobenchmark replacement is introduced.
-- Environment: the current host has Android Studio, Flutter/Dart, and Android SDK 36; it still needs `cmdline-tools`, accepted SDK licenses, and a connected physical test phone before a device pilot. This plan records that as setup/verification work rather than assuming it is complete.
+- Environment: the current host has Android Studio, Flutter/Dart, Android SDK 36, and the build installed the accepted NDK/platform/CMake packages. `cmdline-tools` are missing, no Android device is connected, and Windows Application Control blocks the Flutter AOT runtime, preventing Flutter tests and APK generation on this host until its administrator permits the approved runtime.

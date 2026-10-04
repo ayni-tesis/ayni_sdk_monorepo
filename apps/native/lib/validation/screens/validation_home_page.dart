@@ -20,6 +20,7 @@ import '../models/validation_run_record.dart';
 import '../storage/validation_jsonl_exporter.dart';
 import '../storage/validation_jsonl_store.dart';
 import '../storage/validation_preferences.dart';
+import '../validation_build_mode.dart';
 
 abstract interface class ValidationHomeRuntime {
   Future<ExperimentPlan> loadPlan();
@@ -117,6 +118,12 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<ExperimentPlan> loadPlan() async {
+    if (!validationBuildModeIsValid) {
+      throw const ValidationHomeException(
+        'invalidBuildMode',
+        'La condición fijada para este APK no es válida.',
+      );
+    }
     final plan = await ExperimentPlan.load(_assetBundle);
     _plan = plan;
     return plan;
@@ -161,6 +168,16 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     required ValidationCondition condition,
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   }) async {
+    final runnerKind = validationRunnerKindFor(
+      buildMode: validationBuildMode,
+      condition: condition,
+    );
+    if (runnerKind == ValidationRunnerKind.unavailable) {
+      throw const ValidationHomeException(
+        'conditionUnavailable',
+        'La condición seleccionada no está disponible en este APK.',
+      );
+    }
     if (!profile.isConfigured) {
       throw const ValidationHomeException(
         'profileNotConfigured',
@@ -202,36 +219,41 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     );
     _dataset = dataset;
 
-    final modelRepository = HttpValidationModelRepository(
-      serverUrl: serverUrl,
-      credential: credentials.credential,
-      modelsDirectory: modelsDirectory,
-    );
-    final workflowRepository = HttpWorkflowDefinitionRepository(
-      serverUrl: serverUrl,
-      credential: credentials.credential,
-    );
-    _modelRepository = modelRepository;
-    _workflowRepository = workflowRepository;
-    _directRunner = DirectTfliteRunner(
-      profile: profile,
-      modelRepository: modelRepository,
-    );
-    _sdkRunner = AyniSdkValidationRunner(
-      profile: profile,
-      credentials: credentials,
-      storageDirectory: sdkStorageDirectory,
-      sdk: PublicAyniSdkClient(),
-      workflowDefinitions: workflowRepository,
-      preferences: _preferences,
-    );
     _sdkReadyForRuns = false;
-    if (condition == ValidationCondition.control) {
+    if (runnerKind == ValidationRunnerKind.direct) {
+      final modelRepository = HttpValidationModelRepository(
+        serverUrl: serverUrl,
+        credential: credentials.credential,
+        modelsDirectory: modelsDirectory,
+      );
+      _modelRepository = modelRepository;
+      _directRunner = DirectTfliteRunner(
+        profile: profile,
+        modelRepository: modelRepository,
+      );
       await _directRunner!.prepare();
       _activeRunner = _directRunner;
-    } else {
+    } else if (runnerKind == ValidationRunnerKind.sdk) {
+      final workflowRepository = HttpWorkflowDefinitionRepository(
+        serverUrl: serverUrl,
+        credential: credentials.credential,
+      );
+      _workflowRepository = workflowRepository;
+      _sdkRunner = AyniSdkValidationRunner(
+        profile: profile,
+        credentials: credentials,
+        storageDirectory: sdkStorageDirectory,
+        sdk: PublicAyniSdkClient(),
+        workflowDefinitions: workflowRepository,
+        preferences: _preferences,
+      );
       await _sdkRunner!.prepare();
       _activeRunner = _sdkRunner;
+    } else {
+      throw const ValidationHomeException(
+        'conditionUnavailable',
+        'La condición seleccionada no está disponible en este APK.',
+      );
     }
     return ValidationPreparationState(
       datasetVersion: dataset.version,
@@ -412,6 +434,10 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     _datasetTransport = null;
     _modelRepository = null;
     _workflowRepository = null;
+    _directRunner = null;
+    _sdkRunner = null;
+    _activeRunner = null;
+    _sdkReadyForRuns = false;
   }
 }
 
@@ -437,7 +463,9 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   final _credentialController = TextEditingController();
   final _pairRunIdController = TextEditingController();
   ExperimentPlan? _plan;
-  ValidationCondition _condition = ValidationCondition.control;
+  ValidationCondition _condition = validationBuildMode == 'treatment'
+      ? ValidationCondition.treatment
+      : ValidationCondition.control;
   ValidationScenario? _scenario;
   ValidationPreparationState? _prepared;
   bool _bootstrapping = true;
@@ -510,7 +538,17 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       _credentialController.text.trim().isNotEmpty;
 
   bool get _canPrepare =>
-      !_busy && (_profile?.isConfigured ?? false) && _hasConnection;
+      !_busy &&
+      (_profile?.isConfigured ?? false) &&
+      _hasConnection &&
+      _conditionAvailable;
+
+  bool get _conditionAvailable =>
+      validationRunnerKindFor(
+        buildMode: validationBuildMode,
+        condition: _condition,
+      ) !=
+      ValidationRunnerKind.unavailable;
 
   bool get _canRun =>
       !_busy &&
@@ -518,6 +556,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       _scenario != null &&
       _scenario!.phase != ValidationPhase.coldStart &&
       _pairRunIdController.text.trim().isNotEmpty &&
+      _conditionAvailable &&
       (_condition == ValidationCondition.control || _sdkReady);
 
   Future<void> _saveConnection() async {
@@ -734,7 +773,11 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   }
 
   Future<void> _selectCondition(ValidationCondition? value) async {
-    if (value == null || value == _condition) return;
+    if (value == null ||
+        value == _condition ||
+        validationBuildMode != 'selector') {
+      return;
+    }
     setState(() {
       _condition = value;
       _prepared = null;
@@ -801,8 +844,10 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
                 const SizedBox(height: 12),
                 _buildExperimentCard(plan, scenario),
                 const SizedBox(height: 12),
-                _buildTraceCard(),
-                const SizedBox(height: 12),
+                if (validationBuildMode != 'control') ...[
+                  _buildTraceCard(),
+                  const SizedBox(height: 12),
+                ],
                 _buildActionsCard(),
                 if (_activity != null || _downloadProgress != null) ...[
                   const SizedBox(height: 12),
@@ -929,26 +974,38 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         children: [
           Text('Corrida', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 10),
-          DropdownButtonFormField<ValidationCondition>(
-            key: const ValueKey('condition-selector'),
-            initialValue: _condition,
-            decoration: const InputDecoration(
-              labelText: 'Condición',
-              border: OutlineInputBorder(),
+          if (validationBuildMode == 'selector') ...[
+            DropdownButtonFormField<ValidationCondition>(
+              key: const ValueKey('condition-selector'),
+              initialValue: _condition,
+              decoration: const InputDecoration(
+                labelText: 'Condición',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: ValidationCondition.control,
+                  child: Text('Integración directa'),
+                ),
+                DropdownMenuItem(
+                  value: ValidationCondition.treatment,
+                  child: Text('ayni_sdk'),
+                ),
+              ],
+              onChanged: _busy ? null : _selectCondition,
             ),
-            items: const [
-              DropdownMenuItem(
-                value: ValidationCondition.control,
-                child: Text('Integración directa'),
+            const SizedBox(height: 10),
+          ] else ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Condición fijada para este APK'),
+              subtitle: Text(
+                _condition == ValidationCondition.control
+                    ? 'Integración directa'
+                    : 'ayni_sdk',
               ),
-              DropdownMenuItem(
-                value: ValidationCondition.treatment,
-                child: Text('ayni_sdk'),
-              ),
-            ],
-            onChanged: _busy ? null : _selectCondition,
-          ),
-          const SizedBox(height: 10),
+            ),
+          ],
           DropdownButtonFormField<ValidationScenario>(
             key: const ValueKey('scenario-selector'),
             initialValue: scenario,
@@ -1027,16 +1084,17 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             onPressed: _running ? _cancelBatch : null,
             child: const Text('Cancelar'),
           ),
-          OutlinedButton(
-            key: const ValueKey('sync-sdk'),
-            onPressed:
-                !_busy &&
-                    _condition == ValidationCondition.treatment &&
-                    _prepared != null
-                ? _synchronizeSdk
-                : null,
-            child: const Text('Sincronizar SDK'),
-          ),
+          if (validationBuildMode != 'control')
+            OutlinedButton(
+              key: const ValueKey('sync-sdk'),
+              onPressed:
+                  !_busy &&
+                      _condition == ValidationCondition.treatment &&
+                      _prepared != null
+                  ? _synchronizeSdk
+                  : null,
+              child: const Text('Sincronizar SDK'),
+            ),
           OutlinedButton.icon(
             key: const ValueKey('export-jsonl'),
             onPressed: !_busy && _hasJsonl ? _exportJsonl : null,
