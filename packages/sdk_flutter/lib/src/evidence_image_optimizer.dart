@@ -6,6 +6,11 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'collection_policy_store.dart';
+
+/// The media type of every image [optimizeEvidenceImage] returns.
+const evidenceImageMediaType = 'image/jpeg';
+
 /// The image of an evidence, ready to send: a JPEG of [width] × [height]
 /// pixels.
 typedef OptimizedEvidenceImage = ({Uint8List bytes, int width, int height});
@@ -13,25 +18,21 @@ typedef OptimizedEvidenceImage = ({Uint8List bytes, int width, int height});
 /// The signature of [optimizeEvidenceImage], which tests may replace through
 /// `createAyniSdkForTesting`.
 typedef EvidenceImageOptimizer =
-    OptimizedEvidenceImage Function(
-      Uint8List image, {
-      required int maxImageSize,
-      required int imageQuality,
-    });
+    OptimizedEvidenceImage Function(Uint8List image, CollectionPolicy policy);
 
 /// Prepares the image of an evidence (US-067) with the limits of the
-/// application's collection policy: a JPEG whose longest side is at most
-/// [maxImageSize] pixels, compressed with [imageQuality].
+/// application's collection [policy]: a JPEG whose longest side is at most
+/// its `maxImageSize` pixels, compressed with its `imageQuality`.
 ///
 /// It reads [image] without changing it. It applies the EXIF orientation,
 /// like the workflow's preprocessing, and keeps no EXIF metadata, such as a
 /// location or the camera. It never enlarges a smaller image. It throws a
 /// [FormatException] when [image] cannot be decoded.
 OptimizedEvidenceImage optimizeEvidenceImage(
-  Uint8List image, {
-  required int maxImageSize,
-  required int imageQuality,
-}) {
+  Uint8List image,
+  CollectionPolicy policy,
+) {
+  final CollectionPolicy(:maxImageSize, :imageQuality) = policy;
   img.Image? decoded;
   try {
     decoded = img.decodeImage(image);
@@ -66,10 +67,6 @@ OptimizedEvidenceImage optimizeEvidenceImage(
 /// isolate nothing but these arguments.
 Future<OptimizedEvidenceImage> optimizeEvidenceImageInBackground(
   EvidenceImageOptimizer optimizer,
-  Uint8List image, {
-  required int maxImageSize,
-  required int imageQuality,
-}) => Isolate.run(
-  () =>
-      optimizer(image, maxImageSize: maxImageSize, imageQuality: imageQuality),
-);
+  Uint8List image,
+  CollectionPolicy policy,
+) => Isolate.run(() => optimizer(image, policy));

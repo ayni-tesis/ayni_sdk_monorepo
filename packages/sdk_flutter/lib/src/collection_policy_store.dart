@@ -16,6 +16,14 @@ class CollectionPolicy {
     required this.imageQuality,
   });
 
+  /// The accepted [maxImageSize], as `COLLECTION_MAX_IMAGE_SIZE` in
+  /// `@ayni/api/collection-policy` (the docs' privacy page test compares them).
+  static const maxImageSizeRange = (min: 128, max: 4096);
+
+  /// The accepted [imageQuality], as `COLLECTION_IMAGE_QUALITY` in
+  /// `@ayni/api/collection-policy`.
+  static const imageQualityRange = (min: 10, max: 100);
+
   final int maxImageSize;
   final int imageQuality;
 
@@ -24,11 +32,11 @@ class CollectionPolicy {
     final maxImageSize = value['maxImageSize'];
     final imageQuality = value['imageQuality'];
     if (maxImageSize is! int ||
-        maxImageSize < 128 ||
-        maxImageSize > 4096 ||
+        maxImageSize < maxImageSizeRange.min ||
+        maxImageSize > maxImageSizeRange.max ||
         imageQuality is! int ||
-        imageQuality < 10 ||
-        imageQuality > 100) {
+        imageQuality < imageQualityRange.min ||
+        imageQuality > imageQualityRange.max) {
       return null;
     }
     return CollectionPolicy(

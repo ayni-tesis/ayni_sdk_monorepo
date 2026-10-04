@@ -1,5 +1,6 @@
 // US-067: sync() refreshes the application's collection policy, whose size
 // and quality the SDK applies to each evidence image.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,6 +16,9 @@ void main() {
   var policyBody = '';
   final requests = <HttpRequest>[];
   var redirectTargetRequests = 0;
+  // Both policies answer this late, once for the headers and once more for
+  // the body, without failing.
+  Duration? slowPolicyStep;
 
   const enabledPolicy =
       '{"enabled":true,"consentRequired":true,"network":"wifi",'
@@ -28,6 +32,7 @@ void main() {
     policyBody = enabledPolicy;
     requests.clear();
     redirectTargetRequests = 0;
+    slowPolicyStep = null;
     redirectTarget = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     redirectTarget.listen((request) async {
       redirectTargetRequests++;
@@ -37,6 +42,23 @@ void main() {
     server.listen((request) async {
       requests.add(request);
       request.response.statusCode = HttpStatus.ok;
+      final step = slowPolicyStep;
+      if (step != null && request.uri.path.endsWith('-policy')) {
+        try {
+          final body = request.uri.path == '/sdk/collection-policy'
+              ? policyBody
+              : '{"enabled":false,"retentionDays":30}';
+          await Future<void>.delayed(step);
+          request.response.write(body.substring(0, 1));
+          await request.response.flush();
+          await Future<void>.delayed(step);
+          request.response.write(body.substring(1));
+          await request.response.close();
+        } on Object {
+          // The SDK may have aborted the request.
+        }
+        return;
+      }
       if (request.uri.path == '/sdk/collection-policy') {
         request.response.statusCode = policyStatus;
         if (policyStatus == HttpStatus.found) {
@@ -63,14 +85,28 @@ void main() {
     await storage.delete(recursive: true);
   });
 
-  AyniSdk sdk() => AyniSdk(
+  AyniSdk sdk({Duration syncTimeout = const Duration(seconds: 30)}) => AyniSdk(
     serverUrl: Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
     ),
     credential: 'ayni_sk_test',
     storageDirectory: storage,
+    syncTimeout: syncTimeout,
     allowInsecureLoopback: true,
   );
+
+  test('leaves the required sync its share of the timeout when both policies '
+      'answer slowly', () async {
+    // Each optional attempt may wait 2 s of the 6 s timeout. The telemetry
+    // policy takes 3.8 s; waiting as long for this one would leave the
+    // required sync no time.
+    slowPolicyStep = const Duration(milliseconds: 1900);
+
+    final result = await sdk(syncTimeout: const Duration(seconds: 6)).sync();
+
+    expect(result.status, SyncStatus.upToDate);
+    expect(requests.last.uri.path, '/sdk/sync');
+  });
 
   test('keeps the size and quality of the policy without changing the sync '
       'outcome', () async {

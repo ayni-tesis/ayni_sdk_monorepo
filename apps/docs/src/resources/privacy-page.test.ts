@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import collectionPolicySource from "../../../../packages/api/src/collection-policy.ts?raw";
+import sdkCollectionPolicySource from "../../../../packages/sdk_flutter/lib/src/collection_policy_store.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { dashboardTexts, quotedTexts } from "../guides/dashboard-texts";
 import { tableRows } from "../markdown-table";
@@ -162,6 +164,38 @@ describe("Datos y privacidad (US-147)", () => {
     expect(evidence).toContain("`evidenceConsent: true`");
     expect(evidence).toContain("no vence");
     expect(storedSection).toContain("`diagnostics/collection-policy.json`");
+  });
+
+  it("gives the size and quality ranges and defaults that the server and the SDK apply", () => {
+    const range = (source: string, pattern: RegExp) => {
+      const [, min, max] = pattern.exec(source) ?? [];
+      return { min: Number(min), max: Number(max) };
+    };
+    const defaults = /DEFAULT_COLLECTION_POLICY[^{]*\{([^}]*)\}/.exec(collectionPolicySource)?.[1];
+    const size = range(
+      collectionPolicySource,
+      /COLLECTION_MAX_IMAGE_SIZE = \{ min: (\d+), max: (\d+) \}/,
+    );
+    const quality = range(
+      collectionPolicySource,
+      /COLLECTION_IMAGE_QUALITY = \{ min: (\d+), max: (\d+) \}/,
+    );
+    const defaultSize = /maxImageSize: (\d+)/.exec(defaults ?? "")?.[1];
+    const defaultQuality = /imageQuality: (\d+)/.exec(defaults ?? "")?.[1];
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(
+      range(sdkCollectionPolicySource, /maxImageSizeRange = \(min: (\d+), max: (\d+)\)/),
+    ).toEqual(size);
+    expect(
+      range(sdkCollectionPolicySource, /imageQualityRange = \(min: (\d+), max: (\d+)\)/),
+    ).toEqual(quality);
+    expect(evidence).toContain(
+      `de ${size.min} a ${size.max} píxeles, ${defaultSize} si nadie lo cambió`,
+    );
+    expect(evidence).toContain(
+      `de ${quality.min} a ${quality.max}, ${defaultQuality} si nadie la cambió`,
+    );
   });
 
   it("shows how to delete the data with an example CI analyzes", () => {

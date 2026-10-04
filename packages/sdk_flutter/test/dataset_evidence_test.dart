@@ -615,10 +615,9 @@ void main() {
 const _usingLocal = 'Usando recursos guardados en este dispositivo.';
 
 OptimizedEvidenceImage _failingOptimizer(
-  Uint8List image, {
-  required int maxImageSize,
-  required int imageQuality,
-}) => throw const FormatException('The image cannot be optimized.');
+  Uint8List image,
+  CollectionPolicy policy,
+) => throw const FormatException('The image cannot be optimized.');
 
 String _inventory({bool withUnusedModel = false}) => jsonEncode({
   'workflows': [

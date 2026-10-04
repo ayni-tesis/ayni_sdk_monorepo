@@ -1035,8 +1035,7 @@ class AyniSdk {
               final optimized = await optimizeEvidenceImageInBackground(
                 optimizer,
                 image,
-                maxImageSize: policy.maxImageSize,
-                imageQuality: policy.imageQuality,
+                policy,
               );
               return (
                 image: optimized.bytes,
@@ -1057,7 +1056,7 @@ class AyniSdk {
                     'result': capture.result,
                   })['result'],
                   'image': {
-                    'mediaType': 'image/jpeg',
+                    'mediaType': evidenceImageMediaType,
                     'width': optimized.width,
                     'height': optimized.height,
                     'maxImageSize': policy.maxImageSize,
@@ -1728,25 +1727,47 @@ class AyniSdk {
 
   /// Refreshes the collection policy whose size and quality [run] applies to
   /// each evidence image (US-067). Like the telemetry policy, a failed
-  /// refresh keeps the last valid policy.
-  Future<void> _refreshCollectionPolicy(HttpClient client) async {
+  /// refresh keeps the last valid policy. It never waits into the part of
+  /// the sync timeout kept for the required sync.
+  Future<void> _refreshCollectionPolicy(
+    HttpClient client,
+    _SyncDeadline deadline,
+  ) async {
+    Duration timeout() {
+      final budget = deadline.optionalRequestBudget;
+      return budget < _optionalRequestAttemptTimeout
+          ? budget
+          : _optionalRequestAttemptTimeout;
+    }
+
+    if (deadline.expired || timeout() <= Duration.zero) return;
     final request = await client.getUrl(
       serverUrl.resolve('/sdk/collection-policy'),
     );
     request.followRedirects = false;
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final requestTimeout = timeout();
+    if (requestTimeout <= Duration.zero) {
+      request.abort();
+      return;
+    }
     final response = await request.close().timeout(
-      _optionalRequestAttemptTimeout,
+      requestTimeout,
       onTimeout: () {
         request.abort();
         throw TimeoutException('Collection policy request timed out');
       },
     );
+    final responseTimeout = timeout();
+    if (responseTimeout <= Duration.zero) {
+      request.abort();
+      return;
+    }
     final body = await utf8.decoder
         .bind(response)
         .join()
         .timeout(
-          _optionalRequestAttemptTimeout,
+          responseTimeout,
           onTimeout: () {
             request.abort();
             throw TimeoutException('Collection policy response timed out');
@@ -1821,7 +1842,7 @@ class AyniSdk {
       // Policy refresh is optional; a failed refresh keeps the last valid cache.
     }
     try {
-      await _refreshCollectionPolicy(client);
+      await _refreshCollectionPolicy(client, deadline);
     } on Exception {
       // Optional too: evidence keeps using the last valid collection policy.
     }
@@ -2772,6 +2793,13 @@ class _SyncDeadline {
   final Duration timeout;
   final Stopwatch _stopwatch;
   var expired = false;
+
+  /// What an optional request before the required sync may still use: the
+  /// time left before the third of [timeout] kept for the required sync.
+  Duration get optionalRequestBudget {
+    final available = timeout - _stopwatch.elapsed - timeout ~/ 3;
+    return available <= Duration.zero ? Duration.zero : available;
+  }
 
   Duration get traceUploadBudget {
     final reserve = timeout ~/ 3;

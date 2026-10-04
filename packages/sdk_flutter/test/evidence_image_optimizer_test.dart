@@ -2,6 +2,7 @@
 // limits of the collection policy before it is kept for sending.
 import 'dart:typed_data';
 
+import 'package:ayni_sdk/src/collection_policy_store.dart';
 import 'package:ayni_sdk/src/evidence_image_optimizer.dart';
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
@@ -20,8 +21,7 @@ void main() {
   test('reduces the longest side of a landscape image to the policy size', () {
     final optimized = optimizeEvidenceImage(
       png(400, 200),
-      maxImageSize: 128,
-      imageQuality: 80,
+      const CollectionPolicy(maxImageSize: 128, imageQuality: 80),
     );
 
     final image = decodeJpeg(optimized.bytes);
@@ -32,8 +32,7 @@ void main() {
   test('reduces the longest side of a portrait image to the policy size', () {
     final optimized = optimizeEvidenceImage(
       png(150, 300),
-      maxImageSize: 128,
-      imageQuality: 80,
+      const CollectionPolicy(maxImageSize: 128, imageQuality: 80),
     );
 
     final image = decodeJpeg(optimized.bytes);
@@ -43,8 +42,7 @@ void main() {
   test('never enlarges an image smaller than the policy size', () {
     final optimized = optimizeEvidenceImage(
       png(100, 50),
-      maxImageSize: 1024,
-      imageQuality: 80,
+      const CollectionPolicy(maxImageSize: 1024, imageQuality: 80),
     );
 
     final image = decodeJpeg(optimized.bytes);
@@ -54,8 +52,7 @@ void main() {
   test('keeps at least one pixel on the short side of a very thin image', () {
     final optimized = optimizeEvidenceImage(
       png(1000, 1),
-      maxImageSize: 128,
-      imageQuality: 80,
+      const CollectionPolicy(maxImageSize: 128, imageQuality: 80),
     );
 
     expect((optimized.width, optimized.height), (128, 1));
@@ -73,13 +70,11 @@ void main() {
 
     final low = optimizeEvidenceImage(
       input,
-      maxImageSize: 128,
-      imageQuality: 10,
+      const CollectionPolicy(maxImageSize: 128, imageQuality: 10),
     );
     final high = optimizeEvidenceImage(
       input,
-      maxImageSize: 128,
-      imageQuality: 100,
+      const CollectionPolicy(maxImageSize: 128, imageQuality: 100),
     );
 
     expect(low.bytes.length, lessThan(high.bytes.length));
@@ -96,8 +91,7 @@ void main() {
 
     final optimized = optimizeEvidenceImage(
       input,
-      maxImageSize: 1024,
-      imageQuality: 80,
+      const CollectionPolicy(maxImageSize: 1024, imageQuality: 80),
     );
 
     final image = decodeJpeg(optimized.bytes);
@@ -109,8 +103,7 @@ void main() {
     expect(
       () => optimizeEvidenceImage(
         Uint8List.fromList([1, 2, 3]),
-        maxImageSize: 1024,
-        imageQuality: 80,
+        const CollectionPolicy(maxImageSize: 1024, imageQuality: 80),
       ),
       throwsFormatException,
     );
