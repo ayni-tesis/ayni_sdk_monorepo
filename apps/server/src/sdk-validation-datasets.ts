@@ -71,6 +71,15 @@ export function createSdkValidationDatasetsApp({
       );
     }
     if (verified.ok === false) {
+        if (verified.code === "applicationArchived") {
+          return c.json(
+            {
+              message: DATASET_VERSION_NOT_FOUND_MESSAGE,
+              code: "datasetVersionNotFound",
+            },
+            404,
+          );
+        }
       return c.json({ message: verified.message, code: verified.code }, 401);
     }
 

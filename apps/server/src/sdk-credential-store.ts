@@ -110,7 +110,11 @@ export type VerifiedSdkCredential = {
 
 export type VerifySdkCredentialResult =
   | { ok: true; credential: VerifiedSdkCredential }
-  | { ok: false; code: "invalidCredential" | "credentialRevoked"; message: string };
+  | { ok: false; code: "invalidCredential" | "credentialRevoked" | "applicationArchived"; message: string };
+
+export type UseSdkCredentialOptions = {
+  reportArchivedApplication?: boolean;
+};
 
 export const SDK_CREDENTIAL_REVOKED_MESSAGE =
   "La credencial fue revocada. Genera una nueva credencial para continuar.";
@@ -412,6 +416,7 @@ export async function listSdkCredentials(
 export async function useSdkCredential(
   database: CredentialDatabase,
   secret: string,
+  options: UseSdkCredentialOptions = {},
 ): Promise<VerifySdkCredentialResult> {
   return database.transaction(async (transaction) => {
     const tx = transaction as TransactionExecutor;
@@ -435,13 +440,17 @@ export async function useSdkCredential(
       return { ok: false, code: "credentialRevoked", message: SDK_CREDENTIAL_REVOKED_MESSAGE };
     }
 
-    const activeApplicationRows = await tx
-      .select({ id: application.id })
+    const applicationRows = await tx
+      .select({ id: application.id, status: application.status })
       .from(application)
-      .where(and(eq(application.id, found.applicationId), eq(application.status, "active")))
+      .where(eq(application.id, found.applicationId))
       .limit(1)
       .for("update");
-    if (!activeApplicationRows[0]) {
+    const foundApplication = applicationRows[0] as { id: string; status?: string } | undefined;
+    if (foundApplication?.status === "archived" && options.reportArchivedApplication) {
+      return { ok: false, code: "applicationArchived", message: INVALID_CREDENTIAL_MESSAGE };
+    }
+    if (!foundApplication || foundApplication.status !== "active") {
       return { ok: false, code: "invalidCredential", message: INVALID_CREDENTIAL_MESSAGE };
     }
 

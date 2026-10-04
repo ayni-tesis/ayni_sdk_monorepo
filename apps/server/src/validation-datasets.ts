@@ -270,7 +270,7 @@ export function createValidationDatasetsApp({
       return c.json({ message: INVALID_UPLOAD_MESSAGE, code: "invalidUpload" }, 400);
     }
 
-    const { uploadId, version, partition } = parsed.data;
+      const { uploadId, version, partition, sha256 } = parsed.data;
     const key = stagingKey(application.id, uploadId);
     try {
       if (application.status !== "active") {
@@ -320,6 +320,7 @@ export function createValidationDatasetsApp({
         userId: session.user.id,
         version,
         partition,
+        expectedSha256: sha256,
         bytes,
       });
       if (result.ok) return c.json({ datasetVersion: result.value }, 201);
@@ -366,6 +367,8 @@ export function createValidationDatasetsApp({
               );
         case "hash":
           return c.json({ message: "No se pudo verificar el hash del ZIP.", code: "datasetHashFailed" }, 500);
+          case "hashMismatch":
+            return c.json({ message: "El SHA-256 del ZIP no coincide con el archivo seleccionado.", code: "datasetHashMismatch" }, 400);
         case "storageFailed":
         case "databaseFailed":
           return c.json({ message: UPLOAD_FAILED_MESSAGE, code: "datasetSaveFailed" }, 500);

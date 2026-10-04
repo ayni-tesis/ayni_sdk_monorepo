@@ -18,6 +18,7 @@ export const ValidationDatasetVersionUploadRequestSchema = z
 
 export const ValidationDatasetUploadRequestSchema = ValidationDatasetVersionUploadRequestSchema.extend({
   uploadId: z.string().uuid(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 
 export const ValidationDatasetCancelRequestSchema = z
@@ -217,7 +218,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
         description: "Versión publicada con SHA-256 y tamaño verificados.",
         content: { "application/json": { schema: ValidationDatasetCompleteResponseSchema } },
       },
-      "400": errorResponse("La solicitud o el objeto ZIP no es válido."),
+        "400": errorResponse("La solicitud o el objeto ZIP no es válido o su SHA-256 no coincide."),
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para subir datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -145,6 +145,54 @@ describe("ValidationDatasetsPanel", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("keeps each dataset card's selected ZIP and metadata isolated", async () => {
+    const user = userEvent.setup();
+    getMock.mockResolvedValue({
+      data: {
+        datasets: [
+          dataset,
+          {
+            ...dataset,
+            id: "dataset-2",
+            name: "Aves",
+            versions: [],
+          },
+        ],
+      },
+    });
+    uploadMock.mockResolvedValue({ ok: false, code: "cancelled", message: "" });
+    renderPanel();
+
+    await screen.findByText("Flores");
+    await screen.findByText("Aves");
+    const flores = screen.getByRole("heading", { name: "Flores" }).closest("article");
+    const aves = screen.getByRole("heading", { name: "Aves" }).closest("article");
+    expect(flores).not.toBeNull();
+    expect(aves).not.toBeNull();
+
+    const floresCard = within(flores!);
+    const avesCard = within(aves!);
+    await user.type(floresCard.getByLabelText("Versión"), "2.0.0");
+    await user.type(floresCard.getByLabelText("Partición"), "flores");
+    fireEvent.change(floresCard.getByLabelText("Archivo ZIP"), {
+      target: { files: [new File(["flores"], "flores.zip", { type: "application/zip" })] },
+    });
+    fireEvent.change(avesCard.getByLabelText("Versión"), { target: { value: "3.0.0" } });
+    fireEvent.change(avesCard.getByLabelText("Partición"), { target: { value: "aves" } });
+    fireEvent.change(avesCard.getByLabelText("Archivo ZIP"), {
+      target: { files: [new File(["aves"], "aves.zip", { type: "application/zip" })] },
+    });
+
+    await user.click(floresCard.getByRole("button", { name: "Subir versión" }));
+
+    expect(uploadMock).toHaveBeenCalledWith(expect.objectContaining({
+      datasetId: "dataset-1",
+      version: "2.0.0",
+      partition: "flores",
+      file: expect.objectContaining({ name: "flores.zip" }),
+    }));
   });
 
   it("cancels an active transfer", async () => {

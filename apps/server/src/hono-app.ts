@@ -337,6 +337,12 @@ const sdkModelVersions = {
   },
 };
 
+const sdkValidationDatasetCredentials = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret, { reportArchivedApplication: true });
+  },
+};
+
 const sdkSync = {
   verify(secret: string) {
     return useSdkCredential(db, secret);
@@ -834,7 +840,7 @@ app.route(
 app.route(
   "/",
   createSdkValidationDatasetsApp({
-    credentials: sdkModelVersions,
+    credentials: sdkValidationDatasetCredentials,
     datasets: validationDatasets,
     storage: r2ValidationDatasetStorage,
   }),

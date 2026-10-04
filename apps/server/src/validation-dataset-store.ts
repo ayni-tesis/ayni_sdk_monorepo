@@ -59,6 +59,7 @@ export type ValidationDatasetStoreFailureReason =
   | "versionExists"
   | "size"
   | "hash"
+  | "hashMismatch"
   | "storageFailed"
   | "databaseFailed";
 
@@ -80,6 +81,7 @@ export type CompleteValidationDatasetUploadInput = {
   userId: string;
   version: string;
   partition: string;
+  expectedSha256: string;
   bytes: Uint8Array;
 };
 
@@ -104,12 +106,14 @@ type CompleteOutcome =
   | { kind: "versionExists" };
 
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "23505"
-  );
+  const visited = new Set<object>();
+  let current: unknown = error;
+  while (typeof current === "object" && current !== null && !visited.has(current)) {
+    visited.add(current);
+    if ("code" in current && (current as { code?: unknown }).code === "23505") return true;
+    current = "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+  }
+  return false;
 }
 
 function isoString(value: unknown): string {
@@ -286,6 +290,9 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
         sha256 = await computeSha256Hex(input.bytes);
       } catch {
         return { ok: false, reason: "hash" };
+      }
+      if (!/^[a-f0-9]{64}$/.test(input.expectedSha256) || sha256 !== input.expectedSha256) {
+        return { ok: false, reason: "hashMismatch" };
       }
 
       const versionId = crypto.randomUUID();

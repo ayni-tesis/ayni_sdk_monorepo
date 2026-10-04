@@ -77,8 +77,14 @@ describe("uploadValidationDataset", () => {
       "/applications/app-1/validation-datasets/dataset-1/versions/upload-url",
       "/applications/app-1/validation-datasets/dataset-1/versions/complete",
     ]);
+      expect(httpPostMock.mock.calls[1]?.[1]).toMatchObject({
+        uploadId: "upload-1",
+        version: "1.0.0",
+        partition: "test",
+        sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      });
     expect(onProgress.mock.calls.map(([percent]) => percent)).toEqual([25, 99, 100]);
-    expect(onPhase.mock.calls.map(([phase]) => phase)).toEqual(["uploading", "verifying"]);
+      expect(onPhase.mock.calls.map(([phase]) => phase)).toEqual(["verifying", "uploading", "verifying"]);
   });
 
   it("deletes the staged ZIP when the direct upload is canceled", async () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -39,6 +40,7 @@ const datasetVersion = {
 };
 
 const uploadUrl = "/applications/app-1/validation-datasets";
+const testZipSha256 = createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex");
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -320,6 +322,7 @@ describe("direct-to-R2 validation dataset upload", () => {
       uploadId,
       version: "1.0.0",
       partition: "test",
+      sha256: testZipSha256,
     }));
 
     expect(response.status).toBe(201);
@@ -330,6 +333,7 @@ describe("direct-to-R2 validation dataset upload", () => {
       userId: "admin",
       version: "1.0.0",
       partition: "test",
+      expectedSha256: testZipSha256,
       bytes,
     });
     expect(removeArtifactMock).toHaveBeenCalledWith(`staging/app-1/validation-datasets/${uploadId}.zip`);
@@ -343,7 +347,7 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/complete`,
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
     );
 
     expect(response.status).toBe(400);
@@ -361,7 +365,7 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/complete`,
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
     );
 
     expect(response.status).toBe(400);
@@ -377,7 +381,7 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/complete`,
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
     );
 
     expect(response.status).toBe(413);
@@ -394,10 +398,32 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/complete`,
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
     );
 
     expect(response.status).toBe(409);
+    expect(completeUploadMock).toHaveBeenCalledTimes(1);
+    expect(removeArtifactMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a bad request for a mismatched ZIP hash and removes the staging object", async () => {
+    const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
+    const { app, completeUploadMock, removeArtifactMock } = makeApp({
+      completeUpload: async (_input) => ({ ok: false, reason: "hashMismatch" }),
+    });
+
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/complete`,
+      jsonRequest({
+        uploadId,
+        version: "1.0.0",
+        partition: "test",
+        sha256: "f".repeat(64),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "datasetHashMismatch" });
     expect(completeUploadMock).toHaveBeenCalledTimes(1);
     expect(removeArtifactMock).toHaveBeenCalledTimes(1);
   });
@@ -416,7 +442,7 @@ describe("direct-to-R2 validation dataset upload", () => {
 
       const response = await app.request(
         `${uploadUrl}/dataset-1/versions/complete`,
-        jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+        jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: testZipSha256 }),
       );
 
       expect(response.status).toBe(expectedStatus);

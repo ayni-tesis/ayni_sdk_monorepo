@@ -3180,12 +3180,17 @@
                   "uploadId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
                   }
                 },
                 "required": [
                   "version",
                   "partition",
-                  "uploadId"
+                  "uploadId",
+                  "sha256"
                 ],
                 "additionalProperties": false
               }
@@ -3256,7 +3261,7 @@
             }
           },
           "400": {
-            "description": "La solicitud o el objeto ZIP no es válido.",
+            "description": "La solicitud o el objeto ZIP no es válido o su SHA-256 no coincide.",
             "content": {
               "application/json": {
                 "schema": {

@@ -71,15 +71,6 @@ export function ValidationDatasetsPanel({
   const [source, setSource] = useState("");
   const [license, setLicense] = useState("");
   const [declaredRedistribution, setDeclaredRedistribution] = useState(false);
-  const [version, setVersion] = useState("");
-  const [partition, setPartition] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadingDatasetId, setUploadingDatasetId] = useState<string | null>(null);
-  const [uploadPhase, setUploadPhase] = useState<"starting" | "uploading" | "verifying">("starting");
-  const [progress, setProgress] = useState(0);
-  const [uploadError, setUploadError] = useState("");
-  const abortRef = useRef<AbortController | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canEdit = canManage && applicationStatus === "active";
 
   const loadDatasets = useCallback(async () => {
@@ -99,7 +90,6 @@ export function ValidationDatasetsPanel({
 
   useEffect(() => {
     void loadDatasets();
-    return () => abortRef.current?.abort();
   }, [loadDatasets]);
 
   async function registerDataset(event: React.FormEvent<HTMLFormElement>) {
@@ -135,75 +125,6 @@ export function ValidationDatasetsPanel({
     } finally {
       setCreating(false);
     }
-  }
-
-  function resetUpload() {
-    setUploadingDatasetId(null);
-    setUploadPhase("starting");
-    setProgress(0);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setFile(null);
-    setUploadError("");
-  }
-
-  async function submitUpload(datasetId: string) {
-    if (!canEdit || uploadingDatasetId) return;
-    if (!STRICT_SEMVER.test(version.trim())) {
-      setUploadError("Ingresa una versión SemVer válida, por ejemplo 1.0.0.");
-      return;
-    }
-    if (!/^[A-Za-z0-9._-]{1,64}$/.test(partition)) {
-      setUploadError("Ingresa una partición válida de hasta 64 caracteres.");
-      return;
-    }
-    if (!file || !file.name.toLowerCase().endsWith(".zip") || file.size === 0) {
-      setUploadError("Selecciona un archivo ZIP válido.");
-      return;
-    }
-    if (file.size > MAX_ZIP_BYTES) {
-      setUploadError("El ZIP supera el tamaño máximo permitido de 128 MiB.");
-      return;
-    }
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setUploadingDatasetId(datasetId);
-    setUploadPhase("starting");
-    setProgress(0);
-    setUploadError("");
-    setNotice("");
-
-    const result: ValidationDatasetUploadResult = await uploadValidationDataset({
-      applicationId,
-      datasetId,
-      version: version.trim(),
-      partition,
-      file,
-      signal: controller.signal,
-      onProgress: setProgress,
-      onPhase: setUploadPhase,
-    });
-    abortRef.current = null;
-
-    if (!result.ok) {
-      resetUpload();
-      if (result.code !== "canceled") {
-        setUploadError(
-          result.code === "datasetVersionExists"
-            ? DUPLICATE_VERSION_MESSAGE
-            : result.message || "No se pudo guardar el dataset.",
-        );
-      }
-      return;
-    }
-
-    resetUpload();
-    setVersion("");
-    setPartition("");
-    setNotice(
-      "ZIP verificado y publicado. Los dispositivos comprobarán el manifiesto y las imágenes antes de ejecutar.",
-    );
-    await loadDatasets();
   }
 
   return (
@@ -313,85 +234,177 @@ export function ValidationDatasetsPanel({
               </div>
             )}
 
-            {canEdit && (
-              <div className="space-y-3 border-t pt-4">
-                <h4 className="font-medium text-sm">Subir una versión ZIP</h4>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <label className="space-y-2 text-sm font-medium">
-                    <span>Versión</span>
-                    <Input
-                      value={version}
-                      placeholder="1.0.0"
-                      disabled={uploadingDatasetId !== null}
-                      onChange={(event) => setVersion(event.target.value)}
-                    />
-                  </label>
-                  <label className="space-y-2 text-sm font-medium">
-                    <span>Partición</span>
-                    <Input
-                      value={partition}
-                      placeholder="test"
-                      disabled={uploadingDatasetId !== null}
-                      onChange={(event) => setPartition(event.target.value)}
-                    />
-                  </label>
-                  <label className="space-y-2 text-sm font-medium">
-                    <span>Archivo ZIP</span>
-                    <Input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".zip,application/zip"
-                      disabled={uploadingDatasetId !== null}
-                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                </div>
-
-                {uploadingDatasetId === dataset.id && (
-                  <div className="space-y-1">
-                    {uploadPhase === "verifying" ? (
-                      <p role="status" className="text-muted-foreground text-sm">
-                        Verificando ZIP y calculando SHA-256…
-                      </p>
-                    ) : (
-                      <>
-                        <div
-                          role="progressbar"
-                          aria-label="Subiendo ZIP del dataset"
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={progress}
-                          className="h-2 w-full overflow-hidden rounded-full bg-muted"
-                        >
-                          <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
-                        </div>
-                        <p className="text-muted-foreground text-sm">Subiendo ZIP… {progress}%</p>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {uploadError && <p role="alert" className="text-destructive text-sm">{uploadError}</p>}
-                {uploadingDatasetId === dataset.id ? (
-                  uploadPhase !== "verifying" && (
-                    <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}>
-                      Cancelar subida
-                    </Button>
-                  )
-                ) : (
-                  <Button
-                    type="button"
-                    disabled={uploadingDatasetId !== null}
-                    onClick={() => void submitUpload(dataset.id)}
-                  >
-                    Subir versión
-                  </Button>
-                )}
-              </div>
-            )}
+              {canEdit && (
+                <ValidationDatasetVersionUpload
+                  applicationId={applicationId}
+                  datasetId={dataset.id}
+                  onUploaded={async () => {
+                    setNotice(
+                      "ZIP verificado y publicado. Los dispositivos comprobarán el manifiesto y las imágenes antes de ejecutar.",
+                    );
+                    await loadDatasets();
+                  }}
+                />
+              )}
           </article>
         ))}
       </div>
     </section>
+  );
+}
+
+function ValidationDatasetVersionUpload({
+  applicationId,
+  datasetId,
+  onUploaded,
+}: {
+  applicationId: string;
+  datasetId: string;
+  onUploaded: () => Promise<void>;
+}) {
+  const [version, setVersion] = useState("");
+  const [partition, setPartition] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<"starting" | "uploading" | "verifying">("starting");
+  const [progress, setProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  async function submitUpload() {
+    if (uploading) return;
+    if (!STRICT_SEMVER.test(version.trim())) {
+      setUploadError("Ingresa una versión SemVer válida, por ejemplo 1.0.0.");
+      return;
+    }
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(partition)) {
+      setUploadError("Ingresa una partición válida de hasta 64 caracteres.");
+      return;
+    }
+    if (!file || !file.name.toLowerCase().endsWith(".zip") || file.size === 0) {
+      setUploadError("Selecciona un archivo ZIP válido.");
+      return;
+    }
+    if (file.size > MAX_ZIP_BYTES) {
+      setUploadError("El ZIP supera el tamaño máximo permitido de 128 MiB.");
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setUploading(true);
+    setUploadPhase("starting");
+    setProgress(0);
+    setUploadError("");
+
+    let result: ValidationDatasetUploadResult;
+    try {
+      result = await uploadValidationDataset({
+        applicationId,
+        datasetId,
+        version: version.trim(),
+        partition,
+        file,
+        signal: controller.signal,
+        onProgress: setProgress,
+        onPhase: setUploadPhase,
+      });
+    } finally {
+      abortRef.current = null;
+      setUploading(false);
+    }
+
+    if (!result.ok) {
+      if (result.code !== "canceled") {
+        setUploadError(
+          result.code === "datasetVersionExists"
+            ? DUPLICATE_VERSION_MESSAGE
+            : result.message || "No se pudo guardar el dataset.",
+        );
+      }
+      return;
+    }
+
+    setVersion("");
+    setPartition("");
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    await onUploaded();
+  }
+
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <h4 className="font-medium text-sm">Subir una versión ZIP</h4>
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="space-y-2 text-sm font-medium">
+          <span>Versión</span>
+          <Input
+            value={version}
+            placeholder="1.0.0"
+            disabled={uploading}
+            onChange={(event) => setVersion(event.target.value)}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium">
+          <span>Partición</span>
+          <Input
+            value={partition}
+            placeholder="test"
+            disabled={uploading}
+            onChange={(event) => setPartition(event.target.value)}
+          />
+        </label>
+        <label className="space-y-2 text-sm font-medium">
+          <span>Archivo ZIP</span>
+          <Input
+            ref={fileInputRef}
+            type="file"
+            accept=".zip,application/zip"
+            disabled={uploading}
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+      </div>
+
+      {uploading && (
+        <div className="space-y-1">
+          {uploadPhase === "verifying" ? (
+            <p role="status" className="text-muted-foreground text-sm">
+              Verificando ZIP y calculando SHA-256…
+            </p>
+          ) : uploadPhase === "uploading" ? (
+            <>
+              <div
+                role="progressbar"
+                aria-label="Subiendo ZIP del dataset"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+                className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              >
+                <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+              </div>
+              <p className="text-muted-foreground text-sm">Subiendo ZIP… {progress}%</p>
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {uploadError && <p role="alert" className="text-destructive text-sm">{uploadError}</p>}
+      {uploading ? (
+        uploadPhase !== "verifying" && (
+          <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}>
+            Cancelar subida
+          </Button>
+        )
+      ) : (
+        <Button type="button" onClick={() => void submitUpload()}>
+          Subir versión
+        </Button>
+      )}
+    </div>
   );
 }

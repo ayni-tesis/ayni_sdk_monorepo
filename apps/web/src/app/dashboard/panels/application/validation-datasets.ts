@@ -16,6 +16,11 @@ export type ValidationDatasetUploadResult =
   | { ok: true; datasetVersion: ValidationDatasetVersion }
   | { ok: false; code: string; message: string };
 
+async function sha256Hex(file: File): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function uploadValidationDataset(input: {
   applicationId: string;
   datasetId: string;
@@ -31,6 +36,12 @@ export async function uploadValidationDataset(input: {
   let phase: "starting" | "uploading" | "verifying" = "starting";
 
   try {
+    input.onPhase?.("verifying");
+    const sha256 = await sha256Hex(input.file);
+    if (input.signal?.aborted) {
+      return { ok: false, code: "canceled", message: "" };
+    }
+
     const { data: upload } = await httpClient.post<{ uploadId: string; uploadUrl: string }>(
       `${basePath}/upload-url`,
       { version: input.version, partition: input.partition },
@@ -54,7 +65,7 @@ export async function uploadValidationDataset(input: {
     input.onPhase?.("verifying");
     const response = await httpClient.post<{ datasetVersion: ValidationDatasetVersion }>(
       `${basePath}/complete`,
-      { uploadId, version: input.version, partition: input.partition },
+        { uploadId, version: input.version, partition: input.partition, sha256 },
       { timeout: 0 },
     );
     input.onProgress(100);

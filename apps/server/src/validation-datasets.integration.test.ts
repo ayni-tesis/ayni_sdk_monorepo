@@ -117,6 +117,9 @@ describe("private validation dataset delivery integration", () => {
       async completeUpload(
         input: CompleteValidationDatasetUploadInput,
       ): Promise<ValidationDatasetStoreResult<ValidationDatasetVersion>> {
+          if (createHash("sha256").update(input.bytes).digest("hex") !== input.expectedSha256) {
+            return { ok: false, reason: "hashMismatch" };
+          }
         const id = "dataset-version-1";
         const storageKey = `applications/${input.applicationId}/validation-datasets/${input.datasetId}/versions/${id}.zip`;
         await storage.putArtifact(storageKey, input.bytes);
@@ -212,7 +215,7 @@ describe("private validation dataset delivery integration", () => {
 
     const completion = await app.request(
       "/applications/app-1/validation-datasets/dataset-1/versions/complete",
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test" }),
+        jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: expectedZipSha256 }),
     );
     expect(completion.status).toBe(201);
     await expect(completion.json()).resolves.toMatchObject({

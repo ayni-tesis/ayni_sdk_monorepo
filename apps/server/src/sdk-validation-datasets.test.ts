@@ -125,6 +125,26 @@ describe("GET /sdk/dataset-versions/:datasetVersionId/manifest", () => {
     expect(createDownloadUrlMock).not.toHaveBeenCalled();
   });
 
+    it("hides an archived application's datasets behind the unavailable-version response", async () => {
+      const { app, getManifestDataMock, createDownloadUrlMock } = makeApp({
+        verify: async () => ({
+          ok: false,
+          code: "applicationArchived",
+          message: "La credencial no es válida.",
+        }),
+      });
+
+      const response = await app.request(MANIFEST_URL, sdkRequest());
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({
+        message: "El dataset de validación ya no está disponible.",
+        code: "datasetVersionNotFound",
+      });
+      expect(getManifestDataMock).not.toHaveBeenCalled();
+      expect(createDownloadUrlMock).not.toHaveBeenCalled();
+    });
+
   it.each(["foreign application", "missing version", "archived application"])(
     "returns the same 404 for a %s and never asks R2 to sign it",
     async () => {
