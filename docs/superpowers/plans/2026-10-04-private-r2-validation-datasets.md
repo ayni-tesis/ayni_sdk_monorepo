@@ -177,7 +177,7 @@ Run: `cd apps/web && bun run test -- src/app/dashboard/panels/application/valida
 
 Expected: tests PASS and TypeScript exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/server/src/validation-datasets.ts apps/server/src/validation-datasets.test.ts packages/api/src/validation-datasets.ts packages/api/src/validation-datasets.test.ts packages/api/src/openapi.test.ts packages/api/src/openapi.json apps/web/src/app/dashboard/dashboard.tsx apps/web/src/app/dashboard/dashboard.test.tsx apps/web/src/app/dashboard/types.ts apps/web/src/components/app-sidebar.tsx 'apps/web/src/app/dashboard/applications/[id]/validation-datasets/page.tsx' apps/web/src/app/dashboard/panels/application/validation-datasets.ts apps/web/src/app/dashboard/panels/application/validation-datasets.test.ts apps/web/src/app/dashboard/panels/application/validation-datasets-panel.tsx apps/web/src/app/dashboard/panels/application/validation-datasets-panel.test.tsx apps/web/src/app/dashboard/panels/application-detail-panel.tsx apps/web/src/app/dashboard/panels/application-detail-panel.test.tsx
@@ -187,17 +187,18 @@ git commit -m "feat: manage validation datasets in dashboard"
 ### Task 5: Verify migration, routes, and private object handling together
 
 **Files:**
-- Modify: relevant `apps/server`/`packages/api` integration tests only if Task 1–4 expose a real gap
+- Create: `apps/server/src/validation-datasets.integration.test.ts`
+- Modify: SDK route documentation tests/pages in `apps/docs` to include the dataset manifest path and errors
 - Verify: `packages/db`, `apps/server`, `packages/api`, and `apps/web`
 
 **Interfaces:**
 - Consumes: The published API and schema from Tasks 1–4.
 - Produces: A verified end-to-end path from administrator ZIP upload to an SDK-authenticated, signed download manifest; no new public interfaces.
 
-- [ ] **Step 1: Add a failing integration test** that creates a dataset, uploads a fixture ZIP through the temporary upload flow, completes it, fetches its SDK manifest with an app credential, and checks that the URL is temporary and the stored record has the actual SHA-256/size.
-- [ ] **Step 2: Run the integration test and verify it fails** before any needed integration wiring is added.
-- [ ] **Step 3: Fix only the integration gap**; keep dataset objects private, versions immutable, and all unauthenticated/foreign requests unable to obtain URLs.
-- [ ] **Step 4: Run final checks**
+- [x] **Step 1: Add an integration test** that creates a dataset, uploads a fixture ZIP through the temporary upload flow, completes it, fetches its SDK manifest with an app credential, and checks that the URL is temporary and the stored record has the actual SHA-256/size.
+- [x] **Step 2: Run the integration test and inspect any failure** before changing production wiring.
+- [x] **Step 3: Fix only a real integration gap, if present**; keep dataset objects private, versions immutable, and all unauthenticated/foreign requests unable to obtain URLs.
+- [x] **Step 4: Run final checks**
 
 Run: `bun run test`
 
@@ -207,12 +208,14 @@ Run: `cd apps/server && bun run check-types`
 
 Run: `cd apps/web && bun run check-types`
 
-Expected: all test/type-check commands exit 0; the new migration is included and production configuration still points at the existing private R2 bucket.
+Expected: all test/type-check commands exit 0; the new migrations are journaled and production dataset storage still uses the existing private R2 bucket and signed URLs.
 
-- [ ] **Step 5: Commit**
+Observed: the first integration run returned 401 because its fixture credential omitted `ayni_sk_`. After matching the existing credential parser, the composed dashboard-to-SDK flow passed without production wiring changes; `apps/server/src/hono-app.ts` already mounts both route factories with the same store and private R2 adapter.
+
+- [x] **Step 5: Commit**
 
 ```bash
-git add packages/db apps/server packages/api apps/web
+git add apps/server/src/validation-datasets.integration.test.ts apps/docs/src/reference/http-reference.test.ts apps/docs/src/reference/status-page.test.ts apps/docs/src/content/docs/referencia/estados-y-errores.md apps/docs/src/content/docs/recursos/datos-y-privacidad.mdx apps/web/src/app/dashboard/panels/application/validation-datasets-panel.test.tsx docs/superpowers/plans/2026-10-04-private-r2-validation-datasets.md
 git commit -m "test: verify private validation dataset delivery"
 ```
 

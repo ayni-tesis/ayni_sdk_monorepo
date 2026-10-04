@@ -153,9 +153,15 @@ describe("Estados y errores (US-146)", () => {
       "traceTooLarge",
       "workflowVersionNotFound",
       "modelVersionNotFound",
+      "datasetVersionNotFound",
+      "datasetManifestUnavailable",
     ]);
     for (const row of rows) {
       const code = (row[0] ?? "").replace(/`/g, "");
+      if (code.startsWith("dataset")) {
+        expect(row.at(-1), row[0]).toContain("cliente de validación");
+        continue;
+      }
       expect(row.at(-1), row[0]).toContain(
         ["invalidConsent", "consentReceiptConflict", "privacyNoticeUnavailable"].includes(code)
           ? "`ConsentStatus.pending`"
@@ -166,9 +172,9 @@ describe("Estados y errores (US-146)", () => {
     }
   });
 
-  it("warns that the app never receives the HTTP status code", () => {
+  it("distinguishes SDK method errors from direct dataset manifest responses", () => {
     expect(section("## Errores HTTP del servidor")).toContain(
-      ":::note\nEl SDK no expone el código HTTP a la app: ante una credencial revocada devuelve `SyncStatus.error`.\n:::",
+      ":::note\nLos métodos de `ayni_sdk` no exponen el código HTTP a la app: ante una credencial revocada, `sync()` devuelve `SyncStatus.error`. El endpoint de manifiesto de dataset responde directamente al cliente de validación con su estado HTTP y su JSON.\n:::",
     );
   });
 

@@ -56,6 +56,18 @@ espera el acuse del servidor antes de retirar esa traza de la outbox.
 | La credencial del SDK y un recibo con UUID v4 seudónimo, finalidad, decisión, versión del aviso y fecha | Cuando la persona cambia uno de los controles de privacidad; si está offline, `sync()` reintenta el recibo antes del manifiesto. | `POST /sdk/consents`, en el servidor de Ayni (`serverUrl`). | Sí, solo al registrar una decisión |
 | La credencial del SDK y una traza tipada: identificadores de ejecución e instalación, referencias de workflow y modelos, perfil técnico allowlisted, contexto declarado por la app, resultados estructurados decodificados, mediciones, incidentes, estado y duraciones | Durante `sync()`, procesa la cola dentro del presupuesto opcional reservado y refresca la política antes de cada intento. La política deshabilitada o no vigente conserva pendientes. El recibo `sdkImprovement` no autoriza ni bloquea estas trazas de validación. | `POST /sdk/traces`, en el servidor de Ayni (`serverUrl`). | Sí; requiere captura local autorizada y la política habilitada |
 
+### Descarga del dataset de validación
+
+`ayni_sdk.sync()` no descarga datasets. Para repetir las corridas de validación,
+la aplicación anfitriona puede pedir el manifiesto con la credencial de su SDK
+y el ID de la versión en `GET /sdk/dataset-versions/<datasetVersionId>/manifest`.
+El manifiesto incluye metadatos, SHA-256, tamaño y una URL de descarga firmada
+que vence en 15 minutos; no entrega la clave R2. El consumidor descarga el ZIP
+desde esa URL temporal. El SHA-256 del manifiesto permite comprobar el archivo
+antes de usarlo. Esta descarga no envía imágenes, tensores ni resultados al
+servidor de Ayni; las trazas usan el permiso y el flujo independiente descrito
+arriba.
+
 El esquema de ingesta rechaza imágenes, bytes de entrada, tensores y campos
 adicionales; cada cuerpo está limitado a 2 MiB.
 El servidor limita cada traza a la aplicación de la credencial,

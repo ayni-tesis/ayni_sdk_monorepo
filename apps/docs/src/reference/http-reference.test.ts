@@ -14,6 +14,7 @@ describe("sdkContract", () => {
       "/sdk/sync",
       "/sdk/workflow-versions/{workflowVersionId}",
       "/sdk/model-versions/{modelVersionId}/manifest",
+      "/sdk/dataset-versions/{datasetVersionId}/manifest",
     ]);
   });
 

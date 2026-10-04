@@ -37,7 +37,10 @@ const dataset = {
   versions: [datasetVersion],
 };
 
-function renderPanel({ canManage = true, applicationStatus = "active" } = {}) {
+function renderPanel({
+  canManage = true,
+  applicationStatus = "active",
+}: { canManage?: boolean; applicationStatus?: "active" | "archived" } = {}) {
   return render(
     <ValidationDatasetsPanel
       applicationId="app-1"
