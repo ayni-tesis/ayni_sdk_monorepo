@@ -213,6 +213,9 @@ describe("POST /sdk/traces", () => {
   // other raw input, at the top level or inside any nested object.
   it.each([
     { inputBytes: [137, 80, 78, 71] },
+    { incidents: ["iVBORw0KGgoAAAANSUhEUgAAAAQAAAAE"] },
+    { scenario: "data:image/png;base64,iVBORw0KGgo=" },
+    { condition: "captura /9j/4AAQSkZJRgABAQ" },
     { input: { bytes: "iVBORw0KGgo=" } },
     { profile: { ...trace.profile, image: "iVBORw0KGgo=" } },
     { nodes: [{ nodeId: "input-1", type: "input.image", status: "completed", image: "AA==" }] },

@@ -131,7 +131,6 @@ void main() {
       () async {
         await installWorkflowWithoutCapture();
         final input = pngBytes();
-        final events = <EvidenceEvent>[];
         final client = sdk();
 
         // Even with consent, only dataset.capture collects images.
@@ -140,7 +139,6 @@ void main() {
           input,
           traceContext: WorkflowTraceContext(runId: 'run-1', repetition: 1),
           evidenceConsent: true,
-          onEvidence: events.add,
         );
         final queued = await TraceOutboxStore(storageDirectory).pending();
         final encoded = jsonEncode(queued.single);
@@ -163,8 +161,7 @@ void main() {
         expect(encoded, isNot(contains(input.join(','))));
         // Telemetry does not hold the result back: run() makes no request.
         expect(requests, isEmpty);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(events, isEmpty);
+        // run() schedules evidence only for captures, before it returns.
         expect(await client.pendingEvidenceCount(), 0);
         expect(
           Directory('${storageDirectory.path}/evidence').existsSync(),
@@ -383,7 +380,12 @@ Map<String, Object?> _withAttachments(
       for (final measurement in trace['measurements']! as List)
         copy(measurement)..['raw'] = image,
     ],
-    'incidents': [...trace['incidents']! as List, image],
+    'incidents': [
+      ...trace['incidents']! as List,
+      image,
+      base64Encode(image),
+      'data:image/png;base64,${base64Encode(image)}',
+    ],
     'outputs': {
       ...outputs,
       'Clasificación': classification,

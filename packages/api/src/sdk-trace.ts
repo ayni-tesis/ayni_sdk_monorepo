@@ -43,6 +43,10 @@ const localPathPatterns = [
   /\b(?:path|file|artifact|directory|cwd)\s*[:=]\s*\S*[\\/]\S+/i,
 ];
 const sensitiveContentPatterns = [
+  // An encoded image (US-073): a data URI, or base64 that starts like a PNG,
+  // JPEG, GIF or WebP file. The SDK drops the same text before sending.
+  /data:image\//i,
+  /(?:^|[^A-Za-z0-9+/_-])(?:iVBORw0KGgo|\/9j\/|_9j_|R0lGOD|UklGR)/,
   /\b[a-z][a-z\d+.-]*:\/\/[^/\s:@]*:[^/\s@]+@/i,
   /[?&](?:sig|signature|x-amz-signature|x-goog-signature)=\S+/i,
   /\bauthorization["']?\s*[:=]\s*["']?\S+/i,

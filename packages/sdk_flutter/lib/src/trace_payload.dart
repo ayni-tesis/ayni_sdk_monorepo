@@ -20,7 +20,21 @@ Map<String, Object?> allowlistedTracePayload(Map<String, Object?> trace) =>
 
 typedef _Field = Object? Function(Object? value);
 
-Object? _string(Object? value) => value is String ? value : null;
+/// A text value, unless it carries an encoded image: a `data:image/` URI or
+/// base64 that starts like a PNG, JPEG, GIF or WebP file. The server rejects
+/// the same text (`sdkTraceSchema`).
+Object? _string(Object? value) =>
+    value is String &&
+        !_imageDataUri.hasMatch(value) &&
+        !_base64Image.hasMatch(value)
+    ? value
+    : null;
+
+final _imageDataUri = RegExp(r'data:image/', caseSensitive: false);
+
+final _base64Image = RegExp(
+  r'(?:^|[^A-Za-z0-9+/_-])(?:iVBORw0KGgo|/9j/|_9j_|R0lGOD|UklGR)',
+);
 
 Object? _int(Object? value) => value is int ? value : null;
 

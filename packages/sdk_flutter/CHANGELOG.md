@@ -85,8 +85,8 @@
   eliminar ya no cuenta en ningún estado.
 - Al guardar una traza en la outbox y al leerla para enviarla, el SDK conserva
   solo los campos del esquema de trazas, cada uno con su tipo: si un componente
-  le agrega la imagen de entrada, sus bytes u otro dato, el SDK descarta ese
-  adjunto y envía la traza solo con los metadatos permitidos, que son lo único
+  le agrega la imagen de entrada, sus bytes u otro dato, o un texto con una
+  imagen codificada, el SDK descarta ese adjunto y envía la traza solo con los metadatos permitidos, que son lo único
   que cuenta para el límite de 2 MiB de una traza. `dataset.capture`
   sigue siendo el único mecanismo que recolecta imágenes: un workflow sin ese
   nodo solo registra telemetría, aunque la app pase `evidenceConsent: true`.
