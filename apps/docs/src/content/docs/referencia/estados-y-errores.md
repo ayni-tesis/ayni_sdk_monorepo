@@ -94,6 +94,21 @@ evento. Ningún evento cambia el resultado que ya devolvió `run()` (ver
 | `evidenceDiscarded` | El SDK no pudo preparar la evidencia, por ejemplo porque ningún `sync()` guardó aún la política de recolección o porque no pudo optimizar o guardar la imagen por un motivo distinto de la falta de espacio, y la descartó sin dejar archivos a medias. | `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.` |
 | `evidenceStorageFull` | El dispositivo no tenía espacio para guardar la evidencia en la cola, así que el SDK la descartó sin dejar archivos a medias. La evidencia que ya estaba pendiente se conserva. | `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.` |
 
+## Cola de evidencia
+
+`evidenceQueueStatus()` devuelve el estado de la cola de evidencia pendiente de
+envío como un `EvidenceQueueStatus`, cuyo `message` es un texto que la app puede
+mostrar. Lo calcula en el dispositivo con la cola, la última política de
+recolección que guardó `sync()` y el tipo de conexión del momento, sin
+solicitudes de red (ver
+[Datos y privacidad](/recursos/datos-y-privacidad/#red-permitida-para-enviar-evidencia)).
+
+| `EvidenceQueueStatus` | Cuándo ocurre | `message` |
+| --- | --- | --- |
+| `empty` | No hay evidencia pendiente de envío en el dispositivo. | `Sin evidencia pendiente de envío` |
+| `pending` | Hay evidencia pendiente y nada la hace esperar Wi-Fi: el dispositivo usa Wi-Fi, la política permite «Wi-Fi y datos móviles» o la recolección está deshabilitada, o ningún `sync()` guardó aún la política. | `Evidencia pendiente de envío` |
+| `waitingForWifi` | Hay evidencia pendiente, la política está habilitada y solo permite Wi-Fi, y el dispositivo usa datos móviles, otra conexión o ninguna. El SDK la mantiene pendiente, sin iniciar cargas ni usar datos móviles. | `Pendiente de Wi-Fi` |
+
 ## Errores HTTP del servidor
 
 El SDK llama a los endpoints de la [API HTTP del SDK](/referencia/api-http/).

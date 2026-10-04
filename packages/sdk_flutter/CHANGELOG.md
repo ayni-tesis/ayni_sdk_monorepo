@@ -33,6 +33,13 @@
   descarta sin dejar archivos a medias y avisa `evidenceStorageFull`:
   `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
   El resultado de la inferencia no cambia.
+- `evidenceQueueStatus()` devuelve el estado de la cola de evidencia como un
+  `EvidenceQueueStatus`: `waitingForWifi` (`Pendiente de Wi-Fi`) mientras la
+  política de recolección está habilitada y solo permite Wi-Fi y el
+  dispositivo usa datos móviles, otra conexión o ninguna, `pending` o `empty`.
+  `sync()` guarda también la red permitida y la habilitación de la política, y
+  el SDK lee el tipo de conexión con su plugin nativo sin guardarlo ni
+  enviarlo. En Android, el SDK declara el permiso `ACCESS_NETWORK_STATE`.
 - El SDK acepta el esquema de workflow 3, con el que el servidor publica los
   workflows que incluyen `dataset.capture`. Las versiones anteriores del SDK
   rechazan esos workflows con `unsupportedWorkflowVersion`.

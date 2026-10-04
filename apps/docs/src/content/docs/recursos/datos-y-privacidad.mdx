@@ -225,16 +225,20 @@ para datasets», y solo entonces un administrador puede agregar el nodo a un
 workflow. Esa política exige también «Exigir el consentimiento del usuario
 antes de capturar». Su «Tamaño máximo» (el lado mayor de la imagen, de 128 a
 4096 píxeles, 1024 si nadie lo cambió) y su «Calidad» (de 10 a 100, 80 si nadie
-la cambió) fijan cómo el SDK optimiza cada imagen. En cada `sync()`, justo antes
-de pedir el manifiesto y si al trabajo opcional de ese `sync()` le queda tiempo,
-el SDK consulta la política en `GET /sdk/collection-policy` y guarda esos dos
-valores en `diagnostics/collection-policy.json`; `run()` usa los últimos que
-guardó, también sin conexión. Si no la consulta o la consulta falla, conserva los anteriores.
-Mientras ningún `sync()` los haya guardado, el SDK descarta cada evidencia.
-Esta versión todavía no aplica en el dispositivo la red de la política ni su
-habilitación o su exigencia de consentimiento: deshabilitar la recolección en el
-dashboard no detiene la captura local, que depende solo de que el workflow
-incluya `dataset.capture` y de que la app pase `evidenceConsent: true`.
+la cambió) fijan cómo el SDK optimiza cada imagen, y su «Red permitida», por
+qué conexión puede salir la evidencia (ver
+[Red permitida para enviar evidencia](#red-permitida-para-enviar-evidencia)).
+En cada `sync()`, justo antes de pedir el manifiesto y si al trabajo opcional de
+ese `sync()` le queda tiempo, el SDK consulta la política en
+`GET /sdk/collection-policy` y guarda en `diagnostics/collection-policy.json`
+esos dos valores, la red permitida y si la recolección está habilitada; `run()`
+usa los últimos que guardó, también sin conexión. Si no la consulta o la
+consulta falla, conserva los anteriores. Mientras ningún `sync()` los haya
+guardado, el SDK descarta cada evidencia. Esta versión no aplica a la captura
+local la habilitación de la política ni su exigencia de consentimiento:
+deshabilitar la recolección en el dashboard no detiene la captura local, que
+depende solo de que el workflow incluya `dataset.capture` y de que la app pase
+`evidenceConsent: true`.
 
 El SDK no presenta avisos ni registra el consentimiento de recolección: lo
 gestiona tu app, igual que el permiso de las trazas de validación. Pasa
@@ -287,6 +291,36 @@ evidencia guardada:
 `clearPendingEvidence()` espera también a la evidencia que el SDK aún está
 guardando y la elimina, y un `run()` que ya estaba en curso no guarda la suya.
 No elimina workflows, modelos ni trazas pendientes.
+
+### Red permitida para enviar evidencia
+
+La «Red permitida» de la política de recolección dice por qué conexión puede
+salir del dispositivo la evidencia pendiente: «Solo Wi-Fi» o «Wi-Fi y datos
+móviles». Esta versión todavía no sube la evidencia por ninguna red, pero ya
+informa si espera Wi-Fi con el estado de la cola, que la app consulta con
+`evidenceQueueStatus()`:
+
+<Code code={privacy.evidenceQueueStatus} lang="dart" />
+
+Mientras haya evidencia pendiente, la última política que guardó `sync()` esté
+habilitada y solo permita Wi-Fi, y el dispositivo use datos móviles, otra
+conexión o ninguna, el estado es `waitingForWifi`, con el texto
+`Pendiente de Wi-Fi`: la evidencia sigue pendiente, y el SDK no inicia ninguna
+carga ni usa datos móviles para ella. Con Wi-Fi, con «Wi-Fi y datos móviles», con
+la recolección deshabilitada o antes de que un `sync()` guarde la política, el
+estado es `pending` (`Evidencia pendiente de envío`); sin evidencia pendiente,
+`empty` (`Sin evidencia pendiente de envío`). La evidencia que espera Wi-Fi no
+vence: sigue en `evidence/<evidenceId>/` hasta que `clearPendingEvidence()` la
+elimine.
+
+Para saberlo, `evidenceQueueStatus()` lee en el dispositivo el tipo de conexión
+que usa en ese momento (Wi-Fi, datos móviles, otra, como Ethernet, o ninguna)
+con el plugin nativo del SDK, sin solicitudes de red y sin pedir consentimiento,
+porque no identifica a la persona: en Android con `ConnectivityManager`, que
+necesita el permiso `ACCESS_NETWORK_STATE` (el SDK lo declara en su manifiesto y
+Android lo concede al instalar la app, sin preguntar), y en iOS 12 o posterior
+con `NWPathMonitor`. Si no puede leerlo, no lo cuenta como Wi-Fi. No guarda ni
+envía el tipo de conexión: solo lo compara con la política.
 
 ## Restablecer el identificador de instalación
 
@@ -359,7 +393,7 @@ sus campos permitidos a una traza.
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
 | Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas. No incluye identidad directa; se envía dentro de una traza cuando la política lo permite. | `installation-id` | `await sdk.resetInstallationId()` lo reemplaza; borrar `storageDirectory` elimina todos los datos del SDK. Las trazas ya en la outbox conservan el ID anterior hasta su acuse o hasta que `clearPendingTraces()` las elimine. |
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
-| Tamaño máximo y calidad de la última política de recolección válida (`maxImageSize` e `imageQuality`), sin credenciales ni ID de aplicación. | `diagnostics/collection-policy.json` | Borra `storageDirectory` completo. |
+| Habilitación, red permitida, tamaño máximo y calidad de la última política de recolección válida (`enabled`, `network`, `maxImageSize` e `imageQuality`), sin credenciales ni ID de aplicación. | `diagnostics/collection-policy.json` | Borra `storageDirectory` completo. |
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
 | Copia JPEG de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`, reducida al tamaño máximo y comprimida con la calidad de la política de recolección, sin metadatos EXIF. Cada directorio `evidence/<evidenceId>/` es una evidencia pendiente de envío, también después de reiniciar la app. | `evidence/<evidenceId>/image` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
 | Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo; el ancho y el alto de la imagen, y el tamaño máximo y la calidad con que se optimizó. | `evidence/<evidenceId>/evidence.json` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |

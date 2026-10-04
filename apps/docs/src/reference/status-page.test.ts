@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
 import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
+import evidenceQueueStatusSource from "../../../../packages/sdk_flutter/lib/src/evidence_queue_status.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { tableRows } from "../markdown-table";
 import { dartEnumValues } from "../sdk/dart-enum";
@@ -64,7 +65,7 @@ describe("Estados y errores (US-146)", () => {
       statusEnumDrift(
         page,
         "referencia/estados-y-errores.md",
-        `${ayniSdkSource}\n${evidenceEventSource}`,
+        `${ayniSdkSource}\n${evidenceEventSource}\n${evidenceQueueStatusSource}`,
       ),
     ).toEqual([]);
   });
@@ -78,6 +79,22 @@ describe("Estados y errores (US-146)", () => {
     );
 
     expect(documentedValues(rows)).toEqual(dartEnumValues(evidenceEventSource, "EvidenceEvent"));
+    for (const row of rows) {
+      expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);
+    }
+  });
+
+  it("gives the message of every EvidenceQueueStatus (US-069)", () => {
+    const rows = tableRows(section("## Cola de evidencia"));
+    const messages = Object.fromEntries(
+      [...evidenceQueueStatusSource.matchAll(/EvidenceQueueStatus\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, status, message]) => [status, message],
+      ),
+    );
+
+    expect(documentedValues(rows)).toEqual(
+      dartEnumValues(evidenceQueueStatusSource, "EvidenceQueueStatus"),
+    );
     for (const row of rows) {
       expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);
     }
