@@ -246,18 +246,39 @@ consentimiento:
 Sin `evidenceConsent: true`, el SDK omite la captura: no copia la imagen ni
 avisa a la app. Con él, devuelve el resultado sin esperar la evidencia y la
 prepara después: llama a `onEvidence` con `EvidenceEvent.evidenceOptimizing`
-y a `onProgress` con `Optimizando` mientras optimiza la imagen, y con
-`evidencePrepared` (`Evidencia preparada para envío.`) y `evidenceQueued`
-(`Evidencia guardada para envío posterior.`) cuando la guardó completa. Si no
-puede optimizarla o guardarla, la descarta sin dejar archivos a medias y avisa
-`evidenceDiscarded` con
+y a `onProgress` con `Optimizando` mientras optimiza la imagen, con
+`evidencePrepared` (`Evidencia preparada para envío.`) cuando la imagen está
+lista y con `evidenceQueued` (`Evidencia guardada para envío posterior.`)
+cuando la guardó completa en la cola de evidencia pendiente. Si el dispositivo
+no tiene espacio para guardarla, la descarta sin dejar archivos a medias y
+avisa `evidenceStorageFull` con
+`No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
+Si no puede optimizarla o guardarla por otro motivo, también la descarta sin
+dejar archivos a medias y avisa `evidenceDiscarded` con
 `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
-El resultado no cambia y la evidencia ya guardada, los workflows y los modelos
-siguen igual. Una ejecución que falla, se cancela o no ejecuta el modelo que
-alimenta la captura no crea evidencia.
+En los dos casos el resultado no cambia y la evidencia ya guardada, los
+workflows y los modelos siguen igual. Una ejecución que falla, se cancela o no
+ejecuta el modelo que alimenta la captura no crea evidencia.
 
-Esta versión no envía la evidencia: cada una queda en
-`evidence/<evidenceId>/` dentro de `storageDirectory` y no vence. Si la persona
+### Evidencia pendiente de envío
+
+Cada evidencia guardada queda pendiente de envío en una cola local: su
+directorio `evidence/<evidenceId>/` dentro de `storageDirectory`. La cola no
+agrega otros archivos: una evidencia está pendiente mientras su directorio
+existe, y un directorio terminado en `.tmp` es una evidencia que el SDK todavía
+está guardando y que no cuenta. La cola se conserva sin conexión y aunque la
+app se reinicie, y no bloquea `run()`: el resultado llega aunque el SDK siga
+guardando otra evidencia. La app puede mostrar `Evidencia pendiente de envío`
+con el número de evidencias en la cola:
+
+<Code code={privacy.pendingEvidence} lang="dart" />
+
+`pendingEvidenceCount()` lee la cola en el dispositivo, sin solicitudes de red,
+y no espera a la evidencia que el SDK aún prepara o guarda: la cuenta desde que
+avisa `evidenceQueued`.
+
+Esta versión no envía la evidencia, así que nunca marca una como enviada: cada
+una sigue pendiente en `evidence/<evidenceId>/` y no vence. Si la persona
 retira su consentimiento, deja de pasar `evidenceConsent: true` y elimina la
 evidencia guardada:
 
@@ -340,7 +361,7 @@ sus campos permitidos a una traza.
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
 | Tamaño máximo y calidad de la última política de recolección válida (`maxImageSize` e `imageQuality`), sin credenciales ni ID de aplicación. | `diagnostics/collection-policy.json` | Borra `storageDirectory` completo. |
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
-| Copia JPEG de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`, reducida al tamaño máximo y comprimida con la calidad de la política de recolección, sin metadatos EXIF. | `evidence/<evidenceId>/image` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Copia JPEG de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`, reducida al tamaño máximo y comprimida con la calidad de la política de recolección, sin metadatos EXIF. Cada directorio `evidence/<evidenceId>/` es una evidencia pendiente de envío, también después de reiniciar la app. | `evidence/<evidenceId>/image` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
 | Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo; el ancho y el alto de la imagen, y el tamaño máximo y la calidad con que se optimizó. | `evidence/<evidenceId>/evidence.json` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
 | Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox y evidencias en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia en curso, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: `clearPendingEvidence()` borra los de la evidencia, y borrar `storageDirectory` completo, todos. |

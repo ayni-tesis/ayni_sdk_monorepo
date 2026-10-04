@@ -24,6 +24,15 @@
   `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
   Sin una política de recolección guardada por `sync()`, el SDK descarta la
   evidencia.
+- La evidencia guardada queda pendiente de envío en una cola local que se
+  conserva sin conexión y aunque la app se reinicie, sin bloquear `run()`.
+  `pendingEvidenceCount()` devuelve cuántas evidencias esperan, para mostrar
+  `Evidencia pendiente de envío`. `evidencePrepared` llega cuando la imagen
+  está optimizada y `evidenceQueued`, cuando la evidencia ya está en la cola.
+- Si el dispositivo no tiene espacio para guardar una evidencia, el SDK la
+  descarta sin dejar archivos a medias y avisa `evidenceStorageFull`:
+  `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
+  El resultado de la inferencia no cambia.
 - El SDK acepta el esquema de workflow 3, con el que el servidor publica los
   workflows que incluyen `dataset.capture`. Las versiones anteriores del SDK
   rechazan esos workflows con `unsupportedWorkflowVersion`.
