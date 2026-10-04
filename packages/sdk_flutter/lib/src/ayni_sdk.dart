@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'collection_policy_store.dart';
 import 'device_profile.dart';
 import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
 import 'evidence_event.dart';
+import 'evidence_image_optimizer.dart';
 import 'evidence_store.dart';
 import 'installation_id_store.dart';
 import 'sdk_consent.dart';
@@ -936,7 +938,14 @@ class AyniSdk {
     storageDirectory,
   );
   late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
+  late final CollectionPolicyStore _collectionPolicy = CollectionPolicyStore(
+    storageDirectory,
+  );
   late final EvidenceStore _evidence = EvidenceStore(storageDirectory);
+
+  /// Prepares each evidence image; tests may replace it through
+  /// [createAyniSdkForTesting].
+  EvidenceImageOptimizer _evidenceImageOptimizer = optimizeEvidenceImage;
 
   /// Grows with each [clearPendingEvidence], so a [run] active at that moment
   /// keeps none of its captures.
@@ -1003,36 +1012,68 @@ class AyniSdk {
     required DateTime capturedAt,
     void Function(EvidenceEvent event)? onEvidence,
   }) {
+    void report(EvidenceEvent event) {
+      onProgress?.call(event.message);
+      onEvidence?.call(event);
+    }
+
+    final optimizer = _evidenceImageOptimizer;
     for (final capture in captures) {
       final evidenceId = createUuidV4();
       final model = inventory.models[capture.modelVersionId];
       unawaited(
         _evidence
-            .save(evidenceId, image, {
-              'evidenceSchemaVersion': 1,
-              'evidenceId': evidenceId,
-              'capturedAt': capturedAt.toIso8601String(),
-              'workflowId': workflow.id,
-              'workflowVersionId': workflow.workflowVersionId,
-              'workflowVersion': workflow.version,
-              'captureNodeId': capture.nodeId,
-              'model': {
-                'modelVersionId': capture.modelVersionId,
-                if (model != null) 'version': model.version,
-                if (model != null) 'sha256': model.sha256,
-              },
-              'result': WorkflowTrace.encodeOutputs({
-                'result': capture.result,
-              })['result'],
+            .save(evidenceId, () async {
+              report(EvidenceEvent.evidenceOptimizing);
+              // US-067: the evidence keeps the image reduced and compressed
+              // with the last collection policy sync() saved, never the
+              // app's bytes, which stay unchanged.
+              final policy = await _collectionPolicy.read();
+              if (policy == null) {
+                throw StateError('No collection policy has been synced.');
+              }
+              final optimized = await optimizeEvidenceImageInBackground(
+                optimizer,
+                image,
+                maxImageSize: policy.maxImageSize,
+                imageQuality: policy.imageQuality,
+              );
+              return (
+                image: optimized.bytes,
+                record: <String, Object?>{
+                  'evidenceSchemaVersion': 1,
+                  'evidenceId': evidenceId,
+                  'capturedAt': capturedAt.toIso8601String(),
+                  'workflowId': workflow.id,
+                  'workflowVersionId': workflow.workflowVersionId,
+                  'workflowVersion': workflow.version,
+                  'captureNodeId': capture.nodeId,
+                  'model': {
+                    'modelVersionId': capture.modelVersionId,
+                    if (model != null) 'version': model.version,
+                    if (model != null) 'sha256': model.sha256,
+                  },
+                  'result': WorkflowTrace.encodeOutputs({
+                    'result': capture.result,
+                  })['result'],
+                  'image': {
+                    'mediaType': 'image/jpeg',
+                    'width': optimized.width,
+                    'height': optimized.height,
+                    'maxImageSize': policy.maxImageSize,
+                    'imageQuality': policy.imageQuality,
+                  },
+                },
+              );
             })
             .then(
               (_) {
-                onProgress?.call(EvidenceEvent.evidenceQueued.message);
-                onEvidence?.call(EvidenceEvent.evidenceQueued);
+                report(EvidenceEvent.evidencePrepared);
+                report(EvidenceEvent.evidenceQueued);
               },
-              // The result was already returned; a capture that cannot be
-              // saved is dropped without affecting it.
-              onError: (Object _) {},
+              // The result was already returned; an evidence that cannot be
+              // prepared is discarded without affecting it.
+              onError: (Object _) => report(EvidenceEvent.evidenceDiscarded),
             ),
       );
     }
@@ -1087,12 +1128,18 @@ class AyniSdk {
   /// When the workflow reaches a `dataset.capture` node, the SDK creates
   /// evidence for a dataset only if [evidenceConsent] is `true`: pass it only
   /// while the person has given the consent your app requires for evidence
-  /// collection. The SDK saves a copy of [input] with the captured inference
-  /// result, the workflow version, and the model in [storageDirectory] after
-  /// returning the result, without delaying it or failing it, and then
-  /// reports [EvidenceEvent.evidenceQueued] to [onEvidence] and its message,
-  /// `Evidencia guardada para envío posterior.`, to [onProgress]. Without
-  /// consent (the default), it skips the capture and keeps no image.
+  /// collection. After returning the result, without delaying it or failing
+  /// it, the SDK reduces and compresses a copy of [input] to a JPEG with the
+  /// maximum size and quality of the collection policy that [sync] saved,
+  /// and keeps it in [storageDirectory] with the captured inference result,
+  /// the workflow version, and the model. [input] itself never changes. It
+  /// reports [EvidenceEvent.evidenceOptimizing], then
+  /// [EvidenceEvent.evidencePrepared] and [EvidenceEvent.evidenceQueued] to
+  /// [onEvidence], and each [EvidenceEvent.message] to [onProgress]. An
+  /// evidence it cannot prepare, for example before any [sync] saved the
+  /// policy, is discarded without partial files and reports
+  /// [EvidenceEvent.evidenceDiscarded]. Without consent (the default), it
+  /// skips the capture and keeps no image.
   ///
   /// ```dart
   /// try {
@@ -1679,6 +1726,37 @@ class AyniSdk {
     return policy;
   }
 
+  /// Refreshes the collection policy whose size and quality [run] applies to
+  /// each evidence image (US-067). Like the telemetry policy, a failed
+  /// refresh keeps the last valid policy.
+  Future<void> _refreshCollectionPolicy(HttpClient client) async {
+    final request = await client.getUrl(
+      serverUrl.resolve('/sdk/collection-policy'),
+    );
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final response = await request.close().timeout(
+      _optionalRequestAttemptTimeout,
+      onTimeout: () {
+        request.abort();
+        throw TimeoutException('Collection policy request timed out');
+      },
+    );
+    final body = await utf8.decoder
+        .bind(response)
+        .join()
+        .timeout(
+          _optionalRequestAttemptTimeout,
+          onTimeout: () {
+            request.abort();
+            throw TimeoutException('Collection policy response timed out');
+          },
+        );
+    if (response.statusCode != HttpStatus.ok) return;
+    final policy = CollectionPolicy.fromJson(jsonDecode(body));
+    if (policy != null) await _collectionPolicy.write(policy);
+  }
+
   Duration get _optionalRequestAttemptTimeout {
     final share = syncTimeout ~/ 3;
     if (share <= Duration.zero) return const Duration(microseconds: 1);
@@ -1741,6 +1819,11 @@ class AyniSdk {
       await _refreshTelemetryPolicy(client);
     } on Exception {
       // Policy refresh is optional; a failed refresh keeps the last valid cache.
+    }
+    try {
+      await _refreshCollectionPolicy(client);
+    } on Exception {
+      // Optional too: evidence keeps using the last valid collection policy.
     }
     try {
       await _syncConsentReceipts(client, deadline: deadline);
@@ -2487,6 +2570,7 @@ AyniSdk createAyniSdkForTesting({
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
   WorkflowInferenceRunner? workflowInferenceRunner,
+  EvidenceImageOptimizer? evidenceImageOptimizer,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -2503,6 +2587,9 @@ AyniSdk createAyniSdkForTesting({
     sdk._workflowVersionDownloader = workflowVersionDownloader;
   }
   sdk._workflowInferenceRunner = workflowInferenceRunner;
+  if (evidenceImageOptimizer != null) {
+    sdk._evidenceImageOptimizer = evidenceImageOptimizer;
+  }
   return sdk;
 }
 

@@ -68,6 +68,7 @@ void main() {
     expect(result.status, SyncStatus.upToDate);
     expect(requests.map((request) => request.uri.path), [
       '/sdk/telemetry-policy',
+      '/sdk/collection-policy',
       '/sdk/sync',
     ]);
     expect(

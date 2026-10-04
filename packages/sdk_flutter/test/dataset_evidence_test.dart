@@ -1,5 +1,6 @@
 // US-066: a workflow that reaches `dataset.capture` creates local evidence
-// without delaying the result, and only with the app's consent.
+// without delaying the result, and only with the app's consent. US-067: the
+// evidence keeps its image optimized with the collection policy's limits.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -7,12 +8,27 @@ import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
+import 'package:ayni_sdk/src/collection_policy_store.dart';
+import 'package:ayni_sdk/src/evidence_image_optimizer.dart';
 import 'package:ayni_sdk/src/telemetry_policy_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
 
 import 'support/workflow_install.dart';
+
+const _optimizing = 'Optimizando';
+const _prepared = 'Evidencia preparada para envío.';
+const _queued = 'Evidencia guardada para envío posterior.';
+const _discarded =
+    'No se pudo preparar una evidencia. El resultado del análisis no se vio '
+    'afectado.';
+
+const _savedEvents = [
+  EvidenceEvent.evidenceOptimizing,
+  EvidenceEvent.evidencePrepared,
+  EvidenceEvent.evidenceQueued,
+];
 
 void main() {
   late Directory storageDirectory;
@@ -33,7 +49,14 @@ void main() {
   Future<void> install({
     Map<String, Object?>? definition,
     String? inventory,
+    CollectionPolicy? policy = const CollectionPolicy(
+      maxImageSize: 1024,
+      imageQuality: 80,
+    ),
   }) async {
+    if (policy != null) {
+      await CollectionPolicyStore(storageDirectory).write(policy);
+    }
     const bytes = 'deterministic test model';
     final modelDirectory = Directory(
       '${storageDirectory.path}/model-version-1',
@@ -60,11 +83,13 @@ void main() {
   AyniSdk sdk({
     void Function(String message)? onProgress,
     List<double> scores = const [0.2, 0.8],
+    EvidenceImageOptimizer? evidenceImageOptimizer,
   }) => createAyniSdkForTesting(
     serverUrl: Uri.parse('https://sdk.example.test'),
     credential: 'ayni_sk_test',
     storageDirectory: storageDirectory,
     onProgress: onProgress,
+    evidenceImageOptimizer: evidenceImageOptimizer,
     workflowInferenceRunner:
         ({
           required modelPath,
@@ -78,40 +103,70 @@ void main() {
         ),
   );
 
-  Uint8List png() =>
-      Uint8List.fromList(img.encodePng(img.Image(width: 2, height: 2)));
+  Uint8List png({int width = 2, int height = 2}) => Uint8List.fromList(
+    img.encodePng(img.Image(width: width, height: height)),
+  );
 
   List<Directory> savedEvidence() => evidenceDirectory.existsSync()
       ? evidenceDirectory.listSync().whereType<Directory>().toList()
       : const [];
+
+  /// Runs the capture workflow with consent and waits for its last event.
+  Future<(WorkflowResult, List<EvidenceEvent>)> runAndWait(
+    AyniSdk client,
+    Uint8List input,
+  ) async {
+    final events = <EvidenceEvent>[];
+    final done = Completer<void>();
+    final result = await client.run(
+      'workflow-1',
+      input,
+      evidenceConsent: true,
+      onEvidence: (event) {
+        events.add(event);
+        if (event == EvidenceEvent.evidenceQueued ||
+            event == EvidenceEvent.evidenceDiscarded) {
+          done.complete();
+        }
+      },
+    );
+    await done.future;
+    return (result, events);
+  }
+
+  img.Image savedImage(Directory evidence) {
+    final image = img.decodeJpg(
+      File('${evidence.path}/image').readAsBytesSync(),
+    );
+    expect(image, isNotNull, reason: 'the evidence image must be a JPEG');
+    return image!;
+  }
 
   group('with the consent of the app', () {
     test(
       'creates evidence with the image, result, workflow version and model',
       () async {
         await install();
-        final queued = Completer<EvidenceEvent>();
         final progress = <String>[];
-        final input = png();
 
-        final result = await sdk(onProgress: progress.add).run(
-          'workflow-1',
-          input,
-          evidenceConsent: true,
-          onEvidence: queued.complete,
+        final (result, events) = await runAndWait(
+          sdk(onProgress: progress.add),
+          png(),
         );
 
         expect(
           (result.outputs['Resultado']! as ClassificationResult).label,
           'gato',
         );
-        expect(await queued.future, EvidenceEvent.evidenceQueued);
-        expect(progress, contains('Evidencia guardada para envío posterior.'));
+        expect(events, _savedEvents);
+        expect(progress.where((message) => message != _usingLocal), [
+          _optimizing,
+          _prepared,
+          _queued,
+        ]);
         final evidence = savedEvidence().single;
-        expect(
-          File('${evidence.path}/image').readAsBytesSync(),
-          orderedEquals(input),
-        );
+        final image = savedImage(evidence);
+        expect((image.width, image.height), (2, 2));
         final record =
             jsonDecode(
                   File('${evidence.path}/evidence.json').readAsStringSync(),
@@ -142,8 +197,55 @@ void main() {
           },
         });
         expect(DateTime.parse(record['capturedAt'] as String).isUtc, isTrue);
+        expect(record['image'], {
+          'mediaType': 'image/jpeg',
+          'width': 2,
+          'height': 2,
+          'maxImageSize': 1024,
+          'imageQuality': 80,
+        });
       },
     );
+
+    test('keeps the image reduced and compressed with the size and quality of '
+        'the collection policy', () async {
+      await install(
+        policy: const CollectionPolicy(maxImageSize: 128, imageQuality: 40),
+      );
+      final input = png(width: 400, height: 200);
+
+      await runAndWait(sdk(), input);
+
+      final evidence = savedEvidence().single;
+      final image = savedImage(evidence);
+      expect((image.width, image.height), (128, 64));
+      final record =
+          jsonDecode(File('${evidence.path}/evidence.json').readAsStringSync())
+              as Map;
+      expect(record['image'], {
+        'mediaType': 'image/jpeg',
+        'width': 128,
+        'height': 64,
+        'maxImageSize': 128,
+        'imageQuality': 40,
+      });
+    });
+
+    test('does not modify the image the workflow used', () async {
+      await install(
+        policy: const CollectionPolicy(maxImageSize: 128, imageQuality: 40),
+      );
+      final input = png(width: 400, height: 200);
+      final original = Uint8List.fromList(input);
+
+      final (result, _) = await runAndWait(sdk(), input);
+
+      expect(input, orderedEquals(original));
+      expect(
+        (result.outputs['Resultado']! as ClassificationResult).label,
+        'gato',
+      );
+    });
 
     test('returns the result without waiting for the evidence', () async {
       await install();
@@ -154,38 +256,44 @@ void main() {
         'workflow-1',
         png(),
         evidenceConsent: true,
-        onEvidence: (_) {
-          order.add('evidence');
-          queued.complete();
+        onEvidence: (event) {
+          order.add(event.name);
+          if (event == EvidenceEvent.evidenceQueued) queued.complete();
         },
       );
       order.add('result');
       await queued.future;
 
-      expect(order, ['result', 'evidence']);
+      expect(order, ['result', ..._savedEvents.map((event) => event.name)]);
     });
 
     test(
       'keeps the image the app passed even if it changes it later',
       () async {
         await install();
-        final queued = Completer<void>();
-        final input = png();
-        final original = Uint8List.fromList(input);
+        final done = Completer<void>();
+        final events = <EvidenceEvent>[];
+        final input = png(width: 6, height: 3);
 
         await sdk().run(
           'workflow-1',
           input,
           evidenceConsent: true,
-          onEvidence: (_) => queued.complete(),
+          onEvidence: (event) {
+            events.add(event);
+            if (event == EvidenceEvent.evidenceQueued ||
+                event == EvidenceEvent.evidenceDiscarded) {
+              done.complete();
+            }
+          },
         );
+        // Zeros are not an image: optimizing them would fail.
         input.fillRange(0, input.length, 0);
-        await queued.future;
+        await done.future;
 
-        expect(
-          File('${savedEvidence().single.path}/image').readAsBytesSync(),
-          orderedEquals(original),
-        );
+        expect(events, _savedEvents);
+        final image = savedImage(savedEvidence().single);
+        expect((image.width, image.height), (6, 3));
       },
     );
 
@@ -194,27 +302,110 @@ void main() {
       () async {
         await install();
         File(evidenceDirectory.path).writeAsStringSync('not a directory');
-        final events = <EvidenceEvent>[];
         final progress = <String>[];
-        final client = sdk(onProgress: progress.add);
 
-        final result = await client.run(
-          'workflow-1',
+        final (result, events) = await runAndWait(
+          sdk(onProgress: progress.add),
           png(),
-          evidenceConsent: true,
-          onEvidence: events.add,
         );
-        // Clearing runs after the failed save, so awaiting it awaits the save.
-        await client.clearPendingEvidence();
 
         expect(result.outputs, contains('Resultado'));
-        expect(events, isEmpty);
-        expect(
-          progress,
-          isNot(contains('Evidencia guardada para envío posterior.')),
-        );
+        expect(events, [
+          EvidenceEvent.evidenceOptimizing,
+          EvidenceEvent.evidenceDiscarded,
+        ]);
+        expect(progress, contains(_discarded));
+        expect(progress, isNot(contains(_prepared)));
+        expect(progress, isNot(contains(_queued)));
       },
     );
+
+    group('when the image cannot be optimized', () {
+      test('discards that evidence without leaving files or affecting the '
+          'result', () async {
+        await install();
+        final progress = <String>[];
+
+        final (result, events) = await runAndWait(
+          sdk(
+            onProgress: progress.add,
+            evidenceImageOptimizer: _failingOptimizer,
+          ),
+          png(),
+        );
+
+        expect(
+          (result.outputs['Resultado']! as ClassificationResult).label,
+          'gato',
+        );
+        expect(events, [
+          EvidenceEvent.evidenceOptimizing,
+          EvidenceEvent.evidenceDiscarded,
+        ]);
+        expect(progress.where((message) => message != _usingLocal), [
+          _optimizing,
+          _discarded,
+        ]);
+        expect(
+          evidenceDirectory.existsSync()
+              ? evidenceDirectory.listSync()
+              : const <FileSystemEntity>[],
+          isEmpty,
+        );
+      });
+
+      test('keeps the other local resources', () async {
+        await install();
+        await runAndWait(sdk(), png());
+        final kept = savedEvidence().single;
+        final inventory = File(
+          '${storageDirectory.path}/sync-inventory.json',
+        ).readAsStringSync();
+        final policy = File(
+          '${storageDirectory.path}/diagnostics/collection-policy.json',
+        ).readAsStringSync();
+
+        final (result, _) = await runAndWait(
+          sdk(evidenceImageOptimizer: _failingOptimizer),
+          png(),
+        );
+
+        expect(result.outputs, contains('Resultado'));
+        expect(savedEvidence().map((evidence) => evidence.path), [kept.path]);
+        expect(savedImage(kept).width, 2);
+        expect(
+          File(
+            '${storageDirectory.path}/sync-inventory.json',
+          ).readAsStringSync(),
+          inventory,
+        );
+        expect(
+          File(
+            '${storageDirectory.path}/diagnostics/collection-policy.json',
+          ).readAsStringSync(),
+          policy,
+        );
+        expect(
+          File(
+            '${storageDirectory.path}/model-version-1/model-version-1.tflite',
+          ).existsSync(),
+          isTrue,
+        );
+      });
+
+      test('discards it while the SDK has no collection policy', () async {
+        await install(policy: null);
+
+        final (result, events) = await runAndWait(sdk(), png());
+
+        expect(result.outputs, contains('Resultado'));
+        expect(events, [
+          EvidenceEvent.evidenceOptimizing,
+          EvidenceEvent.evidenceDiscarded,
+        ]);
+        expect(evidenceDirectory.existsSync(), isFalse);
+      });
+    });
 
     test('creates no evidence when the workflow fails', () async {
       await install();
@@ -342,10 +533,8 @@ void main() {
         'gato',
       );
       expect(events, isEmpty);
-      expect(
-        progress,
-        isNot(contains('Evidencia guardada para envío posterior.')),
-      );
+      expect(progress, isNot(contains(_optimizing)));
+      expect(progress, isNot(contains(_queued)));
       expect(evidenceDirectory.existsSync(), isFalse);
     });
   });
@@ -400,14 +589,7 @@ void main() {
     test('deletes the saved evidence after the saves in progress', () async {
       await install();
       final client = sdk();
-      final first = Completer<void>();
-      await client.run(
-        'workflow-1',
-        png(),
-        evidenceConsent: true,
-        onEvidence: (_) => first.complete(),
-      );
-      await first.future;
+      await runAndWait(client, png());
       final events = <EvidenceEvent>[];
       await client.run(
         'workflow-1',
@@ -419,7 +601,7 @@ void main() {
       await client.clearPendingEvidence();
 
       expect(evidenceDirectory.existsSync(), isFalse);
-      expect(events, [EvidenceEvent.evidenceQueued]);
+      expect(events, _savedEvents);
     });
 
     test('does nothing when there is no evidence', () async {
@@ -429,6 +611,14 @@ void main() {
     });
   });
 }
+
+const _usingLocal = 'Usando recursos guardados en este dispositivo.';
+
+OptimizedEvidenceImage _failingOptimizer(
+  Uint8List image, {
+  required int maxImageSize,
+  required int imageQuality,
+}) => throw const FormatException('The image cannot be optimized.');
 
 String _inventory({bool withUnusedModel = false}) => jsonEncode({
   'workflows': [

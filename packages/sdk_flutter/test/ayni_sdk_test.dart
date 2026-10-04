@@ -291,6 +291,7 @@ void main() {
         expect(await syncStatus(sdk()), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/consents',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
@@ -315,6 +316,7 @@ void main() {
         expect(await syncStatus(client), SyncStatus.updated);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/consents',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
@@ -542,6 +544,7 @@ void main() {
         );
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/telemetry-policy',
           '/sdk/traces',
           '/sdk/telemetry-policy',
@@ -574,6 +577,7 @@ void main() {
 
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/consents',
           '/sdk/telemetry-policy',
           '/sdk/traces',
@@ -626,6 +630,7 @@ void main() {
           expect(await outbox.pending(), hasLength(2));
           expect(requests.map((request) => request.uri.path), [
             '/sdk/telemetry-policy',
+            '/sdk/collection-policy',
             '/sdk/telemetry-policy',
             '/sdk/traces',
             '/sdk/sync',
@@ -652,6 +657,7 @@ void main() {
         expect(traceBodies, isEmpty);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
         expect((await outbox.pending()).single['traceId'], trace['traceId']);
@@ -685,6 +691,7 @@ void main() {
         );
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/telemetry-policy',
           '/sdk/traces',
           '/sdk/telemetry-policy',
@@ -743,6 +750,7 @@ void main() {
         expect((await outbox.pending()).single['traceId'], trace['traceId']);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/telemetry-policy',
           '/sdk/sync',
         ]);
@@ -928,10 +936,12 @@ void main() {
 
       expect(requests.map((request) => request.uri.path), [
         '/sdk/telemetry-policy',
+        '/sdk/collection-policy',
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1.0.0',
         '/sdk/model-versions/model-version-1/manifest',
         '/sdk/telemetry-policy',
+        '/sdk/collection-policy',
         '/sdk/sync',
       ]);
     },
@@ -1096,7 +1106,7 @@ void main() {
         SyncResourceStatus.invalidRemoteResource,
       ]);
       expect(await inventory.readAsString(), before);
-      expect(requests.length, requestsBeforeSync + 4);
+      expect(requests.length, requestsBeforeSync + 6);
     },
   );
 
@@ -1446,6 +1456,7 @@ void main() {
     expect(await syncStatus(sdk()), SyncStatus.error);
     expect(requests.map((request) => request.uri.path), [
       '/sdk/telemetry-policy',
+      '/sdk/collection-policy',
       '/sdk/sync',
     ]);
     expect(

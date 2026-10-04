@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+/// What an evidence keeps: its optimized `image` bytes and `evidence.json`.
+typedef EvidenceContent = ({Uint8List image, Map<String, Object?> record});
+
 /// The local evidence a `dataset.capture` node creates (US-066): one
 /// directory per evidence under `storageDirectory/evidence/`, holding the
-/// original `image` bytes and `evidence.json`, its metadata.
+/// `image` the SDK optimized (US-067) and `evidence.json`, its metadata.
 ///
 /// Each evidence is written to `<evidenceId>.tmp` and renamed into place, so
 /// a directory named after an evidence ID is always complete. Sending it
@@ -22,12 +25,14 @@ class EvidenceStore {
   final Directory _directory;
   Future<void> _work = Future<void>.value();
 
-  /// Saves [image] and [record] as the evidence [evidenceId].
+  /// Prepares the evidence [evidenceId] with [prepare] and saves what it
+  /// returns. Both run after the saves already requested, one at a time; when
+  /// either fails, nothing of this evidence stays on the device.
   Future<void> save(
     String evidenceId,
-    Uint8List image,
-    Map<String, Object?> record,
+    Future<EvidenceContent> Function() prepare,
   ) => _serialize(() async {
+    final content = await prepare();
     final temporary = Directory(
       '${_directory.path}${Platform.pathSeparator}$evidenceId.tmp',
     );
@@ -35,10 +40,10 @@ class EvidenceStore {
       await temporary.create(recursive: true);
       await File(
         '${temporary.path}${Platform.pathSeparator}image',
-      ).writeAsBytes(image, flush: true);
+      ).writeAsBytes(content.image, flush: true);
       await File(
         '${temporary.path}${Platform.pathSeparator}evidence.json',
-      ).writeAsString(jsonEncode(record), flush: true);
+      ).writeAsString(jsonEncode(content.record), flush: true);
       await temporary.rename(
         '${_directory.path}${Platform.pathSeparator}$evidenceId',
       );

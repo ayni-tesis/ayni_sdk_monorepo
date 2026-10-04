@@ -13,6 +13,17 @@
   `Evidencia guardada para envío posterior.`
 - `clearPendingEvidence()` elimina la evidencia guardada cuando la persona
   retira su consentimiento.
+- Antes de guardar una evidencia, el SDK reduce su imagen a un JPEG con el
+  tamaño máximo (lado mayor) y la calidad de la política de recolección de la
+  aplicación, que `sync()` consulta en `GET /sdk/collection-policy`. Quita los
+  metadatos EXIF y nunca modifica la imagen que recibió `run()`. `onEvidence`
+  recibe `evidenceOptimizing` (`Optimizando`) y `evidencePrepared`
+  (`Evidencia preparada para envío.`) antes de `evidenceQueued`.
+- Una evidencia que no se puede preparar se descarta sin dejar archivos a medias
+  y avisa `evidenceDiscarded`:
+  `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
+  Sin una política de recolección guardada por `sync()`, el SDK descarta la
+  evidencia.
 - El SDK acepta el esquema de workflow 3, con el que el servidor publica los
   workflows que incluyen `dataset.capture`. Las versiones anteriores del SDK
   rechazan esos workflows con `unsupportedWorkflowVersion`.

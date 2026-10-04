@@ -303,13 +303,20 @@ final result = await sdk.run(
 El ejemplo comprobado está en `example/privacy.dart`.
 
 `run()` devuelve el resultado sin esperar la evidencia y una evidencia que no se
-puede guardar no lo cambia. Después, el SDK guarda en
-`storageDirectory/evidence/<evidenceId>/` una copia de la imagen y
-`evidence.json`, con el resultado que recibió el nodo, el workflow, su versión y
-el modelo; luego llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
-`onProgress` con `Evidencia guardada para envío posterior.` Sin consentimiento,
-el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
-la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
+puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
+imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección
+de la aplicación, que `sync()` consulta, y la guarda en
+`storageDirectory/evidence/<evidenceId>/` con `evidence.json`, con el resultado
+que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
+`run()` no cambia. `onEvidence` recibe `EvidenceEvent.evidenceOptimizing`,
+`evidencePrepared` y `evidenceQueued`, y `onProgress`, sus mensajes:
+`Optimizando`, `Evidencia preparada para envío.` y
+`Evidencia guardada para envío posterior.` Si no puede preparar una evidencia,
+por ejemplo porque ningún `sync()` guardó aún la política, la descarta sin dejar
+archivos a medias y avisa `evidenceDiscarded`:
+`No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
+Sin consentimiento, el SDK omite la captura y no conserva la imagen. Esta
+versión todavía no envía la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
 deja de pasar `evidenceConsent: true` y elimina la evidencia guardada; un
 `run()` que ya estaba en curso tampoco guarda la suya:
 
