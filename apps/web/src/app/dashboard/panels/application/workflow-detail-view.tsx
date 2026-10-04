@@ -843,6 +843,8 @@ export function WorkflowDetailView({
   }
   // The capture is ready when the validation names no error on it (US-065);
   // publishing may still wait for an SDK that runs it, a workflow-level error.
+  // With several captures the line needs all of them ready, or it would read
+  // as if the one listed in Errores de validación were ready too.
   const captureNodes = draft.nodes.filter((node) => node.type === "dataset.capture");
   const captureReady =
     validationResult !== null &&

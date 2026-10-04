@@ -57,8 +57,9 @@ function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
  * Checks whether a workflow draft can be published: it needs an image input
  * and an output, every model image input and both dataset capture inputs
  * connected, compatible types on every edge, no cycles, every output reachable
- * from the image input, and only nodes the SDK runs, so no dataset capture yet. Each error
- * names the node and port that cause it. The draft is never modified.
+ * from the image input, and only nodes the SDK runs, so no dataset capture yet.
+ * Each error names the node and port that cause it, or neither when the whole
+ * workflow does. The draft is never modified.
  */
 export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationResult {
   const errors: WorkflowValidationError[] = [];
@@ -127,13 +128,15 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
       );
   }
 
+  const isInputConnected = (nodeId: string, port: string) =>
+    connections.some(
+      (connection) => connection.targetNodeId === nodeId && connection.targetPort === port,
+    );
+
   for (const node of draft.nodes) {
     const name = workflowNodeName(node);
     if (node.type === "model.tflite") {
-      const connected = connections.some(
-        (connection) => connection.targetNodeId === node.id && connection.targetPort === "image",
-      );
-      if (!connected)
+      if (!isInputConnected(node.id, "image"))
         addError(
           "requiredInput",
           node,
@@ -143,13 +146,9 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
       continue;
     }
     if (node.type === "dataset.capture") {
-      const connected = (port: string) =>
-        connections.some(
-          (connection) => connection.targetNodeId === node.id && connection.targetPort === port,
-        );
-      if (!connected("imagen"))
+      if (!isInputConnected(node.id, "imagen"))
         addError("requiredInput", node, "imagen", `El nodo "${name}" necesita una imagen.`);
-      if (!connected("resultado"))
+      if (!isInputConnected(node.id, "resultado"))
         addError(
           "requiredInput",
           node,
@@ -157,12 +156,13 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
           `El nodo "${name}" necesita un resultado de inferencia.`,
         );
       // The capture itself is ready once its inputs are; publishing still waits
-      // for an SDK that runs it (US-066), so that block is the workflow's.
+      // for an SDK that runs it (US-066), so that block is the workflow's, and
+      // its fixed text lists it once however many captures the draft holds.
       addError(
         "unpublishableNode",
         null,
         null,
-        `El nodo "${name}" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.`,
+        'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
       );
       continue;
     }
