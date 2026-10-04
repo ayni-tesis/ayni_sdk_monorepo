@@ -166,6 +166,20 @@ describe("Datos y privacidad (US-147)", () => {
     expect(storedSection).toContain("`diagnostics/collection-policy.json`");
   });
 
+  it("describes the local queue of evidence pending upload and a full device (US-068)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(evidence).toContain("### Evidencia pendiente de envío");
+    expect(evidence).toContain('<Code code={privacy.pendingEvidence} lang="dart" />');
+    expect(evidence).toContain("`pendingEvidenceCount()`");
+    expect(evidence).toContain("aunque la app se reinicie");
+    expect(evidence).toContain("nunca marca una como enviada");
+    expect(evidence).toContain(
+      "`evidenceStorageFull` con `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`",
+    );
+    expect(evidence).toContain("no vence");
+  });
+
   it("gives the size and quality ranges and defaults that the server and the SDK apply", () => {
     const range = (source: string, pattern: RegExp) => {
       const match = pattern.exec(source);

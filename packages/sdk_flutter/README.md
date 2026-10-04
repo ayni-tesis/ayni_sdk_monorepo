@@ -309,16 +309,35 @@ de la aplicación, que `sync()` consulta, y la guarda en
 `storageDirectory/evidence/<evidenceId>/` con `evidence.json`, con el resultado
 que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
 `run()` no cambia. `onEvidence` recibe `EvidenceEvent.evidenceOptimizing`,
-`evidencePrepared` y `evidenceQueued`, y `onProgress`, sus mensajes:
+`evidencePrepared` cuando la imagen está lista y `evidenceQueued` cuando la
+evidencia queda pendiente en la cola local, y `onProgress`, sus mensajes:
 `Optimizando`, `Evidencia preparada para envío.` y
-`Evidencia guardada para envío posterior.` Si no puede preparar una evidencia,
-por ejemplo porque ningún `sync()` guardó aún la política, la descarta sin dejar
-archivos a medias y avisa `evidenceDiscarded`:
+`Evidencia guardada para envío posterior.` Si el dispositivo no tiene espacio,
+descarta esa evidencia sin dejar archivos a medias y avisa
+`evidenceStorageFull`:
+`No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
+Si no puede preparar una evidencia por otro motivo, por ejemplo porque ningún
+`sync()` guardó aún la política, también la descarta y avisa
+`evidenceDiscarded`:
 `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
-Sin consentimiento, el SDK omite la captura y no conserva la imagen. Esta
-versión todavía no envía la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
-deja de pasar `evidenceConsent: true` y elimina la evidencia guardada; un
-`run()` que ya estaba en curso tampoco guarda la suya:
+Sin consentimiento, el SDK omite la captura y no conserva la imagen.
+
+La evidencia guardada queda pendiente de envío en una cola local que se
+conserva sin conexión y aunque la app se reinicie, y que no bloquea `run()`.
+`pendingEvidenceCount()` devuelve cuántas evidencias esperan, sin solicitudes de
+red, para que la app muestre `Evidencia pendiente de envío`:
+
+```dart
+final pending = await sdk.pendingEvidenceCount();
+if (pending > 0) {
+  showStatus('Evidencia pendiente de envío ($pending)');
+}
+```
+
+Esta versión todavía no envía la evidencia: sigue pendiente en el dispositivo.
+Si la persona retira su consentimiento, deja de pasar `evidenceConsent: true` y
+elimina la evidencia guardada; un `run()` que ya estaba en curso tampoco guarda
+la suya:
 
 ```dart
 await sdk.clearPendingEvidence();

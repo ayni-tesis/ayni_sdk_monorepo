@@ -290,16 +290,31 @@ de la aplicación, que <code>sync()</code> consulta, y la guarda en
 <code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> con <code>evidence.json</code>, con el resultado
 que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
 <code>run()</code> no cambia. <code>onEvidence</code> recibe <code>EvidenceEvent.evidenceOptimizing</code>,
-<code>evidencePrepared</code> y <code>evidenceQueued</code>, y <code>onProgress</code>, sus mensajes:
+<code>evidencePrepared</code> cuando la imagen está lista y <code>evidenceQueued</code> cuando la
+evidencia queda pendiente en la cola local, y <code>onProgress</code>, sus mensajes:
 <code>Optimizando</code>, <code>Evidencia preparada para envío.</code> y
-<code>Evidencia guardada para envío posterior.</code> Si no puede preparar una evidencia,
-por ejemplo porque ningún <code>sync()</code> guardó aún la política, la descarta sin dejar
-archivos a medias y avisa <code>evidenceDiscarded</code>:
+<code>Evidencia guardada para envío posterior.</code> Si el dispositivo no tiene espacio,
+descarta esa evidencia sin dejar archivos a medias y avisa
+<code>evidenceStorageFull</code>:
+<code>No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.</code>
+Si no puede preparar una evidencia por otro motivo, por ejemplo porque ningún
+<code>sync()</code> guardó aún la política, también la descarta y avisa
+<code>evidenceDiscarded</code>:
 <code>No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.</code>
-Sin consentimiento, el SDK omite la captura y no conserva la imagen. Esta
-versión todavía no envía la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
-deja de pasar <code>evidenceConsent: true</code> y elimina la evidencia guardada; un
-<code>run()</code> que ya estaba en curso tampoco guarda la suya:</p>
+Sin consentimiento, el SDK omite la captura y no conserva la imagen.</p>
+<p>La evidencia guardada queda pendiente de envío en una cola local que se
+conserva sin conexión y aunque la app se reinicie, y que no bloquea <code>run()</code>.
+<code>pendingEvidenceCount()</code> devuelve cuántas evidencias esperan, sin solicitudes de
+red, para que la app muestre <code>Evidencia pendiente de envío</code>:</p>
+<pre class="language-dart"><code class="language-dart">final pending = await sdk.pendingEvidenceCount();
+if (pending &gt; 0) {
+  showStatus('Evidencia pendiente de envío ($pending)');
+}
+</code></pre>
+<p>Esta versión todavía no envía la evidencia: sigue pendiente en el dispositivo.
+Si la persona retira su consentimiento, deja de pasar <code>evidenceConsent: true</code> y
+elimina la evidencia guardada; un <code>run()</code> que ya estaba en curso tampoco guarda
+la suya:</p>
 <pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();
 </code></pre>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>

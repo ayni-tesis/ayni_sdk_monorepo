@@ -941,11 +941,18 @@ class AyniSdk {
   late final CollectionPolicyStore _collectionPolicy = CollectionPolicyStore(
     storageDirectory,
   );
-  late final EvidenceStore _evidence = EvidenceStore(storageDirectory);
+  late final EvidenceStore _evidence = EvidenceStore(
+    storageDirectory,
+    writeFile: _evidenceFileWriter,
+  );
 
   /// Prepares each evidence image; tests may replace it through
   /// [createAyniSdkForTesting].
   EvidenceImageOptimizer _evidenceImageOptimizer = optimizeEvidenceImage;
+
+  /// Writes each evidence file; tests may replace it through
+  /// [createAyniSdkForTesting] to simulate a device without space.
+  EvidenceFileWriter _evidenceFileWriter = writeEvidenceFile;
 
   /// Grows with each [clearPendingEvidence], so a [run] active at that moment
   /// keeps none of its captures.
@@ -1004,6 +1011,26 @@ class AyniSdk {
     return _evidence.clear();
   }
 
+  /// How many evidences for datasets are pending upload on this device
+  /// (US-068), for example to show `Evidencia pendiente de envío` while it is
+  /// more than zero.
+  ///
+  /// Each evidence a [run] keeps waits in a local queue in [storageDirectory]
+  /// and is already counted when [run] reports
+  /// [EvidenceEvent.evidenceQueued]. It stays pending across restarts of the
+  /// app and while the device has no connection, and the SDK never counts it
+  /// as sent before the server confirms its upload. The count does not wait
+  /// for the evidence the SDK is still preparing or saving, and it makes no
+  /// network request. [clearPendingEvidence] empties the queue.
+  ///
+  /// ```dart
+  /// final pending = await sdk.pendingEvidenceCount();
+  /// if (pending > 0) {
+  ///   showStatus('Evidencia pendiente de envío ($pending)');
+  /// }
+  /// ```
+  Future<int> pendingEvidenceCount() => _evidence.pendingCount();
+
   void _queueEvidence(
     List<WorkflowCapture> captures, {
     required Uint8List image,
@@ -1037,6 +1064,7 @@ class AyniSdk {
                 image,
                 policy,
               );
+              report(EvidenceEvent.evidencePrepared);
               return (
                 image: optimized.bytes,
                 record: <String, Object?>{
@@ -1066,13 +1094,14 @@ class AyniSdk {
               );
             })
             .then(
-              (_) {
-                report(EvidenceEvent.evidencePrepared);
-                report(EvidenceEvent.evidenceQueued);
-              },
+              (_) => report(EvidenceEvent.evidenceQueued),
               // The result was already returned; an evidence that cannot be
-              // prepared is discarded without affecting it.
-              onError: (Object _) => report(EvidenceEvent.evidenceDiscarded),
+              // prepared or saved is discarded without affecting it.
+              onError: (Object error) => report(
+                isEvidenceStorageFull(error)
+                    ? EvidenceEvent.evidenceStorageFull
+                    : EvidenceEvent.evidenceDiscarded,
+              ),
             ),
       );
     }
@@ -1131,12 +1160,15 @@ class AyniSdk {
   /// it, the SDK reduces and compresses a copy of [input] to a JPEG with the
   /// maximum size and quality of the collection policy that [sync] saved,
   /// and keeps it in [storageDirectory] with the captured inference result,
-  /// the workflow version, and the model. [input] itself never changes. It
-  /// reports [EvidenceEvent.evidenceOptimizing], then
-  /// [EvidenceEvent.evidencePrepared] and [EvidenceEvent.evidenceQueued] to
-  /// [onEvidence], and each [EvidenceEvent.message] to [onProgress]. An
-  /// evidence it cannot prepare, for example before any [sync] saved the
-  /// policy, is discarded without partial files and reports
+  /// the workflow version, and the model, pending upload in a local queue
+  /// that [pendingEvidenceCount] counts. [input] itself never changes. It
+  /// reports to [onEvidence] [EvidenceEvent.evidenceOptimizing], then
+  /// [EvidenceEvent.evidencePrepared] once the image is optimized and
+  /// [EvidenceEvent.evidenceQueued] once the evidence is pending in the
+  /// queue, and each [EvidenceEvent.message] to [onProgress]. An evidence it cannot keep is discarded without partial
+  /// files: without space on the device it reports
+  /// [EvidenceEvent.evidenceStorageFull], and for any other reason, for
+  /// example before any [sync] saved the policy,
   /// [EvidenceEvent.evidenceDiscarded]. Without consent (the default), it
   /// skips the capture and keeps no image.
   ///
@@ -2593,6 +2625,7 @@ AyniSdk createAyniSdkForTesting({
   WorkflowVersionDownloader? workflowVersionDownloader,
   WorkflowInferenceRunner? workflowInferenceRunner,
   EvidenceImageOptimizer? evidenceImageOptimizer,
+  EvidenceFileWriter? evidenceFileWriter,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -2611,6 +2644,9 @@ AyniSdk createAyniSdkForTesting({
   sdk._workflowInferenceRunner = workflowInferenceRunner;
   if (evidenceImageOptimizer != null) {
     sdk._evidenceImageOptimizer = evidenceImageOptimizer;
+  }
+  if (evidenceFileWriter != null) {
+    sdk._evidenceFileWriter = evidenceFileWriter;
   }
   return sdk;
 }

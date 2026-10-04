@@ -12,4 +12,9 @@ describe("privacy example (US-147)", () => {
     expect(privacy.captureEvidence).toContain("onEvidence:");
     expect(privacy.deleteEvidence).toBe("await sdk.clearPendingEvidence();");
   });
+
+  it("counts the evidence pending upload (US-068)", () => {
+    expect(privacy.pendingEvidence).toContain("await sdk.pendingEvidenceCount()");
+    expect(privacy.pendingEvidence).toContain("Evidencia pendiente de envío");
+  });
 });
