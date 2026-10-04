@@ -27,6 +27,7 @@ export const validationDataset = pgTable(
   },
   (table) => [
     index("validation_dataset_application_id_idx").on(table.applicationId),
+    uniqueIndex("validation_dataset_application_name_unique").on(table.applicationId, table.name),
     check("validation_dataset_name_check", sql`length(trim(${table.name})) > 0`),
     check("validation_dataset_source_check", sql`length(trim(${table.source})) > 0`),
     check("validation_dataset_license_check", sql`length(trim(${table.license})) > 0`),

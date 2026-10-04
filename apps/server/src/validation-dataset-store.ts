@@ -53,6 +53,7 @@ export type ValidationDatasetStoreFailureReason =
   | "notFound"
   | "forbidden"
   | "archived"
+  | "datasetExists"
   | "invalidVersion"
   | "invalidPartition"
   | "versionExists"
@@ -183,8 +184,11 @@ export function createValidationDatasetStore({ db, storage, now = () => new Date
         );
         if (!result.ok) return { ok: false, reason: mapActionFailure(result.reason) };
         return { ok: true, value: result.value };
-      } catch {
-        return { ok: false, reason: "databaseFailed" };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: isUniqueViolation(error) ? "datasetExists" : "databaseFailed",
+        };
       }
     },
 

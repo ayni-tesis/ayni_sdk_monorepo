@@ -52,23 +52,23 @@
 **Interfaces:**
 - Consumes: Existing `applications`/workspace membership relations and the existing Drizzle database setup.
 - Produces: `createValidationDatasetStore({ db, storage, now })` with `createDataset(input)`, `list(applicationId)`, `completeUpload(input)`, and `getManifestData(applicationId, datasetVersionId)`. `completeUpload` stores the computed ZIP SHA-256 and byte count and never updates an existing version; `getManifestData` returns only stored metadata and never signs a URL.
-- Store result reasons are `notFound`, `forbidden`, `archived`, `invalidVersion`, `invalidPartition`, `versionExists`, `size`, `hash`, `storageFailed`, and `databaseFailed`.
+- Store result reasons are `notFound`, `forbidden`, `archived`, `datasetExists`, `invalidVersion`, `invalidPartition`, `versionExists`, `size`, `hash`, `storageFailed`, and `databaseFailed`.
 
-- [ ] **Step 1: Write failing store tests** for dataset creation/listing, successful version completion with SHA-256 and size, duplicate `(datasetId, version, partition)` rejection, and foreign-application manifest lookup returning `notFound`.
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 1: Write failing store tests** for dataset creation/listing, successful version completion with SHA-256 and size, duplicate `(datasetId, version, partition)` rejection, and foreign-application manifest lookup returning `notFound`.
+- [x] **Step 2: Run the focused tests**
 
 Run: `cd apps/server; bun run test -- src/validation-dataset-store.test.ts`
 
 Expected: FAIL because the store/schema does not exist.
 
-- [ ] **Step 3: Implement the schema and store** with a dataset table (`id`, `applicationId`, `name`, `source`, `license`, `createdAt`, `createdById`) and version table (`id`, `datasetId`, `version`, `partition`, `storageKey`, `sha256`, `sizeBytes`, `createdAt`, `uploadedById`). Add a unique constraint for version/partition per dataset and application/dataset foreign keys. Keep published rows immutable; no delete/update operation is exported.
-- [ ] **Step 4: Generate the migration and rerun the focused tests**
+- [x] **Step 3: Implement the schema and store** with a dataset table (`id`, `applicationId`, `name`, `source`, `license`, `createdAt`, `createdById`) and version table (`id`, `datasetId`, `version`, `partition`, `storageKey`, `sha256`, `sizeBytes`, `createdAt`, `uploadedById`). Add a unique constraint for version/partition per dataset and application/dataset foreign keys. Keep published rows immutable; no delete/update operation is exported.
+- [x] **Step 4: Generate the migration and rerun the focused tests**
 
 Run: `bun run db:generate && cd apps/server && bun run test -- src/validation-dataset-store.test.ts`
 
 Expected: migration is generated and focused tests PASS, including duplicate rejection without changing the prior version.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/db/src/schema/validation-dataset.ts packages/db/src/schema/index.ts packages/db/src/migrations apps/server/src/validation-dataset-store.ts apps/server/src/validation-dataset-store.test.ts
@@ -79,26 +79,27 @@ git commit -m "feat: persist validation dataset versions"
 
 **Files:**
 - Create: `packages/api/src/validation-datasets.ts`
-- Modify: `packages/api/src/index.ts` and `packages/api` OpenAPI route tests
+- Modify: `packages/api/src/index.ts`, generated `packages/api/src/openapi.json`, and `packages/api` OpenAPI route tests
+- Modify: `packages/db/src/schema/validation-dataset.ts` and generate a migration enforcing unique dataset names per application
 - Create: `apps/server/src/validation-dataset-storage.ts`
 - Create: `apps/server/src/validation-datasets.ts`
-- Create: `apps/server/src/validation-datasets.test.ts`
+- Create: `apps/server/src/validation-dataset-storage.test.ts` and `apps/server/src/validation-datasets.test.ts`
 - Modify: `apps/server/src/hono-app.ts`
 
 **Interfaces:**
 - Consumes: Task 1's `createValidationDatasetStore` and the current `getApplicationForMember`, session, and private-R2 helpers.
-- Produces: `GET /applications/:applicationId/validation-datasets` for any application member; `POST /applications/:applicationId/validation-datasets` with `{ name, source, license }`; `POST /applications/:applicationId/validation-datasets/:datasetId/versions/upload-url` with `{ version, partition }`; and `POST /applications/:applicationId/validation-datasets/:datasetId/versions/complete` with `{ uploadId, version, partition }` for administrators/owners only. `partition` is 1–64 characters from `[A-Za-z0-9._-]`.
+- Produces: `GET /applications/:applicationId/validation-datasets` for any application member; `POST /applications/:applicationId/validation-datasets` with `{ name, source, license }`; `POST /applications/:applicationId/validation-datasets/:datasetId/versions/upload-url` with `{ version, partition }`; and `POST /applications/:applicationId/validation-datasets/:datasetId/versions/complete` with `{ uploadId, version, partition }` for administrators/owners only. A dataset name is unique within its application; `partition` is 1–64 characters from `[A-Za-z0-9._-]`.
 - Responses use `{ datasets }`, `{ dataset }`, `{ uploadId, uploadUrl }`, and `{ datasetVersion }`. New upload cap: `MAX_VALIDATION_DATASET_BYTES = 134217728` (128 MiB per partition ZIP), returning 413 `datasetTooLarge`.
 
-- [ ] **Step 1: Write failing route/OpenAPI tests** for schema parsing, admin create/upload, member denial, foreign-application 404, archived-application conflict, invalid SemVer/partition, oversize, missing object, duplicate completion, and staging cleanup after hash or database failure.
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 1: Write failing route/OpenAPI tests** for schema parsing, admin create/upload, member denial, foreign-application 404, archived-application conflict, invalid SemVer/partition, oversize, missing object, duplicate completion, and staging cleanup after hash or database failure.
+- [x] **Step 2: Run the focused tests**
 
 Run: `cd apps/server; bun run test -- src/validation-datasets.test.ts`
 
 Expected: FAIL because routes and schemas are absent.
 
-- [ ] **Step 3: Implement shared schemas and the upload lifecycle**. Follow `model-versions.ts`: create a random staging key under `staging/<applicationId>/validation-datasets/<uploadId>.zip`, sign a 900-second PUT, then on completion verify application/dataset ownership, active status, object existence, 128 MiB cap, and the uploaded bytes' SHA-256 before copying to an application-scoped final key and inserting the immutable version. Always remove the staging object in `finally`; do not expose its key.
-- [ ] **Step 4: Run API and server focused tests**
+- [x] **Step 3: Implement shared schemas and the upload lifecycle**. Follow `model-versions.ts`: create a random staging key under `staging/<applicationId>/validation-datasets/<uploadId>.zip`, sign a 900-second PUT, then on completion verify application/dataset ownership, active status, object existence, 128 MiB cap, and the uploaded bytes' SHA-256 before copying to an application-scoped final key and inserting the immutable version. Always remove the staging object in `finally`; do not expose its key.
+- [x] **Step 4: Run API and server focused tests**
 
 Run: `cd packages/api && bun run test -- src/openapi.test.ts`
 
@@ -106,7 +107,7 @@ Run: `cd apps/server && bun run test -- src/validation-datasets.test.ts`
 
 Expected: both commands PASS; no route accepts a workspace member as an uploader.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/api/src/validation-datasets.ts packages/api/src/index.ts packages/api/src/openapi.test.ts apps/server/src/validation-dataset-storage.ts apps/server/src/validation-datasets.ts apps/server/src/validation-datasets.test.ts apps/server/src/hono-app.ts

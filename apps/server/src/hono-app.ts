@@ -48,6 +48,9 @@ import {
   setModelVersionContract,
 } from "./model-version-store";
 import { createModelVersionsApp } from "./model-versions";
+import { createValidationDatasetsApp } from "./validation-datasets";
+import { r2ValidationDatasetStorage } from "./validation-dataset-storage";
+import { createValidationDatasetStore } from "./validation-dataset-store";
 import { createModelsApp } from "./models";
 import {
   createPrivacyRightsRequest,
@@ -231,6 +234,11 @@ const modelVersions = {
     return setModelVersionContract(db, r2ModelVersionStorage, input);
   },
 };
+
+const validationDatasets = createValidationDatasetStore({
+  db,
+  storage: r2ValidationDatasetStorage,
+});
 
 const workflows = {
   create(input: { applicationId: string; userId: string; name: string }) {
@@ -796,6 +804,15 @@ app.route(
     getSession: getCurrentTermsSession,
     applications,
     modelVersions,
+  }),
+);
+app.route(
+  "/",
+  createValidationDatasetsApp({
+    getSession: getCurrentTermsSession,
+    applications,
+    validationDatasets,
+    storage: r2ValidationDatasetStorage,
   }),
 );
 app.route(

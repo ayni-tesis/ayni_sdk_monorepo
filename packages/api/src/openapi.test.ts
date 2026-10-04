@@ -160,6 +160,23 @@ it("never answers POST /sdk/sync with 404", () => {
   expect(document.paths["/sdk/sync"]?.post?.responses).not.toHaveProperty("404");
 });
 
+describe("validation dataset routes", () => {
+  it("documents member listing, administrator upload, and verified ZIP publication", () => {
+    expect(document.paths["/applications/{applicationId}/validation-datasets"]?.get).toBeDefined();
+    expect(document.paths["/applications/{applicationId}/validation-datasets"]?.post?.responses).toHaveProperty("201");
+    expect(
+      document.paths[
+        "/applications/{applicationId}/validation-datasets/{datasetId}/versions/upload-url"
+      ]?.post?.responses,
+    ).toHaveProperty("200");
+    expect(
+      document.paths[
+        "/applications/{applicationId}/validation-datasets/{datasetId}/versions/complete"
+      ]?.post?.responses,
+    ).toHaveProperty("413");
+  });
+});
+
 describe("GET /sdk/telemetry-policy", () => {
   it("returns only the enabled flag and an allowed retention period", () => {
     const response = resolve(jsonContent("/sdk/telemetry-policy", "get", "200").schema);

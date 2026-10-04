@@ -145,6 +145,23 @@ describe("createValidationDatasetStore", () => {
     expect((await store.list("app-1")).datasets).toHaveLength(1);
   });
 
+  it("maps a unique application/name collision to a dataset conflict", async () => {
+    const state = adminState({ insertError: { code: "23505" } });
+    const { storage } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+
+    const result = await store.createDataset({
+      applicationId: "app-1",
+      userId: "user-1",
+      name: "Dataset de prueba",
+      source: "Repositorio público de la tesis",
+      license: "CC BY 4.0",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "datasetExists" });
+    expect(state.insertedDatasets).toHaveLength(0);
+  });
+
   it("stores the actual ZIP SHA-256 and byte count in an immutable version", async () => {
     const state = adminState({
       datasets: [
