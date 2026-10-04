@@ -7,6 +7,14 @@ import { z } from "zod";
 
 import { sdkCollectionPolicySchema } from "./sdk-collection-policy";
 import { sdkConsentReceiptSchema } from "./sdk-consent";
+import {
+  EVIDENCE_IMAGE_MAX_BYTES,
+  EVIDENCE_UPLOAD_URL_TTL_SECONDS,
+  SDK_EVIDENCE_MAX_BYTES,
+  sdkEvidenceReceiptSchema,
+  sdkEvidenceSchema,
+  sdkEvidenceUploadSchema,
+} from "./sdk-evidence";
 import { sdkTelemetryPolicySchema } from "./sdk-telemetry-policy";
 import { SDK_TRACE_MAX_BYTES, sdkTraceSchema } from "./sdk-trace";
 
@@ -20,6 +28,14 @@ const SdkTraceAcknowledgementSchema = z
   .object({ traceId: z.uuid(), receivedAt: z.iso.datetime() })
   .openapi("SdkTraceAcknowledgement");
 const SdkWorkflowTraceSchema = sdkTraceSchema.extend({}).openapi("SdkWorkflowTrace");
+const SdkEvidenceSchema = sdkEvidenceSchema.extend({}).openapi("SdkEvidence");
+const SdkEvidenceReceiptSchema = sdkEvidenceReceiptSchema.extend({}).openapi("SdkEvidenceReceipt");
+const SdkEvidenceStartSchema = z
+  .discriminatedUnion("status", [
+    sdkEvidenceUploadSchema.extend({}).openapi("SdkEvidenceUpload"),
+    SdkEvidenceReceiptSchema,
+  ])
+  .openapi("SdkEvidenceStart");
 
 export const SdkSyncWorkflowSchema = z
   .object({
@@ -211,7 +227,10 @@ function credentialErrors(revokedMessage: string): SdkError[] {
 }
 
 /** The error responses of one endpoint, one schema and one example per `code`. */
-function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
+function errorResponses(
+  errors: SdkError[],
+  descriptions: Partial<Record<SdkError["status"], string>> = {},
+): Record<string, ResponseConfig> {
   const statuses = [...new Set(errors.map(({ status }) => status))];
   return Object.fromEntries(
     statuses.map((status) => {
@@ -221,7 +240,8 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
         status,
         {
           description:
-            status === "401"
+            descriptions[status] ??
+            (status === "401"
               ? "Credencial no válida o revocada."
               : status === "400"
                 ? "Solicitud no válida."
@@ -233,7 +253,7 @@ function errorResponses(errors: SdkError[]): Record<string, ResponseConfig> {
                       ? "El cuerpo supera el tamaño máximo permitido."
                       : status === "503"
                         ? "El aviso de privacidad de Ayni todavía no está publicado."
-                        : "Recurso no disponible.",
+                        : "Recurso no disponible."),
           content: {
             "application/json": {
               schema: z.object({
@@ -512,6 +532,206 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         },
       },
       ...errorResponses(credentialErrors(revokedMessage)),
+    },
+  });
+
+  const collectionDisabled: SdkError = {
+    status: "403",
+    code: "collectionDisabled",
+    message: "La recolección de evidencia de esta aplicación está deshabilitada.",
+    cause:
+      "La aplicación recibe evidencia solo mientras su política de recolección está habilitada.",
+  };
+  const evidenceStartErrors: SdkError[] = [
+    ...credentialErrors(revokedMessage),
+    collectionDisabled,
+    {
+      status: "400",
+      code: "invalidEvidence",
+      message: "La evidencia no tiene un formato válido.",
+      cause:
+        "Debe seguir el esquema de la evidencia del SDK, sin campos adicionales, con una imagen `image/jpeg` que no supera el tamaño máximo con que se optimizó.",
+    },
+    {
+      status: "413",
+      code: "evidenceTooLarge",
+      message: "La evidencia supera el tamaño máximo permitido.",
+      cause: `El cuerpo puede ocupar hasta ${SDK_EVIDENCE_MAX_BYTES / 1024} KiB y la imagen, hasta ${EVIDENCE_IMAGE_MAX_BYTES / 1024 / 1024} MiB.`,
+    },
+    {
+      status: "404",
+      code: "evidenceSourceNotFound",
+      message: "La evidencia no corresponde a un workflow publicado de esta aplicación.",
+      cause:
+        "La versión de workflow no es de la aplicación de la credencial, su nodo `dataset.capture` no recibe el resultado del modelo indicado, o ese modelo no es de la aplicación o no coincide en versión, SHA-256, tipo de tarea o etiquetas.",
+    },
+    {
+      status: "409",
+      code: "evidenceConflict",
+      message: "El ID de evidencia ya se usó con otros datos.",
+      cause: "Un mismo ID solo puede repetir los mismos datos en la misma aplicación.",
+    },
+  ];
+  const evidenceExample = {
+    evidenceSchemaVersion: 1,
+    evidenceId: "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f",
+    capturedAt: "2026-10-03T12:00:00.000Z",
+    workflowId: "0b9f3c8e-2f4d-4c11-9a57-6f1e2d3c4b5a",
+    workflowVersionId,
+    workflowVersion: "1.2.0",
+    captureNodeId: "captura",
+    model: { modelVersionId, version: "2.0.0", sha256 },
+    result: {
+      type: "classification",
+      nodeId: "modelo",
+      label: "enferma",
+      confidence: 0.62,
+      confidences: { sana: 0.38, enferma: 0.62 },
+    },
+    image: {
+      mediaType: "image/jpeg",
+      width: 1024,
+      height: 768,
+      maxImageSize: 1024,
+      imageQuality: 80,
+      byteSize: 182_431,
+      sha256: "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b",
+    },
+  } satisfies z.infer<typeof sdkEvidenceSchema>;
+  registry.registerPath({
+    method: "post",
+    path: "/sdk/evidence",
+    tags: ["Endpoints"],
+    operationId: "iniciar-carga-de-evidencia",
+    summary: "Iniciar la carga de una evidencia",
+    description: describeWithErrors(
+      "Recibe los datos de una evidencia pendiente del SDK para la aplicación de la credencial, " +
+        "solo mientras su política de recolección está habilitada, y comprueba que su versión de " +
+        "workflow, su nodo `dataset.capture` y su versión de modelo son de esa aplicación. " +
+        "Guarda los datos una sola vez por `evidenceId` y responde una URL firmada para subir la " +
+        "imagen con `PUT` directamente al almacenamiento de objetos, sin la credencial; la URL " +
+        `vence ${EVIDENCE_UPLOAD_URL_TTL_SECONDS / 60} minutos después. La evidencia queda ` +
+        "recibida solo cuando `POST /sdk/evidence/{evidenceId}/complete` lo confirma. Si el " +
+        "servidor ya la recibió, responde `received` y no hace falta subir la imagen otra vez.",
+      evidenceStartErrors,
+    ),
+    security,
+    "x-codeSamples": curlSample("post", "/sdk/evidence"),
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: SdkEvidenceSchema,
+            examples: { evidencia: { summary: "Clasificación", value: evidenceExample } },
+          },
+        },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Dónde subir la imagen, o la confirmación si el servidor ya la recibió.",
+        content: {
+          "application/json": {
+            schema: SdkEvidenceStartSchema,
+            examples: {
+              subir: {
+                summary: "Falta la imagen",
+                value: {
+                  evidenceId: evidenceExample.evidenceId,
+                  status: "uploadRequired",
+                  uploadUrl: "https://almacenamiento.example/staging/evidencia.jpg?firma=…",
+                  uploadUrlExpiresAt: "2026-10-03T12:16:00.000Z",
+                },
+              },
+              recibida: {
+                summary: "Ya recibida",
+                value: {
+                  evidenceId: evidenceExample.evidenceId,
+                  status: "received",
+                  receivedAt: "2026-10-03T12:01:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+      ...errorResponses(evidenceStartErrors, {
+        "403": "La política de recolección no está habilitada.",
+        "413": "La evidencia o su imagen superan el tamaño máximo permitido.",
+      }),
+    },
+  });
+
+  const evidenceCompleteErrors: SdkError[] = [
+    ...credentialErrors(revokedMessage),
+    collectionDisabled,
+    {
+      status: "404",
+      code: "evidenceNotFound",
+      message: "No encontramos esta evidencia.",
+      cause: "Su carga no se inició con `POST /sdk/evidence` para la aplicación de la credencial.",
+    },
+    {
+      status: "409",
+      code: "evidenceImageMissing",
+      message: "La imagen de la evidencia todavía no se subió.",
+      cause: "No hay una imagen en la URL firmada de esta evidencia.",
+    },
+    {
+      status: "400",
+      code: "invalidEvidenceImage",
+      message: "La imagen no coincide con la evidencia.",
+      cause:
+        "La imagen subida no es un JPEG o su tamaño, su SHA-256 o sus dimensiones no son los de la evidencia; el servidor la descarta.",
+    },
+  ];
+  registry.registerPath({
+    method: "post",
+    path: "/sdk/evidence/{evidenceId}/complete",
+    tags: ["Endpoints"],
+    operationId: "confirmar-carga-de-evidencia",
+    summary: "Confirmar la carga de una evidencia",
+    description: describeWithErrors(
+      "Comprueba la imagen que el SDK subió a la URL firmada: debe ser un JPEG con el tamaño, el " +
+        "SHA-256 y las dimensiones de la evidencia. La guarda junto a sus datos y confirma la " +
+        "recepción; el SDK solo considera enviada la evidencia con esta confirmación. Confirmar " +
+        "otra vez una evidencia recibida devuelve la misma fecha. La solicitud no lleva cuerpo.",
+      evidenceCompleteErrors,
+    ),
+    security,
+    "x-codeSamples": curlSample("post", `/sdk/evidence/${evidenceExample.evidenceId}/complete`),
+    request: {
+      params: z.object({
+        evidenceId: z
+          .uuid()
+          .describe("ID de la evidencia, el mismo de `POST /sdk/evidence`.")
+          .openapi({ example: evidenceExample.evidenceId }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "La evidencia quedó recibida.",
+        content: {
+          "application/json": {
+            schema: SdkEvidenceReceiptSchema,
+            examples: {
+              recibida: {
+                summary: "Evidencia recibida",
+                value: {
+                  evidenceId: evidenceExample.evidenceId,
+                  status: "received",
+                  receivedAt: "2026-10-03T12:01:00.000Z",
+                },
+              },
+            },
+          },
+        },
+      },
+      ...errorResponses(evidenceCompleteErrors, {
+        "403": "La política de recolección no está habilitada.",
+        "409": "La imagen todavía no está en el almacenamiento.",
+      }),
     },
   });
 

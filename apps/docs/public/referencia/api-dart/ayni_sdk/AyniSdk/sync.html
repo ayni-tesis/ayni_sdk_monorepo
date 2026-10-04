@@ -55,7 +55,9 @@
     <section class="multi-line-signature">
       
 <span class="returntype"><a href="https://api.flutter.dev/flutter/dart-async/Future-class.html">Future</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../../ayni_sdk/SyncResult-class.html">SyncResult</a></span>&gt;</span></span>
-<span class="name ">sync</span>(<wbr>)
+<span class="name ">sync</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="sync-param-onEvidence"><span class="type-annotation">void</span> <span class="parameter-name">onEvidence</span>(<ol class="parameter-list single-line"> <li><span class="parameter" id="param-event"><span class="type-annotation"><a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a></span> <span class="parameter-name">event</span></span></li>
+</ol>)?, </span></li>
+</ol>})
 
       
 
@@ -105,17 +107,33 @@ for (final resource in result.resources) {
   }
 }
 </code></pre>
+<p>As its last optional step, before the manifest, <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> uploads the
+evidence for datasets pending on this device (US-070) while the
+application's collection policy, consulted right before each one,
+allows it over the current connection. <code>onEvidence</code> receives, for each
+evidence it starts to upload, <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceUploading</a> and then
+<a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceReceived</a> once the server confirmed it,
+<a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceUploadFailed</a> when it stays pending for a later
+sync, or <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceCredentialRevoked</a> when the server
+rejected the revoked credential; <a href="../../ayni_sdk/AyniSdk/onProgress.html">onProgress</a> receives their messages.
+An evidence counts as sent only after that confirmation. The uploads
+share the time <a href="../../ayni_sdk/AyniSdk/syncTimeout.html">syncTimeout</a> leaves before the part kept for the
+manifest, so an evidence that does not fit stays pending.</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.sync(
+  onEvidence: (event) =&gt; showStatus(event.message),
+);
+</code></pre>
 </section>
 
 
     
 <section class="summary source-code" id="source">
   <h2><span>Implementation</span></h2>
-  <pre class="language-dart"><code class="language-dart">Future&lt;SyncResult&gt; sync() {
+  <pre class="language-dart"><code class="language-dart">Future&lt;SyncResult&gt; sync({void Function(EvidenceEvent event)? onEvidence}) {
   final previousSync = _syncQueue;
   final syncFinished = Completer&lt;void&gt;();
   _syncQueue = syncFinished.future;
-  return _syncAfter(previousSync, syncFinished);
+  return _syncAfter(previousSync, syncFinished, onEvidence);
 }</code></pre>
 </section>
 

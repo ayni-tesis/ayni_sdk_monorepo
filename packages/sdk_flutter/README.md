@@ -334,7 +334,6 @@ if (pending > 0) {
 }
 ```
 
-Esta versión todavía no envía la evidencia: sigue pendiente en el dispositivo.
 Si la persona retira su consentimiento, deja de pasar `evidenceConsent: true` y
 elimina la evidencia guardada; un `run()` que ya estaba en curso tampoco guarda
 la suya:
@@ -363,6 +362,26 @@ if (status != EvidenceQueueStatus.empty) {
 Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
 (`ConnectivityManager` en Android, `NWPathMonitor` en iOS 12 o posterior) y no
 lo guarda ni lo envía.
+
+`sync()` sube la evidencia pendiente a la aplicación de la credencial solo
+mientras la política de recolección, consultada antes de cada una, esté
+habilitada y permita la conexión actual. `onEvidence` de `sync()` recibe
+`evidenceUploading` (`Subiendo evidencia…`) y después `evidenceReceived`
+(`Evidencia recibida.`), `evidenceUploadFailed`
+(`No se pudo enviar la evidencia; se reintentará cuando sea posible.`) o
+`evidenceCredentialRevoked`
+(`No se puede enviar evidencia porque la credencial fue revocada.`):
+
+```dart
+final result = await sdk.sync(
+  onEvidence: (event) => showStatus(event.message),
+);
+```
+
+El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
+la recibió; sin esa confirmación sigue pendiente y un `sync()` posterior la
+vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
+copia de la evidencia recibida hasta `clearPendingEvidence()`.
 
 ## Estructura del paquete
 

@@ -311,8 +311,7 @@ if (pending &gt; 0) {
   showStatus('Evidencia pendiente de envío ($pending)');
 }
 </code></pre>
-<p>Esta versión todavía no envía la evidencia: sigue pendiente en el dispositivo.
-Si la persona retira su consentimiento, deja de pasar <code>evidenceConsent: true</code> y
+<p>Si la persona retira su consentimiento, deja de pasar <code>evidenceConsent: true</code> y
 elimina la evidencia guardada; un <code>run()</code> que ya estaba en curso tampoco guarda
 la suya:</p>
 <pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();
@@ -334,6 +333,22 @@ if (status != EvidenceQueueStatus.empty) {
 <p>Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
 (<code>ConnectivityManager</code> en Android, <code>NWPathMonitor</code> en iOS 12 o posterior) y no
 lo guarda ni lo envía.</p>
+<p><code>sync()</code> sube la evidencia pendiente a la aplicación de la credencial solo
+mientras la política de recolección, consultada antes de cada una, esté
+habilitada y permita la conexión actual. <code>onEvidence</code> de <code>sync()</code> recibe
+<code>evidenceUploading</code> (<code>Subiendo evidencia…</code>) y después <code>evidenceReceived</code>
+(<code>Evidencia recibida.</code>), <code>evidenceUploadFailed</code>
+(<code>No se pudo enviar la evidencia; se reintentará cuando sea posible.</code>) o
+<code>evidenceCredentialRevoked</code>
+(<code>No se puede enviar evidencia porque la credencial fue revocada.</code>):</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.sync(
+  onEvidence: (event) =&gt; showStatus(event.message),
+);
+</code></pre>
+<p>El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
+la recibió; sin esa confirmación sigue pendiente y un <code>sync()</code> posterior la
+vuelve a intentar sin duplicarla. Esta versión conserva en el dispositivo la
+copia de la evidencia recibida hasta <code>clearPendingEvidence()</code>.</p>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>

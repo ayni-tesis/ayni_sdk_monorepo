@@ -20,4 +20,23 @@ describe("R2 upload URL", () => {
     expect(url.searchParams.has("x-amz-sdk-checksum-algorithm")).toBe(false);
     expect(url.searchParams.has("x-amz-checksum-crc32")).toBe(false);
   });
+
+  it("signs the exact size of the upload when one is given (US-070)", async () => {
+    vi.stubEnv("R2_ACCOUNT_ID", "account");
+    vi.stubEnv("R2_ACCESS_KEY_ID", "test-access");
+    vi.stubEnv("R2_SECRET_ACCESS_KEY", "test-secret");
+    vi.stubEnv("R2_BUCKET_NAME", "test-bucket");
+
+    const { getUploadUrl } = await import("./storage");
+    const url = new URL(
+      await getUploadUrl("staging/app/evidence/e.jpg", {
+        contentType: "image/jpeg",
+        contentLength: 2048,
+      }),
+    );
+
+    expect(url.searchParams.get("X-Amz-SignedHeaders")?.split(";")).toEqual(
+      expect.arrayContaining(["content-length"]),
+    );
+  });
 });

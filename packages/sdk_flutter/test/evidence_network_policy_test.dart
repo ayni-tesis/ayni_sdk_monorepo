@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
 import 'package:ayni_sdk/src/collection_policy_store.dart';
+import 'package:ayni_sdk/src/evidence_store.dart';
 import 'package:ayni_sdk/src/network_type.dart';
 import 'package:test/test.dart';
 
@@ -74,7 +75,7 @@ void main() {
     return networks[index < networks.length ? index : networks.length - 1];
   }
 
-  AyniSdk sdk({bool withUploader = true}) => createAyniSdkForTesting(
+  AyniSdk sdk() => createAyniSdkForTesting(
     serverUrl: Uri.parse(
       'http://${InternetAddress.loopbackIPv4.address}:${server.port}',
     ),
@@ -82,12 +83,15 @@ void main() {
     storageDirectory: storage,
     allowInsecureLoopback: true,
     networkTypeReader: readNetwork,
-    evidenceUploader: withUploader
-        ? (evidence) async {
-            uploads.add(evidence.uri.pathSegments.lastWhere((s) => s != ''));
-            return confirmUploads;
-          }
-        : null,
+    evidenceUploader: (evidence) async {
+      uploads.add(evidence.uri.pathSegments.lastWhere((s) => s != ''));
+      return confirmUploads
+          ? (
+              outcome: EvidenceUploadOutcome.received,
+              receivedAt: DateTime.utc(2026, 10, 3),
+            )
+          : (outcome: EvidenceUploadOutcome.failed, receivedAt: null);
+    },
   );
 
   Future<void> pendingEvidence(List<String> ids) async {
@@ -276,7 +280,8 @@ void main() {
       await client.sync();
 
       expect(uploads, hasLength(1));
-      expect(await client.pendingEvidenceCount(), 2);
+      // The confirmed one is no longer pending (US-070); the other waits.
+      expect(await client.pendingEvidenceCount(), 1);
       expect(
         await client.evidenceQueueStatus(),
         EvidenceQueueStatus.waitingForWifi,
@@ -319,16 +324,6 @@ void main() {
 
       expect(networkReads, 0);
       expect(policyRequests(), 1);
-    });
-
-    test('sends nothing until the upload exists (US-070)', () async {
-      await pendingEvidence(['evidence-1']);
-      final client = sdk(withUploader: false);
-
-      await client.sync();
-
-      expect(networkReads, 0);
-      expect(await client.pendingEvidenceCount(), 1);
     });
   });
 

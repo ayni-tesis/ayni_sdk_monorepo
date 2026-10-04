@@ -43,8 +43,23 @@
 - El SDK acepta el esquema de workflow 3, con el que el servidor publica los
   workflows que incluyen `dataset.capture`. Las versiones anteriores del SDK
   rechazan esos workflows con `unsupportedWorkflowVersion`.
-
-Esta versión todavía no envía la evidencia al servidor.
+- `sync()` sube la evidencia pendiente a la aplicación de la credencial con
+  `POST /sdk/evidence`, la imagen a la URL firmada que indica el servidor y
+  `POST /sdk/evidence/<evidenceId>/complete`, solo mientras la política de
+  recolección, consultada antes de cada evidencia, esté habilitada y permita la
+  conexión actual. Su nuevo parámetro `onEvidence` recibe `evidenceUploading`
+  (`Subiendo evidencia…`) y después `evidenceReceived` (`Evidencia recibida.`),
+  `evidenceUploadFailed`
+  (`No se pudo enviar la evidencia; se reintentará cuando sea posible.`) o
+  `evidenceCredentialRevoked`
+  (`No se puede enviar evidencia porque la credencial fue revocada.`).
+- Una evidencia solo cuenta como enviada cuando el servidor confirma que la
+  recibió: el SDK agrega `received.json` a su directorio, deja de contarla en
+  `pendingEvidenceCount()` y no la vuelve a subir. Sin confirmación sigue
+  pendiente y un `sync()` posterior la vuelve a intentar con el mismo ID, sin
+  duplicarla. La copia local de la evidencia recibida se conserva hasta
+  `clearPendingEvidence()`.
+- Requiere la API HTTP 0.3.0 del servidor, que agrega esas dos rutas.
 
 ## 0.2.0 - 2026-10-03
 

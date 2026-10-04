@@ -25,6 +25,7 @@ import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
+import { r2EvidenceStorage } from "./evidence-storage";
 import {
   type AcceptResult,
   type CreatedInvitation,
@@ -74,6 +75,8 @@ import {
   useSdkCredential,
 } from "./sdk-credential-store";
 import { createSdkCredentialsApp } from "./sdk-credentials";
+import { createSdkEvidenceApp } from "./sdk-evidence";
+import { createSdkEvidenceService, drizzleSdkEvidenceRepository } from "./sdk-evidence-store";
 import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
@@ -373,6 +376,20 @@ const sdkCollectionPolicies = {
     return getCollectionPolicy(db, applicationId);
   },
 };
+
+const sdkEvidenceAccess = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret);
+  },
+  get(applicationId: string) {
+    return getCollectionPolicy(db, applicationId);
+  },
+};
+
+const sdkEvidenceService = createSdkEvidenceService({
+  repository: drizzleSdkEvidenceRepository(db),
+  storage: r2EvidenceStorage,
+});
 
 const sdkTraces = {
   verify(secret: string) {
@@ -850,6 +867,14 @@ app.route(
   createSdkCollectionPolicyApp({
     credentials: sdkCollectionPolicies,
     policies: sdkCollectionPolicies,
+  }),
+);
+app.route(
+  "/",
+  createSdkEvidenceApp({
+    credentials: sdkEvidenceAccess,
+    policies: sdkEvidenceAccess,
+    evidence: sdkEvidenceService,
   }),
 );
 app.route(

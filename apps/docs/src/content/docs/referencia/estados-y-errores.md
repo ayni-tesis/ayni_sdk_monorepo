@@ -86,6 +86,11 @@ también el diagnóstico que recibe `onProgress`. Sin consentimiento no hay
 evento. Ningún evento cambia el resultado que ya devolvió `run()` (ver
 [Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets)).
 
+`sync()` llama a su propio `onEvidence` por cada evidencia pendiente que empieza
+a subir: `evidenceUploading` y después `evidenceReceived`,
+`evidenceUploadFailed` o `evidenceCredentialRevoked` (ver
+[Envío de la evidencia](/recursos/datos-y-privacidad/#envío-de-la-evidencia)).
+
 | `EvidenceEvent` | Cuándo ocurre | `message` |
 | --- | --- | --- |
 | `evidenceOptimizing` | El SDK empezó a reducir y comprimir la imagen de la evidencia con el tamaño máximo y la calidad de la política de recolección. | `Optimizando` |
@@ -93,6 +98,10 @@ evento. Ningún evento cambia el resultado que ya devolvió `run()` (ver
 | `evidenceQueued` | El SDK guardó completas la imagen y el resultado de la captura en la cola local de evidencia pendiente de envío, donde se conservan aunque la app se reinicie. Cuando llega, `pendingEvidenceCount()` ya la cuenta. | `Evidencia guardada para envío posterior.` |
 | `evidenceDiscarded` | El SDK no pudo preparar la evidencia, por ejemplo porque ningún `sync()` guardó aún la política de recolección o porque no pudo optimizar o guardar la imagen por un motivo distinto de la falta de espacio, y la descartó sin dejar archivos a medias. | `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.` |
 | `evidenceStorageFull` | El dispositivo no tenía espacio para guardar la evidencia en la cola, así que el SDK la descartó sin dejar archivos a medias. La evidencia que ya estaba pendiente se conserva. | `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.` |
+| `evidenceUploading` | `sync()` empezó a subir una evidencia pendiente: la política de recolección, consultada justo antes, la permite por la conexión actual. | `Subiendo evidencia…` |
+| `evidenceReceived` | El servidor confirmó que recibió la evidencia, sus datos y su imagen. Ya no está pendiente y ningún `sync()` posterior la vuelve a subir. | `Evidencia recibida.` |
+| `evidenceUploadFailed` | El SDK no pudo enviar la evidencia o el servidor no confirmó su recepción. Sigue pendiente y un `sync()` posterior la vuelve a intentar. | `No se pudo enviar la evidencia; se reintentará cuando sea posible.` |
+| `evidenceCredentialRevoked` | El servidor rechazó la carga porque la credencial fue revocada. La evidencia sigue pendiente y el SDK no sube otra en ese `sync()`. | `No se puede enviar evidencia porque la credencial fue revocada.` |
 
 ## Cola de evidencia
 
@@ -118,14 +127,22 @@ lo recibe: ve el resultado de la última columna.
 | `code` | Estado HTTP | Cuándo ocurre | Qué ve la app |
 | --- | --- | --- | --- |
 | `invalidConsent` | `400` | El recibo enviado a `POST /sdk/consents` no cumple el esquema. | `recordConsent()` devuelve `ConsentStatus.pending` y conserva el recibo para reintentar. |
-| `invalidCredential` | `401` | Falta la credencial, no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o su aplicación está archivada. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. |
-| `credentialRevoked` | `401` | Un administrador revocó o regeneró la credencial. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. Si se revoca a mitad de una sincronización, mientras se descarga un modelo, el workflow que lo usa trae `dependencyFailed`. |
+| `invalidCredential` | `401` | Falta la credencial, no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o su aplicación está archivada. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. Una evidencia que estaba subiendo trae `evidenceUploadFailed` y sigue pendiente. |
+| `credentialRevoked` | `401` | Un administrador revocó o regeneró la credencial. | `sync()` devuelve `SyncStatus.error` con `resources` vacío. Si se revoca a mitad de una sincronización, mientras se descarga un modelo, el workflow que lo usa trae `dependencyFailed`. Una evidencia que estaba subiendo trae `evidenceCredentialRevoked` y sigue pendiente. |
 | `consentReceiptConflict` | `409` | El `receiptId` ya existe con otros datos. | `recordConsent()` devuelve `ConsentStatus.pending` y conserva el recibo local. |
 | `privacyNoticeUnavailable` | `503` | El aviso de privacidad de Ayni todavía está en borrador. | `recordConsent()` devuelve `ConsentStatus.pending`; `sync()` puede continuar con workflows y modelos. |
 | `invalidTrace` | `400` | La traza enviada a `POST /sdk/traces` no cumple el esquema tipado estricto. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `telemetryDisabled` | `403` | La política vigente de la aplicación no permite recibir trazas. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `traceConflict` | `409` | El mismo ID de traza de esta aplicación ya se confirmó con otros datos. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `traceTooLarge` | `413` | El cuerpo de `POST /sdk/traces` supera 2 MiB. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
+| `invalidEvidence` | `400` | Los datos enviados a `POST /sdk/evidence` no cumplen el esquema de la evidencia. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `collectionDisabled` | `403` | La política de recolección de la aplicación está deshabilitada en el servidor. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y no sube otra en ese `sync()`. |
+| `evidenceSourceNotFound` | `404` | La versión de workflow, el nodo `dataset.capture` o la versión de modelo de la evidencia no son de la aplicación de la credencial o no coinciden entre sí. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `evidenceConflict` | `409` | El ID de evidencia ya se usó con otros datos en esta aplicación. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `evidenceTooLarge` | `413` | Los datos de la evidencia superan 1 MiB o su imagen, 32 MiB. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `invalidEvidenceImage` | `400` | La imagen subida no es un JPEG o su tamaño, su SHA-256 o sus dimensiones no son los de la evidencia; el servidor la descarta. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `evidenceNotFound` | `404` | `POST /sdk/evidence/<evidenceId>/complete` nombra una evidencia cuya carga no se inició en esta aplicación. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
+| `evidenceImageMissing` | `409` | La imagen de la evidencia todavía no está en el almacenamiento. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, conserva la evidencia pendiente y sigue con la siguiente. |
 | `workflowVersionNotFound` | `404` | La versión de workflow que listó el servidor ya no se puede descargar, por ejemplo porque su workflow se archivó durante la sincronización. | El workflow trae `workflowUnavailable` y `sync()` devuelve `SyncStatus.error`. |
 | `modelVersionNotFound` | `404` | La versión de modelo que usa un workflow ya no se puede descargar. | El workflow trae `dependencyFailed` con esa versión en `<modelo>`, y `sync()` devuelve `SyncStatus.error`. |
 
