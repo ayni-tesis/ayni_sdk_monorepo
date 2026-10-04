@@ -4191,6 +4191,76 @@ describe("ApplicationDetailPanel", () => {
     });
   });
 
+  describe("US-073: Enviar solo telemetría sin nodo de captura", () => {
+    stubWorkflowCanvasLayout();
+
+    const NO_CAPTURE = "Este workflow no recolecta imágenes.";
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const captureNode = {
+      id: "capture-node",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+
+    async function openWorkflow(nodes: unknown[], canManage: boolean) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: {
+              workflow: {
+                id: "workflow-1",
+                applicationId: "app-1",
+                name: "Detección de broca",
+                status: "draft",
+                createdAt: "2026-09-21T15:00:00.000Z",
+                updatedAt: "2026-09-21T16:00:00.000Z",
+              },
+              draft: { nodes, connections: [] },
+              versions: [],
+            },
+          };
+        if (url === "/applications/app-1/collection-policy")
+          return { data: { policy: { applicationId: "app-1", enabled: true } } };
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: { versions: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+    }
+
+    it.each([
+      ["an administrator", true],
+      ["a member", false],
+    ])(
+      "tells %s that a workflow without Capturar evidencia collects no images",
+      async (_, canManage) => {
+        await openWorkflow([imageNode], canManage);
+
+        expect(screen.getByText(NO_CAPTURE)).toBeTruthy();
+        expect(client.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not show it once the workflow has a Capturar evidencia node", async () => {
+      await openWorkflow([imageNode, captureNode], true);
+
+      expect(screen.queryByText(NO_CAPTURE)).toBeNull();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {
