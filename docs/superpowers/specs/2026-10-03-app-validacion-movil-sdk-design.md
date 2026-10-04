@@ -1,7 +1,7 @@
 # Diseño: aplicación móvil de validación de ayni_sdk
 
 **Fecha:** 2026-10-03
-**Estado:** Diseño aprobado en conversación; falta revisión del documento escrito
+**Estado:** Diseño aprobado por el usuario
 **Protocolo:** Plan de Pruebas Técnico SDK de Visión Computacional v1.3
 **SDK evaluado:** `ayni_sdk` 0.2.0 (`ayni_sdk-v0.2.0`)
 
