@@ -38,7 +38,7 @@ El dashboard no ejecuta los modelos: la inferencia ocurre en el dispositivo.
 
 ## Qué hace el SDK
 
-La versión 0.1.0 del SDK es estable:
+La versión 0.2.0 del SDK es estable:
 
 - sincroniza con `sync()` las versiones publicadas de los workflows de una
   aplicación y los modelos que usan, y descarga solo lo que cambió;
@@ -48,7 +48,10 @@ La versión 0.1.0 del SDK es estable:
   actualización falla;
 - ejecuta con `run()`, sin red, la última versión instalada de un workflow
   sobre una imagen, con modelos TensorFlow Lite de clasificación o detección y
-  sus condiciones.
+  sus condiciones;
+- adjunta trazas técnicas tipadas a las ejecuciones autorizadas por la app y
+  envía las pendientes en `sync()` solo con una política de telemetría vigente
+  habilitada.
 
 ## Qué no hace el SDK
 
@@ -59,3 +62,4 @@ La versión 0.1.0 del SDK es estable:
   enviar trazas tipadas y sanitizadas cuando la política de telemetría está
   habilitada y la app tiene el permiso o consentimiento aplicable.
 - No entrena ni modifica modelos.
+- No guarda resultados de la aplicación en la outbox de trazas.
