@@ -18,11 +18,12 @@ import 'support/workflow_install.dart';
 /// US-073: a workflow without `dataset.capture` only emits telemetry, and a
 /// trace never carries the input image, its bytes, secrets or raw inputs.
 ///
-/// The public API offers no way to attach data to a trace: [WorkflowTrace]
-/// has a private constructor and every value the app passes is typed. The
-/// bad path is therefore shown where a trace enters and leaves the outbox,
-/// [TraceOutboxStore], which keeps only the fields of the published trace
-/// schema ([allowlistedTracePayload]).
+/// The public API has no method to attach data to a trace: [WorkflowTrace]
+/// has a private constructor and every value the app passes is typed. A
+/// subclass of an exported type, such as [WorkflowTraceContext], can still
+/// add a field to its `toJson()`, so the bad path is shown there and where a
+/// trace enters and leaves the outbox, [TraceOutboxStore], which keeps only
+/// the fields of the published trace schema ([allowlistedTracePayload]).
 void main() {
   late Directory storageDirectory;
   late HttpServer server;
@@ -157,7 +158,6 @@ void main() {
             ),
           ),
         );
-        expect(_traceFields.containsAll(queued.single.keys), isTrue);
         expect(allowlistedTracePayload(queued.single), queued.single);
         expect(encoded, isNot(contains(base64Encode(input))));
         expect(encoded, isNot(contains(input.join(','))));
@@ -173,11 +173,40 @@ void main() {
       },
     );
 
+    test(
+      'drops an image a component attaches to the trace of a run and keeps the trace',
+      () async {
+        await installWorkflowWithoutCapture();
+        final input = pngBytes();
+        // Larger than the 2 MiB trace limit on its own: only the allowed
+        // fields count, so the attachment never costs the trace.
+        final attachment = base64Encode(
+          Uint8List(TraceOutboxStore.maxPayloadBytes),
+        );
+
+        final result = await sdk().run(
+          'workflow-1',
+          input,
+          traceContext: _ContextWithImage(attachment),
+        );
+        final queued = await TraceOutboxStore(storageDirectory).pending();
+
+        expect(result.outputs, contains('Resultado'));
+        expect(result.tracePersistenceFailed, isFalse);
+        expect(queued.single['traceId'], result.trace!.traceId);
+        expect(queued.single.containsKey('image'), isFalse);
+        expect(queued.single['clientReportedFields'], ['runId', 'repetition']);
+        expect(
+          jsonEncode(queued.single),
+          isNot(contains(attachment.substring(0, 64))),
+        );
+      },
+    );
+
     test('keeps every field of a complete SDK trace', () {
       final trace = _completeTrace().toJson();
 
       expect(allowlistedTracePayload(trace), trace);
-      expect(_traceFields.containsAll(trace.keys), isTrue);
     });
 
     test(
@@ -226,45 +255,18 @@ void main() {
   });
 }
 
-const _modelBytes = 'deterministic test model';
+/// A context whose serialization carries the input image, as a component
+/// that tries to attach it to the telemetry would.
+class _ContextWithImage extends WorkflowTraceContext {
+  _ContextWithImage(this.image) : super(runId: 'run-1', repetition: 1);
 
-/// The top-level fields of `sdkTraceSchema` (`packages/api/src/sdk-trace.ts`).
-const _traceFields = {
-  'traceSchemaVersion',
-  'traceId',
-  'runId',
-  'repetition',
-  'installationId',
-  'timestamp',
-  'condition',
-  'caseId',
-  'scenario',
-  'appCommit',
-  'sdkCommit',
-  'datasetId',
-  'datasetPartition',
-  'datasetSha256',
-  'backend',
-  'network',
-  'batteryPercent',
-  'temperatureC',
-  'appVersion',
-  'sdkVersion',
-  'measurements',
-  'incidents',
-  'validity',
-  'workflowId',
-  'workflowVersionId',
-  'workflowVersion',
-  'models',
-  'profile',
-  'status',
-  'durationMs',
-  'nodes',
-  'outputs',
-  'clientReportedFields',
-  'error',
-};
+  final String image;
+
+  @override
+  Map<String, Object?> toJson() => {...super.toJson(), 'image': image};
+}
+
+const _modelBytes = 'deterministic test model';
 
 /// A trace that fills every field the SDK can write, with all result types.
 WorkflowTrace _completeTrace() => createWorkflowTrace(

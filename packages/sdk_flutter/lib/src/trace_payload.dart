@@ -11,7 +11,8 @@ library;
 ///
 /// Any other field, at any level, is dropped: an image, input bytes, a
 /// tensor, a path or any data a component attached. So are list items and
-/// output values of an unknown shape. The allowed metadata stays as it was,
+/// output values of an unknown shape, and `clientReportedFields` names that
+/// are not trace fields. The allowed metadata stays as it was,
 /// so the trace can still be sent. `TraceOutboxStore` applies it when it
 /// saves a trace and when it reads one to send it.
 Map<String, Object?> allowlistedTracePayload(Map<String, Object?> trace) =>
@@ -58,7 +59,39 @@ Map<String, Object?> _pick(
       if (field(value) case final kept?) key! as String: kept,
 };
 
-const _measurementFields = {
+// Each map below is a flat declaration of `'field': rule` lines so that
+// `packages/api/src/sdk-trace-allowlist.test.ts` can compare it with
+// `sdkTraceSchema`: keep that shape when adding a field.
+
+/// The values `clientReportedFields` may list.
+const _traceClientReportedFieldNames = {
+  'runId',
+  'repetition',
+  'condition',
+  'caseId',
+  'scenario',
+  'appCommit',
+  'sdkCommit',
+  'datasetId',
+  'datasetPartition',
+  'datasetSha256',
+  'backend',
+  'network',
+  'batteryPercent',
+  'temperatureC',
+  'ramRange',
+  'socModel',
+  'appVersion',
+  'sdkVersion',
+  'measurements',
+  'incidents',
+  'validity',
+};
+
+Object? _traceClientReportedField(Object? value) =>
+    _traceClientReportedFieldNames.contains(value) ? value : null;
+
+const _traceMeasurementFields = {
   'name': _string,
   'value': _number,
   'unit': _string,
@@ -68,13 +101,13 @@ const _measurementFields = {
   'provenance': _string,
 };
 
-const _modelFields = {
+const _traceModelFields = {
   'modelVersionId': _string,
   'version': _string,
   'sha256': _string,
 };
 
-const _profileFields = {
+const _traceProfileFields = {
   'schemaVersion': _int,
   'platform': _string,
   'osVersion': _string,
@@ -84,7 +117,7 @@ const _profileFields = {
   'socModel': _string,
 };
 
-const _nodeFields = {
+const _traceNodeFields = {
   'nodeId': _string,
   'type': _string,
   'status': _string,
@@ -92,55 +125,76 @@ const _nodeFields = {
   'modelVersionId': _string,
 };
 
-const _errorFields = {
+const _traceErrorFields = {
   'category': _string,
   'phase': _string,
   'nodeId': _string,
   'modelVersionId': _string,
 };
 
-final _boxFields = {
+const _traceBoxFields = {
   'xMin': _number,
   'yMin': _number,
   'xMax': _number,
   'yMax': _number,
 };
 
-final Map<String, Map<String, _Field>> _scalarOutputFields = {
-  'classification': {
-    'type': _string,
-    'nodeId': _string,
-    'label': _string,
-    'confidence': _number,
-    'confidences': _record(_number),
-  },
-  'detection': {
-    'type': _string,
-    'nodeId': _string,
-    'detections': _list(
-      _object({
-        'label': _string,
-        'confidence': _number,
-        'box': _object(_boxFields),
-      }),
-    ),
-  },
-  'boolean': {'type': _string, 'nodeId': _string, 'value': _bool},
+final Map<String, _Field> _traceDetectionFields = {
+  'label': _string,
+  'confidence': _number,
+  'box': _object(_traceBoxFields),
+};
+
+final Map<String, _Field> _traceClassificationOutputFields = {
+  'type': _string,
+  'nodeId': _string,
+  'label': _string,
+  'confidence': _number,
+  'confidences': _record(_number),
+};
+
+final Map<String, _Field> _traceDetectionOutputFields = {
+  'type': _string,
+  'nodeId': _string,
+  'detections': _list(_object(_traceDetectionFields)),
+};
+
+const _traceBooleanOutputFields = {
+  'type': _string,
+  'nodeId': _string,
+  'value': _bool,
+};
+
+final Map<String, _Field> _traceCombinedOutputFields = {
+  'type': _string,
+  'nodeId': _string,
+  'values': _list(_traceScalarOutput),
+};
+
+/// The fields of each result type a combined output may hold, by `type`.
+final Map<String, Map<String, _Field>> _traceScalarOutputTypes = {
+  'classification': _traceClassificationOutputFields,
+  'detection': _traceDetectionOutputFields,
+  'boolean': _traceBooleanOutputFields,
+};
+
+/// The fields of each result type an output may hold, by `type`.
+final Map<String, Map<String, _Field>> _traceOutputTypes = {
+  ..._traceScalarOutputTypes,
+  'combined': _traceCombinedOutputFields,
 };
 
 /// A decoded workflow output, or `null` when its `type` is not one of the
-/// published result types; a combined output only holds scalar ones.
-Object? _output(Object? value, {bool combined = true}) {
+/// published result types.
+Object? _traceOutput(Object? value) => _typed(value, _traceOutputTypes);
+
+/// An output a combined output holds: never another combined one.
+Object? _traceScalarOutput(Object? value) =>
+    _typed(value, _traceScalarOutputTypes);
+
+Object? _typed(Object? value, Map<String, Map<String, _Field>> types) {
   if (value is! Map) return null;
-  final type = value['type'];
-  if (combined && type == 'combined') {
-    return _pick(value, {
-      'type': _string,
-      'nodeId': _string,
-      'values': _list((item) => _output(item, combined: false)),
-    });
-  }
-  final fields = _scalarOutputFields[type];
+  final fields = types[value['type']];
   return fields == null ? null : _pick(value, fields);
 }
 
@@ -165,18 +219,18 @@ final Map<String, _Field> _traceFields = {
   'temperatureC': _number,
   'appVersion': _string,
   'sdkVersion': _string,
-  'measurements': _list(_object(_measurementFields)),
+  'measurements': _list(_object(_traceMeasurementFields)),
   'incidents': _list(_string),
   'validity': _string,
   'workflowId': _string,
   'workflowVersionId': _string,
   'workflowVersion': _string,
-  'models': _list(_object(_modelFields)),
-  'profile': _object(_profileFields),
+  'models': _list(_object(_traceModelFields)),
+  'profile': _object(_traceProfileFields),
   'status': _string,
   'durationMs': _int,
-  'nodes': _list(_object(_nodeFields)),
-  'outputs': _record(_output),
-  'clientReportedFields': _list(_string),
-  'error': _object(_errorFields),
+  'nodes': _list(_object(_traceNodeFields)),
+  'outputs': _record(_traceOutput),
+  'clientReportedFields': _list(_traceClientReportedField),
+  'error': _object(_traceErrorFields),
 };

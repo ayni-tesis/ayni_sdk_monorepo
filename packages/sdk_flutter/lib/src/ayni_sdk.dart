@@ -25,6 +25,7 @@ import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'trace_payload.dart';
 import 'workflow_trace.dart';
 import 'supported_platform_stub.dart'
     if (dart.library.ui) 'supported_platform_flutter.dart'
@@ -814,7 +815,9 @@ class AyniSdk {
   Future<bool> _persistTrace(WorkflowTrace? trace, int generation) async {
     if (trace == null) return false;
     try {
-      final payload = trace.toJson();
+      // Only the allowed fields count against the size limit: an attachment
+      // is dropped, never a reason to lose the trace (US-073).
+      final payload = allowlistedTracePayload(trace.toJson());
       if (utf8.encode(jsonEncode(payload)).length >
           TraceOutboxStore.maxPayloadBytes) {
         return false;
