@@ -4057,6 +4057,126 @@ describe("ApplicationDetailPanel", () => {
     );
   });
 
+  describe("US-065: Validar un nodo de captura", () => {
+    stubWorkflowCanvasLayout();
+
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const captureNode = {
+      id: "capture-node",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+    const validationUrl = "/applications/app-1/workflows/workflow-1/validation";
+    const unpublishableCapture = {
+      code: "unpublishableNode",
+      nodeId: null,
+      nodeName: null,
+      port: null,
+      message:
+        'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
+    };
+
+    async function validateCaptureWorkflow(validation: unknown) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url === validationUrl) return { data: validation };
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: {
+              workflow: {
+                id: "workflow-1",
+                applicationId: "app-1",
+                name: "Detección de broca",
+                status: "draft",
+                createdAt: "2026-09-21T15:00:00.000Z",
+                updatedAt: "2026-09-21T16:00:00.000Z",
+              },
+              draft: { nodes: [imageNode, captureNode], connections: [] },
+              versions: [],
+            },
+          };
+        if (url === "/applications/app-1/collection-policy")
+          return { data: { policy: { applicationId: "app-1", enabled: true } } };
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: { versions: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+      fireEvent.click(screen.getByRole("button", { name: "Validar workflow" }));
+      return screen.findByRole("region", { name: "Errores de validación" });
+    }
+
+    function rowCells(panel: HTMLElement) {
+      return within(panel)
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) =>
+          within(row)
+            .getAllByRole("cell")
+            .map((cell) => cell.textContent),
+        );
+    }
+
+    it("lists the missing image and inference result ports of the capture", async () => {
+      const panel = await validateCaptureWorkflow({
+        publishable: false,
+        errors: [
+          {
+            code: "requiredInput",
+            nodeId: "capture-node",
+            nodeName: "Capturar evidencia",
+            port: "imagen",
+            message: 'El nodo "Capturar evidencia" necesita una imagen.',
+          },
+          {
+            code: "requiredInput",
+            nodeId: "capture-node",
+            nodeName: "Capturar evidencia",
+            port: "resultado",
+            message: 'El nodo "Capturar evidencia" necesita un resultado de inferencia.',
+          },
+          unpublishableCapture,
+        ],
+      });
+
+      expect(rowCells(panel)).toEqual([
+        ["Capturar evidencia", "imagen", 'El nodo "Capturar evidencia" necesita una imagen.'],
+        [
+          "Capturar evidencia",
+          "resultado",
+          'El nodo "Capturar evidencia" necesita un resultado de inferencia.',
+        ],
+        ["Workflow", "—", unpublishableCapture.message],
+      ]);
+      expect(screen.queryByText("El nodo de captura está listo.")).toBeNull();
+      expect(screen.queryByText("El workflow está listo para publicarse.")).toBeNull();
+    });
+
+    it("confirms a capture with its image and result connected, without changing the draft", async () => {
+      const panel = await validateCaptureWorkflow({
+        publishable: false,
+        errors: [unpublishableCapture],
+      });
+
+      expect(screen.getByText("El nodo de captura está listo.")).toBeTruthy();
+      expect(rowCells(panel)).toEqual([["Workflow", "—", unpublishableCapture.message]]);
+      expect(client.post).not.toHaveBeenCalled();
+      expect(client.patch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("US-037: Archivar un workflow", () => {
     const workflowDetail = {
       workflow: {

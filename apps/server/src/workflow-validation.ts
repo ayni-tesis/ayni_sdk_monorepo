@@ -55,9 +55,9 @@ function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
 
 /**
  * Checks whether a workflow draft can be published: it needs an image input
- * and an output, every model image input connected, compatible types on every
- * edge, no cycles, every output reachable from the image input, and only nodes
- * the SDK runs, so no dataset capture yet. Each error
+ * and an output, every model image input and both dataset capture inputs
+ * connected, compatible types on every edge, no cycles, every output reachable
+ * from the image input, and only nodes the SDK runs, so no dataset capture yet. Each error
  * names the node and port that cause it. The draft is never modified.
  */
 export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationResult {
@@ -143,10 +143,24 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
       continue;
     }
     if (node.type === "dataset.capture") {
-      // No SDK runs a capture yet (US-064), so a draft that holds one stays a draft.
+      const connected = (port: string) =>
+        connections.some(
+          (connection) => connection.targetNodeId === node.id && connection.targetPort === port,
+        );
+      if (!connected("imagen"))
+        addError("requiredInput", node, "imagen", `El nodo "${name}" necesita una imagen.`);
+      if (!connected("resultado"))
+        addError(
+          "requiredInput",
+          node,
+          "resultado",
+          `El nodo "${name}" necesita un resultado de inferencia.`,
+        );
+      // The capture itself is ready once its inputs are; publishing still waits
+      // for an SDK that runs it (US-066), so that block is the workflow's.
       addError(
         "unpublishableNode",
-        node,
+        null,
         null,
         `El nodo "${name}" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.`,
       );

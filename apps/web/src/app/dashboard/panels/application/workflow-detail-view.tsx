@@ -841,6 +841,13 @@ export function WorkflowDetailView({
   for (const { nodeId, message } of validationResult?.errors ?? []) {
     if (nodeId) nodeErrors[nodeId] = [...(nodeErrors[nodeId] ?? []), message];
   }
+  // The capture is ready when the validation names no error on it (US-065);
+  // publishing may still wait for an SDK that runs it, a workflow-level error.
+  const captureNodes = draft.nodes.filter((node) => node.type === "dataset.capture");
+  const captureReady =
+    validationResult !== null &&
+    captureNodes.length > 0 &&
+    captureNodes.every((node) => !nodeErrors[node.id]);
   const layoutUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}/layout`;
 
   function showPositions(positions: WorkflowCanvasPositions) {
@@ -1292,6 +1299,11 @@ export function WorkflowDetailView({
               {validationResult?.publishable && (
                 <p role="status" className="text-sm">
                   El workflow está listo para publicarse.
+                </p>
+              )}
+              {captureReady && (
+                <p role="status" className="text-sm">
+                  El nodo de captura está listo.
                 </p>
               )}
               {validationResult && !validationResult.publishable && (
