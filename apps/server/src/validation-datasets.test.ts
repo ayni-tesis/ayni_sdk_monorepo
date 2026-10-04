@@ -423,4 +423,31 @@ describe("direct-to-R2 validation dataset upload", () => {
       expect(removeArtifactMock).toHaveBeenCalledWith(`staging/app-1/validation-datasets/${uploadId}.zip`);
     },
   );
+
+  it("lets an application administrator delete a canceled staged ZIP", async () => {
+    const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
+    const { app, removeArtifactMock } = makeApp();
+
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/cancel`,
+      jsonRequest({ uploadId }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(removeArtifactMock).toHaveBeenCalledWith(
+      `staging/app-1/validation-datasets/${uploadId}.zip`,
+    );
+  });
+
+  it("does not let a member delete a staged ZIP", async () => {
+    const { app, removeArtifactMock } = makeApp({ membershipRole: "member" });
+
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/cancel`,
+      jsonRequest({ uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(removeArtifactMock).not.toHaveBeenCalled();
+  });
 });

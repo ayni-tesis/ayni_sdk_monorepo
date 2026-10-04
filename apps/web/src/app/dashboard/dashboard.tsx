@@ -33,6 +33,7 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
   overview: null,
   workflows: "workflows",
   models: "models",
+  datasets: "validation-datasets",
   credentials: "credentials",
   privacy: "privacy",
   collection: "collection",
@@ -43,10 +44,11 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
 export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (pathname === "/dashboard/members") return { kind: "members" };
   const match = pathname?.match(
-    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|credentials|privacy|collection|traces|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
+    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|validation-datasets|credentials|privacy|collection|traces|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
   );
   if (match) {
-    const section = (match[2] ?? match[4] ?? "overview") as ApplicationSection;
+    const parsedSection = (match[2] ?? match[4] ?? "overview") as ApplicationSection | "validation-datasets";
+    const section: ApplicationSection = parsedSection === "validation-datasets" ? "datasets" : parsedSection;
     if (match[3] && section !== "models") return { kind: "list" };
     const modelId = section === "models" ? match[3] : undefined;
     const workflowId = match[5];

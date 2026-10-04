@@ -156,6 +156,14 @@ describe("parseDashboardRoute", () => {
     });
   });
 
+  it("reads the validation dataset section route", () => {
+    expect(parseDashboardRoute("/dashboard/applications/app-1/validation-datasets")).toEqual({
+      kind: "app",
+      id: "app-1",
+      section: "datasets",
+    });
+  });
+
   it("reads the Trazas application section route (US-108)", () => {
     expect(parseDashboardRoute("/dashboard/applications/app-1/traces")).toEqual({
       kind: "app",

@@ -151,32 +151,36 @@ git commit -m "feat: serve private validation dataset manifests"
 
 **Files:**
 - Create: `apps/web/src/app/dashboard/panels/application/validation-datasets.ts`
+- Create: `apps/web/src/app/dashboard/panels/application/validation-datasets.test.ts`
 - Create: `apps/web/src/app/dashboard/panels/application/validation-datasets-panel.tsx`
 - Create: `apps/web/src/app/dashboard/panels/application/validation-datasets-panel.test.tsx`
 - Modify: `apps/web/src/app/dashboard/panels/application-detail-panel.tsx` and its tests
+- Modify: `apps/web/src/app/dashboard/dashboard.tsx`, `apps/web/src/app/dashboard/dashboard.test.tsx`, `apps/web/src/app/dashboard/types.ts`, and `apps/web/src/components/app-sidebar.tsx` to expose the panel as a navigable application section
+- Create: `apps/web/src/app/dashboard/applications/[id]/validation-datasets/page.tsx` as the section's App Router entry point
+- Modify: `packages/api/src/validation-datasets.ts`, `packages/api/src/openapi.test.ts`, generated OpenAPI, `apps/server/src/validation-datasets.ts`, and its tests to support administrator-only staging cancellation
 
 **Interfaces:**
 - Consumes: Task 2's list/create/upload routes and existing `httpClient`/Axios session behavior.
-- Produces: `uploadValidationDataset({ applicationId, datasetId, version, partition, file, onProgress, signal })`, returning `{ ok, datasetVersion }` or `{ ok: false, code, message }`. The panel lists name, source/license declaration, version, partition, size, SHA-256, upload date, and upload status.
+- Produces: `uploadValidationDataset({ applicationId, datasetId, version, partition, file, onProgress, signal })`, returning `{ ok, datasetVersion }` or `{ ok: false, code, message }`. A canceled in-flight PUT triggers best-effort deletion of its staged object through the authenticated dashboard API. The panel lists name, source/license declaration, version, partition, size, SHA-256, upload date, and upload status.
 
-- [ ] **Step 1: Write failing UI/service tests** for admin-only create/upload, required source/license text, progress reporting, cancel cleanup, duplicate-version errors, and read-only listing for a member.
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 1: Write failing UI/service tests** for admin-only create/upload, required source/license text, progress reporting, cancel cleanup, duplicate-version errors, and read-only listing for a member.
+- [x] **Step 2: Run focused tests**
 
-Run: `cd apps/web; bun run test -- src/app/dashboard/panels/application/validation-datasets-panel.test.tsx`
+Run: `cd apps/web; bun run test -- src/app/dashboard/panels/application/validation-datasets-panel.test.tsx src/app/dashboard/panels/application/validation-datasets.test.ts`
 
-Expected: FAIL because the panel/service is absent.
+Expected: FAIL because the panel/service is absent. The administrator-only cancellation route is also verified red before implementation.
 
-- [ ] **Step 3: Implement the upload service and panel** using the existing model version dialog pattern: direct PUT to the returned temporary URL, progress/cancel support, and explicit copy that the operator is declaring redistribution permission rather than receiving legal certification. Show only metadata, never object keys or signed URLs.
-- [ ] **Step 4: Run focused tests and type check**
+- [x] **Step 3: Implement the upload service and panel** using the existing model version dialog pattern: direct PUT to the returned temporary URL, progress/cancel support, and explicit copy that the operator is declaring redistribution permission rather than receiving legal certification. Show only metadata, never object keys or signed URLs.
+- [x] **Step 4: Run focused tests and type check**
 
-Run: `cd apps/web && bun run test -- src/app/dashboard/panels/application/validation-datasets-panel.test.tsx && bun run check-types`
+Run: `cd apps/web && bun run test -- src/app/dashboard/panels/application/validation-datasets-panel.test.tsx src/app/dashboard/panels/application/validation-datasets.test.ts src/app/dashboard/panels/application-detail-panel.test.tsx src/app/dashboard/dashboard.test.tsx && bun run check-types`
 
 Expected: tests PASS and TypeScript exits 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/web/src/app/dashboard/panels/application/validation-datasets.ts apps/web/src/app/dashboard/panels/application/validation-datasets-panel.tsx apps/web/src/app/dashboard/panels/application/validation-datasets-panel.test.tsx apps/web/src/app/dashboard/panels/application-detail-panel.tsx apps/web/src/app/dashboard/panels/application-detail-panel.test.tsx
+git add apps/server/src/validation-datasets.ts apps/server/src/validation-datasets.test.ts packages/api/src/validation-datasets.ts packages/api/src/validation-datasets.test.ts packages/api/src/openapi.test.ts packages/api/src/openapi.json apps/web/src/app/dashboard/dashboard.tsx apps/web/src/app/dashboard/dashboard.test.tsx apps/web/src/app/dashboard/types.ts apps/web/src/components/app-sidebar.tsx 'apps/web/src/app/dashboard/applications/[id]/validation-datasets/page.tsx' apps/web/src/app/dashboard/panels/application/validation-datasets.ts apps/web/src/app/dashboard/panels/application/validation-datasets.test.ts apps/web/src/app/dashboard/panels/application/validation-datasets-panel.tsx apps/web/src/app/dashboard/panels/application/validation-datasets-panel.test.tsx apps/web/src/app/dashboard/panels/application-detail-panel.tsx apps/web/src/app/dashboard/panels/application-detail-panel.test.tsx
 git commit -m "feat: manage validation datasets in dashboard"
 ```
 

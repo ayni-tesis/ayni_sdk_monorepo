@@ -20,6 +20,10 @@ export const ValidationDatasetUploadRequestSchema = ValidationDatasetVersionUplo
   uploadId: z.string().uuid(),
 }).strict();
 
+export const ValidationDatasetCancelRequestSchema = z
+  .object({ uploadId: z.string().uuid() })
+  .strict();
+
 export const ValidationDatasetSchema = z
   .object({
     id: z.string(),
@@ -167,6 +171,31 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos la aplicación o el dataset."),
       "409": errorResponse("La aplicación está archivada o la versión ya existe."),
       "500": errorResponse("No se pudo iniciar la carga."),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel",
+    tags: ["Validation datasets"],
+    operationId: "cancelar-carga-de-dataset-de-validacion",
+    summary: "Eliminar un ZIP de staging cancelado",
+    description:
+      "Solo administradores de la aplicación. El borrado del objeto temporal es de mejor esfuerzo.",
+    request: {
+      params: datasetParams,
+      body: {
+        required: true,
+        content: { "application/json": { schema: ValidationDatasetCancelRequestSchema } },
+      },
+    },
+    responses: {
+      "204": { description: "Carga temporal eliminada o ya ausente." },
+      "400": errorResponse("El identificador de carga no es válido."),
+      "401": errorResponse("La sesión no está autenticada."),
+      "403": errorResponse("No tienes permiso para cancelar cargas de datasets."),
+      "404": errorResponse("No encontramos la aplicación o el dataset."),
+      "500": errorResponse("No se pudo buscar el dataset para cancelar la carga."),
     },
   });
 

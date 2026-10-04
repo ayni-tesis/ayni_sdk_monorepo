@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ValidationDatasetCreateRequestSchema,
   ValidationDatasetVersionUploadRequestSchema,
+  ValidationDatasetCancelRequestSchema,
   SdkValidationDatasetManifestSchema,
 } from "./validation-datasets";
 
@@ -52,6 +53,17 @@ describe("validation dataset request schemas", () => {
         partition: "x".repeat(65),
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts only a UUID for staging cancellation", () => {
+    expect(
+      ValidationDatasetCancelRequestSchema.safeParse({
+        uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e",
+      }).success,
+    ).toBe(true);
+    expect(ValidationDatasetCancelRequestSchema.safeParse({ uploadId: "../../other-app.zip" }).success).toBe(
+      false,
+    );
   });
 });
 

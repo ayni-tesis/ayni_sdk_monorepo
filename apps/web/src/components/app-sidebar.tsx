@@ -5,6 +5,7 @@ import {
   IconActivity,
   IconApps,
   IconCpu,
+  IconDatabase,
   IconGitBranch,
   IconKey,
   IconLayoutDashboard,
@@ -132,6 +133,16 @@ export function AppSidebar({
                     <span>Modelos</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={activeView === "datasets"}
+                      tooltip="Datasets de validación"
+                      onClick={() => onViewChange?.("datasets")}
+                    >
+                      <IconDatabase />
+                      <span>Datasets de validación</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={activeView === "credentials"}

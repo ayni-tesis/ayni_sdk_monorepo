@@ -26,6 +26,11 @@ const { client, toastMock, writeTextMock } = vi.hoisted(() => ({
 
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("sonner", () => ({ toast: toastMock }));
+vi.mock("./application/validation-datasets-panel", () => ({
+  ValidationDatasetsPanel: ({ applicationId, canManage }: { applicationId: string; canManage?: boolean }) => (
+    <div data-testid="validation-datasets-panel">{applicationId}:{String(canManage)}</div>
+  ),
+}));
 vi.mock("next/link", async () => {
   const React = await import("react");
   return {
@@ -118,6 +123,22 @@ describe("ApplicationDetailPanel", () => {
 
     expect(screen.queryByRole("button", { name: /aplicaciones/i })).toBeNull();
     expect(screen.queryByText("ID de aplicación")).toBeNull();
+  });
+
+  it("mounts the validation datasets panel with the application permissions", () => {
+    render(
+      <TooltipProvider>
+        <ApplicationDetailPanel
+          application={activeApp}
+          activeSection="datasets"
+          canManage={true}
+          onApplicationUpdated={vi.fn()}
+          onApplicationArchived={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId("validation-datasets-panel").textContent).toBe("app-1:true");
   });
 
   it("renames application via dialog", async () => {

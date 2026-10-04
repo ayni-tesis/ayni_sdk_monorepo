@@ -1,4 +1,5 @@
 import {
+  ValidationDatasetCancelRequestSchema,
   ValidationDatasetCreateRequestSchema,
   ValidationDatasetUploadRequestSchema,
   ValidationDatasetVersionUploadRequestSchema,
@@ -382,6 +383,54 @@ export function createValidationDatasetsApp({
     } finally {
       await cleanupStaging(storage, key);
     }
+    },
+  );
+
+  app.post(
+    "/applications/:applicationId/validation-datasets/:datasetId/versions/cancel",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) return c.json({ message: "No encontramos esta aplicación." }, 404);
+      if (!isApplicationAdministrator(application.role)) {
+        return c.json(
+          { message: "No tienes permiso para cancelar cargas de datasets.", code: "forbidden" },
+          403,
+        );
+      }
+
+      let rawBody: unknown;
+      try {
+        rawBody = await c.req.json();
+      } catch {
+        rawBody = null;
+      }
+      const parsed = ValidationDatasetCancelRequestSchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return c.json({ message: "La solicitud de cancelación no es válida.", code: "invalidUpload" }, 400);
+      }
+
+      try {
+        const current = await validationDatasets.list(application.id);
+        const dataset = current.datasets.find((item) => item.id === c.req.param("datasetId"));
+        if (!dataset) {
+          return c.json({ message: "No encontramos este dataset.", code: "datasetNotFound" }, 404);
+        }
+      } catch {
+        return c.json(
+          { message: "No se pudo buscar el dataset para cancelar la carga.", code: "uploadFailed" },
+          500,
+        );
+      }
+
+      await cleanupStaging(storage, stagingKey(application.id, parsed.data.uploadId));
+      return c.body(null, 204);
     },
   );
 

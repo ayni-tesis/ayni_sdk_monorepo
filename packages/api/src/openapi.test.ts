@@ -180,6 +180,11 @@ describe("validation dataset routes", () => {
         "/applications/{applicationId}/validation-datasets/{datasetId}/versions/complete"
       ]?.post?.responses,
     ).toHaveProperty("413");
+      expect(
+        document.paths[
+          "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel"
+        ]?.post?.responses,
+      ).toHaveProperty("204");
   });
 });
 
