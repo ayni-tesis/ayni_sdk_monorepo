@@ -129,21 +129,21 @@ git commit -m "feat: define thesis experiment plan models"
 - Produces: `DatasetManifest.fromJson(Map<String, Object?> json)`; `DatasetBundleLoader.install({required File archiveFile, required Directory datasetsDirectory, required String expectedArchiveSha256, required String expectedDatasetId, required String expectedVersion, required String expectedPartition, required String expectedSource, required String expectedLicense}) -> Future<VerifiedDataset>`; `DatasetRepository.prepare(datasetVersionId, {onProgress}) -> Future<VerifiedDataset>`.
 - `VerifiedDataset` exposes the parsed ordered cases, dataset version, partition, ZIP SHA-256, and private local image paths; it does not expose an unverified path.
 
-- [ ] **Step 1: Write failing tests** for valid manifest/ZIP, ZIP hash mismatch, per-image hash mismatch, absolute and `../` paths, Windows drive paths, duplicate paths/case IDs, missing image, malformed ZIP, expanded size over 1 GiB, signed URL expiry followed by manifest refresh, and failed install preserving a previously verified directory.
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 1: Write failing tests** for valid manifest/ZIP, ZIP hash mismatch, per-image hash mismatch, absolute and `../` paths, Windows drive paths, duplicate paths/case IDs, missing image, malformed ZIP, expanded size over 1 GiB, signed URL expiry followed by manifest refresh, and failed install preserving a previously verified directory.
+- [x] **Step 2: Run focused tests**
 
 Run: `cd apps/native; flutter test test/validation/data`
 
 Expected: FAIL because manifest, loader, and repository are absent.
 
-- [ ] **Step 3: Implement download and safe installation**. Use `HttpClient` with bearer auth only for the manifest request and no credential for the signed object URL; verify the signed URL is HTTPS (or explicitly allowed loopback in development), refresh the manifest and signed URL after an expired download, stream the ZIP to a temporary file, enforce the 128 MiB server ZIP cap, verify ZIP and image SHA-256 values, require a root `manifest.json` with `schemaVersion: "1"` and matching dataset/version/partition/source/license fields, reject archive entries escaping the destination, cap total extracted bytes at 1 GiB, and atomically promote only after every check succeeds.
-- [ ] **Step 4: Rerun focused tests**
+- [x] **Step 3: Implement download and safe installation**. Use `HttpClient` with bearer auth only for the manifest request and no credential for the signed object URL; verify the signed URL is HTTPS (or explicitly allowed loopback in development), refresh the manifest and signed URL after an expired download, stream the ZIP to a temporary file, enforce the 128 MiB server ZIP cap, verify ZIP and image SHA-256 values, require a root `manifest.json` with `schemaVersion: "1"` and matching dataset/version/partition/source/license fields, reject archive entries escaping the destination, cap total extracted bytes at 1 GiB, and atomically promote only after every check succeeds.
+- [x] **Step 4: Rerun focused tests**
 
 Run: `cd apps/native; flutter test test/validation/data`
 
 Expected: PASS; every rejection leaves the current verified dataset directory unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/native/lib/validation/data apps/native/test/validation/data
