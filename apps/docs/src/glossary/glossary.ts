@@ -143,7 +143,7 @@ export const glossary: GlossaryEntry[] = [
     source: "Evidence",
     term: "Evidencia",
     definition:
-      "Una imagen que el SDK conserva en el dispositivo cuando una versión de workflow alcanza un nodo `dataset.capture`, junto con el resultado de inferencia que recibió el nodo, la versión de workflow y la versión de modelo que produjo el resultado, para enviarla después a los datasets de su aplicación. El SDK solo la crea mientras la app indica que la persona consiente la recolección de evidencia, y nunca retrasa ni cambia el resultado que devuelve.",
+      "Una imagen que el SDK conserva en el dispositivo cuando una ejecución de una versión de workflow alcanza un nodo `dataset.capture` y termina bien (una ejecución que falla o se cancela no crea ninguna), junto con el resultado de inferencia que recibió el nodo, la versión de workflow y la versión de modelo que produjo el resultado, para enviarla después a los datasets de su aplicación. El SDK solo la crea mientras la app indica que la persona consiente la recolección de evidencia, y nunca retrasa ni cambia el resultado que devuelve.",
     avoid: ["muestra", "subida", "telemetría"],
     comingSoon: "El SDK todavía no envía la evidencia: la conserva en el dispositivo.",
   },
