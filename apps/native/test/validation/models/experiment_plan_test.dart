@@ -22,8 +22,68 @@ void main() {
         plan.activeResourceProfile.treatmentModelVersionId,
         'model-version-1',
       );
+      expect(
+        plan.activeResourceProfile.inputContract.normalization,
+        'zero_to_one',
+      );
       expect(plan.scenarios, hasLength(10));
     });
+
+    test(
+      'accepts only image preprocessing contracts supported by ayni_sdk',
+      () {
+        final json = _validPlan();
+        final profiles = json['resourceProfiles']! as List<Object?>;
+        final profile = Map<String, Object?>.from(profiles.single! as Map);
+        profile['inputContract'] = {
+          'width': 224,
+          'height': 224,
+          'channels': 4,
+          'normalization': 'minus_one_to_one',
+        };
+        profiles[0] = profile;
+
+        final parsed = ExperimentPlan.fromJson(json);
+        expect(parsed.activeResourceProfile.inputContract.channels, 4);
+        expect(
+          parsed.activeResourceProfile.inputContract.normalization,
+          'minus_one_to_one',
+        );
+
+        final incompatible = _validPlan();
+        final incompatibleProfiles =
+            incompatible['resourceProfiles']! as List<Object?>;
+        final incompatibleProfile = Map<String, Object?>.from(
+          incompatibleProfiles.single! as Map,
+        );
+        incompatibleProfile['inputContract'] = {
+          'width': 224,
+          'height': 224,
+          'channels': 3,
+          'normalization': 'bgr_mean',
+        };
+        incompatibleProfiles[0] = incompatibleProfile;
+        expect(
+          () => ExperimentPlan.fromJson(incompatible),
+          throwsFormatException,
+        );
+
+        final oversized = _validPlan();
+        final oversizedProfiles =
+            oversized['resourceProfiles']! as List<Object?>;
+        final oversizedProfile = Map<String, Object?>.from(
+          oversizedProfiles.single! as Map,
+        );
+        oversizedProfile['inputContract'] = {
+          'width': 8193,
+          'height': 224,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        };
+        oversizedProfiles[0] = oversizedProfile;
+        expect(() => ExperimentPlan.fromJson(oversized), throwsFormatException);
+      },
+    );
 
     test('loads a plan from an asset bundle', () async {
       final json = jsonEncode(_validPlan());
@@ -318,11 +378,7 @@ Map<String, Object?> _validPlan() {
           'width': 224,
           'height': 224,
           'channels': 3,
-          'layout': 'NHWC',
-          'colorOrder': 'RGB',
-          'dataType': 'uint8',
-          'scale': 1.0 / 255,
-          'offset': 0.0,
+          'normalization': 'zero_to_one',
         },
         'outputContract': [
           {

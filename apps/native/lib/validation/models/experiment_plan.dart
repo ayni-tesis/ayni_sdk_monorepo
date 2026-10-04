@@ -310,54 +310,38 @@ class ValidationInputContract {
     required this.width,
     required this.height,
     required this.channels,
-    required this.layout,
-    required this.colorOrder,
-    required this.dataType,
-    required this.scale,
-    required this.offset,
+    required this.normalization,
   });
 
   final int width;
   final int height;
   final int channels;
-  final String layout;
-  final String colorOrder;
-  final String dataType;
-  final double scale;
-  final double offset;
+  final String normalization;
 
   factory ValidationInputContract.fromJson(Map<String, Object?> json) {
     _requireKeys(json, const {
       'width',
       'height',
       'channels',
-      'layout',
-      'colorOrder',
-      'dataType',
-      'scale',
-      'offset',
+      'normalization',
     }, 'input contract');
     final width = _positiveInt(json['width'], 'input.width');
     final height = _positiveInt(json['height'], 'input.height');
     final channels = _positiveInt(json['channels'], 'input.channels');
-    final layout = _string(json['layout'], 'input.layout');
-    final colorOrder = _string(json['colorOrder'], 'input.colorOrder');
-    final dataType = _string(json['dataType'], 'input.dataType');
-    if (!{'NHWC', 'NCHW'}.contains(layout) ||
-        !{'GRAY', 'RGB', 'BGR'}.contains(colorOrder) ||
-        !{'uint8', 'int8', 'float32'}.contains(dataType) ||
-        (colorOrder == 'GRAY' ? channels != 1 : channels != 3)) {
-      throw const FormatException('Unsupported input tensor contract.');
+    final normalization = _string(json['normalization'], 'input.normalization');
+    if (width > 8192 ||
+        height > 8192 ||
+        ![1, 3, 4].contains(channels) ||
+        !{'none', 'zero_to_one', 'minus_one_to_one'}.contains(normalization)) {
+      throw const FormatException(
+        'Unsupported input contract for ayni_sdk 0.2.0.',
+      );
     }
     return ValidationInputContract(
       width: width,
       height: height,
       channels: channels,
-      layout: layout,
-      colorOrder: colorOrder,
-      dataType: dataType,
-      scale: _finiteNumber(json['scale'], 'input.scale'),
-      offset: _finiteNumber(json['offset'], 'input.offset'),
+      normalization: normalization,
     );
   }
 }
@@ -367,18 +351,25 @@ class ValidationOutputContract {
     required this.name,
     required this.resultType,
     required List<String> labels,
+    this.scoreThreshold,
   }) : labels = List.unmodifiable(labels);
 
   final String name;
   final ValidationResultType resultType;
   final List<String> labels;
+  final double? scoreThreshold;
 
   factory ValidationOutputContract.fromJson(Map<String, Object?> json) {
-    _requireKeys(json, const {
-      'name',
-      'resultType',
-      'labels',
-    }, 'output contract');
+    const requiredKeys = {'name', 'resultType', 'labels'};
+    if (requiredKeys.difference(json.keys.toSet()).isNotEmpty ||
+        json.keys.toSet().difference({
+          ...requiredKeys,
+          'scoreThreshold',
+        }).isNotEmpty) {
+      throw const FormatException(
+        'output contract has missing or unknown fields.',
+      );
+    }
     final resultTypeName = _string(json['resultType'], 'output.resultType');
     final resultType = ValidationResultType.values
         .where((value) => value.name == resultTypeName)
@@ -391,10 +382,26 @@ class ValidationOutputContract {
     if (resultType == ValidationResultType.classification && labels.isEmpty) {
       throw const FormatException('Classification outputs require labels.');
     }
+    final scoreThreshold = json['scoreThreshold'];
+    if (resultType == ValidationResultType.detection) {
+      if (scoreThreshold is! num ||
+          !scoreThreshold.isFinite ||
+          scoreThreshold < 0 ||
+          scoreThreshold > 1) {
+        throw const FormatException(
+          'Detection outputs require a scoreThreshold from 0 to 1.',
+        );
+      }
+    } else if (json.containsKey('scoreThreshold')) {
+      throw const FormatException(
+        'Only detection outputs may declare scoreThreshold.',
+      );
+    }
     return ValidationOutputContract(
       name: _string(json['name'], 'output.name'),
       resultType: resultType,
       labels: labels,
+      scoreThreshold: (scoreThreshold as num?)?.toDouble(),
     );
   }
 }
@@ -497,13 +504,6 @@ int _positiveInt(Object? value, String name) {
     throw FormatException('$name must be a positive integer.');
   }
   return value;
-}
-
-double _finiteNumber(Object? value, String name) {
-  if (value is! num || !value.isFinite) {
-    throw FormatException('$name must be a finite number.');
-  }
-  return value.toDouble();
 }
 
 bool _boolean(Object? value, String name) {

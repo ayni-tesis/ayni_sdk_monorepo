@@ -91,7 +91,7 @@ git commit -m "build: pin validation app to ayni sdk 0.2.0"
 **Interfaces:**
 - Consumes: Task 1 Flutter app configuration.
 - Produces: `ExperimentPlan.fromJson(Map<String, Object?> json)`; `ExperimentPlan.load(AssetBundle bundle)`; `ValidationPhase` values `coldStart`, `warmup`, `measured`, `stress`, `fault`; immutable `ValidationScenario`, `ValidationResourceProfile`, and `ValidationRunRecord`.
-- Each profile identifies one dataset version, the same model version/hash in control and treatment, treatment workflow ID/expected version, and a shared image/preprocess/output contract. The profile rejects different model version IDs between the direct adapter and the workflow definition. A `pairRunId` links control and treatment; repetitions are one-based.
+- Each profile identifies one dataset version, the same model version/hash in control and treatment, treatment workflow ID/expected version, and a shared image/preprocess/output contract. The input contract mirrors the published `ayni_sdk 0.2.0` model contract (`width`, `height`, `channels`, `normalization`); inference uses NHWC float32 tensors and the SDK's image decoder, RGB/grayscale/alpha channel order, resize, and normalization behavior. The profile rejects different model version IDs or contracts between the direct adapter and the workflow definition. A `pairRunId` links control and treatment; repetitions are one-based.
 
 - [x] **Step 1: Write failing parser tests** for a valid plan, unsupported schema version, missing resource profile, duplicate case IDs, invalid count/phase, 30 cold-start launch labels, exactly 20 warmups, three measured blocks of 100, 1,024 stress repetitions, and 30 repetitions per fault scenario.
 - [x] **Step 2: Run the focused tests**
@@ -164,25 +164,26 @@ git commit -m "feat: verify and cache private validation datasets"
 **Interfaces:**
 - Consumes: Task 2 profiles/records and Task 3 `VerifiedDataset`.
 - Produces: `abstract interface class ValidationConditionRunner { ValidationCondition get condition; Future<ConditionRunResult> runCase(ValidationRunRequest request); Future<void> close(); }`; `ValidationRunRequest` carries `pairRunId`, one-based `repetition`, scenario/case IDs, verified input bytes/hash, dataset ID/partition/hash, phase, and `captureTrace`; `ConditionRunResult` carries normalized output, resource version/hash, duration, and typed outcome/error.
+- The recorded duration covers preprocessing, local inference, and output normalization. Request integrity checks, secure trace-permission lookup, and preparation are completed outside that duration for both conditions.
 - The SDK adapter uses only public `package:ayni_sdk/ayni_sdk.dart` APIs: static `AyniSdk.initialize(AyniConfig(...))`, then `AyniSdk.instance.sync()`, `.run(workflowId, bytes, traceContext: ...)`, and `.clearPendingTraces()`. It reads `WorkflowResult.workflowVersion` and `.outputs`; no SDK internal imports.
 
-- [ ] **Step 1: Write failing adapter tests** for same-byte input, CPU-only execution, direct model manifest/hash validation, SDK initialization/sync, workflow-version and referenced-model-version enforcement, matching normalized output shape, credential redaction, trace capture defaulting off, and permission revocation calling `clearPendingTraces()` while subsequent requests carry no trace context.
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 1: Write failing adapter tests** for same-byte input, CPU-only execution, direct model manifest/hash validation, SDK initialization/sync, workflow-version and referenced-model-version enforcement, matching normalized output shape, credential redaction, trace capture defaulting off, and permission revocation calling `clearPendingTraces()` while subsequent requests carry no trace context.
+- [x] **Step 2: Run focused tests**
 
 Run: `cd apps/native; flutter test test/validation/execution`
 
 Expected: FAIL because runner interfaces/adapters are absent.
 
-- [ ] **Step 3: Implement the direct runner and normalizer**. Fetch the direct model via `GET /sdk/model-versions/:modelVersionId/manifest`, verify its SHA-256 before creating a CPU interpreter, and apply the same profile image contract and typed output schema as treatment.
-- [ ] **Step 4: Implement the SDK runner and trace permission**. Initialize the hosted 0.2.0 SDK using server URL, credential, and app-private storage. During preparation, fetch the expected immutable definition from `GET /sdk/workflow-versions/:workflowVersionId`, verify the workflow's model node references the same `modelVersionId` as the direct profile, and call `AyniSdk.instance.sync()` only from the explicit sync action. Require explicit host permission before passing `WorkflowTraceContext(runId: pairRunId, repetition: repetition, condition: ..., caseId: ..., scenario: ..., datasetId: ..., datasetPartition: ..., datasetSha256: ..., backend: "CPU", appVersion: ..., sdkVersion: ...)`. Render the permission copy: `Se enviará a Ayni la traza técnica del SDK, incluidas las salidas tipadas decodificadas. No se enviarán imágenes, tensores ni el JSONL completo.` Keep the preference false by default and separate from `sdkImprovement`; on revocation call `AyniSdk.instance.clearPendingTraces()` before completing the UI action.
-- [ ] **Step 5: Add an unmeasured treatment preflight** after explicit SDK sync. Run the selected workflow once, check `WorkflowResult.workflowVersion`, output names/types, and the expected model version against the profile, and block the measured batch if any differ. Record this preflight as setup metadata, not as one of the Plan's measured/warmup repetitions.
-- [ ] **Step 6: Rerun focused tests**
+- [x] **Step 3: Implement the direct runner and normalizer**. Fetch the direct model via `GET /sdk/model-versions/:modelVersionId/manifest`, verify its SHA-256 before creating a CPU interpreter, and apply the same profile image contract and typed output schema as treatment. The signed artifact GET never carries the SDK bearer; the interpreter uses the default CPU runtime without delegates.
+- [x] **Step 4: Implement the SDK runner and trace permission**. Initialize the hosted 0.2.0 SDK using server URL, credential, and app-private storage. During preparation, fetch the expected immutable definition from `GET /sdk/workflow-versions/:workflowVersionId`, verify the workflow's model node references the same `modelVersionId` and input/output contracts as the direct profile, and call `AyniSdk.instance.sync()` only from the explicit sync action. Require explicit host permission before passing `WorkflowTraceContext(runId: pairRunId, repetition: repetition, condition: ..., caseId: ..., scenario: ..., datasetId: ..., datasetPartition: ..., datasetSha256: ..., backend: "CPU", appVersion: ..., sdkVersion: ...)`. Render the permission copy: `Se enviará a Ayni la traza técnica del SDK, incluidas las salidas tipadas decodificadas. No se enviarán imágenes, tensores ni el JSONL completo.` Keep the preference false by default and separate from `sdkImprovement`; on revocation persist the disabled state first and call `AyniSdk.instance.clearPendingTraces()` before completing the UI action.
+- [x] **Step 5: Add an unmeasured treatment preflight** after explicit SDK sync. Run the selected workflow once, check `WorkflowResult.workflowVersion`, output names/types, and the expected model version against the profile, and block the measured batch if any differ. This preflight is separate from the result record and never receives trace context.
+- [x] **Step 6: Rerun focused tests**
 
 Run: `cd apps/native && flutter test test/validation/execution && flutter analyze`
 
 Expected: PASS; the adapters return the same public normalized result shape and no images/tensors/credentials enter logs or trace context.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/native/lib/validation/execution apps/native/lib/validation/storage/validation_preferences.dart apps/native/test/validation/execution

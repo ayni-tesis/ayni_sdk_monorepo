@@ -19,11 +19,7 @@
         "width": 224,
         "height": 224,
         "channels": 3,
-        "layout": "NHWC",
-        "colorOrder": "RGB",
-        "dataType": "uint8",
-        "scale": 0.0039215686,
-        "offset": 0.0
+        "normalization": "zero_to_one"
       },
       "outputContract": [
         {
