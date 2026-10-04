@@ -66,11 +66,17 @@
 <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a> (US-071), for example to show how many are <code>Fallida</code>.
 Every status is in the map, with 0 when no evidence has it.</p>
 <p>An evidence is <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.pending</a> until its first upload,
-<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a> after an upload without a confirmation,
-<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.received</a> once the server confirmed it, and
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.uploading</a> while <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> sends it,
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.retrying</a> after an upload without a confirmation, and
 <a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.failed</a> after <a href="../../ayni_sdk/AyniSdk/maxEvidenceUploadAttempts.html">maxEvidenceUploadAttempts</a> uploads
 without one: the SDK keeps a failed evidence on the device but no
-longer sends it automatically. Like <a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a>, it reads the
+longer sends it automatically. Once the server confirms an evidence,
+<a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> deletes it from the device (US-072), so it leaves the counts:
+<a href="../../ayni_sdk/EvidenceStatus.html">EvidenceStatus.received</a> only counts one whose local copy the SDK
+could not start deleting yet, which a later <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> or <a href="../../ayni_sdk/AyniSdk/initialize.html">initialize</a>
+deletes, and the app learns
+of each confirmation through <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceReceived</a>. Like
+<a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a>, it reads the
 queue on the device without a network request and without waiting for
 the evidence the SDK is still preparing or saving.
 <a href="../../ayni_sdk/AyniSdk/clearPendingEvidence.html">clearPendingEvidence</a> deletes the evidence of every status.</p>

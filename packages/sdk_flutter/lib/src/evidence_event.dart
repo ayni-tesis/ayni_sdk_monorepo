@@ -49,7 +49,12 @@ enum EvidenceEvent {
 
   /// The server confirmed that it received the evidence, its data and its
   /// image, so it is no longer pending and no later [AyniSdk.sync] uploads it
-  /// again.
+  /// again. This event is the moment the evidence is
+  /// [EvidenceStatus.received] (`Enviada`). The SDK has already deleted its
+  /// local copy (US-072), so [AyniSdk.evidenceStatusCounts] no longer counts
+  /// it; only when that deletion failed, for example because a file was
+  /// locked, the copy stays until a later [AyniSdk.sync] or
+  /// [AyniSdk.initialize] deletes it.
   evidenceReceived,
 
   /// The SDK could not send the evidence, or the server did not confirm it,

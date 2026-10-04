@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'evidence_status.dart';
 import 'sdk_internal.dart';
+import 'uuid_v4.dart';
 
 /// The upload attempts of one evidence that ended without a confirmation
 /// (US-071): how many, when the last one started, and whether they reached
@@ -110,10 +111,11 @@ bool isEvidenceStorageFull(Object error) =>
 /// An evidence is written to `<evidenceId>.tmp/`, which is never part of the
 /// queue, and renamed to `<evidenceId>/`, so a directory named after an
 /// evidence ID is complete and pending upload. Once the server confirms its
-/// upload (US-070), [markReceived] adds `received.json` to the directory and
-/// the evidence is no longer pending; deleting the directory of a received
-/// evidence is US-072's. A `.tmp` directory left by a process that stopped
-/// mid-save is skipped, and only [clear] removes it.
+/// upload (US-070), [markReceived] adds `received.json` to the directory, so
+/// the evidence is no longer pending, and [remove] deletes the directory
+/// (US-072). A `.tmp` directory left by a process that stopped mid-save, or
+/// by a [remove] that failed halfway, is skipped, and [removeLeftovers] or
+/// [clear] delete it.
 class EvidenceStore {
   /// [maxUploadAttempts] is `AyniSdk.maxEvidenceUploadAttempts`: after that
   /// many failed uploads an evidence is [EvidenceStatus.failed]. A value
@@ -134,6 +136,16 @@ class EvidenceStore {
   final int _maxUploadAttempts;
   Future<void> _work = Future<void>.value();
 
+  /// The IDs of the evidence a [save] of any store of this isolate is
+  /// writing to its `.tmp` directory now, which [removeLeftovers] keeps: an
+  /// app that initializes the SDK again while an earlier instance still saves
+  /// an evidence must not lose it.
+  static final Set<String> _writingIds = {};
+
+  /// The evidence `AyniSdk.sync` is uploading now, which [statusCounts]
+  /// counts as [EvidenceStatus.uploading] until the upload ends (US-072).
+  Directory? uploadingEvidence;
+
   /// Prepares the evidence [evidenceId] with [prepare] and adds what it
   /// returns to the queue. Both run after the saves already requested, one at
   /// a time; when either fails, nothing of this evidence stays on the device.
@@ -145,6 +157,7 @@ class EvidenceStore {
     final temporary = Directory(
       '${_directory.path}${Platform.pathSeparator}$evidenceId$_writingSuffix',
     );
+    _writingIds.add(evidenceId);
     try {
       await temporary.create(recursive: true);
       await _writeFile(
@@ -163,21 +176,26 @@ class EvidenceStore {
         if (await temporary.exists()) await temporary.delete(recursive: true);
       } on FileSystemException {
         // Keep the error that stopped the save (such as a full device); the
-        // `.tmp` directory is never pending, and clear() removes it.
+        // `.tmp` directory is never pending, and removeLeftovers() or
+        // clear() delete it.
       }
       rethrow;
+    } finally {
+      _writingIds.remove(evidenceId);
     }
   });
 
   /// The directory of each evidence pending upload, in no particular order,
-  /// for the upload (US-070): the [EvidenceStatus.pending] and
-  /// [EvidenceStatus.retrying] ones. It does not wait for the saves in
+  /// for the upload (US-070): the [EvidenceStatus.pending],
+  /// [EvidenceStatus.uploading] and [EvidenceStatus.retrying] ones. It does
+  /// not wait for the saves in
   /// progress, which are not pending yet, skips the evidence the server
   /// already received or that reached the limit of attempts (US-071), and
   /// ends early when a [clear] deletes the queue while it is being listed.
   Stream<Directory> pending() async* {
     await for (final (:evidence, :status) in _evidenceStatuses()) {
       if (status == EvidenceStatus.pending ||
+          status == EvidenceStatus.uploading ||
           status == EvidenceStatus.retrying) {
         yield evidence;
       }
@@ -216,6 +234,10 @@ class EvidenceStore {
     // A lower limit than the one in force when it was recorded fails it too.
     if (recorded.failed || recorded.count >= _maxUploadAttempts) {
       return EvidenceStatus.failed;
+    }
+    final current = uploadingEvidence;
+    if (current != null && _evidenceId(current) == _evidenceId(evidence)) {
+      return EvidenceStatus.uploading;
     }
     return recorded.count > 0
         ? EvidenceStatus.retrying
@@ -285,6 +307,86 @@ class EvidenceStore {
           'receivedAt': receivedAt.toUtc().toIso8601String(),
         }),
       );
+
+  /// Deletes the local copy of [evidence], which the server confirmed
+  /// (US-072): its image, `evidence.json` and the files of its upload. It
+  /// only deletes a directory of the queue named after an evidence ID, never
+  /// a link or what one points to, and nothing else in `storageDirectory`;
+  /// for anything else it fails with a [FileSystemException].
+  ///
+  /// It first renames the directory to `<evidenceId>.tmp`, which is never
+  /// part of the queue, so a deletion that fails halfway never makes the
+  /// evidence pending again: when the rename fails, for example because a
+  /// file is locked, the evidence keeps its `received.json`; when the
+  /// deletion fails, the `.tmp` directory stays. Either way it fails, and
+  /// [removeLeftovers] deletes what is left later.
+  Future<void> remove(Directory evidence) async {
+    final id = _evidenceId(evidence);
+    final path = '${_directory.path}${Platform.pathSeparator}$id';
+    if (!isUuidV4(id) ||
+        !await _queueIsDirectory() ||
+        !await FileSystemEntity.identical(
+          evidence.parent.path,
+          _directory.path,
+        ) ||
+        await FileSystemEntity.type(path, followLinks: false) !=
+            FileSystemEntityType.directory) {
+      throw FileSystemException('Not an evidence of the queue', evidence.path);
+    }
+    final removing = await Directory(path).rename('$path$_writingSuffix');
+    await removing.delete(recursive: true);
+  }
+
+  /// Deletes what a stopped process or a failed [remove] left in the queue
+  /// (US-072): each evidence the server confirmed, which has
+  /// `received.json`, and each `<evidenceId>.tmp/` directory, except those
+  /// a [save] of any store of this isolate is writing now. It keeps the pending, retrying
+  /// and failed evidence, skips anything not named after an evidence ID and
+  /// never follows a link, not even when `evidence/` itself is one. It does
+  /// not fail: what it cannot delete stays for a later call.
+  Future<void> removeLeftovers() async {
+    final halfDone = <Directory>[];
+    final received = <Directory>[];
+    try {
+      if (!await _queueIsDirectory()) return;
+      await for (final entity in _directory.list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final name = _evidenceId(entity);
+        if (name.endsWith(_writingSuffix)) {
+          final id = name.substring(0, name.length - _writingSuffix.length);
+          if (isUuidV4(id) && !_writingIds.contains(id)) {
+            halfDone.add(entity);
+          }
+        } else if (isUuidV4(name) && await _receivedFile(entity).exists()) {
+          received.add(entity);
+        }
+      }
+    } on FileSystemException {
+      // A clear() deleted the queue while it was being listed.
+      return;
+    }
+    // The half-done ones first: one may be in the way of a remove().
+    for (final directory in halfDone) {
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        // Still locked, or a clear() deleted it: a later call tries again.
+      }
+    }
+    for (final evidence in received) {
+      try {
+        await remove(evidence);
+      } on FileSystemException {
+        // Its received.json keeps it out of the queue until a later call.
+      }
+    }
+  }
+
+  /// Whether `evidence/` is a directory and not a link, so that deleting
+  /// inside it never reaches what a link points to.
+  Future<bool> _queueIsDirectory() async =>
+      await FileSystemEntity.type(_directory.path, followLinks: false) ==
+      FileSystemEntityType.directory;
 
   /// Writes [contents] to [file] through a temporary file renamed into
   /// place, so a reader never sees it half-written.

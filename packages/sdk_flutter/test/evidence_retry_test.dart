@@ -101,13 +101,14 @@ void main() {
     int failed = 0,
   }) => {
     EvidenceStatus.pending: pending,
+    EvidenceStatus.uploading: 0,
     EvidenceStatus.retrying: retrying,
     EvidenceStatus.received: received,
     EvidenceStatus.failed: failed,
   };
 
-  test('retries an evidence that failed for a temporary problem and marks it '
-      'sent once the server confirms it', () async {
+  test('retries an evidence that failed for a temporary problem and deletes '
+      'it once the server confirms it (US-072)', () async {
     await pendingEvidence([_firstId]);
     outcomes = [_failed, _received];
     final client = sdk();
@@ -129,8 +130,9 @@ void main() {
       EvidenceEvent.evidenceUploading,
       EvidenceEvent.evidenceReceived,
     ]);
-    expect(await client.evidenceStatusCounts(), counts(received: 1));
+    expect(await client.evidenceStatusCounts(), counts());
     expect(await client.pendingEvidenceCount(), 0);
+    expect(await evidenceDirectory(_firstId).exists(), isFalse);
   });
 
   test('keeps an evidence that keeps failing as failed once it reaches the '
@@ -227,10 +229,7 @@ void main() {
       await syncAt(client, now.add(const Duration(minutes: 1)));
 
       expect(uploads, [_firstId, _secondId]);
-      expect(
-        await client.evidenceStatusCounts(),
-        counts(retrying: 1, received: 1),
-      );
+      expect(await client.evidenceStatusCounts(), counts(retrying: 1));
     },
   );
 
@@ -297,7 +296,7 @@ void main() {
     outcomes = [_received, _failed];
     final client = sdk(maxEvidenceUploadAttempts: 1);
     await syncAt(client, now);
-    expect(await client.evidenceStatusCounts(), counts(received: 1, failed: 1));
+    expect(await client.evidenceStatusCounts(), counts(failed: 1));
 
     await client.clearPendingEvidence();
 
@@ -307,6 +306,7 @@ void main() {
   test('gives each status its Spanish text', () {
     expect(EvidenceStatus.values.map((status) => status.message), [
       'Pendiente',
+      'Enviando',
       'Reintentando',
       'Enviada',
       'Fallida',
@@ -349,6 +349,6 @@ void main() {
     await syncAt(client, now.add(const Duration(minutes: 1)));
 
     expect(uploads, [_firstId, _secondId]);
-    expect(await client.evidenceStatusCounts(), counts(failed: 1, received: 1));
+    expect(await client.evidenceStatusCounts(), counts(failed: 1));
   });
 }

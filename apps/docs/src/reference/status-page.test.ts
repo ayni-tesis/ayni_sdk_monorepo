@@ -101,7 +101,7 @@ describe("Estados y errores (US-146)", () => {
     }
   });
 
-  it("gives the message of every EvidenceStatus (US-071)", () => {
+  it("gives the message of every EvidenceStatus (US-071, US-072)", () => {
     const rows = tableRows(section("## Estado de cada evidencia"));
     const messages = Object.fromEntries(
       [...evidenceStatusSource.matchAll(/EvidenceStatus\.(\w+) =>\s*'([^']+)'/g)].map(
@@ -109,7 +109,13 @@ describe("Estados y errores (US-146)", () => {
       ),
     );
 
-    expect(Object.values(messages)).toEqual(["Pendiente", "Reintentando", "Enviada", "Fallida"]);
+    expect(Object.values(messages)).toEqual([
+      "Pendiente",
+      "Enviando",
+      "Reintentando",
+      "Enviada",
+      "Fallida",
+    ]);
     expect(documentedValues(rows)).toEqual(dartEnumValues(evidenceStatusSource, "EvidenceStatus"));
     for (const row of rows) {
       expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);

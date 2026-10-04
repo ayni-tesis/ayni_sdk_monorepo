@@ -223,25 +223,16 @@ void main() {
     expect(completed.body, isEmpty);
   });
 
-  test('keeps evidence.json unchanged and records the confirmation apart, so '
-      'a later sync does not upload it again', () async {
+  test('deletes the confirmed evidence, so a later sync does not upload it '
+      'again (US-072)', () async {
     await pendingEvidence([_firstId]);
     final client = sdk();
     await client.sync();
-    final record = File('${evidenceDirectory(_firstId).path}/evidence.json');
     requests.clear();
 
     await client.sync();
 
-    expect(jsonDecode(await record.readAsString()), _record(_firstId));
-    expect(
-      jsonDecode(
-        await File(
-          '${evidenceDirectory(_firstId).path}/received.json',
-        ).readAsString(),
-      ),
-      {'evidenceId': _firstId, 'receivedAt': _receivedAt},
-    );
+    expect(await evidenceDirectory(_firstId).exists(), isFalse);
     expect(evidenceRequests(), isEmpty);
   });
 
@@ -365,8 +356,9 @@ void main() {
     ]);
     expect(await client.evidenceStatusCounts(), {
       EvidenceStatus.pending: 0,
+      EvidenceStatus.uploading: 0,
       EvidenceStatus.retrying: 0,
-      EvidenceStatus.received: 1,
+      EvidenceStatus.received: 0,
       EvidenceStatus.failed: 0,
     });
   });

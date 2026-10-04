@@ -101,7 +101,7 @@ a subir: `evidenceUploading` y después `evidenceReceived`,
 | `evidenceDiscarded` | El SDK no pudo preparar la evidencia, por ejemplo porque ningún `sync()` guardó aún la política de recolección o porque no pudo optimizar o guardar la imagen por un motivo distinto de la falta de espacio, y la descartó sin dejar archivos a medias. | `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.` |
 | `evidenceStorageFull` | El dispositivo no tenía espacio para guardar la evidencia en la cola, así que el SDK la descartó sin dejar archivos a medias. La evidencia que ya estaba pendiente se conserva. | `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.` |
 | `evidenceUploading` | `sync()` empezó a subir una evidencia pendiente: la política de recolección, consultada justo antes, la permite por la conexión actual. | `Subiendo evidencia…` |
-| `evidenceReceived` | El servidor confirmó que recibió la evidencia, sus datos y su imagen. Ya no está pendiente y ningún `sync()` posterior la vuelve a subir. | `Evidencia recibida.` |
+| `evidenceReceived` | El servidor confirmó que recibió la evidencia, sus datos y su imagen. El SDK ya eliminó su copia local, así que no está pendiente, ningún `sync()` posterior la vuelve a subir y `evidenceStatusCounts()` ya no la cuenta: este aviso es el momento en que queda `Enviada`. | `Evidencia recibida.` |
 | `evidenceUploadFailed` | El SDK no pudo enviar la evidencia o el servidor no confirmó su recepción. Cuenta un intento: la evidencia sigue pendiente como `retrying` y un `sync()` posterior la vuelve a intentar después de una espera. | `No se pudo enviar la evidencia; se reintentará cuando sea posible.` |
 | `evidenceCredentialRevoked` | El servidor rechazó la carga porque la credencial fue revocada. No cuenta como intento: la evidencia sigue pendiente y el SDK no sube otra en ese `sync()`. | `No se puede enviar evidencia porque la credencial fue revocada.` |
 | `evidenceRetriesExhausted` | La carga volvió a fallar y era el último de los `maxEvidenceUploadAttempts` intentos. La evidencia queda `failed`: el SDK la conserva en el dispositivo, pero no la vuelve a enviar automáticamente. | `No se pudo enviar la evidencia después de varios intentos.` |
@@ -127,14 +127,18 @@ solicitudes de red (ver
 dispositivo hay en cada `EvidenceStatus`, con todos los estados, también los
 que están en 0. Su `message` es un texto que la app puede mostrar. Lo lee en el
 dispositivo, sin solicitudes de red. `pendingEvidenceCount()` suma las
-`pending` y las `retrying` (ver
+`pending`, las `uploading` y las `retrying` (ver
 [Reintentos de la evidencia](/recursos/datos-y-privacidad/#reintentos-de-la-evidencia)).
+Cuando el servidor confirma una evidencia, `sync()` elimina su copia local y
+avisa `evidenceReceived`, así que deja de contarse (ver
+[Retención de la evidencia en el dispositivo](/recursos/datos-y-privacidad/#retención-de-la-evidencia-en-el-dispositivo)).
 
 | `EvidenceStatus` | Cuándo ocurre | `message` |
 | --- | --- | --- |
 | `pending` | La evidencia está en la cola y espera su primera carga. | `Pendiente` |
+| `uploading` | Un `sync()` la está subiendo. Sigue pendiente: el SDK nunca la muestra como enviada antes de que el servidor confirme que la recibió. | `Enviando` |
 | `retrying` | Al menos una carga terminó sin confirmación del servidor, por ejemplo por un fallo de la red o del servidor, y todavía no alcanzó `maxEvidenceUploadAttempts`. Un `sync()` posterior la vuelve a intentar con el mismo ID cuando pasa la espera: 15 minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo 6 horas. | `Reintentando` |
-| `received` | El servidor confirmó que la recibió. El SDK no la vuelve a subir y conserva su copia local hasta `clearPendingEvidence()`. | `Enviada` |
+| `received` | El servidor confirmó que la recibió. El SDK no la vuelve a subir y elimina su copia local en ese momento, así que normalmente no se cuenta: solo cuenta una evidencia cuya copia el SDK todavía no pudo empezar a eliminar, por ejemplo porque un archivo estaba bloqueado, y que elimina un `sync()` posterior o `initialize()`. | `Enviada` |
 | `failed` | La evidencia alcanzó `maxEvidenceUploadAttempts` cargas sin confirmación. El SDK la conserva en el dispositivo, no la vuelve a enviar automáticamente y ya no la cuenta como pendiente. | `Fallida` |
 
 ## Errores HTTP del servidor

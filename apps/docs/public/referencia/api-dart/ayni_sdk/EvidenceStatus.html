@@ -60,14 +60,16 @@
     
 <section class="desc markdown">
   <p>The state of one evidence for datasets kept on this device, which
-<a href="../ayni_sdk/AyniSdk/evidenceStatusCounts.html">AyniSdk.evidenceStatusCounts</a> counts (US-071).</p>
-<p>A new evidence is <a href="../ayni_sdk/EvidenceStatus.html">pending</a>. When <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> cannot send it, it is
+<a href="../ayni_sdk/AyniSdk/evidenceStatusCounts.html">AyniSdk.evidenceStatusCounts</a> counts (US-071, US-072).</p>
+<p>A new evidence is <a href="../ayni_sdk/EvidenceStatus.html">pending</a>, and <a href="../ayni_sdk/EvidenceStatus.html">uploading</a> while <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> sends
+it. When the upload ends without a confirmation of the server, it is
 <a href="../ayni_sdk/EvidenceStatus.html">retrying</a> and a later sync tries again, waiting a little longer after
-each failed attempt. Once the server confirms it, it is <a href="../ayni_sdk/EvidenceStatus.html">received</a>. After
+each failed attempt. Once the server confirms it, it is <a href="../ayni_sdk/EvidenceStatus.html">received</a> and
+the SDK deletes its local copy, so it leaves the counts. After
 <a href="../ayni_sdk/AyniSdk/maxEvidenceUploadAttempts.html">AyniSdk.maxEvidenceUploadAttempts</a> attempts without that confirmation it
 is <a href="../ayni_sdk/EvidenceStatus.html">failed</a>: the SDK keeps it on the device but no longer sends it
-automatically. <a href="../ayni_sdk/AyniSdk/pendingEvidenceCount.html">AyniSdk.pendingEvidenceCount</a> counts the <a href="../ayni_sdk/EvidenceStatus.html">pending</a> and
-<a href="../ayni_sdk/EvidenceStatus.html">retrying</a> ones.</p>
+automatically. <a href="../ayni_sdk/AyniSdk/pendingEvidenceCount.html">AyniSdk.pendingEvidenceCount</a> counts the <a href="../ayni_sdk/EvidenceStatus.html">pending</a>,
+<a href="../ayni_sdk/EvidenceStatus.html">uploading</a> and <a href="../ayni_sdk/EvidenceStatus.html">retrying</a> ones.</p>
 </section>
 
 
@@ -111,6 +113,19 @@ automatically. <a href="../ayni_sdk/AyniSdk/pendingEvidenceCount.html">AyniSdk.p
 
 </dd>
 
+            <dt id="uploading" class="constant">
+    <span class="name ">uploading</span>
+  <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
+  
+
+</dt>
+<dd>
+  <p><a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> is sending it now. It is never shown as <a href="../ayni_sdk/EvidenceStatus.html">received</a>
+before the server confirms it.</p>
+  
+
+</dd>
+
             <dt id="retrying" class="constant">
     <span class="name ">retrying</span>
   <span class="signature">&#8594; const <a href="../ayni_sdk/EvidenceStatus.html">EvidenceStatus</a></span>
@@ -131,8 +146,11 @@ server failed, and a later <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync<
 
 </dt>
 <dd>
-  <p>The server confirmed that it received the evidence. The SDK does not
-send it again.</p>
+  <p>The server confirmed that it received the evidence, so the SDK does not
+send it again and deletes its local copy right away. The counts include
+it only while the SDK could not start deleting that copy yet, for
+example because a file was locked; a later <a href="../ayni_sdk/AyniSdk/sync.html">AyniSdk.sync</a> or
+<a href="../ayni_sdk/AyniSdk/initialize.html">AyniSdk.initialize</a> deletes it.</p>
   
 
 </dd>
@@ -192,7 +210,7 @@ and does not count it as pending.</p>
 </dt>
 <dd>
   A Spanish text the app can show for this state: <code>Pendiente</code>,
-<code>Reintentando</code>, <code>Enviada</code> or <code>Fallida</code>.
+<code>Enviando</code>, <code>Reintentando</code>, <code>Enviada</code> or <code>Fallida</code>.
   <div class="features"><span class="feature">no setter</span></div>
 
 </dd>
