@@ -381,8 +381,8 @@ final result = await sdk.sync(
 El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
 la recibió, y entonces elimina su copia local antes de avisar
 `evidenceReceived`, sin tocar workflows ni modelos instalados. Sin esa
-confirmación la conserva como pendiente, sin eliminar nada, y un `sync()`
-posterior la vuelve a intentar sin duplicarla.
+confirmación la conserva, sin eliminar nada, y un `sync()` posterior la vuelve
+a intentar sin duplicarla hasta el límite de intentos.
 
 Cada carga sin confirmación cuenta como un intento, salvo con la credencial
 revocada, y la evidencia queda `Reintentando`: un `sync()` posterior la

@@ -622,6 +622,9 @@ class AyniSdk {
         maxEvidenceUploadAttempts: config.maxEvidenceUploadAttempts,
       );
       sdk._ensureInstallationId();
+      // US-072: what a stopped process left of the evidence queue goes even
+      // if the app never syncs again; it never fails and never blocks.
+      unawaited(sdk._evidence.removeLeftovers());
       _instance = sdk;
       return AyniInitializationResult(
         status: InitializationStatus.ready,
@@ -1103,7 +1106,8 @@ class AyniSdk {
   /// longer sends it automatically. Once the server confirms an evidence,
   /// [sync] deletes it from the device (US-072), so it leaves the counts:
   /// [EvidenceStatus.received] only counts one whose local copy the SDK
-  /// could not delete yet, which the next [sync] deletes, and the app learns
+  /// could not start deleting yet, which a later [sync] or [initialize]
+  /// deletes, and the app learns
   /// of each confirmation through [EvidenceEvent.evidenceReceived]. Like
   /// [pendingEvidenceCount], it reads the
   /// queue on the device without a network request and without waiting for

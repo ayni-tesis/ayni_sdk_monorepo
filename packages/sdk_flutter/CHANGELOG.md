@@ -61,8 +61,9 @@
   nada, y un `sync()` posterior la vuelve a intentar con el mismo ID, sin
   duplicarla. El borrado se limita al directorio de esa evidencia y no afecta
   workflows ni modelos instalados. Si no puede eliminarla, `received.json`
-  evita que se suba otra vez y el siguiente `sync()` la elimina, junto con la
-  evidencia que quedó a medio guardar o a medio eliminar si la app se cerró.
+  evita que se suba otra vez y la elimina un `sync()` posterior o
+  `initialize()`, junto con la evidencia que quedó a medio guardar o a medio
+  eliminar si la app se cerró.
 - Cada carga de evidencia que termina sin confirmación cuenta como un intento,
   salvo con la credencial revocada; un `sync()` que no llega a empezarla por la
   política, la conexión o el tiempo disponible tampoco cuenta. Después de un
@@ -80,7 +81,8 @@
   `EvidenceStatus`: `pending` (`Pendiente`), `uploading` (`Enviando`, mientras
   `sync()` la sube), `retrying`, `received` (`Enviada`) y `failed`, sin
   solicitudes de red. Como el SDK elimina la evidencia confirmada, `received`
-  solo cuenta la que todavía no pudo eliminar.
+  solo cuenta la que todavía no pudo empezar a eliminar; una que quedó a medio
+  eliminar ya no cuenta en ningún estado.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega `POST /sdk/evidence` y
   `POST /sdk/evidence/<evidenceId>/complete`.
 

@@ -25,7 +25,8 @@ enum EvidenceStatus {
   /// The server confirmed that it received the evidence, so the SDK does not
   /// send it again and deletes its local copy right away. The counts include
   /// it only while the SDK could not start deleting that copy yet, for
-  /// example because a file was locked; a later [AyniSdk.sync] deletes it.
+  /// example because a file was locked; a later [AyniSdk.sync] or
+  /// [AyniSdk.initialize] deletes it.
   received,
 
   /// The SDK reached the limit of upload attempts without a confirmation. It

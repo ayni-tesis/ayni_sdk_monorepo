@@ -263,6 +263,40 @@ void main() {
     expect(await client.evidenceStatusCounts(), counts(retrying: 1));
   });
 
+  test('initialize() deletes what a stopped process left, without a sync, '
+      'and keeps the pending evidence', () async {
+    await pendingEvidence([_firstId, _secondId]);
+    await File(
+      '${evidenceDirectory(_firstId).path}/received.json',
+    ).writeAsString(
+      '{"evidenceId":"$_firstId","receivedAt":"2026-10-04T12:00:00.000Z"}',
+    );
+    await File(
+      '${storage.path}/evidence/$_stoppedId.tmp/image',
+    ).create(recursive: true);
+
+    final result = AyniSdk.initialize(
+      AyniConfig(
+        serverUrl: Uri.parse('https://api.ayni.dev'),
+        credential: 'ayni_sk_test',
+        storageDirectory: storage,
+      ),
+    );
+    expect(result.status, InitializationStatus.ready);
+    final queue = Directory('${storage.path}/evidence');
+    Future<List<String>> names() async => [
+      for (final entity in await queue.list().toList())
+        entity.uri.pathSegments.lastWhere((s) => s != ''),
+    ];
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    while ((await names()).length > 1 && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    expect(await names(), [_secondId]);
+    expect(await result.sdk!.pendingEvidenceCount(), 1);
+  });
+
   test('keeps the failed evidence on the device', () async {
     await pendingEvidence([_firstId]);
     outcomes = [_failed];

@@ -478,14 +478,16 @@ instalados, trazas ni otros archivos de `storageDirectory`, y no sigue enlaces.
 Primero lo renombra a `evidence/<evidenceId>.tmp/`, que nunca cuenta como
 pendiente, y después lo borra. Si no puede renombrarlo, por ejemplo porque un
 archivo está bloqueado, la evidencia conserva el `received.json` que acaba de
-escribir: no vuelve a la cola ni se sube otra vez, y `evidenceStatusCounts()` la cuenta como `Enviada`
-hasta que un `sync()` posterior la elimina. Si lo renombra pero no puede
-borrarlo, queda `evidence/<evidenceId>.tmp/`, que ya no cuenta en ningún estado
-y que un `sync()` posterior borra. Antes de subir evidencia, cada
-`sync()` elimina también la evidencia confirmada que quedó porque la app se
-cerró entre la confirmación y el borrado, y los directorios
-`evidence/<evidenceId>.tmp/` de una evidencia que quedó a medio guardar o a
-medio eliminar, salvo la que el SDK está guardando en ese momento.
+escribir: no vuelve a la cola ni se sube otra vez, y `evidenceStatusCounts()`
+la cuenta como `Enviada` hasta que la elimina un `sync()` posterior o
+`initialize()`. Si lo renombra pero no puede borrarlo, queda
+`evidence/<evidenceId>.tmp/`, que ya no cuenta en ningún estado y que también
+se borra después. `initialize()`, sin esperar ni hacer solicitudes de red, y
+cada `sync()`, antes de subir evidencia, eliminan la evidencia confirmada que
+quedó porque la app se cerró entre la confirmación y el borrado, y los
+directorios `evidence/<evidenceId>.tmp/` de una evidencia que quedó a medio
+guardar o a medio eliminar, salvo la que el SDK está guardando en ese momento.
+No eliminan nada si `evidence/` es un enlace.
 
 ### Retención de la evidencia en el servidor
 
@@ -576,10 +578,10 @@ sus campos permitidos a una traza.
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
 | Copia JPEG de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`, reducida al tamaño máximo y comprimida con la calidad de la política de recolección, sin metadatos EXIF. Cada directorio `evidence/<evidenceId>/` es una evidencia pendiente de envío, también después de reiniciar la app, hasta que el servidor confirma su recepción, y entonces `sync()` lo elimina, o hasta que alcanza el límite de intentos, y entonces el SDK lo conserva sin volver a enviarlo. | `evidence/<evidenceId>/image` | `sync()` la elimina cuando el servidor confirma su recepción. `await sdk.clearPendingEvidence()` elimina toda la evidencia, también la fallida; borrar `storageDirectory` también. |
 | Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo; el ancho y el alto de la imagen, y el tamaño máximo y la calidad con que se optimizó. | `evidence/<evidenceId>/evidence.json` | `sync()` lo elimina cuando el servidor confirma la recepción de la evidencia. `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
-| Confirmación de cada evidencia que el servidor recibió: su ID y la fecha de recepción. Con ella la evidencia deja de estar pendiente. El SDK la escribe justo antes de eliminar la evidencia, y solo queda si no pudo eliminarla. | `evidence/<evidenceId>/received.json` | `sync()` la elimina con la evidencia, en ese momento o en un `sync()` posterior. `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Confirmación de cada evidencia que el servidor recibió: su ID y la fecha de recepción. Con ella la evidencia deja de estar pendiente. El SDK la escribe justo antes de eliminar la evidencia, y solo queda si no pudo eliminarla. | `evidence/<evidenceId>/received.json` | `sync()` la elimina con la evidencia, en ese momento o, si no pudo, un `sync()` posterior o `initialize()`. `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
 | Intentos de carga de cada evidencia que terminaron sin confirmación: su ID, cuántos fueron, la fecha en que empezó el último y si alcanzó el límite, con el que la evidencia queda fallida y el SDK deja de enviarla. | `evidence/<evidenceId>/upload-attempts.json` | `sync()` lo elimina con la evidencia cuando el servidor confirma su recepción. `await sdk.clearPendingEvidence()` elimina toda la evidencia, también la fallida; borrar `storageDirectory` también. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
-| Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox, evidencias que se están guardando o eliminando y confirmaciones e intentos de evidencia. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia que se está guardando o eliminando, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: el siguiente `sync()` y `clearPendingEvidence()` borran los de la evidencia, y borrar `storageDirectory` completo, todos. |
+| Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox, evidencias que se están guardando o eliminando y confirmaciones e intentos de evidencia. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia que se está guardando o eliminando, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: `initialize()`, el siguiente `sync()` y `clearPendingEvidence()` borran los de la evidencia, y borrar `storageDirectory` completo, todos. |
 
 El SDK no borra las versiones anteriores de un workflow o de un modelo al
 instalar una nueva: siguen en `storageDirectory` hasta que lo borres.

@@ -322,7 +322,7 @@ class EvidenceStore {
     final id = _evidenceId(evidence);
     final path = '${_directory.path}${Platform.pathSeparator}$id';
     if (!isUuidV4(id) ||
-        !await _directory.exists() ||
+        !await _queueIsDirectory() ||
         !await FileSystemEntity.identical(
           evidence.parent.path,
           _directory.path,
@@ -340,13 +340,13 @@ class EvidenceStore {
   /// `received.json`, and each `<evidenceId>.tmp/` directory, except the one
   /// a [save] of this store is writing now. It keeps the pending, retrying
   /// and failed evidence, skips anything not named after an evidence ID and
-  /// never follows a link. It does not fail: what it cannot delete stays for
-  /// a later call.
+  /// never follows a link, not even when `evidence/` itself is one. It does
+  /// not fail: what it cannot delete stays for a later call.
   Future<void> removeLeftovers() async {
     final halfDone = <Directory>[];
     final received = <Directory>[];
     try {
-      if (!await _directory.exists()) return;
+      if (!await _queueIsDirectory()) return;
       await for (final entity in _directory.list(followLinks: false)) {
         if (entity is! Directory) continue;
         final name = _evidenceId(entity);
@@ -377,6 +377,12 @@ class EvidenceStore {
       }
     }
   }
+
+  /// Whether `evidence/` is a directory and not a link, so that deleting
+  /// inside it never reaches what a link points to.
+  Future<bool> _queueIsDirectory() async =>
+      await FileSystemEntity.type(_directory.path, followLinks: false) ==
+      FileSystemEntityType.directory;
 
   /// Writes [contents] to [file] through a temporary file renamed into
   /// place, so a reader never sees it half-written.

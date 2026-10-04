@@ -355,6 +355,26 @@ void main() {
       expect(await store.pendingCount(), 1);
     });
 
+    test('deletes nothing when the queue directory is a link', () async {
+      final outside = Directory('${storageDirectory.path}/outside')
+        ..createSync();
+      final confirmed = File('${outside.path}/$received/received.json')
+        ..createSync(recursive: true);
+      final halfWritten = File('${outside.path}/$stopped.tmp/image')
+        ..createSync(recursive: true);
+      Link(evidenceDirectory.path).createSync(outside.absolute.path);
+      final store = EvidenceStore(storageDirectory);
+
+      await store.removeLeftovers();
+      await expectLater(
+        store.remove(Directory('${evidenceDirectory.path}/$received')),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(confirmed.existsSync(), isTrue);
+      expect(halfWritten.existsSync(), isTrue);
+    });
+
     test('does nothing without a queue', () async {
       await EvidenceStore(storageDirectory).removeLeftovers();
 

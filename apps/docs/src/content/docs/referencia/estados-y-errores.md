@@ -138,7 +138,7 @@ avisa `evidenceReceived`, así que deja de contarse (ver
 | `pending` | La evidencia está en la cola y espera su primera carga. | `Pendiente` |
 | `uploading` | Un `sync()` la está subiendo. Sigue pendiente: el SDK nunca la muestra como enviada antes de que el servidor confirme que la recibió. | `Enviando` |
 | `retrying` | Al menos una carga terminó sin confirmación del servidor, por ejemplo por un fallo de la red o del servidor, y todavía no alcanzó `maxEvidenceUploadAttempts`. Un `sync()` posterior la vuelve a intentar con el mismo ID cuando pasa la espera: 15 minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo 6 horas. | `Reintentando` |
-| `received` | El servidor confirmó que la recibió. El SDK no la vuelve a subir y elimina su copia local en ese momento, así que normalmente no se cuenta: solo cuenta una evidencia cuya copia el SDK todavía no pudo eliminar, por ejemplo porque un archivo estaba bloqueado, y que el siguiente `sync()` elimina. | `Enviada` |
+| `received` | El servidor confirmó que la recibió. El SDK no la vuelve a subir y elimina su copia local en ese momento, así que normalmente no se cuenta: solo cuenta una evidencia cuya copia el SDK todavía no pudo empezar a eliminar, por ejemplo porque un archivo estaba bloqueado, y que elimina un `sync()` posterior o `initialize()`. | `Enviada` |
 | `failed` | La evidencia alcanzó `maxEvidenceUploadAttempts` cargas sin confirmación. El SDK la conserva en el dispositivo, no la vuelve a enviar automáticamente y ya no la cuenta como pendiente. | `Fallida` |
 
 ## Errores HTTP del servidor
