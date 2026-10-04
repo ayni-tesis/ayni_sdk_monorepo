@@ -77,15 +77,20 @@ el ID de la versión de modelo que falló (`dependencyName`).
 ## Evidencia para datasets
 
 Cuando `run()` alcanza un nodo `dataset.capture` y la app pasó
-`evidenceConsent: true`, el SDK guarda la evidencia después de devolver el
-resultado y llama a `onEvidence` con un `EvidenceEvent`. Su `message` es
-también el diagnóstico que recibe `onProgress`. Sin consentimiento, o si la
-evidencia no se pudo guardar, no hay evento y el resultado no cambia (ver
+`evidenceConsent: true`, el SDK prepara la evidencia después de devolver el
+resultado y llama a `onEvidence` con cada `EvidenceEvent`, en este orden:
+`evidenceOptimizing` y luego `evidencePrepared` y `evidenceQueued`, o
+`evidenceDiscarded`. Su `message` es también el diagnóstico que recibe
+`onProgress`. Sin consentimiento no hay evento. Ningún evento cambia el
+resultado que ya devolvió `run()` (ver
 [Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets)).
 
 | `EvidenceEvent` | Cuándo ocurre | `message` |
 | --- | --- | --- |
+| `evidenceOptimizing` | El SDK empezó a reducir y comprimir la imagen de la evidencia con el tamaño máximo y la calidad de la política de recolección. | `Optimizando` |
+| `evidencePrepared` | El SDK guardó completa en el dispositivo la imagen optimizada con el resultado de la captura. | `Evidencia preparada para envío.` |
 | `evidenceQueued` | El SDK guardó en el dispositivo la imagen y el resultado de la captura para enviarlos más tarde. | `Evidencia guardada para envío posterior.` |
+| `evidenceDiscarded` | El SDK no pudo preparar la evidencia, por ejemplo porque ningún `sync()` guardó aún la política de recolección o porque no pudo optimizar o guardar la imagen, y la descartó sin dejar archivos a medias. | `No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.` |
 
 ## Errores HTTP del servidor
 

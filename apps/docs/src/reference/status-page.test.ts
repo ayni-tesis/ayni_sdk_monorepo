@@ -69,10 +69,10 @@ describe("Estados y errores (US-146)", () => {
     ).toEqual([]);
   });
 
-  it("gives the message of every EvidenceEvent (US-066)", () => {
+  it("gives the message of every EvidenceEvent (US-066, US-067)", () => {
     const rows = tableRows(section("## Evidencia para datasets"));
     const messages = Object.fromEntries(
-      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) => '([^']+)'/g)].map(
+      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) =>\s*'([^']+)'/g)].map(
         ([, event, message]) => [event, message],
       ),
     );

@@ -148,6 +148,22 @@ describe("Datos y privacidad (US-147)", () => {
     expect(storedSection).toContain("`diagnostics/telemetry-policy.json`");
   });
 
+  it("describes the optimized evidence image and the collection policy that sets it (US-067)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(evidence).toContain("`GET /sdk/collection-policy`");
+    expect(evidence).toContain("`diagnostics/collection-policy.json`");
+    expect(evidence).toContain("«Tamaño máximo»");
+    expect(evidence).toContain("«Calidad»");
+    expect(evidence).toContain("sin metadatos EXIF");
+    expect(evidence).toContain(
+      "La imagen que recibió `run()`, con la que el workflow hizo la inferencia, no cambia",
+    );
+    expect(evidence).toContain("`evidenceConsent: true`");
+    expect(evidence).toContain("no vence");
+    expect(storedSection).toContain("`diagnostics/collection-policy.json`");
+  });
+
   it("shows how to delete the data with an example CI analyzes", () => {
     expect(storedSection).toContain('<Code code={privacy.deleteData} lang="dart" />');
   });

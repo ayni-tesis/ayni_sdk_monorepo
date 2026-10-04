@@ -11,6 +11,7 @@ describe("sdkContract", () => {
       "/sdk/consents",
       "/sdk/traces",
       "/sdk/telemetry-policy",
+      "/sdk/collection-policy",
       "/sdk/sync",
       "/sdk/workflow-versions/{workflowVersionId}",
       "/sdk/model-versions/{modelVersionId}/manifest",

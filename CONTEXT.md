@@ -57,7 +57,7 @@ The per-Application setting that says whether the SDK may capture images as evid
 _Avoid_: Capture settings, upload settings
 
 **Evidence**:
-An image the SDK keeps on the device when an execution of a Workflow Version reaches a `dataset.capture` node and completes successfully (a failed or cancelled execution creates none), together with the inference result the node received, the Workflow Version and the Model Version that produced the result, to send it later to its Application's datasets. The SDK creates it only while the app says the person consents to evidence collection, and never delays or changes the result it returns.
+An image the SDK keeps on the device when an execution of a Workflow Version reaches a `dataset.capture` node and completes successfully (a failed or cancelled execution creates none), together with the inference result the node received, the Workflow Version and the Model Version that produced the result, to send it later to its Application's datasets. The SDK creates it only while the app says the person consents to evidence collection, and never delays or changes the result it returns. It keeps a copy of the image reduced and compressed with the Collection Policy's maximum size and quality, never the image the workflow used, and discards an evidence it cannot prepare.
 _Avoid_: Sample, upload, telemetry
 
 **Slug**:
