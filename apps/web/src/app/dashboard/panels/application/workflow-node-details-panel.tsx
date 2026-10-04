@@ -182,6 +182,12 @@ export function WorkflowNodeDetailsPanel({
         </dl>
       )}
 
+      {node.type === "dataset.capture" && (
+        <dl className="space-y-3">
+          <Field label="Entradas">imagen y resultado</Field>
+        </dl>
+      )}
+
       {(node.type === "condition" || node.type === "output") && (
         <form
           noValidate

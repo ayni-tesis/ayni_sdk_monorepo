@@ -121,6 +121,7 @@ const ADD_NODE_MESSAGES: Record<WorkflowNewNode["type"], { success: string; fail
   "model.tflite": { success: "Nodo de modelo agregado.", failure: "No pudimos agregar el nodo." },
   condition: { success: "Condición agregada.", failure: "No pudimos agregar la condición." },
   output: { success: "Nodo de salida agregado.", failure: "No pudimos agregar la salida." },
+  "dataset.capture": { success: "Nodo agregado.", failure: "No pudimos agregar el nodo." },
 };
 // Any type added after an output port (US-128).
 const ADD_CONNECTED_NODE_MESSAGES = {
@@ -403,6 +404,8 @@ export function WorkflowDetailView({
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
   const [modelOptionsError, setModelOptionsError] = useState("");
   const [modelOptionsReload, setModelOptionsReload] = useState(0);
+  // Whether the application's collection policy lets a capture be added (US-064).
+  const [collectionEnabled, setCollectionEnabled] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<WorkflowConnectionItem | null>(null);
   // The new source of a condition or an output while it saves (US-131).
   const [pendingSource, setPendingSource] = useState<WorkflowConnectionItem | null>(null);
@@ -586,6 +589,30 @@ export function WorkflowDetailView({
   }
 
   const detailUrl = `/applications/${application.id}/workflows/${encodeURIComponent(workflowId)}`;
+
+  useEffect(() => {
+    let active = true;
+    setCollectionEnabled(false);
+    if (!canManage || application.status !== "active")
+      return () => {
+        active = false;
+      };
+    // Until the policy loads, or if it cannot, the capture stays disabled; the
+    // server checks the policy again when the node is added.
+    void (async () => {
+      try {
+        const { data } = await httpClient.get<{ policy: { enabled: boolean } }>(
+          `/applications/${application.id}/collection-policy`,
+        );
+        if (active) setCollectionEnabled(data.policy.enabled === true);
+      } catch {
+        // Keeps the capture disabled.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [application.id, application.status, canManage]);
 
   // Sends a draft change at once, or once the change being sent is answered,
   // based on the revision that one left, so the editor never conflicts with itself.
@@ -1388,6 +1415,7 @@ export function WorkflowDetailView({
                         modelsLoading={modelOptionsLoading}
                         modelsError={modelOptionsError}
                         onRetryModels={() => setModelOptionsReload((value) => value + 1)}
+                        collectionEnabled={collectionEnabled}
                         busy={loading || addingNode || savingPositions || arrangingNodes}
                         origin={addNodeOrigin ?? undefined}
                         onAdd={(node) =>

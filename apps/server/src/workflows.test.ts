@@ -1,4 +1,10 @@
-import { application, member, workflow, workflowVersion } from "@ayni/db/schema/index";
+import {
+  application,
+  applicationCollectionPolicy,
+  member,
+  workflow,
+  workflowVersion,
+} from "@ayni/db/schema/index";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +13,7 @@ import {
   type AddImageInputResult,
   type ArchiveWorkflowResult,
   addConditionNode,
+  addDatasetCaptureNode,
   addImageInputNode,
   addModelNode,
   addOutputNode,
@@ -128,6 +135,10 @@ function makeApp({
   addConditionNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
   addModelNode = async () => ({ ok: false as const, reason: "modelVersionNotFound" as const }),
   addOutputNode = async () => ({ ok: false as const, reason: "incompatibleSource" as const }),
+  addDatasetCaptureNode = async () => ({
+    ok: false as const,
+    reason: "collectionDisabled" as const,
+  }),
   updateNodePositions = async ({
     positions,
   }: import("./workflow-store").UpdateWorkflowNodePositionsInput) => ({
@@ -189,6 +200,9 @@ function makeApp({
   addOutputNode?: (
     input: import("./workflow-store").AddOutputNodeInput,
   ) => Promise<import("./workflow-store").AddOutputNodeResult>;
+  addDatasetCaptureNode?: (
+    input: import("./workflow-store").AddDatasetCaptureNodeInput,
+  ) => Promise<import("./workflow-store").AddDatasetCaptureNodeResult>;
   updateNodePositions?: (
     input: import("./workflow-store").UpdateWorkflowNodePositionsInput,
   ) => Promise<import("./workflow-store").UpdateWorkflowNodePositionsResult>;
@@ -216,6 +230,7 @@ function makeApp({
   const addModelNodeMock = vi.fn(addModelNode);
   const addConditionNodeMock = vi.fn(addConditionNode);
   const addOutputNodeMock = vi.fn(addOutputNode);
+  const addDatasetCaptureNodeMock = vi.fn(addDatasetCaptureNode);
   const addConnectionMock = vi.fn(addConnection);
   const removeConnectionMock = vi.fn(removeConnection);
   const updateNodePositionsMock = vi.fn(updateNodePositions);
@@ -233,6 +248,7 @@ function makeApp({
     addModelNode: addModelNodeMock,
     addConditionNode: addConditionNodeMock,
     addOutputNode: addOutputNodeMock,
+    addDatasetCaptureNode: addDatasetCaptureNodeMock,
     addConnection: addConnectionMock,
     removeConnection: removeConnectionMock,
     updateNodePositions: updateNodePositionsMock,
@@ -256,6 +272,7 @@ function makeApp({
         addModelNode: addModelNodeMock,
         addConditionNode: addConditionNodeMock,
         addOutputNode: addOutputNodeMock,
+        addDatasetCaptureNode: addDatasetCaptureNodeMock,
         addConnection: addConnectionMock,
         removeConnection: removeConnectionMock,
         updateNodePositions: updateNodePositionsMock,
@@ -606,6 +623,87 @@ function postWorkflowNode(request: ReturnType<typeof makeApp>["request"], body: 
     body: JSON.stringify(withDraftRevision(body)),
   });
 }
+
+describe("POST …/nodes with a dataset capture (US-064)", () => {
+  const capture = {
+    id: "capture",
+    type: "dataset.capture" as const,
+    inputs: { imagen: "image" as const, resultado: "inferenceResult" as const },
+  };
+
+  it("adds the capture after a result, passing only its position and source", async () => {
+    const addDatasetCaptureNode = vi.fn(async () => ({
+      ok: true as const,
+      draft: { nodes: [capture] },
+      draftRevision: NEXT_REVISION,
+    }));
+    const { request } = makeApp({ addDatasetCaptureNode });
+
+    const response = await postWorkflowNode(request, {
+      type: "dataset.capture",
+      sourceNodeId: "detector",
+      sourcePort: "result",
+      position: { x: 688, y: 0 },
+      // Nothing but the type, position and source is read: a node never carries code.
+      script: "fetch('https://example.com')",
+      inputs: { imagen: "anything" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      draft: { nodes: [capture] },
+      draftRevision: NEXT_REVISION,
+    });
+    expect(addDatasetCaptureNode).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      workflowId: "workflow-1",
+      userId: "admin",
+      draftRevision: BASE_REVISION,
+      position: { x: 688, y: 0 },
+      source: { nodeId: "detector", port: "result" },
+    });
+  });
+
+  it("rejects the capture with the policy message when collection is not enabled", async () => {
+    const { request } = makeApp();
+
+    const response = await postWorkflowNode(request, { type: "dataset.capture" });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: "Habilita la recolección de evidencia en la configuración de la aplicación.",
+      code: "collectionDisabled",
+    });
+  });
+
+  it("maps an incompatible source and the shared refusals", async () => {
+    for (const [reason, status, message] of [
+      ["incompatibleSource", 409, "Estos puertos no son compatibles."],
+      ["forbidden", 403, "No tienes permiso para editar este workflow."],
+      ["archived", 409, "No puedes editar workflows en una aplicación archivada."],
+      ["workflowNotFound", 404, "No encontramos este workflow."],
+    ] as const) {
+      const { request } = makeApp({
+        addDatasetCaptureNode: async () => ({ ok: false, reason }),
+      });
+      const response = await postWorkflowNode(request, { type: "dataset.capture" });
+      expect(response.status, reason).toBe(status);
+      expect(((await response.json()) as { message: string }).message, reason).toBe(message);
+    }
+  });
+
+  it("rejects a source with only one of its node and port before adding anything", async () => {
+    const { request, addDatasetCaptureNode } = makeApp();
+
+    const response = await postWorkflowNode(request, {
+      type: "dataset.capture",
+      sourceNodeId: "detector",
+    });
+
+    expect(response.status).toBe(400);
+    expect(addDatasetCaptureNode).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /applications/:applicationId/workflows/:workflowId/nodes", () => {
   it("validates and dispatches a typed classification condition", async () => {
@@ -3156,6 +3254,159 @@ describe("addModelNode after an output port (US-128)", () => {
   });
 });
 
+describe("addDatasetCaptureNode (US-064)", () => {
+  const imageNode = {
+    id: "image",
+    type: "input.image" as const,
+    outputs: { imagen: "image" as const },
+  };
+  const detector = {
+    id: "detector",
+    type: "model.tflite" as const,
+    modelVersionId: "version-d",
+    modelName: "Detector",
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 320,
+        height: 320,
+        channels: 3 as const,
+        normalization: "none" as const,
+      },
+    },
+    outputs: {
+      result: { type: "detection" as const, labels: ["roya"], scoreThreshold: 0.5 },
+    },
+  };
+  const condition = {
+    id: "condition",
+    type: "condition" as const,
+    sourceNodeId: "detector",
+    label: "roya",
+    operator: "gte" as const,
+    threshold: 0.5,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  };
+  const draft = {
+    nodes: [imageNode, detector, condition],
+    connections: [
+      {
+        sourceNodeId: "image",
+        sourcePort: "imagen",
+        targetNodeId: "detector",
+        targetPort: "image",
+      },
+    ],
+  };
+  const input = {
+    applicationId: "app-1",
+    workflowId: "workflow-1",
+    userId: "admin",
+    draftRevision: 0,
+    position: { x: 688, y: 0 },
+  };
+  const enabled = { enabled: true };
+  const captureStore = (collectionPolicy?: { enabled: boolean }) =>
+    makeWorkflowPositionStoreDb(draft, [], 0, true, collectionPolicy);
+
+  it("adds a capture whose only fields are its typed image and inference result inputs", async () => {
+    const store = captureStore(enabled);
+
+    const result = await addDatasetCaptureNode(store.db, input);
+
+    if (!result.ok) throw new Error(`Expected the capture to be added, got ${result.reason}`);
+    const added = result.draft.nodes[3];
+    expect(added).toEqual({
+      id: expect.any(String),
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    });
+    expect(result.draft.connections).toEqual(draft.connections);
+    expect(result.draft.layout).toEqual({ [added?.id ?? ""]: input.position });
+    expect(result.draftRevision).toBe(1);
+    expect(store.reload()).toEqual(result.draft);
+    expect(store.lockedTables).toContain(applicationCollectionPolicy);
+  });
+
+  it("added after a detection result, takes that result and the image the model reads", async () => {
+    const store = captureStore(enabled);
+
+    const result = await addDatasetCaptureNode(store.db, {
+      ...input,
+      source: { nodeId: "detector", port: "result" },
+    });
+
+    if (!result.ok) throw new Error(`Expected the capture to be added, got ${result.reason}`);
+    const captureId = result.draft.nodes[3]?.id;
+    expect(result.draft.connections).toEqual([
+      ...draft.connections,
+      {
+        sourceNodeId: "detector",
+        sourcePort: "result",
+        targetNodeId: captureId,
+        targetPort: "resultado",
+      },
+      {
+        sourceNodeId: "image",
+        sourcePort: "imagen",
+        targetNodeId: captureId,
+        targetPort: "imagen",
+      },
+    ]);
+    expect(store.writes).toBe(1);
+  });
+
+  it("added after the result of a model without an image, takes only the result", async () => {
+    const store = makeWorkflowPositionStoreDb({ nodes: [detector] }, [], 0, true, enabled);
+
+    const result = await addDatasetCaptureNode(store.db, {
+      ...input,
+      source: { nodeId: "detector", port: "result" },
+    });
+
+    if (!result.ok) throw new Error(`Expected the capture to be added, got ${result.reason}`);
+    expect(result.draft.connections).toEqual([
+      {
+        sourceNodeId: "detector",
+        sourcePort: "result",
+        targetNodeId: result.draft.nodes[1]?.id,
+        targetPort: "resultado",
+      },
+    ]);
+  });
+
+  it.each([
+    ["has no saved collection policy", undefined],
+    ["has collection disabled", { enabled: false }],
+  ])("rejects the capture without adding it when the application %s", async (_case, policy) => {
+    const store = captureStore(policy);
+
+    const result = await addDatasetCaptureNode(store.db, {
+      ...input,
+      source: { nodeId: "detector", port: "result" },
+    });
+
+    expect(result).toEqual({ ok: false, reason: "collectionDisabled" });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(draft);
+  });
+
+  it.each([
+    ["the image", "image", "imagen"],
+    ["a condition branch", "condition", "true"],
+    ["a missing node", "missing", "result"],
+  ])("rejects %s as its source without saving anything", async (_case, nodeId, port) => {
+    const store = captureStore(enabled);
+
+    const result = await addDatasetCaptureNode(store.db, { ...input, source: { nodeId, port } });
+
+    expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+    expect(store.writes).toBe(0);
+    expect(store.reload()).toEqual(draft);
+  });
+});
+
 describe("deleteWorkflowNode", () => {
   it("removes the selected node, incident connections, and saved layout", async () => {
     const draft = {
@@ -3927,6 +4178,8 @@ function makeWorkflowPositionStoreDb(
   draftRevision = 0,
   // Whether the application has the workflow at all.
   workflowExists = true,
+  // The application's saved collection policy, if any (US-064).
+  collectionPolicy?: { enabled: boolean },
 ) {
   let storedDraft = structuredClone(draft);
   let storedRevision = draftRevision;
@@ -3949,6 +4202,8 @@ function makeWorkflowPositionStoreDb(
                 return workflowExists
                   ? [{ draft: structuredClone(storedDraft), draftRevision: storedRevision }]
                   : [];
+              if (table === applicationCollectionPolicy)
+                return collectionPolicy ? [collectionPolicy] : [];
               return [];
             },
           }),

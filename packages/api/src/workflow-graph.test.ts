@@ -188,6 +188,59 @@ describe("workflowPortCompatibility", () => {
   });
 });
 
+// US-064: a capture takes an image on `imagen` and an inference result on `resultado`.
+describe("the inputs of a dataset capture", () => {
+  const draft: WorkflowPortDraft = {
+    nodes: [
+      image("image"),
+      model("classifier"),
+      model("detector", "detection"),
+      { id: "condition", type: "condition", sourceNodeId: "classifier", label: "perro" },
+      { id: "capture", type: "dataset.capture" },
+    ],
+  };
+
+  it("accepts the image on imagen and a classification or detection result on resultado", () => {
+    expect(workflowPortCompatibility(draft, connect("image", "imagen", "capture", "imagen"))).toBe(
+      "compatible",
+    );
+    expect(
+      workflowPortCompatibility(draft, connect("detector", "result", "capture", "resultado")),
+    ).toBe("compatible");
+    expect(
+      workflowPortCompatibility(draft, connect("classifier", "result", "capture", "resultado")),
+    ).toBe("compatible");
+  });
+
+  it("rejects a result on imagen, the image or a branch on resultado, and unknown inputs", () => {
+    expect(
+      workflowPortCompatibility(draft, connect("detector", "result", "capture", "imagen")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(draft, connect("image", "imagen", "capture", "resultado")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(draft, connect("condition", "true", "capture", "resultado")),
+    ).toBe("incompatible");
+    expect(workflowPortCompatibility(draft, connect("image", "imagen", "capture", "image"))).toBe(
+      "incompatible",
+    );
+  });
+
+  it("takes one connection per input and has no outputs", () => {
+    const connected: WorkflowPortDraft = {
+      ...draft,
+      connections: [connect("detector", "result", "capture", "resultado")],
+    };
+    expect(
+      workflowPortCompatibility(connected, connect("classifier", "result", "capture", "resultado")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(connected, connect("capture", "resultado", "detector", "image")),
+    ).toBe("incompatible");
+  });
+});
+
 // US-131: an Origen input always has one source; a compatible drop replaces it.
 describe("reassigning the Origen of a condition or an output", () => {
   const draft: WorkflowPortDraft = {

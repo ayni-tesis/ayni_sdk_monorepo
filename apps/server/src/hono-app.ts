@@ -91,6 +91,7 @@ import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-st
 import { createTelemetryRetentionApp } from "./telemetry-retention";
 import {
   addConditionNode,
+  addDatasetCaptureNode,
   addImageInputNode,
   addModelNode,
   addOutputNode,
@@ -258,6 +259,9 @@ const workflows = {
   },
   addOutputNode(input: Parameters<typeof addOutputNode>[1]) {
     return addOutputNode(db, input);
+  },
+  addDatasetCaptureNode(input: Parameters<typeof addDatasetCaptureNode>[1]) {
+    return addDatasetCaptureNode(db, input);
   },
   addConnection(input: Parameters<typeof addWorkflowConnection>[1]) {
     return addWorkflowConnection(db, input);
