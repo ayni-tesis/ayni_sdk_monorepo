@@ -1287,12 +1287,13 @@ class AyniSdk {
   /// low-confidence predictions, is reached only when the condition takes
   /// that branch; otherwise the SDK creates no evidence and the result does
   /// not change. Pass [evidenceConsent] only while the person has given the
-  /// consent your app requires for evidence collection. After returning the result, without delaying it or failing
-  /// it, the SDK reduces and compresses a copy of [input] to a JPEG with the
-  /// maximum size and quality of the collection policy that [sync] saved,
-  /// and keeps it in [storageDirectory] with the captured inference result,
-  /// the workflow version, and the model, pending upload in a local queue
-  /// that [pendingEvidenceCount] counts. [input] itself never changes. It
+  /// consent your app requires for evidence collection. After returning the
+  /// result, without delaying it or failing it, the SDK reduces and
+  /// compresses a copy of [input] to a JPEG with the maximum size and
+  /// quality of the collection policy that [sync] saved, and keeps it in
+  /// [storageDirectory] with the captured inference result, the workflow
+  /// version, and the model, pending upload in a local queue that
+  /// [pendingEvidenceCount] counts. [input] itself never changes. It
   /// reports to [onEvidence] [EvidenceEvent.evidenceOptimizing], then
   /// [EvidenceEvent.evidencePrepared] once the image is optimized and
   /// [EvidenceEvent.evidenceQueued] once the evidence is pending in the

@@ -335,9 +335,19 @@ resultado, así que también exige «Permitir captura de imágenes para datasets
 activado en «Recolección de evidencia».
 
 Cuando el resultado cumple la condición, `run()` alcanza el nodo y el SDK crea
-la evidencia como en cualquier otra captura: con los mismos datos, el mismo
-consentimiento (`evidenceConsent: true`) y la misma retención. La condición no
-agrega ningún dato a la evidencia. Cuando no la cumple, el SDK no copia la
+la evidencia como en cualquier otra captura:
+
+- **Datos:** los mismos de la lista anterior. La condición no agrega ningún
+  dato a la evidencia.
+- **Política:** la misma «Permitir captura de imágenes para datasets», que
+  además habilita su envío por la «Red permitida».
+- **Consentimiento:** el de recolección que gestiona tu app, con
+  `evidenceConsent: true`.
+- **Retención:** en el dispositivo, hasta que el servidor confirma su
+  recepción o hasta `clearPendingEvidence()` (ver
+  [Retención de la evidencia en el dispositivo](#retención-de-la-evidencia-en-el-dispositivo));
+  en el servidor, la de
+  [Retención de la evidencia en el servidor](#retención-de-la-evidencia-en-el-servidor). Cuando no la cumple, el SDK no copia la
 imagen, no crea evidencia ni llama a `onEvidence`, y devuelve el mismo
 resultado. La traza de esa ejecución, si la telemetría está habilitada,
 registra la condición como completada y la captura como omitida (`skipped`),

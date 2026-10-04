@@ -95,7 +95,8 @@
   recibe, por ejemplo para guardar solo las predicciones de baja confianza.
   `run()` crea la evidencia solo si la condición toma esa rama; si no, no crea
   evidencia, conserva la traza permitida y devuelve el mismo resultado. Una
-  condición que solo decide una captura se evalúa aunque ninguna salida la lea.
+  condición que solo decide una captura se evalúa aunque ninguna salida la lea,
+  y si no puede evaluarse, la captura se omite sin hacer fallar la ejecución.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega `POST /sdk/evidence` y
   `POST /sdk/evidence/<evidenceId>/complete`.
 

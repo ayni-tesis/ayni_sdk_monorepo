@@ -555,11 +555,18 @@ class WorkflowExecutor {
             case 'condition':
               final source = values[node['sourceNodeId']];
               if (source is! ClassificationResult ||
-                  !source.confidences.containsKey(node['label']))
+                  !source.confidences.containsKey(node['label'])) {
+                // A condition only captures read never fails the run: it
+                // stays unevaluated, so its captures are skipped.
+                if (!requiredConditionIds.contains(id)) {
+                  active.remove(id);
+                  break;
+                }
                 throw WorkflowError(
                   WorkflowErrorCategory.conditionInputMissing,
                   nodeId: id,
                 );
+              }
               final truth = _compare(
                 source.confidences[node['label']]!,
                 node['operator'],
@@ -611,26 +618,18 @@ class WorkflowExecutor {
                     : CombinedWorkflowResult(id, resultValues);
               }
             case 'dataset.capture':
+              Map? edgeInto(String port) => connections
+                  .where(
+                    (c) => c['targetNodeId'] == id && c['targetPort'] == port,
+                  )
+                  .firstOrNull;
               String? sourceOf(String port) =>
-                  connections
-                          .where(
-                            (c) =>
-                                c['targetNodeId'] == id &&
-                                c['targetPort'] == port,
-                          )
-                          .firstOrNull?['sourceNodeId']
-                      as String?;
+                  edgeInto(port)?['sourceNodeId'] as String?;
               final resultSource = sourceOf('resultado');
               final result = values[resultSource];
               // Behind a condition (US-074), the capture is reached only when
               // the condition ran and took the branch it hangs from.
-              final gate = connections
-                  .where(
-                    (c) =>
-                        c['targetNodeId'] == id &&
-                        c['targetPort'] == 'condicion',
-                  )
-                  .firstOrNull;
+              final gate = edgeInto('condicion');
               final gateValue = gate == null
                   ? null
                   : values[gate['sourceNodeId']];

@@ -92,12 +92,13 @@ that hangs from a branch of a condition, for example to keep only
 low-confidence predictions, is reached only when the condition takes
 that branch; otherwise the SDK creates no evidence and the result does
 not change. Pass <code>evidenceConsent</code> only while the person has given the
-consent your app requires for evidence collection. After returning the result, without delaying it or failing
-it, the SDK reduces and compresses a copy of <code>input</code> to a JPEG with the
-maximum size and quality of the collection policy that <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> saved,
-and keeps it in <a href="../../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a> with the captured inference result,
-the workflow version, and the model, pending upload in a local queue
-that <a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a> counts. <code>input</code> itself never changes. It
+consent your app requires for evidence collection. After returning the
+result, without delaying it or failing it, the SDK reduces and
+compresses a copy of <code>input</code> to a JPEG with the maximum size and
+quality of the collection policy that <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> saved, and keeps it in
+<a href="../../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a> with the captured inference result, the workflow
+version, and the model, pending upload in a local queue that
+<a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a> counts. <code>input</code> itself never changes. It
 reports to <code>onEvidence</code> <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceOptimizing</a>, then
 <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidencePrepared</a> once the image is optimized and
 <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceQueued</a> once the evidence is pending in the
