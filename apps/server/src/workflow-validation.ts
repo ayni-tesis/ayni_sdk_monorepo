@@ -1,5 +1,6 @@
 import {
   areWorkflowPortsCompatible,
+  isCaptureConditionCompatible,
   isConditionSourceCompatible,
   isOutputSourceCompatible,
   type WorkflowEdge,
@@ -55,8 +56,9 @@ function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
 /**
  * Checks whether a workflow draft can be published: it needs an image input
  * and an output, every model image input and both dataset capture inputs
- * connected, compatible types on every edge, no cycles, and every output
- * reachable from the image input.
+ * connected, compatible types on every edge, a capture's condition on the
+ * result it captures, no cycles, and every output reachable from the image
+ * input.
  * Each error names the node and port that cause it, or neither when the whole
  * workflow does. The draft is never modified.
  */
@@ -153,6 +155,23 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
           node,
           "resultado",
           `El nodo "${name}" necesita un resultado de inferencia.`,
+        );
+      // A capture behind a condition (US-074) keeps the result its condition
+      // decided on; a branch of the wrong type is already incompatibleType.
+      const gate = connections.find(
+        (connection) =>
+          connection.targetNodeId === node.id && connection.targetPort === "condicion",
+      );
+      if (
+        gate &&
+        areWorkflowPortsCompatible(draft, gate) &&
+        !isCaptureConditionCompatible(draft, node.id)
+      )
+        addError(
+          "incompatibleType",
+          node,
+          "condicion",
+          `El nodo "${name}" necesita una condición sobre el resultado que captura.`,
         );
       continue;
     }

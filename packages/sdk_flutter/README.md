@@ -302,6 +302,10 @@ final result = await sdk.run(
 
 El ejemplo comprobado está en `example/privacy.dart`.
 
+Si el nodo cuelga de una rama de una condición, por ejemplo para guardar solo
+las predicciones de baja confianza, `run()` lo alcanza solo cuando la condición
+toma esa rama; si toma la otra, no crea evidencia y el resultado es el mismo.
+
 `run()` devuelve el resultado sin esperar la evidencia y una evidencia que no se
 puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
 imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección

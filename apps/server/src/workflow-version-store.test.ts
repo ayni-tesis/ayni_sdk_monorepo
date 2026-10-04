@@ -272,6 +272,43 @@ describe("publishWorkflowVersion", () => {
     });
   });
 
+  it("publishes a capture behind a condition branch as schema 3 with that connection (US-074)", async () => {
+    const condition = {
+      id: "condition",
+      type: "condition" as const,
+      sourceNodeId: "classifier",
+      label: "sana",
+      operator: "lt" as const,
+      threshold: 0.6,
+      branches: { true: "Verdadero" as const, false: "Falso" as const },
+    };
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, condition, capture],
+      connections: [
+        ...(publishableDraft.connections ?? []),
+        imageToCapture,
+        resultToCapture,
+        {
+          sourceNodeId: "condition",
+          sourcePort: "true",
+          targetNodeId: "capture",
+          targetPort: "condicion",
+        },
+      ],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result.ok).toBe(true);
+    expect(store.inserted[0]?.definition).toEqual({
+      schemaVersion: "3",
+      nodes: draft.nodes,
+      connections: draft.connections,
+    });
+  });
+
   it("rejects a version identifier already used by the workflow, keeping the existing versions", async () => {
     const store = makePublishDb({ existingVersions: ["1.0.0"] });
 

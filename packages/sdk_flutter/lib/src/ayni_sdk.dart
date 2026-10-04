@@ -1282,14 +1282,20 @@ class AyniSdk {
   /// nodes after any currently running inference finishes.
   ///
   /// When the workflow reaches a `dataset.capture` node, the SDK creates
-  /// evidence for a dataset only if [evidenceConsent] is `true`: pass it only
-  /// while the person has given the consent your app requires for evidence
-  /// collection. After returning the result, without delaying it or failing
-  /// it, the SDK reduces and compresses a copy of [input] to a JPEG with the
-  /// maximum size and quality of the collection policy that [sync] saved,
-  /// and keeps it in [storageDirectory] with the captured inference result,
-  /// the workflow version, and the model, pending upload in a local queue
-  /// that [pendingEvidenceCount] counts. [input] itself never changes. It
+  /// evidence for a dataset only if [evidenceConsent] is `true`. A capture
+  /// that hangs from a branch of a condition, for example to keep only
+  /// low-confidence predictions, is reached only when the condition takes
+  /// that branch. When it takes the other branch, or when a condition that no
+  /// output reads cannot be evaluated, the SDK creates no evidence, reports
+  /// no [EvidenceEvent], marks the capture as skipped in the trace, and the
+  /// result does not change. Pass [evidenceConsent] only while the person has given the
+  /// consent your app requires for evidence collection. After returning the
+  /// result, without delaying it or failing it, the SDK reduces and
+  /// compresses a copy of [input] to a JPEG with the maximum size and
+  /// quality of the collection policy that [sync] saved, and keeps it in
+  /// [storageDirectory] with the captured inference result, the workflow
+  /// version, and the model, pending upload in a local queue that
+  /// [pendingEvidenceCount] counts. [input] itself never changes. It
   /// reports to [onEvidence] [EvidenceEvent.evidenceOptimizing], then
   /// [EvidenceEvent.evidencePrepared] once the image is optimized and
   /// [EvidenceEvent.evidenceQueued] once the evidence is pending in the

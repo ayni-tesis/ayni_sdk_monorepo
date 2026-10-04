@@ -199,8 +199,22 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
   it.each([
     ["Verdadero", "condition", "true"],
     ["Falso", "condition", "false"],
-  ])("offers only outputs after %s", (_port, sourceNodeId, sourcePort) => {
-    expect(after(sourceNodeId, sourcePort)).toEqual([{ key: "output", disabledReason: undefined }]);
+  ])("offers outputs and the capture after %s (US-074)", (_port, sourceNodeId, sourcePort) => {
+    expect(after(sourceNodeId, sourcePort)).toEqual([
+      { key: "output", disabledReason: undefined },
+      { key: "dataset.capture", disabledReason: undefined },
+    ]);
+  });
+
+  it("keeps the capture disabled after a condition branch while collection is not enabled", () => {
+    expect(after("condition", "true", false)).toEqual([
+      { key: "output", disabledReason: undefined },
+      {
+        key: "dataset.capture",
+        disabledReason:
+          "Habilita la recolección de evidencia en la configuración de la aplicación.",
+      },
+    ]);
   });
 
   it("keeps the capture disabled after a result while collection is not enabled", () => {

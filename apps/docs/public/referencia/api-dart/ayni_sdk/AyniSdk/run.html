@@ -87,14 +87,20 @@ an image throws <a href="../../ayni_sdk/WorkflowErrorCategory.html">WorkflowErro
 <a href="../../ayni_sdk/AyniSdk/cancelExecution.html">cancelExecution</a> while this call is active. Cancellation stops pending
 nodes after any currently running inference finishes.</p>
 <p>When the workflow reaches a <code>dataset.capture</code> node, the SDK creates
-evidence for a dataset only if <code>evidenceConsent</code> is <code>true</code>: pass it only
-while the person has given the consent your app requires for evidence
-collection. After returning the result, without delaying it or failing
-it, the SDK reduces and compresses a copy of <code>input</code> to a JPEG with the
-maximum size and quality of the collection policy that <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> saved,
-and keeps it in <a href="../../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a> with the captured inference result,
-the workflow version, and the model, pending upload in a local queue
-that <a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a> counts. <code>input</code> itself never changes. It
+evidence for a dataset only if <code>evidenceConsent</code> is <code>true</code>. A capture
+that hangs from a branch of a condition, for example to keep only
+low-confidence predictions, is reached only when the condition takes
+that branch. When it takes the other branch, or when a condition that no
+output reads cannot be evaluated, the SDK creates no evidence, reports
+no <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent</a>, marks the capture as skipped in the trace, and the
+result does not change. Pass <code>evidenceConsent</code> only while the person has given the
+consent your app requires for evidence collection. After returning the
+result, without delaying it or failing it, the SDK reduces and
+compresses a copy of <code>input</code> to a JPEG with the maximum size and
+quality of the collection policy that <a href="../../ayni_sdk/AyniSdk/sync.html">sync</a> saved, and keeps it in
+<a href="../../ayni_sdk/AyniSdk/storageDirectory.html">storageDirectory</a> with the captured inference result, the workflow
+version, and the model, pending upload in a local queue that
+<a href="../../ayni_sdk/AyniSdk/pendingEvidenceCount.html">pendingEvidenceCount</a> counts. <code>input</code> itself never changes. It
 reports to <code>onEvidence</code> <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceOptimizing</a>, then
 <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidencePrepared</a> once the image is optimized and
 <a href="../../ayni_sdk/EvidenceEvent.html">EvidenceEvent.evidenceQueued</a> once the evidence is pending in the

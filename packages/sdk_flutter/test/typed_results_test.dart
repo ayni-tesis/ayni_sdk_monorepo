@@ -5,7 +5,8 @@ import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:ayni_sdk/src/ayni_sdk.dart' show createAyniSdkForTesting;
-import 'package:ayni_sdk/src/workflow_execution.dart' show WorkflowExecutor;
+import 'package:ayni_sdk/src/workflow_execution.dart'
+    show WorkflowCapture, WorkflowExecutor;
 import 'package:ayni_sdk/src/telemetry_policy_store.dart';
 import 'package:ayni_sdk/src/trace_outbox_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
@@ -1356,6 +1357,80 @@ void main() {
         nodeId: 'condition-1',
       ),
     );
+  });
+
+  test('skips a capture whose condition cannot be evaluated without failing '
+      'the run (US-074)', () async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final nodes = (definition['nodes'] as List).cast<Map>();
+    final input = nodes.firstWhere((node) => node['type'] == 'input.image');
+    final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
+    final output = nodes.firstWhere((node) => node['type'] == 'output');
+    final condition = {
+      'id': 'condition-1',
+      'type': 'condition',
+      'sourceNodeId': 'model-1',
+      'label': 'no-declarada',
+      'operator': 'gte',
+      'threshold': 0.5,
+      'branches': {'true': 'Verdadero', 'false': 'Falso'},
+    };
+    final capture = {
+      'id': 'capture-1',
+      'type': 'dataset.capture',
+      'inputs': {'imagen': 'image', 'resultado': 'inferenceResult'},
+    };
+    Map<String, String> connect(
+      String source,
+      String sourcePort,
+      String target,
+      String targetPort,
+    ) => {
+      'sourceNodeId': source,
+      'sourcePort': sourcePort,
+      'targetNodeId': target,
+      'targetPort': targetPort,
+    };
+    final executor = WorkflowExecutor(
+      storageDirectory,
+      inferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+            ],
+          ),
+    );
+    final captures = <WorkflowCapture>[];
+    final statuses = <String, String>{};
+
+    final result = await executor.execute(
+      executionId: 'execution-1',
+      workflowId: 'workflow-1',
+      workflowVersion: '1.0.0',
+      definition: {
+        ...definition,
+        'nodes': [input, model, output, condition, capture],
+        'connections': [
+          ...(definition['connections'] as List),
+          connect(input['id'] as String, 'imagen', 'capture-1', 'imagen'),
+          connect('model-1', 'result', 'capture-1', 'resultado'),
+          connect('condition-1', 'true', 'capture-1', 'condicion'),
+        ],
+      },
+      imageBytes: pngBytes(),
+      onCapture: captures.add,
+      onNodeFinished: (node) => statuses[node.nodeId] = node.status,
+    );
+
+    expect(result.outputs, contains(output['name']));
+    expect(captures, isEmpty);
+    expect(statuses['condition-1'], 'skipped');
+    expect(statuses['capture-1'], 'skipped');
   });
 
   test(

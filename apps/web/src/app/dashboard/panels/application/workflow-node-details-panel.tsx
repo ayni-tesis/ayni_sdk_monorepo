@@ -9,8 +9,14 @@ import {
   WORKFLOW_RESULT_TYPE_LABELS,
   type WorkflowCanvasDraft,
   type WorkflowCanvasNode,
+  workflowConditionRule,
   workflowNodeTitle,
 } from "./workflow-canvas";
+import {
+  CAPTURE_ONLY_WHEN_LABEL,
+  conditionOnBranch,
+  workflowCaptureCondition,
+} from "./workflow-capture-condition";
 
 /** The editable settings of a condition or an output; their source stays as it is. */
 export type WorkflowNodeChanges =
@@ -132,6 +138,9 @@ export function WorkflowNodeDetailsPanel({
       : undefined;
   const sourceLabels =
     source?.outputs.result.type === "classification" ? source.outputs.result.labels : [];
+  // The condition branch a capture hangs from (US-074).
+  const captureCondition =
+    node.type === "dataset.capture" ? workflowCaptureCondition(draft, node.id) : undefined;
   // The saved label stays selectable even if the source no longer declares it.
   const labelOptions =
     node.type === "condition" && !sourceLabels.includes(node.label)
@@ -185,6 +194,13 @@ export function WorkflowNodeDetailsPanel({
       {node.type === "dataset.capture" && (
         <dl className="space-y-3">
           <Field label="Entradas">imagen y resultado</Field>
+          {captureCondition && (
+            <Field label={CAPTURE_ONLY_WHEN_LABEL}>
+              {workflowConditionRule(
+                conditionOnBranch(captureCondition.condition, captureCondition.branch),
+              )}
+            </Field>
+          )}
         </dl>
       )}
 
