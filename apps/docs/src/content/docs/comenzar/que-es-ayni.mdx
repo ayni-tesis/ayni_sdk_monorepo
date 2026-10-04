@@ -38,7 +38,7 @@ El dashboard no ejecuta los modelos: la inferencia ocurre en el dispositivo.
 
 ## Qué hace el SDK
 
-La versión 0.2.0 del SDK es estable:
+La versión 0.3.0 del SDK es estable:
 
 - sincroniza con `sync()` las versiones publicadas de los workflows de una
   aplicación y los modelos que usan, y descarga solo lo que cambió;
@@ -51,14 +51,18 @@ La versión 0.2.0 del SDK es estable:
   sus condiciones;
 - adjunta trazas técnicas tipadas a las ejecuciones autorizadas por la app y
   envía las pendientes en `sync()` solo con una política de telemetría vigente
-  habilitada.
+  habilitada;
+- guarda en el dispositivo la imagen y el resultado de un nodo
+  `dataset.capture` como evidencia para un dataset, solo cuando la app indica
+  que la persona dio su consentimiento.
 
 ## Qué no hace el SDK
 
 - No ejecuta nada en el servidor ni en el dashboard.
 - No sincroniza por su cuenta: la app decide cuándo llamar a `sync()`.
 - No descarga ni ejecuta borradores: solo versiones publicadas.
-- No sube imágenes de entrada, tensores ni datos para datasets. `sync()` sí puede
+- No sube imágenes de entrada, tensores ni datos para datasets: la evidencia de
+  `dataset.capture` queda en el dispositivo. `sync()` sí puede
   enviar trazas tipadas y sanitizadas cuando la política de telemetría está
   habilitada y la app tiene el permiso o consentimiento aplicable.
 - No entrena ni modifica modelos.

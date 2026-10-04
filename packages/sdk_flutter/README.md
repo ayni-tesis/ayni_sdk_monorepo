@@ -13,7 +13,7 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.2.0
+  ayni_sdk: ^0.3.0
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -29,7 +29,7 @@ el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 [README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
 y usa una dependencia local `path: ../..` para verificar este checkout antes
-de publicar. Una aplicación consumidora debe resolver `^0.2.0` desde pub.dev.
+de publicar. Una aplicación consumidora debe resolver `^0.3.0` desde pub.dev.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
@@ -283,6 +283,40 @@ sdk.cancelExecution(executionId);
 
 La cancelación detiene los nodos pendientes después de que termine una inferencia que ya estaba en curso. `run()` completa con `WorkflowErrorCategory.cancelled`; un ID que ya no está activo produce `executionNotFound`.
 
+## Evidencia para datasets
+
+Un workflow puede incluir el nodo `dataset.capture`, que recibe la imagen de
+entrada y el resultado de un modelo de clasificación o detección. Cuando `run()`
+lo alcanza, el SDK crea una evidencia local solo si la app pasa
+`evidenceConsent: true`. Pásalo únicamente mientras la persona mantiene el
+consentimiento de recolección que tu app le pide:
+
+```dart
+final result = await sdk.run(
+  workflowId,
+  image,
+  evidenceConsent: evidenceAccepted,
+  onEvidence: (event) => log(event.message),
+);
+```
+
+El ejemplo comprobado está en `example/privacy.dart`.
+
+`run()` devuelve el resultado sin esperar la evidencia y una evidencia que no se
+puede guardar no lo cambia. Después, el SDK guarda en
+`storageDirectory/evidence/<evidenceId>/` una copia de la imagen y
+`evidence.json`, con el resultado que recibió el nodo, el workflow, su versión y
+el modelo; luego llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
+`onProgress` con `Evidencia guardada para envío posterior.` Sin consentimiento,
+el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
+la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
+deja de pasar `evidenceConsent: true` y elimina la evidencia guardada; un
+`run()` que ya estaba en curso tampoco guarda la suya:
+
+```dart
+await sdk.clearPendingEvidence();
+```
+
 ## Estructura del paquete
 
 - `pubspec.yaml`: Especificación del paquete y dependencias genéricas.
@@ -293,7 +327,7 @@ La cancelación detiene los nodos pendientes después de que termine una inferen
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.2.0: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.3.0: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.

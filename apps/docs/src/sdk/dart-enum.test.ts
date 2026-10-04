@@ -20,6 +20,26 @@ describe("dartEnumValues", () => {
     expect(dartEnumValues(source, "Outcome")).toEqual(["worked", "failed"]);
   });
 
+  it("reads the values of an enhanced enum, without its arguments or members", () => {
+    const source = [
+      "enum Purpose {",
+      "  /// Images.",
+      "  images('ayniImages'),",
+      "  traces('ayniTraces');",
+      "",
+      "  const Purpose(this.wireValue);",
+      "",
+      "  /// A message.",
+      "  String get message => switch (this) {",
+      "    Purpose.images => 'a, b',",
+      "    Purpose.traces => 'c',",
+      "  };",
+      "}",
+    ].join("\n");
+
+    expect(dartEnumValues(source, "Purpose")).toEqual(["images", "traces"]);
+  });
+
   it("reads only the named enum when the source declares several", () => {
     const source = "enum First {\n  a,\n  b,\n}\n\nenum Second {\n  c,\n}\n";
 

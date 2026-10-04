@@ -1,6 +1,8 @@
 // Data and privacy of the SDK documentation (US-147). The site shows each
 // `#region` of this file in `Datos y privacidad`, so `dart analyze` checks
 // every snippet.
+import 'dart:typed_data';
+
 import 'package:ayni_sdk/ayni_sdk.dart';
 
 /// Deletes everything [sdk] keeps on this device.
@@ -21,4 +23,32 @@ Future<void> resetAyniInstallationId(AyniSdk sdk) async {
   // #region restablecer-identificador-instalacion
   await sdk.resetInstallationId();
   // #endregion restablecer-identificador-instalacion
+}
+
+/// Runs [workflowId] on [image] and keeps evidence for a dataset only while
+/// the person accepts evidence collection in the app.
+Future<WorkflowResult> runWithEvidence(
+  AyniSdk sdk,
+  String workflowId,
+  Uint8List image, {
+  required bool evidenceAccepted,
+  required void Function(String message) log,
+}) async {
+  // #region capturar-evidencia
+  final result = await sdk.run(
+    workflowId,
+    image,
+    evidenceConsent: evidenceAccepted,
+    onEvidence: (event) => log(event.message),
+  );
+  // #endregion capturar-evidencia
+  return result;
+}
+
+/// Deletes the evidence kept on this device after the person withdraws their
+/// consent for evidence collection.
+Future<void> withdrawEvidenceConsent(AyniSdk sdk) async {
+  // #region borrar-evidencia
+  await sdk.clearPendingEvidence();
+  // #endregion borrar-evidencia
 }

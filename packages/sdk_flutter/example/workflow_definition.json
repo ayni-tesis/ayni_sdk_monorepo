@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "3",
   "nodes": [
     {
       "id": "imagen",
@@ -57,6 +57,11 @@
       "sourceNodeId": "condicion",
       "sourcePort": "false",
       "resultType": "boolean"
+    },
+    {
+      "id": "captura",
+      "type": "dataset.capture",
+      "inputs": { "imagen": "image", "resultado": "inferenceResult" }
     }
   ],
   "connections": [
@@ -65,6 +70,18 @@
       "sourcePort": "imagen",
       "targetNodeId": "modelo",
       "targetPort": "image"
+    },
+    {
+      "sourceNodeId": "imagen",
+      "sourcePort": "imagen",
+      "targetNodeId": "captura",
+      "targetPort": "imagen"
+    },
+    {
+      "sourceNodeId": "modelo",
+      "sourcePort": "result",
+      "targetNodeId": "captura",
+      "targetPort": "resultado"
     }
   ]
 }

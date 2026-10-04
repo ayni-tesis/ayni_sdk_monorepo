@@ -5,7 +5,7 @@ import {
   type WorkflowEdge,
   workflowEdges,
 } from "@ayni/api/workflow-graph";
-import type { WorkflowDraft, WorkflowDraftNode } from "./workflow-store";
+import type { WorkflowDraft, WorkflowNode } from "./workflow-store";
 
 export type WorkflowValidationError = {
   code:
@@ -16,8 +16,7 @@ export type WorkflowValidationError = {
     | "missingTarget"
     | "incompatibleType"
     | "cycle"
-    | "unreachableOutput"
-    | "unpublishableNode";
+    | "unreachableOutput";
   nodeId: string | null;
   nodeName: string | null;
   port: string | null;
@@ -29,7 +28,7 @@ export type WorkflowValidationResult = {
   errors: WorkflowValidationError[];
 };
 
-function workflowNodeName(node: WorkflowDraftNode) {
+function workflowNodeName(node: WorkflowNode) {
   if (node.type === "input.image") return "Imagen de entrada";
   if (node.type === "dataset.capture") return "Capturar evidencia";
   if (node.type === "model.tflite") return node.modelName;
@@ -56,8 +55,8 @@ function reachableFrom(startIds: string[], edges: WorkflowEdge[]) {
 /**
  * Checks whether a workflow draft can be published: it needs an image input
  * and an output, every model image input and both dataset capture inputs
- * connected, compatible types on every edge, no cycles, every output reachable
- * from the image input, and only nodes the SDK runs, so no dataset capture yet.
+ * connected, compatible types on every edge, no cycles, and every output
+ * reachable from the image input.
  * Each error names the node and port that cause it, or neither when the whole
  * workflow does. The draft is never modified.
  */
@@ -68,7 +67,7 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
   // A null node marks a workflow-level error.
   const addError = (
     code: WorkflowValidationError["code"],
-    node: WorkflowDraftNode | null,
+    node: WorkflowNode | null,
     port: string | null,
     message: string,
   ) => {
@@ -155,15 +154,6 @@ export function validateWorkflowDraft(draft: WorkflowDraft): WorkflowValidationR
           "resultado",
           `El nodo "${name}" necesita un resultado de inferencia.`,
         );
-      // The capture itself is ready once its inputs are; publishing still waits
-      // for an SDK that runs it (US-066), so that block is the workflow's, and
-      // its fixed text lists it once however many captures the draft holds.
-      addError(
-        "unpublishableNode",
-        null,
-        null,
-        'El nodo "Capturar evidencia" aún no se puede publicar: el SDK todavía no ejecuta la captura de evidencia.',
-      );
       continue;
     }
     if (node.type === "condition") {

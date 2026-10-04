@@ -39,7 +39,7 @@ finalidades.
 
 ## Datos que el SDK envía
 
-Válido para `ayni_sdk` 0.2.0.
+Válido para `ayni_sdk` 0.3.0.
 
 El SDK usa la red dentro de `sync()` y cuando la app registra una decisión con
 `recordConsent()`. `initialize()` y `run()` no envían nada. `sync()` puede enviar
@@ -185,9 +185,63 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
   reemplaza solo después de persistir el nuevo UUID. Las trazas que ya existían
   mantienen su identificador y las futuras usan el nuevo. La operación no
   cambia el consentimiento ni la política de trazas.
-- No envía ni guarda la imagen que recibe `run()`; la inferencia ocurre por
-  completo en el dispositivo. Una traza autorizada puede conservar resultados
-  estructurados públicos, pero no los bytes de entrada ni los tensores.
+- No envía la imagen que recibe `run()`; la inferencia ocurre por completo en
+  el dispositivo. Solo guarda una copia cuando el workflow alcanza un nodo
+  `dataset.capture` y la app indica que la persona dio su consentimiento (ver
+  [Evidencia para datasets](#evidencia-para-datasets)). Una traza autorizada
+  puede conservar resultados estructurados públicos, pero no los bytes de
+  entrada ni los tensores.
+
+## Evidencia para datasets
+
+Un workflow puede incluir el nodo `dataset.capture` («Capturar evidencia» en el
+editor) para reunir ejemplos con los que mejorar los modelos de tu aplicación.
+Cuando `run()` lo alcanza, el SDK crea una evidencia en el dispositivo con:
+
+- una copia de la imagen que recibió `run()`, tal como la entregó la app;
+- el resultado de inferencia que recibió el nodo: la clasificación o las
+  detecciones del modelo;
+- el workflow, el ID de su versión publicada, su versión y el ID del nodo;
+- el modelo que produjo el resultado: el ID de su versión, la versión y su
+  SHA-256;
+- un ID aleatorio de la evidencia y la fecha de la ejecución.
+
+La evidencia no guarda el ID de la aplicación: la versión de workflow
+pertenece a una sola aplicación, la de la credencial con la que se sincronizó.
+No incluye la credencial, el identificador de instalación ni el perfil del
+dispositivo.
+
+La política de recolección de la aplicación la habilita: en el dashboard,
+«Recolección de evidencia» debe tener activado «Permitir captura de imágenes
+para datasets», y solo entonces un administrador puede agregar el nodo a un
+workflow. Esa política exige también «Exigir el consentimiento del usuario
+antes de capturar». Esta versión del SDK todavía no consulta la política en el
+dispositivo, ni aplica su red, tamaño máximo o calidad.
+
+El SDK no presenta avisos ni registra el consentimiento de recolección: lo
+gestiona tu app, igual que el permiso de las trazas de validación. Pasa
+`evidenceConsent: true` a `run()` solo mientras la persona mantenga ese
+consentimiento:
+
+<Code code={privacy.captureEvidence} lang="dart" />
+
+Sin `evidenceConsent: true`, el SDK omite la captura: no copia la imagen ni
+avisa a la app. Con él, devuelve el resultado sin esperar la evidencia, la
+guarda después y llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
+`onProgress` con `Evidencia guardada para envío posterior.` Si no puede
+guardarla, el resultado no cambia y no avisa. Una ejecución que falla, se
+cancela o no ejecuta el modelo que alimenta la captura no crea evidencia.
+
+Esta versión no envía la evidencia: cada una queda en
+`evidence/<evidenceId>/` dentro de `storageDirectory` y no vence. Si la persona
+retira su consentimiento, deja de pasar `evidenceConsent: true` y elimina la
+evidencia guardada:
+
+<Code code={privacy.deleteEvidence} lang="dart" />
+
+`clearPendingEvidence()` espera también a la evidencia que el SDK aún está
+guardando y la elimina, y un `run()` que ya estaba en curso no guarda la suya.
+No elimina workflows, modelos ni trazas pendientes.
 
 ## Restablecer el identificador de instalación
 
@@ -235,11 +289,12 @@ outbox.
 
 ## Datos que el SDK guarda en el dispositivo
 
-Válido para `ayni_sdk` 0.2.0.
+Válido para `ayni_sdk` 0.3.0.
 
 Todo lo que guarda el SDK está dentro del `storageDirectory` que le pasa tu
 app. Ahí conserva los recursos que tu aplicación publicó en Ayni, las trazas
-locales pendientes y los recibos seudónimos pendientes de confirmar. Estos
+locales pendientes, la evidencia para datasets que la app autorizó y los
+recibos seudónimos pendientes de confirmar. Estos
 recibos incluyen un ID aleatorio de persona, finalidad, decisión, versión del
 aviso y fecha; no incluyen nombre, correo, teléfono ni hashes de identificadores
 directos. La credencial solo se
@@ -260,8 +315,10 @@ sus campos permitidos a una traza.
 | Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas. No incluye identidad directa; se envía dentro de una traza cuando la política lo permite. | `installation-id` | `await sdk.resetInstallationId()` lo reemplaza; borrar `storageDirectory` elimina todos los datos del SDK. Las trazas ya en la outbox conservan el ID anterior hasta su acuse o hasta que `clearPendingTraces()` las elimine. |
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
+| Copia de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`. | `evidence/<evidenceId>/image` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo. | `evidence/<evidenceId>/evidence.json` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
-| Archivos temporales de las descargas, verificaciones, instalaciones y escrituras de la outbox en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza, pueden quedar: borra `storageDirectory` completo. |
+| Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox y evidencias en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia en curso, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: `clearPendingEvidence()` borra los de la evidencia, y borrar `storageDirectory` completo, todos. |
 
 El SDK no borra las versiones anteriores de un workflow o de un modelo al
 instalar una nueva: siguen en `storageDirectory` hasta que lo borres.

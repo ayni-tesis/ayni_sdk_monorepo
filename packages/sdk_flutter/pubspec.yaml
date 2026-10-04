@@ -1,6 +1,6 @@
 name: ayni_sdk
 description: "Offline-first SDK primitives for Ayni Flutter integrations on Android and iOS. Minimums: Android API 26+, iOS 11+."
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/ayni-tesis/ayni_sdk_monorepo/tree/main/packages/sdk_flutter
 
 environment:

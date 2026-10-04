@@ -72,7 +72,12 @@ export function toWorkflowVersion(row: WorkflowVersionRow): WorkflowVersion {
   };
 }
 
-/** The nodes a published version holds, the ones the SDK runs. */
+/**
+ * The nodes of a draft and of a published version, the ones the SDK runs. A
+ * dataset capture (US-064) takes the image on `imagen` and a model's inference
+ * result on `resultado`, and holds nothing else, so never any code; the SDK
+ * creates local evidence from it since `ayni_sdk` 0.3.0 (US-066).
+ */
 export type WorkflowNode =
   | { id: string; type: "input.image"; outputs: { imagen: "image" } }
   | {
@@ -105,20 +110,13 @@ export type WorkflowNode =
         sourcePort: string;
         resultType: "classification" | "detection" | "boolean";
       }[];
+    }
+  | {
+      id: string;
+      type: "dataset.capture";
+      inputs: { imagen: "image"; resultado: "inferenceResult" };
     };
-/**
- * A dataset capture (US-064): it takes the image on `imagen` and a model's
- * inference result on `resultado`, and holds nothing else, so never any code.
- * Only drafts hold it for now: no SDK runs it yet, so validation keeps a
- * draft with a capture from being published.
- */
-export type DatasetCaptureNode = {
-  id: string;
-  type: "dataset.capture";
-  inputs: { imagen: "image"; resultado: "inferenceResult" };
-};
-/** A node of a draft: those a version publishes, and those only a draft holds yet. */
-export type WorkflowDraftNode = WorkflowNode | DatasetCaptureNode;
+export type DatasetCaptureNode = Extract<WorkflowNode, { type: "dataset.capture" }>;
 export type WorkflowConnection = {
   sourceNodeId: string;
   sourcePort: string;
@@ -127,14 +125,14 @@ export type WorkflowConnection = {
 };
 export type WorkflowNodePosition = { x: number; y: number };
 export type WorkflowDraft = {
-  nodes: WorkflowDraftNode[];
+  nodes: WorkflowNode[];
   connections?: WorkflowConnection[];
   layout?: Record<string, WorkflowNodePosition>;
 };
 
 function appendWorkflowNode(
   draft: WorkflowDraft,
-  node: WorkflowDraftNode,
+  node: WorkflowNode,
   position?: WorkflowNodePosition,
 ): WorkflowDraft {
   return {

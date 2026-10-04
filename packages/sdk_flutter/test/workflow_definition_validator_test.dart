@@ -330,7 +330,7 @@ void main() {
     'rejects unsupported schema versions as unsupportedSchemaVersion (US-098)',
     () {
       expect(
-        validate(definition(schemaVersion: '3')),
+        validate(definition(schemaVersion: '4')),
         WorkflowValidationStatus.unsupportedSchemaVersion,
       );
       expect(
@@ -343,7 +343,7 @@ void main() {
       );
       expect(
         validate({
-          'schemaVersion': '3',
+          'schemaVersion': '4',
           'nodes': const <Object>[],
           'connections': const <Object>[],
           'futureField': true,
@@ -477,12 +477,216 @@ void main() {
       validate(
         definition(
           nodes: [
-            const {'id': 'a', 'type': 'dataset.capture'},
+            const {'id': 'a', 'type': 'image.transform'},
           ],
         ),
       ),
       WorkflowValidationStatus.unknownNodeType,
     );
+  });
+
+  group('dataset.capture (US-066)', () {
+    Map<String, Object> capture({
+      String id = 'capture-1',
+      Object inputs = const {'imagen': 'image', 'resultado': 'inferenceResult'},
+    }) => {'id': id, 'type': 'dataset.capture', 'inputs': inputs};
+
+    List<Map<String, String>> captureConnections({
+      String captureId = 'capture-1',
+      String modelId = 'model-1',
+    }) => [
+      imageConnection(),
+      imageConnection(targetNodeId: captureId, targetPort: 'imagen'),
+      imageConnection(
+        sourceNodeId: modelId,
+        sourcePort: 'result',
+        targetNodeId: captureId,
+        targetPort: 'resultado',
+      ),
+    ];
+
+    test('accepts a capture of the image and a model result in schema 3', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [imageInput(), model(), output(), capture()],
+            connections: captureConnections(),
+          ),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [
+              imageInput(),
+              model(resultType: 'detection', scoreThreshold: 0.5),
+              output(resultType: 'detection'),
+              capture(),
+            ],
+            connections: captureConnections(),
+          ),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('accepts combined outputs in schema 3', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [
+              imageInput(),
+              model(),
+              model(id: 'model-2', modelVersionId: 'model-version-2'),
+              combinedOutput(
+                sources: [
+                  {
+                    'sourceNodeId': 'model-1',
+                    'sourcePort': 'result',
+                    'resultType': 'classification',
+                  },
+                  {
+                    'sourceNodeId': 'model-2',
+                    'sourcePort': 'result',
+                    'resultType': 'classification',
+                  },
+                ],
+              ),
+            ],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'model-2'),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('rejects a capture in a schema older than 3', () {
+      for (final schemaVersion in ['1', '2']) {
+        expect(
+          validate(
+            definition(
+              schemaVersion: schemaVersion,
+              nodes: [imageInput(), model(), output(), capture()],
+              connections: captureConnections(),
+            ),
+          ),
+          WorkflowValidationStatus.invalidSchema,
+          reason: schemaVersion,
+        );
+      }
+    });
+
+    test('rejects a capture whose inputs are not the published ones', () {
+      for (final inputs in <Object>[
+        const {'imagen': 'image'},
+        const {'imagen': 'image', 'resultado': 'classification'},
+        const {
+          'imagen': 'image',
+          'resultado': 'inferenceResult',
+          'script': 'x',
+        },
+        'imagen',
+      ]) {
+        expect(
+          validate(
+            definition(
+              schemaVersion: '3',
+              nodes: [
+                imageInput(),
+                model(),
+                output(),
+                capture(inputs: inputs),
+              ],
+              connections: captureConnections(),
+            ),
+          ),
+          WorkflowValidationStatus.invalidSchema,
+          reason: '$inputs',
+        );
+      }
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [
+              imageInput(),
+              model(),
+              output(),
+              {...capture(), 'code': 'print(1)'},
+            ],
+            connections: captureConnections(),
+          ),
+        ),
+        WorkflowValidationStatus.invalidSchema,
+      );
+    });
+
+    test('rejects a capture without exactly one image and one result', () {
+      final connections = captureConnections();
+      for (final broken in [
+        [connections[0], connections[1]],
+        [connections[0], connections[2]],
+        [...connections, connections[1]],
+        [...connections, connections[2]],
+      ]) {
+        expect(
+          validate(
+            definition(
+              schemaVersion: '3',
+              nodes: [imageInput(), model(), output(), capture()],
+              connections: broken,
+            ),
+          ),
+          WorkflowValidationStatus.incompatiblePort,
+        );
+      }
+    });
+
+    test('rejects a capture fed by incompatible ports', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [imageInput(), model(), output(), capture()],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'capture-1', targetPort: 'imagen'),
+              imageConnection(
+                targetNodeId: 'capture-1',
+                targetPort: 'resultado',
+              ),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.incompatiblePort,
+      );
+      expect(
+        validate(
+          definition(
+            schemaVersion: '3',
+            nodes: [imageInput(), model(), condition(), output(), capture()],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'capture-1', targetPort: 'imagen'),
+              imageConnection(
+                sourceNodeId: 'condition-1',
+                sourcePort: 'true',
+                targetNodeId: 'capture-1',
+                targetPort: 'resultado',
+              ),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.incompatiblePort,
+      );
+    });
   });
 
   test('rejects duplicated node ids', () {

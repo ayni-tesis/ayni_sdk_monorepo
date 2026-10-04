@@ -290,7 +290,7 @@
                 },
                 "type": {
                   "type": "string",
-                  "enum": ["input.image", "model.tflite", "condition", "output"]
+                  "enum": ["input.image", "model.tflite", "condition", "output", "dataset.capture"]
                 },
                 "status": {
                   "type": "string",
@@ -740,7 +740,7 @@
           },
           "type": {
             "type": "string",
-            "enum": ["input.image", "model.tflite", "condition", "output"],
+            "enum": ["input.image", "model.tflite", "condition", "output", "dataset.capture"],
             "description": "Tipo de nodo; los demás campos dependen del tipo."
           }
         },

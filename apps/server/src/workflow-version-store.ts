@@ -68,6 +68,9 @@ export async function publishWorkflowVersion(
       const hasCombinedOutput = draft.nodes.some(
         (node) => node.type === "output" && (node.sources?.length ?? 0) > 0,
       );
+      // Schema 3 adds the dataset capture (US-066): an SDK older than 0.3.0
+      // reports that the workflow needs a newer SDK instead of an unknown node.
+      const hasCapture = draft.nodes.some((node) => node.type === "dataset.capture");
       const nodes = draft.nodes.map((node) =>
         node.type === "output" && (node.sources?.length ?? 0) > 0
           ? {
@@ -93,7 +96,7 @@ export async function publishWorkflowVersion(
           version,
           // The layout only positions nodes on the dashboard canvas; the SDK gets the DAG.
           definition: {
-            schemaVersion: hasCombinedOutput ? "2" : "1",
+            schemaVersion: hasCapture ? "3" : hasCombinedOutput ? "2" : "1",
             nodes,
             connections: draft.connections ?? [],
           },

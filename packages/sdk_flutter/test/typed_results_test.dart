@@ -993,7 +993,7 @@ void main() {
       'rejects an installed workflow with unsupported schemaVersion before checking models',
       () async {
         final unsupportedDef = jsonEncode({
-          'schemaVersion': '3',
+          'schemaVersion': '4',
           'nodes': [
             {
               'id': 'input-1',

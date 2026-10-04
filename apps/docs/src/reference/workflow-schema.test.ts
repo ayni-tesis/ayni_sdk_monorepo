@@ -35,12 +35,13 @@ class WorkflowDefinitionValidator {
     expect(() => validatorNodeFields("class A {}")).toThrow(/_nodeFields/);
   });
 
-  it("reads the four node types the SDK runs", () => {
+  it("reads the five node types the SDK runs", () => {
     expect(Object.keys(validatorNodeFields(validatorSource))).toEqual([
       "input.image",
       "model.tflite",
       "condition",
       "output",
+      "dataset.capture",
     ]);
   });
 });

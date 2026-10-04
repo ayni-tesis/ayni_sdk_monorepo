@@ -318,6 +318,30 @@ bool workflowBranchReachesOutput({
   return false;
 }
 
+/// A `dataset.capture` node an execution reached (US-066): the inference
+/// result it records and the model version that produced it.
+///
+/// It never holds the image: the SDK keeps the run's input only when it
+/// creates evidence with the app's consent.
+class WorkflowCapture {
+  /// Creates the capture of [result], produced by [modelVersionId], at node
+  /// [nodeId].
+  const WorkflowCapture({
+    required this.nodeId,
+    required this.modelVersionId,
+    required this.result,
+  });
+
+  /// The ID of the capture node.
+  final String nodeId;
+
+  /// The model version whose result the capture received on `resultado`.
+  final String modelVersionId;
+
+  /// The classification or detection the capture received.
+  final WorkflowValue result;
+}
+
 List<Map> _outputSourceDefinitions(Map node) =>
     node['sources'] is List ? (node['sources'] as List).cast<Map>() : [node];
 
@@ -383,6 +407,10 @@ class WorkflowExecutor {
   /// Runs [definition] on [imageBytes] and returns the value of each output
   /// node it reaches.
   ///
+  /// [onCapture] receives each `dataset.capture` node reached: one whose image
+  /// and inference result were both produced in this execution. A capture
+  /// whose result source did not run is skipped, never an error.
+  ///
   /// Throws a [WorkflowError] when the workflow cannot complete.
   Future<WorkflowResult> execute({
     required String executionId,
@@ -392,6 +420,7 @@ class WorkflowExecutor {
     required Uint8List imageBytes,
     bool Function()? isCancelled,
     void Function(TraceNodeExecution node)? onNodeFinished,
+    void Function(WorkflowCapture capture)? onCapture,
   }) async {
     String? activeNodeId;
     String? activeNodeType;
@@ -568,6 +597,34 @@ class WorkflowExecutor {
                 outputs[node['name'] as String] = resultValues.length == 1
                     ? resultValues.single
                     : CombinedWorkflowResult(id, resultValues);
+              }
+            case 'dataset.capture':
+              String? sourceOf(String port) =>
+                  connections
+                          .where(
+                            (c) =>
+                                c['targetNodeId'] == id &&
+                                c['targetPort'] == port,
+                          )
+                          .firstOrNull?['sourceNodeId']
+                      as String?;
+              final resultSource = sourceOf('resultado');
+              final result = values[resultSource];
+              if (values[sourceOf('imagen')] is Uint8List &&
+                  (result is ClassificationResult ||
+                      result is DetectionResult)) {
+                onCapture?.call(
+                  WorkflowCapture(
+                    nodeId: id,
+                    modelVersionId:
+                        byId[resultSource]!['modelVersionId'] as String,
+                    result: result as WorkflowValue,
+                  ),
+                );
+              } else {
+                // Its model did not run in this execution, so the capture is
+                // not reached; it never fails the workflow.
+                active.remove(id);
               }
           }
         nodeTimer.stop();

@@ -1,3 +1,24 @@
+## 0.3.0 - 2026-10-03
+
+### Novedades
+
+- Nodo `dataset.capture`: al ejecutar un workflow que lo alcanza, `run()`
+  guarda en el dispositivo una evidencia con la imagen, el resultado de
+  inferencia que recibe el nodo, la versión del workflow y el modelo, para
+  enviarla más tarde. La captura no retrasa ni cambia el resultado.
+- `run()` solo crea evidencia con `evidenceConsent: true`, que la app pasa
+  mientras la persona mantiene su consentimiento de recolección; sin él, omite
+  la captura y no conserva la imagen. `onEvidence` recibe
+  `EvidenceEvent.evidenceQueued` y `onProgress`, el diagnóstico
+  `Evidencia guardada para envío posterior.`
+- `clearPendingEvidence()` elimina la evidencia guardada cuando la persona
+  retira su consentimiento.
+- El SDK acepta el esquema de workflow 3, con el que el servidor publica los
+  workflows que incluyen `dataset.capture`. Las versiones anteriores del SDK
+  rechazan esos workflows con `unsupportedWorkflowVersion`.
+
+Esta versión todavía no envía la evidencia al servidor.
+
 ## 0.2.0 - 2026-10-03
 
 ### Novedades
