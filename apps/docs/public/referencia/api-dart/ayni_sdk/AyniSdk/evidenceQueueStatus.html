@@ -89,7 +89,8 @@ if (status != EvidenceQueueStatus.empty) {
   <pre class="language-dart"><code class="language-dart">Future&lt;EvidenceQueueStatus&gt; evidenceQueueStatus() async {
   if (await _evidence.pending().isEmpty) return EvidenceQueueStatus.empty;
   final policy = await _collectionPolicy.read();
-  if (policy != null &amp;&amp; policy.waitsForWifiOn(await _readNetworkType())) {
+  if (policy != null &amp;&amp;
+      policy.waitsForWifiOn(await _currentNetworkType(networkTypeTimeout))) {
     return EvidenceQueueStatus.waitingForWifi;
   }
   return EvidenceQueueStatus.pending;
