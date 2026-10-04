@@ -10,6 +10,7 @@ export type SdkCompatibility = { minimumServer: string; workflowSchema: string |
 
 /** The compatibility of each version in `CHANGELOG.md`. A new version adds its entry. */
 export const sdkCompatibility: Record<string, SdkCompatibility> = {
+  "0.3.0": { minimumServer: "0.1.0", workflowSchema: "1, 2 y 3" },
   "0.2.0": { minimumServer: "0.1.0", workflowSchema: "1 y 2" },
   "0.1.0": { minimumServer: "0.1.0", workflowSchema: "1" },
   "0.1.0-beta.1": { minimumServer: "0.1.0", workflowSchema: "1" },
@@ -25,6 +26,7 @@ export const nodeTypeSince: Record<string, string> = {
   "model.tflite": "0.1.0-beta.1",
   condition: "0.1.0-beta.1",
   output: "0.1.0-beta.1",
+  "dataset.capture": "0.3.0",
 };
 
 /**

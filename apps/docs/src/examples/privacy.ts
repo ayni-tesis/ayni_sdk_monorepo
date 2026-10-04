@@ -5,4 +5,6 @@ import { exampleRegion } from "./region";
 export const privacy = {
   deleteData: exampleRegion(source, "borrar-datos"),
   resetInstallationId: exampleRegion(source, "restablecer-identificador-instalacion"),
+  captureEvidence: exampleRegion(source, "capturar-evidencia"),
+  deleteEvidence: exampleRegion(source, "borrar-evidencia"),
 };

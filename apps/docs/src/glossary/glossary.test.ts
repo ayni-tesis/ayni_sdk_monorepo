@@ -53,9 +53,9 @@ describe("glossary (US-141)", () => {
     expect(new Set(anchors).size).toBe(anchors.length);
   });
 
-  it("marks the policies the SDK does not apply yet as coming soon", () => {
+  it("marks what the SDK does not apply or send yet as coming soon", () => {
     const comingSoon = glossary.filter((entry) => entry.comingSoon).map(({ source }) => source);
 
-    expect(comingSoon).toEqual(["Telemetry Policy", "Collection Policy"]);
+    expect(comingSoon).toEqual(["Telemetry Policy", "Collection Policy", "Evidence"]);
   });
 });

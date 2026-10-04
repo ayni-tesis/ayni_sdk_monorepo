@@ -56,6 +56,10 @@ _Avoid_: Tracking settings, analytics consent
 The per-Application setting that says whether the SDK may capture images as evidence for datasets, over which network it may upload them, and the maximum size and quality it compresses them to. Only administrators change it. Without a saved policy, collection is disabled. Collection can only be enabled together with an explicit consent configuration, and images are only captured by workflows that include `dataset.capture`.
 _Avoid_: Capture settings, upload settings
 
+**Evidence**:
+An image the SDK keeps on the device when a Workflow Version reaches a `dataset.capture` node, together with the inference result the node received, the Workflow Version and the Model Version that produced the result, to send it later to its Application's datasets. The SDK creates it only while the app says the person consents to evidence collection, and never delays or changes the result it returns.
+_Avoid_: Sample, upload, telemetry
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

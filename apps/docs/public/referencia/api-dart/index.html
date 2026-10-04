@@ -24,7 +24,7 @@
 <header id="title">
   <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
   <ol class="breadcrumbs gt-separated dark hidden-xs">
-    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.2.0</li>
+    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.3.0</li>
   </ol>
   <div class="self-name">ayni_sdk</div>
   <form class="search navbar-right" role="search">
@@ -51,7 +51,7 @@
 configura <code>minSdkVersion 26</code> en la app Flutter.</p>
 <p>Agrega <code>ayni_sdk</code> a las dependencias de tu proyecto Flutter en <code>pubspec.yaml</code>:</p>
 <pre class="language-yaml"><code class="language-yaml">dependencies:
-  ayni_sdk: ^0.2.0
+  ayni_sdk: ^0.3.0
 </code></pre>
 <p>Resuelve las dependencias desde la carpeta de tu aplicación:</p>
 <pre class="language-sh"><code class="language-sh">flutter pub get
@@ -63,7 +63,7 @@ el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md">README del ejemplo</a>
 y usa una dependencia local <code>path: ../..</code> para verificar este checkout antes
-de publicar. Una aplicación consumidora debe resolver <code>^0.2.0</code> desde pub.dev.</p>
+de publicar. Una aplicación consumidora debe resolver <code>^0.3.0</code> desde pub.dev.</p>
 <p>Consulta las notas de cada versión en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md">changelog del repositorio</a>.</p>
 <h2 id="api-pblica">API Pública</h2>
@@ -269,6 +269,32 @@ final pending = sdk.run(
 sdk.cancelExecution(executionId);
 </code></pre>
 <p>La cancelación detiene los nodos pendientes después de que termine una inferencia que ya estaba en curso. <code>run()</code> completa con <code>WorkflowErrorCategory.cancelled</code>; un ID que ya no está activo produce <code>executionNotFound</code>.</p>
+<h2 id="evidencia-para-datasets">Evidencia para datasets</h2>
+<p>Un workflow puede incluir el nodo <code>dataset.capture</code>, que recibe la imagen de
+entrada y el resultado de un modelo de clasificación o detección. Cuando <code>run()</code>
+lo alcanza, el SDK crea una evidencia local solo si la app pasa
+<code>evidenceConsent: true</code>. Pásalo únicamente mientras la persona mantiene el
+consentimiento de recolección que tu app le pide:</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.run(
+  workflowId,
+  image,
+  evidenceConsent: evidenceAccepted,
+  onEvidence: (event) =&gt; log(event.message),
+);
+</code></pre>
+<p>El ejemplo comprobado está en <code>example/privacy.dart</code>.</p>
+<p><code>run()</code> devuelve el resultado sin esperar la evidencia y una evidencia que no se
+puede guardar no lo cambia. Después, el SDK guarda en
+<code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> una copia de la imagen y
+<code>evidence.json</code>, con el resultado que recibió el nodo, el workflow, su versión y
+el modelo; luego llama a <code>onEvidence</code> con <code>EvidenceEvent.evidenceQueued</code> y a
+<code>onProgress</code> con <code>Evidencia guardada para envío posterior.</code> Sin consentimiento,
+el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
+la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
+deja de pasar <code>evidenceConsent: true</code>, espera a que terminen los <code>run()</code> en
+curso y elimina la evidencia guardada:</p>
+<pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();
+</code></pre>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
 <li><code>pubspec.yaml</code>: Especificación del paquete y dependencias genéricas.</li>
@@ -278,7 +304,7 @@ sdk.cancelExecution(executionId);
 <li><code>bin/package.dart</code>: Herramienta de empaquetado y verificación de reglas de distribución.</li>
 </ul>
 <h2 id="plataformas-compatibles">Plataformas compatibles</h2>
-<p>Plataformas compatibles con ayni_sdk 0.2.0: Android e iOS.</p>
+<p>Plataformas compatibles con ayni_sdk 0.3.0: Android e iOS.</p>
 <ul>
 <li>Android 8.0 (API 26) o posterior.</li>
 <li>iOS 11.0 o posterior.</li>
@@ -365,7 +391,7 @@ sdk.cancelExecution(executionId);
 <footer>
   <span class="no-break">
     ayni_sdk
-      0.2.0
+      0.3.0
   </span>
   
 </footer>

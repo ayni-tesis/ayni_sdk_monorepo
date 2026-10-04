@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Esta página describe `ayni_sdk` 0.2.0. Para diagnosticar un problema a
+Esta página describe `ayni_sdk` 0.3.0. Para diagnosticar un problema a
 partir de lo que ve tu app, sigue
 [Solucionar problemas de sincronización](/guias/solucionar-problemas-de-sincronizacion/).
 
@@ -73,6 +73,19 @@ el ID de la versión de modelo que falló (`dependencyName`).
 | `dependencyFailed` | Igual, en un dispositivo sin una versión válida de ese workflow. | No | No se pudo preparar `<nombre>`: `<modelo>`. |
 | `workflowUnavailable` | El servidor ya no entrega la versión de workflow que listó. | Sí | El workflow ya no está disponible. Se mantuvo la versión anterior. |
 | `workflowUnavailable` | Igual, en un dispositivo sin una versión anterior de ese workflow. | No | El workflow ya no está disponible. No se instaló ninguna versión. |
+
+## Evidencia para datasets
+
+Cuando `run()` alcanza un nodo `dataset.capture` y la app pasó
+`evidenceConsent: true`, el SDK guarda la evidencia después de devolver el
+resultado y llama a `onEvidence` con un `EvidenceEvent`. Su `message` es
+también el diagnóstico que recibe `onProgress`. Sin consentimiento, o si la
+evidencia no se pudo guardar, no hay evento y el resultado no cambia (ver
+[Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets)).
+
+| `EvidenceEvent` | Cuándo ocurre | `message` |
+| --- | --- | --- |
+| `evidenceQueued` | El SDK guardó en el dispositivo la imagen y el resultado de la captura para enviarlos más tarde. | `Evidencia guardada para envío posterior.` |
 
 ## Errores HTTP del servidor
 

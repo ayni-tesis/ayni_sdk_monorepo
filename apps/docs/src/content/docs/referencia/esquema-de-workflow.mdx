@@ -19,9 +19,9 @@ Una definición publicada es un objeto `{ schemaVersion, nodes, connections }`:
 
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
-| `schemaVersion` | `"1"` o `"2"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
+| `schemaVersion` | `"1"`, `"2"` o `"3"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
 | `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
-| `connections` | Lista de conexiones | Las conexiones entre la entrada de imagen y los modelos. El servidor la publica vacía si no hay ninguna. |
+| `connections` | Lista de conexiones | Las conexiones de la entrada de imagen con los modelos y las capturas, y de un modelo con una captura. El servidor la publica vacía si no hay ninguna. |
 
 :::note
 La disposición del lienzo no forma parte de la versión publicada.
@@ -42,6 +42,7 @@ Un nodo debe tener exactamente los campos de su tipo, ni uno más ni uno menos.
 | [`model.tflite`](#modeltflite) | `id`, `type`, `modelVersionId`, `modelName`, `version`, `inputs`, `outputs` | `0.1.0-beta.1` |
 | [`condition`](#condition) | `id`, `type`, `sourceNodeId`, `label`, `operator`, `threshold`, `branches` | `0.1.0-beta.1` |
 | [`output`](#output) | `id`, `type`, `name`, `sourceNodeId`, `sourcePort`, `resultType` | `0.1.0-beta.1` |
+| [`dataset.capture`](#datasetcapture) | `id`, `type`, `inputs` | `0.3.0` |
 
 La columna `Desde la versión del SDK` indica la primera versión de `ayni_sdk`
 que acepta cada tipo. Una versión anterior del SDK rechaza un workflow que lo
@@ -103,7 +104,26 @@ de esos mismos tres campos para combinar varios resultados compatibles.
 | `sourceNodeId` | Texto (esquema 1) | El nodo del que lee el resultado: un modelo o una condición. |
 | `sourcePort` | Texto (esquema 1) | El puerto que lee: `result` de un modelo, o `true` o `false` de una condición. |
 | `resultType` | `"classification"`, `"detection"` o `"boolean"` (esquema 1) | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
-| `sources` | Lista no vacía | En el esquema 2, orígenes que se combinan en un único resultado nombrado. Cada origen contiene `sourceNodeId`, `sourcePort` y `resultType`. |
+| `sources` | Lista no vacía | En el esquema 2 o posterior, orígenes que se combinan en un único resultado nombrado. Cada origen contiene `sourceNodeId`, `sourcePort` y `resultType`. |
+
+### `dataset.capture`
+
+Pide guardar la imagen de entrada y el resultado de un modelo como evidencia
+para un dataset de la aplicación. Solo existe en el esquema 3, con el que el
+servidor publica todo workflow que lo incluye. No tiene salidas ni contiene
+código.
+
+Cuando `run()` alcanza el nodo, el SDK guarda la evidencia en el dispositivo
+solo si la app indica que la persona dio su consentimiento; sin él, omite la
+captura. Un nodo cuyo modelo no se ejecutó en esa ejecución no crea evidencia.
+Qué guarda y cómo borrarlo está en
+[Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets).
+
+| Campo | Valor | Descripción |
+| --- | --- | --- |
+| `id` | Texto | Identificador del nodo. |
+| `type` | `"dataset.capture"` | Tipo del nodo. |
+| `inputs` | `{ "imagen": "image", "resultado": "inferenceResult" }` | Sus puertos de entrada: `imagen` recibe la imagen de entrada y `resultado`, el resultado de un modelo de clasificación o detección. Cada uno recibe exactamente una conexión en `connections`. |
 
 ## Conexiones
 
@@ -118,15 +138,17 @@ entrada:
 | `targetPort` | El puerto de entrada del nodo de destino. |
 
 Los cuatro campos son obligatorios y ninguno puede estar vacío. En
-`connections` solo va la conexión de una entrada de imagen con un modelo. Una
-condición y una salida guardan su origen en sus propios campos `sourceNodeId`
-y `sourcePort`.
+`connections` solo van las conexiones que llegan a un modelo o a una captura.
+Una condición y una salida guardan su origen en sus propios campos
+`sourceNodeId` y `sourcePort`.
 
 ### Puertos compatibles
 
 | Origen | Destino | Dónde se guarda |
 | --- | --- | --- |
 | `input.image`, puerto `imagen` | `model.tflite`, puerto `image` | En `connections`. Cada modelo recibe como mucho una conexión. |
+| `input.image`, puerto `imagen` | `dataset.capture`, puerto `imagen` | En `connections`. Cada captura recibe exactamente una. |
+| `model.tflite`, puerto `result` | `dataset.capture`, puerto `resultado` | En `connections`. Cada captura recibe exactamente una. |
 | `model.tflite` de clasificación, puerto `result` | `condition` cuyo `label` está en las etiquetas del modelo | En el `sourceNodeId` de la condición. |
 | `model.tflite`, puerto `result` | `output` cuyo `resultType` es el tipo de salida del modelo | En el `sourceNodeId` de la salida, con `sourcePort` igual a `result`. |
 | `condition`, puerto `true` o `false` | `output` con `resultType` igual a `boolean` | En el `sourceNodeId` de la salida, con `sourcePort` igual a `true` o `false`. |
@@ -145,12 +167,12 @@ una de estas reglas:
 | Regla | Qué comprueba |
 | --- | --- |
 | Esquema exacto | La definición es un JSON válido. La definición, cada nodo, cada conexión y los objetos `outputs`, `inputs`, `result` y `branches` tienen exactamente los campos de esta página, ni uno más ni uno menos. Los campos de texto de los nodos y las conexiones no están vacíos, `operator`, `threshold`, `resultType` y el `type` de `result` tienen un valor permitido, `labels` es una lista de textos y ningún `id` se repite. El SDK no comprueba los campos internos de `inputs.image` ni los textos de `branches`. |
-| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"` o `"2"`). El esquema 1 admite un origen por salida; el esquema 2 admite `sources`. Si el workflow declara una versión no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
+| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"`, `"2"` o `"3"`). El esquema 1 admite un origen por salida; el esquema 2 admite además `sources`, y el esquema 3, además, `dataset.capture`. Si el workflow declara una versión no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
 | Tipos de nodo compatibles | El `type` de cada nodo es uno de los [tipos de nodo](#tipos-de-nodo) de la versión del SDK. |
 | Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
 | Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |
 | Grafo acíclico | El grafo no tiene ciclos (ver [Grafo acíclico](#grafo-acíclico)). |
-| Puertos compatibles | Cada arista une [puertos compatibles](#puertos-compatibles) y cada modelo recibe como mucho una conexión de imagen. |
+| Puertos compatibles | Cada arista une [puertos compatibles](#puertos-compatibles), cada modelo recibe como mucho una conexión de imagen y cada captura recibe exactamente una imagen y un resultado. |
 
 ### Resultado de una definición rechazada
 
@@ -182,24 +204,29 @@ Los demás estados están en [Estados y errores](/referencia/estados-y-errores/)
 ### Tipos de nodo sin soporte
 
 Si un workflow publicado usa un tipo de nodo que la versión del SDK de la app
-no acepta, el SDK rechaza la actualización con
-`SyncResourceStatus.invalidWorkflow` y se conserva la versión anterior del
-workflow cuando el dispositivo tenía una. Para instalarlo, actualiza `ayni_sdk`
+no acepta, el SDK rechaza la actualización y se conserva la versión anterior
+del workflow cuando el dispositivo tenía una. Un tipo que llega con una
+versión de esquema nueva, como `dataset.capture` con el esquema 3, se rechaza
+con `SyncResourceStatus.unsupportedWorkflowVersion`; cualquier otro, con
+`SyncResourceStatus.invalidWorkflow`. Para instalarlo, actualiza `ayni_sdk`
 a una versión que acepte ese tipo; la columna `Desde la versión del SDK` y
 las [Notas de versión y compatibilidad](/recursos/notas-de-version/) indican
 cuál.
 
 ## Ejemplo completo
 
-Este workflow clasifica una foto de una hoja y avisa cuando la confianza de
-`enferma` es de al menos 0,8:
+Este workflow clasifica una foto de una hoja, avisa cuando la confianza de
+`enferma` es de al menos 0,8 y pide guardar la foto como evidencia. Usa el
+esquema 3 porque incluye `dataset.capture`:
 
-- `imagen` entrega la foto al modelo `modelo` por la única conexión de
-  `connections`.
+- `imagen` entrega la foto al modelo `modelo` y a la captura `captura` por
+  las conexiones de `connections`.
 - `modelo` clasifica la hoja como `sana` o `enferma`.
 - `diagnostico` devuelve la clasificación completa del modelo.
 - `condicion` compara la confianza de `enferma` con `0.8`.
 - `revisar` lee la rama verdadera de la condición (`true`) y `sin-alerta`, la
   falsa (`false`); ambas son salidas `boolean`.
+- `captura` recibe la foto en `imagen` y la clasificación de `modelo` en
+  `resultado`.
 
 <Code code={workflowDefinition} lang="json" title="workflow_definition.json" />

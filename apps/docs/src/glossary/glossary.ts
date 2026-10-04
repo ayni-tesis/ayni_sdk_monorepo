@@ -137,7 +137,15 @@ export const glossary: GlossaryEntry[] = [
       "La configuración de cada aplicación que indica si el SDK puede capturar imágenes como evidencia para datasets, por qué red puede subirlas y el tamaño y la calidad máximos a los que las comprime. Solo los administradores la cambian. Sin una política guardada, la recolección está desactivada. Solo se puede activar junto con una configuración explícita de consentimiento, y solo capturan imágenes los workflows que incluyen `dataset.capture`.",
     avoid: ["configuración de captura", "configuración de subida"],
     comingSoon:
-      "El SDK todavía no captura ni sube imágenes: la política se guarda en el dashboard, pero aún no tiene efecto en el dispositivo.",
+      "El SDK guarda la evidencia de `dataset.capture` en el dispositivo, pero todavía no la sube ni aplica la red, el tamaño o la calidad de la política.",
+  },
+  {
+    source: "Evidence",
+    term: "Evidencia",
+    definition:
+      "Una imagen que el SDK conserva en el dispositivo cuando una versión de workflow alcanza un nodo `dataset.capture`, junto con el resultado de inferencia que recibió el nodo, la versión de workflow y la versión de modelo que produjo el resultado, para enviarla después a los datasets de su aplicación. El SDK solo la crea mientras la app indica que la persona consiente la recolección de evidencia, y nunca retrasa ni cambia el resultado que devuelve.",
+    avoid: ["muestra", "subida", "telemetría"],
+    comingSoon: "El SDK todavía no envía la evidencia: la conserva en el dispositivo.",
   },
   {
     source: "Slug",
