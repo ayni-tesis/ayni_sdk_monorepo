@@ -37,6 +37,8 @@ const Map<String, Set<String>> expectedExports = {
   },
   'src/device_profile.dart': {'DeviceProfile'},
   'src/evidence_event.dart': {'EvidenceEvent'},
+  'src/evidence_queue_status.dart': {'EvidenceQueueStatus'},
+  'src/evidence_status.dart': {'EvidenceStatus'},
   'src/workflow_trace.dart': {
     'TraceMeasurement',
     'TraceModel',
@@ -212,6 +214,8 @@ void main() {
         'ConsentStatus': ConsentStatus,
         'DeviceProfile': DeviceProfile,
         'EvidenceEvent': EvidenceEvent,
+        'EvidenceQueueStatus': EvidenceQueueStatus,
+        'EvidenceStatus': EvidenceStatus,
         'TraceMeasurement': TraceMeasurement,
         'TraceModel': TraceModel,
         'TraceNodeExecution': TraceNodeExecution,
@@ -244,9 +248,26 @@ void main() {
           credential: 'ayni_sk_test',
           storageDirectory: Directory.systemTemp,
         );
-        expect(sdk.sync, isA<Future<SyncResult> Function()>());
+        expect(
+          sdk.sync,
+          isA<
+            Future<SyncResult> Function({
+              void Function(EvidenceEvent)? onEvidence,
+            })
+          >(),
+        );
         expect(sdk.clearPendingTraces, isA<Future<void> Function()>());
         expect(sdk.clearPendingEvidence, isA<Future<void> Function()>());
+        expect(sdk.pendingEvidenceCount, isA<Future<int> Function()>());
+        expect(
+          sdk.evidenceQueueStatus,
+          isA<Future<EvidenceQueueStatus> Function()>(),
+        );
+        expect(
+          sdk.evidenceStatusCounts,
+          isA<Future<Map<EvidenceStatus, int>> Function()>(),
+        );
+        expect(sdk.maxEvidenceUploadAttempts, 5);
         expect(sdk.resetInstallationId, isA<Future<void> Function()>());
         expect(sdk.getDeviceProfile, isA<Future<DeviceProfile> Function()>());
         expect(

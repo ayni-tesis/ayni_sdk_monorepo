@@ -56,6 +56,7 @@ describe("glossary (US-141)", () => {
   it("marks what the SDK does not apply or send yet as coming soon", () => {
     const comingSoon = glossary.filter((entry) => entry.comingSoon).map(({ source }) => source);
 
-    expect(comingSoon).toEqual(["Telemetry Policy", "Collection Policy", "Evidence"]);
+    // US-070: the SDK uploads evidence, so the collection policy is fully applied.
+    expect(comingSoon).toEqual(["Telemetry Policy", "Evidence"]);
   });
 });

@@ -38,6 +38,7 @@ function jsonContent(path: string, method: string, status: string) {
 const sdkOperations = [
   { method: "post", path: "/sdk/sync", notFound: undefined, extraErrors: [] },
   { method: "get", path: "/sdk/telemetry-policy", notFound: undefined, extraErrors: [] },
+  { method: "get", path: "/sdk/collection-policy", notFound: undefined, extraErrors: [] },
   {
     method: "post",
     path: "/sdk/consents",
@@ -204,6 +205,25 @@ describe("GET /sdk/telemetry-policy", () => {
   });
 });
 
+describe("GET /sdk/collection-policy", () => {
+  it("returns the collection settings with the size and quality limits of the policy", () => {
+    const response = resolve(jsonContent("/sdk/collection-policy", "get", "200").schema);
+    const properties = response.properties as Record<string, JsonObject>;
+
+    expect(Object.keys(properties).sort()).toEqual([
+      "consentRequired",
+      "enabled",
+      "imageQuality",
+      "maxImageSize",
+      "network",
+    ]);
+    expect(properties.network?.enum).toEqual(["wifi", "wifiAndCellular"]);
+    expect(properties.maxImageSize).toMatchObject({ type: "integer", minimum: 128, maximum: 4096 });
+    expect(properties.imageQuality).toMatchObject({ type: "integer", minimum: 10, maximum: 100 });
+    expect(response.additionalProperties).toBe(false);
+  });
+});
+
 describe("GET /sdk/model-versions/{modelVersionId}/manifest", () => {
   it("allows a null contract for a version that has none yet", () => {
     const manifest = resolve(
@@ -228,6 +248,11 @@ describe("curl request samples", () => {
     ["/sdk/sync", "post", "curl -X POST https://tu-servidor-ayni.example/sdk/sync"],
     ["/sdk/traces", "post", "curl -X POST https://tu-servidor-ayni.example/sdk/traces"],
     ["/sdk/telemetry-policy", "get", "curl https://tu-servidor-ayni.example/sdk/telemetry-policy"],
+    [
+      "/sdk/collection-policy",
+      "get",
+      "curl https://tu-servidor-ayni.example/sdk/collection-policy",
+    ],
     [
       "/sdk/workflow-versions/{workflowVersionId}",
       "get",

@@ -44,17 +44,24 @@ Válido para `ayni_sdk` 0.3.0.
 El SDK usa la red dentro de `sync()` y cuando la app registra una decisión con
 `recordConsent()`. `initialize()` y `run()` no envían nada. `sync()` puede enviar
 trazas pendientes cuando obtiene una política vigente habilitada; cada envío
-espera el acuse del servidor antes de retirar esa traza de la outbox.
+espera el acuse del servidor antes de retirar esa traza de la outbox. También
+puede subir la evidencia para datasets pendiente cuando la política de
+recolección lo permite (ver [Envío de la evidencia](#envío-de-la-evidencia)),
+y solo la cuenta como enviada cuando el servidor confirma que la recibió.
 
 | Dato | Cuándo se envía | A dónde | Opcional |
 | --- | --- | --- | --- |
 | La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()`. | `POST /sdk/sync`, en el servidor de Ayni (`serverUrl`). | No |
 | La credencial del SDK, en el encabezado `Authorization` | Al comenzar cada `sync()` y antes de cada traza pendiente, para refrescar la política de captura y envío. | `GET /sdk/telemetry-policy`, en el servidor de Ayni (`serverUrl`). | No |
+| La credencial del SDK, en el encabezado `Authorization` | En cada `sync()`, justo antes de pedir el manifiesto, y otra vez antes de subir cada evidencia pendiente, si al trabajo opcional de ese `sync()` le queda tiempo, para refrescar la habilitación, la red permitida, el tamaño máximo y la calidad de la política de recolección. | `GET /sdk/collection-policy`, en el servidor de Ayni (`serverUrl`). | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de workflow, en la ruta | Durante `sync()`, por cada versión de workflow publicada que aún no está en el dispositivo. | `GET /sdk/workflow-versions/<workflowVersionId>`, en el servidor de Ayni. | No |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la versión de modelo, en la ruta | Durante `sync()`, por cada modelo que necesita un workflow nuevo y que aún no está en el dispositivo. | `GET /sdk/model-versions/<modelVersionId>/manifest`, en el servidor de Ayni. | No |
 | Solo la solicitud de descarga del archivo del modelo, sin credencial | Justo después de recibir el manifiesto de ese modelo. | `GET <downloadUrl>`: la URL firmada del almacenamiento de objetos que indica el manifiesto, un host distinto del servidor. | No |
 | La credencial del SDK y un recibo con UUID v4 seudónimo, finalidad, decisión, versión del aviso y fecha | Cuando la persona cambia uno de los controles de privacidad; si está offline, `sync()` reintenta el recibo antes del manifiesto. | `POST /sdk/consents`, en el servidor de Ayni (`serverUrl`). | Sí, solo al registrar una decisión |
 | La credencial del SDK y una traza tipada: identificadores de ejecución e instalación, referencias de workflow y modelos, perfil técnico allowlisted, contexto declarado por la app, resultados estructurados decodificados, mediciones, incidentes, estado y duraciones | Durante `sync()`, procesa la cola dentro del presupuesto opcional reservado y refresca la política antes de cada intento. La política deshabilitada o no vigente conserva pendientes. El recibo `sdkImprovement` no autoriza ni bloquea estas trazas de validación. | `POST /sdk/traces`, en el servidor de Ayni (`serverUrl`). | Sí; requiere captura local autorizada y la política habilitada |
+| La credencial del SDK y los datos de una evidencia para datasets: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, el resultado de inferencia que recibió el nodo, el tipo, el ancho y el alto de la imagen, el tamaño máximo y la calidad con que se optimizó, y el tamaño en bytes y el SHA-256 de la imagen | Durante `sync()`, por cada evidencia pendiente, cuando la política de recolección, consultada justo antes, está habilitada y permite la conexión actual, si al trabajo opcional de ese `sync()` le queda tiempo. | `POST /sdk/evidence`, en el servidor de Ayni (`serverUrl`). | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
+| Solo la imagen JPEG optimizada de esa evidencia, sin credencial | Justo después, si el servidor responde que todavía no la tiene. | `PUT <uploadUrl>`: la URL firmada del almacenamiento de objetos que indica el servidor, un host distinto del servidor, que vence 15 minutos después. | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
+| La credencial del SDK, en el encabezado `Authorization`, y el ID de la evidencia, en la ruta | Después de subir la imagen, para que el servidor la compruebe y confirme la recepción. | `POST /sdk/evidence/<evidenceId>/complete`, en el servidor de Ayni (`serverUrl`). | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
 
 ### Descarga del dataset de validación
 
@@ -153,10 +160,16 @@ cliente; Ayni publicará su propio canal cuando su aviso esté vigente.
 Como en cualquier conexión HTTP, el servidor y el almacenamiento de objetos
 reciben la dirección IP del dispositivo y el encabezado `User-Agent`
 predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
+Además de `Authorization`, el SDK solo declara el cuerpo de las solicitudes que
+lo llevan: su tipo en `Content-Type` (`application/json` para los datos e
+`image/jpeg` para la imagen de una evidencia) y, como cualquier cliente HTTP, su
+tamaño en `Content-Length`.
 
 ## Lo que el SDK no hace
 
-- No sube imágenes ni entradas del modelo. Si la app entrega contexto a `run()`
+- No sube imágenes ni entradas del modelo, salvo la copia optimizada de cada
+  evidencia para datasets que la app autorizó (ver
+  [Envío de la evidencia](#envío-de-la-evidencia)). Si la app entrega contexto a `run()`
   y la política local más reciente habilita la captura, adjunta una traza tipada a su resultado o
   error; la app también puede solicitar una traza de control con
   `createClientExecutionTrace()`. Puede incluir los identificadores de traza,
@@ -197,12 +210,56 @@ predeterminado de Dart, `Dart/<versión> (dart:io)`, que el SDK no modifica.
   reemplaza solo después de persistir el nuevo UUID. Las trazas que ya existían
   mantienen su identificador y las futuras usan el nuevo. La operación no
   cambia el consentimiento ni la política de trazas.
-- No envía la imagen que recibe `run()`; la inferencia ocurre por completo en
-  el dispositivo. Solo guarda una copia cuando el workflow alcanza un nodo
-  `dataset.capture` y la app indica que la persona dio su consentimiento (ver
-  [Evidencia para datasets](#evidencia-para-datasets)). Una traza autorizada
+- No envía la imagen que recibe `run()` ni la modifica; la inferencia ocurre
+  por completo en el dispositivo. Solo guarda una copia optimizada cuando el
+  workflow alcanza un nodo `dataset.capture` y la app indica que la persona dio
+  su consentimiento, y solo sube esa copia cuando la política de recolección lo
+  permite (ver [Evidencia para datasets](#evidencia-para-datasets)). Una traza autorizada
   puede conservar resultados estructurados públicos, pero no los bytes de
   entrada ni los tensores.
+
+## Telemetría sin captura de imágenes
+
+La telemetría no incluye imágenes, secretos ni datos de entrada crudos. Cada
+traza lleva solo los campos de su esquema: los identificadores, el workflow y
+los modelos, el perfil técnico, el contexto que declara la app, los resultados
+estructurados, las mediciones, los incidentes, el estado, los errores tipados y
+las duraciones (ver [Lo que el SDK no hace](#lo-que-el-sdk-no-hace)). El SDK
+arma cada traza con esos campos tipados y nunca le agrega la credencial, la
+imagen que recibe `run()` ni sus bytes. Además, al guardar una traza en
+`diagnostics/trace-outbox/` y al leerla para enviarla con `POST /sdk/traces`,
+conserva solo los campos del esquema, cada uno con su tipo: si un componente
+agrega a la traza la imagen de entrada, sus bytes u otro dato, el SDK descarta
+ese adjunto y envía la traza solo con los metadatos permitidos. También
+descarta un texto que lleva una imagen codificada, como una URI `data:image/`
+o el base64 de un PNG, JPEG, GIF o WebP. Solo esos
+campos cuentan para el límite de 2 MiB de una traza, así que un adjunto
+descartado no hace perder la traza. El servidor
+también rechaza con `invalidTrace`, sin guardar nada, una traza con un campo
+fuera del esquema, en cualquier nivel, o con un texto que parece una
+credencial, un correo, un teléfono o una ruta local.
+
+El nodo `dataset.capture` («Capturar evidencia» en el editor) es el único
+mecanismo con el que el SDK recolecta imágenes. Un workflow sin ese nodo solo
+registra telemetría: `run()` no copia la imagen ni crea evidencia, aunque la app
+pase `evidenceConsent: true`. El editor del dashboard lo indica con «Este
+workflow no recolecta imágenes.», y `Privacidad y telemetría` aclara «La
+telemetría no incluye imágenes de entrada.»
+
+La telemetría no bloquea el resultado: `run()` solo guarda la traza en el
+dispositivo, sin solicitudes de red, y si no puede guardarla devuelve igual el
+resultado o el error, con `tracePersistenceFailed: true`. El envío ocurre
+después, en `sync()`.
+
+Cada uno tiene su propia política, consentimiento y retención:
+
+| Aspecto | Telemetría (trazas) | Evidencia para datasets |
+| --- | --- | --- |
+| Qué guarda y envía | Metadatos de la ejecución, sin imágenes ni bytes de entrada. | Una copia optimizada de la imagen y el resultado de inferencia que recibió el nodo. |
+| Política que la habilita | «Permitir telemetría técnica», en `Privacidad y telemetría`. | Un nodo `dataset.capture` en el workflow, que un administrador solo puede agregar con «Permitir captura de imágenes para datasets» activado en «Recolección de evidencia». Esa política habilita el envío; esta versión no la aplica a la captura local. |
+| Consentimiento | El permiso de validación que gestiona la app antes de pasar `traceContext` a `run()`; `sdkImprovement` no lo cubre. | El consentimiento de recolección que gestiona la app, con `evidenceConsent: true`. |
+| Retención en el dispositivo | Hasta el acuse del servidor o hasta `clearPendingTraces()`. | Hasta que el servidor confirma su recepción o hasta `clearPendingEvidence()`. |
+| Retención en el servidor | 7, 30 o 90 días desde su recepción (ver [Retención de las trazas en el servidor](#retención-de-las-trazas-en-el-servidor)). | Sin retención definida (ver [Retención de la evidencia en el servidor](#retención-de-la-evidencia-en-el-servidor)). |
 
 ## Evidencia para datasets
 
@@ -210,7 +267,13 @@ Un workflow puede incluir el nodo `dataset.capture` («Capturar evidencia» en e
 editor) para reunir ejemplos con los que mejorar los modelos de tu aplicación.
 Cuando `run()` lo alcanza, el SDK crea una evidencia en el dispositivo con:
 
-- una copia de la imagen que recibió `run()`, tal como la entregó la app;
+- una copia optimizada de la imagen que recibió `run()`: un JPEG cuyo lado
+  mayor no supera el tamaño máximo de la política de recolección, comprimido
+  con su calidad y sin metadatos EXIF, como la ubicación o la cámara. Una
+  imagen más pequeña conserva su tamaño. La imagen que recibió `run()`, con la
+  que el workflow hizo la inferencia, no cambia;
+- el ancho y el alto de esa copia, y el tamaño máximo y la calidad con que se
+  optimizó;
 - el resultado de inferencia que recibió el nodo: la clasificación o las
   detecciones del modelo;
 - el workflow, el ID de su versión publicada, su versión y el ID del nodo;
@@ -219,7 +282,8 @@ Cuando `run()` lo alcanza, el SDK crea una evidencia en el dispositivo con:
 - un ID aleatorio de la evidencia y la fecha de la ejecución.
 
 La evidencia no guarda el ID de la aplicación: la versión de workflow
-pertenece a una sola aplicación, la de la credencial con la que se sincronizó.
+pertenece a una sola aplicación, la de la credencial con la que se sincronizó,
+y el servidor lo comprueba al recibirla.
 No incluye la credencial, el identificador de instalación ni el perfil del
 dispositivo.
 
@@ -227,8 +291,22 @@ La política de recolección de la aplicación la habilita: en el dashboard,
 «Recolección de evidencia» debe tener activado «Permitir captura de imágenes
 para datasets», y solo entonces un administrador puede agregar el nodo a un
 workflow. Esa política exige también «Exigir el consentimiento del usuario
-antes de capturar». Esta versión del SDK todavía no consulta la política en el
-dispositivo, ni aplica su red, tamaño máximo o calidad.
+antes de capturar». Su «Tamaño máximo» (el lado mayor de la imagen, de 128 a
+4096 píxeles, 1024 si nadie lo cambió) y su «Calidad» (de 10 a 100, 80 si nadie
+la cambió) fijan cómo el SDK optimiza cada imagen, y su «Red permitida», por
+qué conexión puede salir la evidencia (ver
+[Red permitida para enviar evidencia](#red-permitida-para-enviar-evidencia)).
+En cada `sync()`, justo antes de pedir el manifiesto y si al trabajo opcional de
+ese `sync()` le queda tiempo, el SDK consulta la política en
+`GET /sdk/collection-policy` y guarda en `diagnostics/collection-policy.json`
+esos dos valores, la red permitida y si la recolección está habilitada; `run()`
+usa los últimos que guardó, también sin conexión. Si no la consulta o la
+consulta falla, conserva los anteriores. Mientras ningún `sync()` los haya
+guardado, el SDK descarta cada evidencia. Esta versión no aplica a la captura
+local la habilitación de la política ni su exigencia de consentimiento:
+deshabilitar la recolección en el dashboard no detiene la captura local, que
+depende solo de que el workflow incluya `dataset.capture` y de que la app pase
+`evidenceConsent: true`.
 
 El SDK no presenta avisos ni registra el consentimiento de recolección: lo
 gestiona tu app, igual que el permiso de las trazas de validación. Pasa
@@ -238,22 +316,287 @@ consentimiento:
 <Code code={privacy.captureEvidence} lang="dart" />
 
 Sin `evidenceConsent: true`, el SDK omite la captura: no copia la imagen ni
-avisa a la app. Con él, devuelve el resultado sin esperar la evidencia, la
-guarda después y llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
-`onProgress` con `Evidencia guardada para envío posterior.` Si no puede
-guardarla, el resultado no cambia y no avisa. Una ejecución que falla, se
-cancela o no ejecuta el modelo que alimenta la captura no crea evidencia.
+avisa a la app. Con él, devuelve el resultado sin esperar la evidencia y la
+prepara después: llama a `onEvidence` con `EvidenceEvent.evidenceOptimizing`
+y a `onProgress` con `Optimizando` mientras optimiza la imagen, con
+`evidencePrepared` (`Evidencia preparada para envío.`) cuando la imagen está
+lista y con `evidenceQueued` (`Evidencia guardada para envío posterior.`)
+cuando la guardó completa en la cola de evidencia pendiente. Si el dispositivo
+no tiene espacio para guardarla, la descarta sin dejar archivos a medias y
+avisa `evidenceStorageFull` con
+`No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
+Si no puede optimizarla o guardarla por otro motivo, también la descarta sin
+dejar archivos a medias y avisa `evidenceDiscarded` con
+`No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
+En los dos casos el resultado no cambia y la evidencia ya guardada, los
+workflows y los modelos siguen igual. Una ejecución que falla, se cancela o no
+ejecuta el modelo que alimenta la captura no crea evidencia.
 
-Esta versión no envía la evidencia: cada una queda en
-`evidence/<evidenceId>/` dentro de `storageDirectory` y no vence. Si la persona
-retira su consentimiento, deja de pasar `evidenceConsent: true` y elimina la
-evidencia guardada:
+### Captura condicionada por confianza
+
+Un administrador puede colgar el nodo de una rama de una «Condición» para
+recolectar solo los ejemplos útiles, por ejemplo las predicciones de baja
+confianza. La condición compara la confianza de una etiqueta del mismo modelo
+cuyo resultado recibe la captura con un umbral, con uno de los operadores
+mayor o igual, mayor, menor o igual y menor, sin expresiones ni código. En el
+editor, la condición muestra «Capturar solo cuando» con esa etiqueta, el
+operador y el umbral, y rotula la rama que llega a la captura como
+«Capturar evidencia» y la otra como «No capturar». El nodo se agrega con
+«Capturar para dataset» después de una rama, igual que después de un
+resultado, así que también exige «Permitir captura de imágenes para datasets»
+activado en «Recolección de evidencia».
+
+Cuando la condición toma la rama de la que cuelga la captura (la verdadera,
+si el resultado la cumple, o la falsa, si no), `run()` alcanza el nodo y el SDK
+crea la evidencia como en cualquier otra captura:
+
+- **Datos:** los mismos de la lista anterior. La condición no agrega ningún
+  dato a la evidencia.
+- **Política:** la misma «Permitir captura de imágenes para datasets», que
+  además habilita su envío por la «Red permitida».
+- **Consentimiento:** el de recolección que gestiona tu app, con
+  `evidenceConsent: true`.
+- **Retención:** en el dispositivo, hasta que el servidor confirma su
+  recepción o hasta `clearPendingEvidence()` (ver
+  [Retención de la evidencia en el dispositivo](#retención-de-la-evidencia-en-el-dispositivo));
+  en el servidor, la de
+  [Retención de la evidencia en el servidor](#retención-de-la-evidencia-en-el-servidor).
+
+Cuando la condición toma la otra rama, el SDK no copia la imagen, no crea
+evidencia ni llama a `onEvidence`, y devuelve el mismo resultado. La traza de
+esa ejecución, si la telemetría está habilitada, registra la condición como
+completada y la captura como omitida (`skipped`), sin la imagen. Lo mismo pasa,
+sin que falle la ejecución, si su modelo no se ejecutó porque ninguna salida lo
+lee, o si ninguna salida lee la condición y esta no se puede evaluar: la traza
+registra entonces la condición y la captura como omitidas. Una condición que
+también lee una salida y no se puede evaluar hace fallar la ejecución, como
+antes.
+
+### Evidencia pendiente de envío
+
+Cada evidencia guardada queda pendiente de envío en una cola local: su
+directorio `evidence/<evidenceId>/` dentro de `storageDirectory`. Una evidencia
+está pendiente mientras su directorio existe sin `received.json`, el archivo
+con el que el SDK registra que el servidor la recibió, mientras no alcance el
+límite de intentos de carga (ver
+[Reintentos de la evidencia](#reintentos-de-la-evidencia)). Un directorio
+terminado en `.tmp` es una evidencia que el SDK todavía está guardando o
+eliminando y que no cuenta. La cola se conserva sin conexión y aunque la
+app se reinicie, y no bloquea `run()`: el resultado llega aunque el SDK siga
+guardando otra evidencia. La app puede mostrar `Evidencia pendiente de envío`
+con el número de evidencias en la cola:
+
+<Code code={privacy.pendingEvidence} lang="dart" />
+
+`pendingEvidenceCount()` lee la cola en el dispositivo, sin solicitudes de red,
+y no espera a la evidencia que el SDK aún prepara o guarda: cuando avisa
+`evidenceQueued`, ya la cuenta.
+
+El SDK nunca marca una como enviada antes de que el servidor confirme que la
+recibió: hasta entonces sigue en `evidence/<evidenceId>/`, pendiente o, si
+agotó sus intentos, fallida, y no vence. Con la confirmación, el SDK elimina su
+copia local (ver
+[Retención de la evidencia en el dispositivo](#retención-de-la-evidencia-en-el-dispositivo)).
+Si la persona retira su consentimiento, deja de pasar `evidenceConsent: true` y
+elimina la evidencia guardada de todos los estados:
 
 <Code code={privacy.deleteEvidence} lang="dart" />
 
 `clearPendingEvidence()` espera también a la evidencia que el SDK aún está
 guardando y la elimina, y un `run()` que ya estaba en curso no guarda la suya.
-No elimina workflows, modelos ni trazas pendientes.
+Si un `sync()` está subiendo evidencia, no inicia el paso siguiente de esa
+carga ni otra evidencia. No elimina workflows, modelos ni trazas pendientes, ni
+la evidencia que el servidor ya recibió (ver
+[Retención de la evidencia en el servidor](#retención-de-la-evidencia-en-el-servidor)).
+
+### Red permitida para enviar evidencia
+
+La «Red permitida» de la política de recolección dice por qué conexión puede
+salir del dispositivo la evidencia pendiente: «Solo Wi-Fi» o «Wi-Fi y datos
+móviles». `sync()` solo sube la evidencia por esa red (ver
+[Envío de la evidencia](#envío-de-la-evidencia)), y la app sabe si la evidencia
+espera Wi-Fi con el estado de la cola, que consulta con `evidenceQueueStatus()`:
+
+<Code code={privacy.evidenceQueueStatus} lang="dart" />
+
+Mientras haya evidencia pendiente, la última política que guardó `sync()` esté
+habilitada y solo permita Wi-Fi, y el dispositivo use datos móviles, otra
+conexión o ninguna, el estado es `waitingForWifi`, con el texto
+`Pendiente de Wi-Fi`: la evidencia sigue pendiente, y el SDK no inicia ninguna
+carga ni usa datos móviles para ella. Con Wi-Fi, con «Wi-Fi y datos móviles», con
+la recolección deshabilitada o antes de que un `sync()` guarde la política, el
+estado es `pending` (`Evidencia pendiente de envío`); sin evidencia pendiente,
+`empty` (`Sin evidencia pendiente de envío`). La evidencia que espera Wi-Fi no
+vence: sigue en `evidence/<evidenceId>/` hasta que `clearPendingEvidence()` la
+elimine.
+
+Para saberlo, `evidenceQueueStatus()` lee en el dispositivo el tipo de conexión
+que usa en ese momento (Wi-Fi, datos móviles, otra, como Ethernet, o ninguna)
+con el plugin nativo del SDK, sin solicitudes de red y sin pedir consentimiento,
+porque no identifica a la persona: en Android con `ConnectivityManager`, que
+necesita el permiso `ACCESS_NETWORK_STATE` (el SDK lo declara en su manifiesto y
+Android lo concede al instalar la app, sin preguntar), y en iOS 12 o posterior
+con `NWPathMonitor`. Si no puede leerlo, no lo cuenta como Wi-Fi. No guarda ni
+envía el tipo de conexión: solo lo compara con la política.
+
+### Envío de la evidencia
+
+`sync()` sube la evidencia pendiente como último paso opcional, antes de pedir
+el manifiesto. Por cada evidencia vuelve a consultar la política de recolección
+y el tipo de conexión, y solo la sube si la política está habilitada y permite
+esa conexión. La cola solo contiene evidencia que `run()` creó con
+`evidenceConsent: true`, y `clearPendingEvidence()` la elimina cuando la persona
+retira su consentimiento. Cada evidencia se sube en tres pasos:
+
+1. `POST /sdk/evidence`, con la credencial y los datos de `evidence.json`, más
+   el tamaño en bytes y el SHA-256 de la imagen. El servidor comprueba que la
+   credencial esté activa, que la política de recolección de su aplicación
+   esté habilitada y que la versión de workflow, el nodo `dataset.capture` y la
+   versión de modelo de la evidencia sean de esa aplicación; si no, la rechaza.
+   Guarda los datos una sola vez por ID de evidencia y responde una URL firmada
+   para la imagen, o que ya la recibió.
+2. `PUT <uploadUrl>`, con la imagen JPEG optimizada y sin la credencial,
+   directamente al almacenamiento de objetos de Ayni.
+3. `POST /sdk/evidence/<evidenceId>/complete`, con la credencial. El servidor
+   comprueba que la imagen sea un JPEG con el tamaño, el SHA-256 y las
+   dimensiones que declaró la evidencia, la guarda y confirma la recepción.
+
+`sync()` llama a su `onEvidence` y a `onProgress` con cada paso de cada
+evidencia que empieza a subir: `evidenceUploading` (`Subiendo evidencia…`) y
+después `evidenceReceived` (`Evidencia recibida.`) cuando el servidor confirmó
+la recepción, `evidenceUploadFailed`
+(`No se pudo enviar la evidencia; se reintentará cuando sea posible.`) cuando
+queda pendiente, o `evidenceCredentialRevoked`
+(`No se puede enviar evidencia porque la credencial fue revocada.`) cuando el
+servidor rechazó la credencial revocada:
+
+<Code code={privacy.uploadEvidence} lang="dart" />
+
+Solo la confirmación del servidor, o su respuesta de que ya la había recibido,
+cuenta como envío: entonces el SDK agrega `received.json` (el ID de la
+evidencia y la fecha en que el servidor la recibió) a su directorio, sin cambiar
+`evidence.json` ni la imagen, la evidencia deja de estar pendiente y el SDK
+elimina su copia local antes de avisar `evidenceReceived` (ver
+[Retención de la evidencia en el dispositivo](#retención-de-la-evidencia-en-el-dispositivo));
+un `sync()` posterior no la vuelve a subir. Si el SDK no puede escribir
+`received.json`, por ejemplo porque el dispositivo no tiene espacio, igual
+elimina la copia; si tampoco puede eliminarla, la evidencia sigue pendiente: el
+siguiente `sync()` vuelve a avisar `evidenceUploading`, y el servidor responde
+que ya la recibió sin que el SDK suba la imagen otra vez. Sin esa confirmación, por ejemplo sin
+red, con la credencial revocada, con la aplicación archivada o con la
+recolección deshabilitada en el servidor, la evidencia sigue pendiente y un
+`sync()` posterior la vuelve a intentar con el mismo ID, sin duplicarla en el
+servidor, hasta un límite de intentos (ver
+[Reintentos de la evidencia](#reintentos-de-la-evidencia)). Las cargas
+comparten el tiempo que `syncTimeout` deja antes de la parte reservada al
+manifiesto, así que una imagen que no alcanza a subirse queda pendiente.
+
+### Reintentos de la evidencia
+
+Cada carga que termina sin la confirmación del servidor cuenta como un intento
+de esa evidencia: sin respuesta, por tiempo agotado, por un error del servidor
+o porque el servidor la rechazó. También cuenta una evidencia cuyos archivos
+el SDK no puede leer o no describen una evidencia válida, que no se envía: así
+queda fallida en vez de pendiente para siempre. El SDK no puede saber si un rechazo es
+definitivo, y el servidor no duplica una evidencia que recibe dos veces con el
+mismo ID, así que también la reintenta, pero sigue con la siguiente. La
+credencial revocada no cuenta como intento, porque no es un fallo de la
+evidencia, y tampoco cuenta un `sync()` que no llega a empezar su carga por la
+política de recolección, por la conexión o porque no le queda tiempo. Una carga
+que se queda sin tiempo a mitad sí cuenta, como cualquier tiempo agotado: así,
+una imagen que nunca alcanza a subirse no gasta datos indefinidamente. Si el
+SDK no puede guardar el registro del intento, por ejemplo porque el dispositivo
+no tiene espacio, ese intento no cuenta y la evidencia conserva su estado.
+
+Después de cada intento fallido que no alcanza el límite, `sync()` avisa
+`evidenceUploadFailed` y la evidencia queda `Reintentando`: un `sync()` posterior la vuelve a subir con el
+mismo ID cuando pasa una espera de 15 minutos después del primer fallo, el
+doble después de cada uno de los siguientes y como máximo 6 horas. Así, una app
+que llama a `sync()` a menudo no gasta datos ni batería en una carga que acaba
+de fallar, y una caída del servidor de unas horas no agota los intentos: con el
+límite por defecto, una evidencia queda fallida tras casi 4 horas de fallos.
+Mientras una evidencia espera, `sync()` sube las demás. Si el reloj del dispositivo retrocede,
+la espera no retiene la evidencia.
+
+El límite es `maxEvidenceUploadAttempts` de `AyniSdk` o de `AyniConfig`, 5 si
+la app no lo cambia: la primera carga y hasta cuatro reintentos (ver
+[Configurar el cliente](/comenzar/instalacion-y-configuracion/#configurar-el-cliente)).
+Si la carga falla en el último intento, `sync()` avisa
+`evidenceRetriesExhausted` con
+`No se pudo enviar la evidencia después de varios intentos.` y la evidencia
+queda `Fallida`: el SDK la conserva en `evidence/<evidenceId>/`, sin cambiar su
+imagen ni `evidence.json`, pero no la vuelve a enviar automáticamente y deja de
+contarla en `pendingEvidenceCount()` y en `evidenceQueueStatus()`, así que no
+retiene a la evidencia siguiente.
+
+El SDK registra los intentos en `evidence/<evidenceId>/upload-attempts.json`,
+aparte de `evidence.json`: el ID de la evidencia, cuántas cargas fallaron, la
+fecha en que empezó la última y si alcanzó el límite. No guarda la causa del
+fallo, la respuesta del servidor ni el tipo de conexión, y no lo envía. La app
+consulta, sin solicitudes de red, cuántas evidencias hay en cada estado
+(`Pendiente`, `Enviando`, `Reintentando`, `Enviada` o `Fallida`):
+
+<Code code={privacy.evidenceStatus} lang="dart" />
+
+Los reintentos usan la misma política de recolección y el mismo consentimiento
+que la primera carga: el SDK vuelve a consultar la política antes de cada uno, y
+`clearPendingEvidence()` elimina la evidencia de todos los estados, también la
+fallida, cuando la persona retira su consentimiento. La evidencia fallida no
+vence: queda en el dispositivo hasta que `clearPendingEvidence()` la elimine o
+borres `storageDirectory`.
+
+### Retención de la evidencia en el dispositivo
+
+El SDK conserva cada evidencia en el dispositivo solo hasta que el servidor
+confirma que la recibió. En cuanto `sync()` recibe esa confirmación, escribe
+`received.json` y elimina el directorio `evidence/<evidenceId>/` completo: la
+imagen optimizada, `evidence.json`, `received.json` y, si hubo intentos
+fallidos, `upload-attempts.json`. La evidencia sale de la cola antes de que
+`sync()` avise `evidenceReceived`, así que `pendingEvidenceCount()` y
+`evidenceStatusCounts()` ya no la cuentan. Mientras `sync()` la sube,
+`evidenceStatusCounts()` la cuenta como `Enviando`, y el SDK nunca la muestra
+como `Enviada` antes de la confirmación: la app sabe que quedó `Enviada` por el
+aviso `evidenceReceived`.
+
+Una carga incierta conserva la evidencia: sin la confirmación, por ejemplo sin
+respuesta, por tiempo agotado o con una respuesta que no la confirma, el SDK la
+mantiene completa como pendiente (`Reintentando`) y no elimina nada. La
+evidencia `Fallida` tampoco se elimina sola: el SDK no sabe si el servidor la
+recibió y borrarla perdería datos que la persona autorizó a recolectar, así que
+queda con su `upload-attempts.json` hasta que `clearPendingEvidence()` la
+elimine o borres `storageDirectory`. Esta retención no cambia la política de
+recolección ni el consentimiento que necesita la evidencia.
+
+El SDK solo elimina el directorio de esa evidencia dentro de `evidence/`, y
+solo si su nombre es un ID de evidencia: no toca workflows, modelos
+instalados, trazas ni otros archivos de `storageDirectory`, y no sigue enlaces.
+Primero lo renombra a `evidence/<evidenceId>.tmp/`, que nunca cuenta como
+pendiente, y después lo borra. Si no puede renombrarlo, por ejemplo porque un
+archivo está bloqueado, la evidencia conserva el `received.json` que acaba de
+escribir: no vuelve a la cola ni se sube otra vez, y `evidenceStatusCounts()`
+la cuenta como `Enviada` hasta que la elimina un `sync()` posterior o
+`initialize()`. Si lo renombra pero no puede borrarlo, queda
+`evidence/<evidenceId>.tmp/`, que ya no cuenta en ningún estado y que también
+se borra después. `initialize()`, sin esperar ni hacer solicitudes de red, y
+cada `sync()`, antes de subir evidencia, eliminan la evidencia confirmada que
+quedó porque la app se cerró entre la confirmación y el borrado, y los
+directorios `evidence/<evidenceId>.tmp/` de una evidencia que quedó a medio
+guardar o a medio eliminar, salvo la que el SDK está guardando en ese momento.
+No eliminan nada si `evidence/` es un enlace.
+
+### Retención de la evidencia en el servidor
+
+El servidor guarda cada evidencia recibida para la aplicación de la credencial:
+la imagen, en el almacenamiento de objetos de Ayni, y sus datos, asociados al
+workflow, a la versión de workflow, al nodo y a la versión de modelo que
+indica. No guarda la credencial, el identificador de instalación ni el perfil
+del dispositivo, porque la evidencia no los incluye. Esta versión no define una
+retención para la evidencia: no vence, revocar la credencial, archivar la
+aplicación o deshabilitar la recolección no la elimina, y el dashboard todavía
+no la muestra ni permite borrarla. `clearPendingEvidence()` solo elimina la copia
+del dispositivo. Para la evidencia que Ayni ya recibió, la persona usa el canal
+de derechos publicado en el aviso de privacidad de la aplicación (ver
+[Solicitudes de derechos](#solicitudes-de-derechos)).
 
 ## Restablecer el identificador de instalación
 
@@ -326,11 +669,14 @@ sus campos permitidos a una traza.
 | Copia verificada de cada archivo de modelo descargado, que se conserva después de instalarlo. | `model-downloads/<modelVersionId>.tflite.verified` | Borra `storageDirectory` completo. |
 | Identificador aleatorio UUID v4 de esta instalación, usado para correlacionar trazas técnicas. No incluye identidad directa; se envía dentro de una traza cuando la política lo permite. | `installation-id` | `await sdk.resetInstallationId()` lo reemplaza; borrar `storageDirectory` elimina todos los datos del SDK. Las trazas ya en la outbox conservan el ID anterior hasta su acuse o hasta que `clearPendingTraces()` las elimine. |
 | Última política válida de captura local (`enabled` y `retentionDays`), sin credenciales ni ID de aplicación. | `diagnostics/telemetry-policy.json` | Borra `storageDirectory` completo. |
+| Habilitación, red permitida, tamaño máximo y calidad de la última política de recolección válida (`enabled`, `network`, `maxImageSize` e `imageQuality`), sin credenciales ni ID de aplicación. | `diagnostics/collection-policy.json` | Borra `storageDirectory` completo. |
 | Trazas tipadas y sanitizadas de ejecuciones hechas con `run()`, con contexto declarado por la app, perfil allowlisted, salidas estructuradas, mediciones, incidentes, errores y duraciones. Las pendientes no incluyen imágenes, tensores ni bytes de entrada. | `diagnostics/trace-outbox/<ID de traza codificado>.json` | `sync()` elimina cada traza al recibir el acuse del servidor; `clearPendingTraces()` elimina la outbox al revocar el permiso de validación. Para descartar todo el almacenamiento, borra `storageDirectory` completo. |
-| Copia de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`. | `evidence/<evidenceId>/image` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
-| Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo. | `evidence/<evidenceId>/evidence.json` | `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Copia JPEG de la imagen que recibió `run()` en cada evidencia para datasets, solo con `evidenceConsent: true`, reducida al tamaño máximo y comprimida con la calidad de la política de recolección, sin metadatos EXIF. Cada directorio `evidence/<evidenceId>/` es una evidencia pendiente de envío, también después de reiniciar la app, hasta que el servidor confirma su recepción, y entonces `sync()` lo elimina, o hasta que alcanza el límite de intentos, y entonces el SDK lo conserva sin volver a enviarlo. | `evidence/<evidenceId>/image` | `sync()` la elimina cuando el servidor confirma su recepción. `await sdk.clearPendingEvidence()` elimina toda la evidencia, también la fallida; borrar `storageDirectory` también. |
+| Datos de cada evidencia: su ID y fecha, el workflow, el ID de su versión, su versión y el ID del nodo, el ID, la versión y el SHA-256 del modelo, y el resultado de inferencia que recibió el nodo; el ancho y el alto de la imagen, y el tamaño máximo y la calidad con que se optimizó. | `evidence/<evidenceId>/evidence.json` | `sync()` lo elimina cuando el servidor confirma la recepción de la evidencia. `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Confirmación de cada evidencia que el servidor recibió: su ID y la fecha de recepción. Con ella la evidencia deja de estar pendiente. El SDK la escribe justo antes de eliminar la evidencia, y solo queda si no pudo eliminarla. | `evidence/<evidenceId>/received.json` | `sync()` la elimina con la evidencia, en ese momento o, si no pudo, un `sync()` posterior o `initialize()`. `await sdk.clearPendingEvidence()` elimina toda la evidencia; borrar `storageDirectory` también. |
+| Intentos de carga de cada evidencia que terminaron sin confirmación: su ID, cuántos fueron, la fecha en que empezó el último y si alcanzó el límite, con el que la evidencia queda fallida y el SDK deja de enviarla. | `evidence/<evidenceId>/upload-attempts.json` | `sync()` lo elimina con la evidencia cuando el servidor confirma su recepción. `await sdk.clearPendingEvidence()` elimina toda la evidencia, también la fallida; borrar `storageDirectory` también. |
 | Recibos seudónimos de decisiones de privacidad pendientes de confirmar por Ayni: ID aleatorio de persona, finalidad, decisión, versión del aviso y fecha de decisión. No incluyen nombre, correo, teléfono ni hashes de identificadores directos. | `consent-receipts.json` | El SDK los elimina al recibir confirmación; borra `storageDirectory` completo para descartar recibos pendientes. |
-| Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox y evidencias en curso. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia en curso, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: `clearPendingEvidence()` borra los de la evidencia, y borrar `storageDirectory` completo, todos. |
+| Archivos temporales de las descargas, verificaciones, instalaciones, escrituras de la outbox, evidencias que se están guardando o eliminando y confirmaciones e intentos de evidencia. | Junto a los anteriores, terminados en `.part`, `.tmp` o `.backup`; una evidencia que se está guardando o eliminando, en `evidence/<evidenceId>.tmp/` | El SDK los borra al terminar. Si la app se cierra durante `sync()` o al persistir una traza o una evidencia, pueden quedar: `initialize()`, el siguiente `sync()` y `clearPendingEvidence()` borran los de la evidencia, y borrar `storageDirectory` completo, todos. |
 
 El SDK no borra las versiones anteriores de un workflow o de un modelo al
 instalar una nueva: siguen en `storageDirectory` hasta que lo borres.

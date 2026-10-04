@@ -82,6 +82,12 @@
       "sourcePort": "result",
       "targetNodeId": "captura",
       "targetPort": "resultado"
+    },
+    {
+      "sourceNodeId": "condicion",
+      "sourcePort": "true",
+      "targetNodeId": "captura",
+      "targetPort": "condicion"
     }
   ]
 }

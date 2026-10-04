@@ -9,7 +9,7 @@ import {
   workflowPortCompatibility,
   workflowSourceTarget,
 } from "@ayni/api/workflow-graph";
-import { IconRefresh } from "@tabler/icons-react";
+import { IconCameraOff, IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -1372,6 +1372,14 @@ export function WorkflowDetailView({
                 Recargar borrador
               </Button>
             </div>
+          )}
+          {captureNodes.length === 0 && (
+            // US-073: without a capture node the SDK only records telemetry,
+            // which never carries the input image.
+            <p className="flex items-center gap-2 text-muted-foreground text-sm">
+              <IconCameraOff aria-hidden className="size-4 shrink-0" />
+              Este workflow no recolecta imágenes.
+            </p>
           )}
           <WorkflowCanvas
             draft={draft}

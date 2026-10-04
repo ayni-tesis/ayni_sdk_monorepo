@@ -1,5 +1,5 @@
 {
-  "id": "2ac232e7-58ec-4665-b35f-b6a87b203eab",
+  "id": "31071722-06ac-48eb-bea7-ceeb96a057cb",
   "prevId": "2608a8ad-b897-4fba-b9c6-7996c3e04eab",
   "version": "7",
   "dialect": "postgresql",
@@ -2006,6 +2006,271 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.sdk_evidence": {
+      "name": "sdk_evidence",
+      "schema": "",
+      "columns": {
+        "application_id": {
+          "name": "application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence_id": {
+          "name": "evidence_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_version_id": {
+          "name": "workflow_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capture_node_id": {
+          "name": "capture_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version_id": {
+          "name": "model_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_sha256": {
+          "name": "model_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_type": {
+          "name": "task_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_media_type": {
+          "name": "image_media_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_width": {
+          "name": "image_width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_height": {
+          "name": "image_height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_byte_size": {
+          "name": "image_byte_size",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_sha256": {
+          "name": "image_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_image_size": {
+          "name": "max_image_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_quality": {
+          "name": "image_quality",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_sha256": {
+          "name": "content_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'awaitingUpload'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "sdk_evidence_application_received_idx": {
+          "name": "sdk_evidence_application_received_idx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "received_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sdk_evidence_workflow_version_idx": {
+          "name": "sdk_evidence_workflow_version_idx",
+          "columns": [
+            {
+              "expression": "workflow_version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sdk_evidence_application_id_application_id_fk": {
+          "name": "sdk_evidence_application_id_application_id_fk",
+          "tableFrom": "sdk_evidence",
+          "tableTo": "application",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sdk_evidence_workflow_id_workflow_id_fk": {
+          "name": "sdk_evidence_workflow_id_workflow_id_fk",
+          "tableFrom": "sdk_evidence",
+          "tableTo": "workflow",
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sdk_evidence_workflow_version_id_workflow_version_id_fk": {
+          "name": "sdk_evidence_workflow_version_id_workflow_version_id_fk",
+          "tableFrom": "sdk_evidence",
+          "tableTo": "workflow_version",
+          "columnsFrom": [
+            "workflow_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sdk_evidence_application_id_evidence_id_pk": {
+          "name": "sdk_evidence_application_id_evidence_id_pk",
+          "columns": [
+            "application_id",
+            "evidence_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "sdk_evidence_status_check": {
+          "name": "sdk_evidence_status_check",
+          "value": "\"sdk_evidence\".\"status\" in ('awaitingUpload', 'received')"
+        },
+        "sdk_evidence_received_at_check": {
+          "name": "sdk_evidence_received_at_check",
+          "value": "(\"sdk_evidence\".\"status\" = 'received') = (\"sdk_evidence\".\"received_at\" is not null)"
+        },
+        "sdk_evidence_task_type_check": {
+          "name": "sdk_evidence_task_type_check",
+          "value": "\"sdk_evidence\".\"task_type\" in ('classification', 'detection')"
+        },
+        "sdk_evidence_image_sha256_check": {
+          "name": "sdk_evidence_image_sha256_check",
+          "value": "\"sdk_evidence\".\"image_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "sdk_evidence_image_byte_size_check": {
+          "name": "sdk_evidence_image_byte_size_check",
+          "value": "\"sdk_evidence\".\"image_byte_size\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.sdk_trace": {
       "name": "sdk_trace",
       "schema": "",
@@ -2520,288 +2785,6 @@
         "workflow_version_version_check": {
           "name": "workflow_version_version_check",
           "value": "\"workflow_version\".\"version\" ~ '^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.validation_dataset": {
-      "name": "validation_dataset",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "application_id": {
-          "name": "application_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "license": {
-          "name": "license",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_by_id": {
-          "name": "created_by_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "validation_dataset_application_id_idx": {
-          "name": "validation_dataset_application_id_idx",
-          "columns": [
-            {
-              "expression": "application_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "validation_dataset_application_id_application_id_fk": {
-          "name": "validation_dataset_application_id_application_id_fk",
-          "tableFrom": "validation_dataset",
-          "tableTo": "application",
-          "columnsFrom": [
-            "application_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "validation_dataset_created_by_id_user_id_fk": {
-          "name": "validation_dataset_created_by_id_user_id_fk",
-          "tableFrom": "validation_dataset",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "validation_dataset_name_check": {
-          "name": "validation_dataset_name_check",
-          "value": "length(trim(\"validation_dataset\".\"name\")) > 0"
-        },
-        "validation_dataset_source_check": {
-          "name": "validation_dataset_source_check",
-          "value": "length(trim(\"validation_dataset\".\"source\")) > 0"
-        },
-        "validation_dataset_license_check": {
-          "name": "validation_dataset_license_check",
-          "value": "length(trim(\"validation_dataset\".\"license\")) > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.validation_dataset_version": {
-      "name": "validation_dataset_version",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "dataset_id": {
-          "name": "dataset_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "partition": {
-          "name": "partition",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sha256": {
-          "name": "sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "size_bytes": {
-          "name": "size_bytes",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "uploaded_by_id": {
-          "name": "uploaded_by_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "validation_dataset_version_dataset_version_partition_idx": {
-          "name": "validation_dataset_version_dataset_version_partition_idx",
-          "columns": [
-            {
-              "expression": "dataset_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "partition",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "validation_dataset_version_storage_key_idx": {
-          "name": "validation_dataset_version_storage_key_idx",
-          "columns": [
-            {
-              "expression": "storage_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "validation_dataset_version_dataset_id_idx": {
-          "name": "validation_dataset_version_dataset_id_idx",
-          "columns": [
-            {
-              "expression": "dataset_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "validation_dataset_version_dataset_id_validation_dataset_id_fk": {
-          "name": "validation_dataset_version_dataset_id_validation_dataset_id_fk",
-          "tableFrom": "validation_dataset_version",
-          "tableTo": "validation_dataset",
-          "columnsFrom": [
-            "dataset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "validation_dataset_version_uploaded_by_id_user_id_fk": {
-          "name": "validation_dataset_version_uploaded_by_id_user_id_fk",
-          "tableFrom": "validation_dataset_version",
-          "tableTo": "user",
-          "columnsFrom": [
-            "uploaded_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "validation_dataset_version_version_check": {
-          "name": "validation_dataset_version_version_check",
-          "value": "\"validation_dataset_version\".\"version\" ~ '^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$'"
-        },
-        "validation_dataset_version_partition_check": {
-          "name": "validation_dataset_version_partition_check",
-          "value": "\"validation_dataset_version\".\"partition\" ~ '^[A-Za-z0-9._-]{1,64}$'"
-        },
-        "validation_dataset_version_sha256_check": {
-          "name": "validation_dataset_version_sha256_check",
-          "value": "\"validation_dataset_version\".\"sha256\" ~ '^[0-9a-f]{64}$'"
-        },
-        "validation_dataset_version_size_bytes_check": {
-          "name": "validation_dataset_version_size_bytes_check",
-          "value": "\"validation_dataset_version\".\"size_bytes\" > 0"
         }
       },
       "isRLSEnabled": false

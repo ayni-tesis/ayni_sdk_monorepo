@@ -7,4 +7,8 @@ export const privacy = {
   resetInstallationId: exampleRegion(source, "restablecer-identificador-instalacion"),
   captureEvidence: exampleRegion(source, "capturar-evidencia"),
   deleteEvidence: exampleRegion(source, "borrar-evidencia"),
+  pendingEvidence: exampleRegion(source, "evidencia-pendiente"),
+  evidenceQueueStatus: exampleRegion(source, "estado-cola-evidencia"),
+  uploadEvidence: exampleRegion(source, "subir-evidencia"),
+  evidenceStatus: exampleRegion(source, "estado-de-cada-evidencia"),
 };

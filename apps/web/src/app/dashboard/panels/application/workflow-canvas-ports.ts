@@ -12,6 +12,7 @@ export const WORKFLOW_PORT_LABELS: Record<string, string> = {
   true: "Verdadero",
   false: "Falso",
   resultado: "resultado",
+  condicion: "condición",
 };
 export const WORKFLOW_PORTS_INCOMPATIBLE_MESSAGE = "Estos puertos no son compatibles.";
 export const WORKFLOW_PORTS_CONNECTED_MESSAGE = "Estos puertos ya están conectados.";
@@ -33,7 +34,7 @@ export function workflowNodePorts(node: WorkflowCanvasNode): {
     case "output":
       return { inputs: [port("source")], outputs: [] };
     case "dataset.capture":
-      return { inputs: [port("imagen"), port("resultado")], outputs: [] };
+      return { inputs: [port("imagen"), port("resultado"), port("condicion")], outputs: [] };
   }
 }
 

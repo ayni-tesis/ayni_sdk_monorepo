@@ -12,4 +12,27 @@ describe("privacy example (US-147)", () => {
     expect(privacy.captureEvidence).toContain("onEvidence:");
     expect(privacy.deleteEvidence).toBe("await sdk.clearPendingEvidence();");
   });
+
+  it("counts the evidence pending upload (US-068)", () => {
+    expect(privacy.pendingEvidence).toContain("await sdk.pendingEvidenceCount()");
+    expect(privacy.pendingEvidence).toContain("Evidencia pendiente de envío");
+  });
+
+  it("shows the state of the evidence queue, such as Pendiente de Wi-Fi (US-069)", () => {
+    expect(privacy.evidenceQueueStatus).toContain("await sdk.evidenceQueueStatus()");
+    expect(privacy.evidenceQueueStatus).toContain("EvidenceQueueStatus.empty");
+    expect(privacy.evidenceQueueStatus).toContain("status.message");
+  });
+
+  it("syncs and shows each event of the evidence upload (US-070)", () => {
+    expect(privacy.uploadEvidence).toContain("await sdk.sync(");
+    expect(privacy.uploadEvidence).toContain("onEvidence:");
+    expect(privacy.uploadEvidence).toContain("event.message");
+  });
+
+  it("counts the evidence of each status, such as Fallida (US-071)", () => {
+    expect(privacy.evidenceStatus).toContain("await sdk.evidenceStatusCounts()");
+    expect(privacy.evidenceStatus).toContain("EvidenceStatus.failed");
+    expect(privacy.evidenceStatus).toContain(".message");
+  });
 });

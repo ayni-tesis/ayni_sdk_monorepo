@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ayni API",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "description": "Endpoints HTTP que usa el SDK de Ayni para sincronizar workflows y modelos.\n\n## Autenticación\n\nCada solicitud lleva el secreto de una credencial del SDK en el encabezado:\n\n```http\nAuthorization: Bearer ayni_sk_…\n```\n\n- Un administrador genera la credencial en el dashboard, en Credenciales SDK de la aplicación. El secreto se muestra una sola vez.\n- La credencial solo da acceso a los recursos de su aplicación.\n- Cuando un administrador revoca o regenera la credencial, estos endpoints responden `401` con `credentialRevoked`. Revocarla no borra workflows, modelos ni versiones, ni lo que ya está instalado en los dispositivos."
   },
   "servers": [
@@ -770,6 +770,279 @@
           "nodes",
           "outputs",
           "clientReportedFields"
+        ],
+        "additionalProperties": false
+      },
+      "SdkEvidenceStart": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SdkEvidenceUpload"
+          },
+          {
+            "$ref": "#/components/schemas/SdkEvidenceReceipt"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "status",
+          "mapping": {
+            "uploadRequired": "#/components/schemas/SdkEvidenceUpload",
+            "received": "#/components/schemas/SdkEvidenceReceipt"
+          }
+        }
+      },
+      "SdkEvidenceUpload": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["uploadRequired"]
+          },
+          "uploadUrl": {
+            "type": "string",
+            "description": "URL firmada para subir la imagen con `PUT`, `Content-Type: image/jpeg` y sin la credencial; la firma incluye `Content-Length`, así que solo acepta exactamente `image.byteSize` bytes."
+          },
+          "uploadUrlExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Vencimiento de `uploadUrl` (ISO 8601)."
+          }
+        },
+        "required": ["evidenceId", "status", "uploadUrl", "uploadUrlExpiresAt"],
+        "additionalProperties": false
+      },
+      "SdkEvidenceReceipt": {
+        "type": "object",
+        "properties": {
+          "evidenceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["received"]
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["evidenceId", "status", "receivedAt"],
+        "additionalProperties": false
+      },
+      "SdkEvidence": {
+        "type": "object",
+        "properties": {
+          "evidenceSchemaVersion": {
+            "type": "number",
+            "enum": [1]
+          },
+          "evidenceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID aleatorio que el SDK generó; reintentar lo reutiliza."
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Inicio de la ejecución que la capturó."
+          },
+          "workflowId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "workflowVersionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Versión publicada que ejecutó el SDK."
+          },
+          "workflowVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "captureNodeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Nodo `dataset.capture` que pidió la evidencia."
+          },
+          "model": {
+            "type": "object",
+            "properties": {
+              "modelVersionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": ["modelVersionId", "version", "sha256"],
+            "additionalProperties": false
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["classification"]
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "confidences": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "required": ["type", "nodeId", "label", "confidence", "confidences"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["detection"]
+                  },
+                  "nodeId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "detections": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "box": {
+                          "type": "object",
+                          "properties": {
+                            "xMin": {
+                              "type": "number"
+                            },
+                            "yMin": {
+                              "type": "number"
+                            },
+                            "xMax": {
+                              "type": "number"
+                            },
+                            "yMax": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["xMin", "yMin", "xMax", "yMax"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["label", "confidence", "box"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["type", "nodeId", "detections"],
+                "additionalProperties": false
+              }
+            ],
+            "description": "Resultado de inferencia que recibió el nodo."
+          },
+          "image": {
+            "type": "object",
+            "properties": {
+              "mediaType": {
+                "type": "string",
+                "enum": ["image/jpeg"],
+                "description": "Tipo de la imagen: siempre el JPEG que optimizó el SDK."
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096,
+                "description": "Ancho en píxeles."
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096,
+                "description": "Alto en píxeles."
+              },
+              "maxImageSize": {
+                "type": "integer",
+                "minimum": 128,
+                "maximum": 4096,
+                "description": "Tamaño máximo (lado mayor) de la política con que se optimizó."
+              },
+              "imageQuality": {
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 100,
+                "description": "Calidad JPEG de la política con que se optimizó."
+              },
+              "byteSize": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Tamaño del archivo en bytes; el servidor acepta hasta 32 MiB."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 del archivo, en hexadecimal; el servidor lo comprueba."
+              }
+            },
+            "required": [
+              "mediaType",
+              "width",
+              "height",
+              "maxImageSize",
+              "imageQuality",
+              "byteSize",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "evidenceSchemaVersion",
+          "evidenceId",
+          "capturedAt",
+          "workflowId",
+          "workflowVersionId",
+          "workflowVersion",
+          "captureNodeId",
+          "model",
+          "result",
+          "image"
         ],
         "additionalProperties": false
       },
@@ -1664,6 +1937,633 @@
                     "value": {
                       "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
                       "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/collection-policy": {
+      "get": {
+        "tags": ["Endpoints"],
+        "operationId": "obtener-politica-de-recoleccion",
+        "summary": "Obtener la política de recolección de evidencia",
+        "description": "Devuelve la política de recolección de evidencia de la aplicación de la credencial. El SDK intenta refrescarla en cada sincronización, justo antes de pedir el manifiesto, y optimiza cada imagen de evidencia con su tamaño máximo y su calidad. Sin configuración, la recolección está deshabilitada, con 1024 px y calidad 80. No incluye el identificador de aplicación.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl https://tu-servidor-ayni.example/sdk/collection-policy \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Política de recolección de la aplicación autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Si la aplicación permite capturar imágenes para datasets."
+                    },
+                    "consentRequired": {
+                      "type": "boolean",
+                      "description": "Si el SDK debe contar con el consentimiento de la persona antes de capturar."
+                    },
+                    "network": {
+                      "type": "string",
+                      "enum": ["wifi", "wifiAndCellular"],
+                      "description": "Red por la que se puede enviar la evidencia: `wifi` o `wifiAndCellular`."
+                    },
+                    "maxImageSize": {
+                      "type": "integer",
+                      "minimum": 128,
+                      "maximum": 4096,
+                      "description": "Lado mayor, en píxeles, al que el SDK reduce cada imagen de evidencia."
+                    },
+                    "imageQuality": {
+                      "type": "integer",
+                      "minimum": 10,
+                      "maximum": 100,
+                      "description": "Calidad JPEG con la que el SDK comprime cada imagen de evidencia."
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "consentRequired",
+                    "network",
+                    "maxImageSize",
+                    "imageQuality"
+                  ],
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "habilitada": {
+                    "summary": "Recolección habilitada solo por Wi-Fi",
+                    "value": {
+                      "enabled": true,
+                      "consentRequired": true,
+                      "network": "wifi",
+                      "maxImageSize": 1024,
+                      "imageQuality": 80
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/evidence": {
+      "post": {
+        "tags": ["Endpoints"],
+        "operationId": "iniciar-carga-de-evidencia",
+        "summary": "Iniciar la carga de una evidencia",
+        "description": "Recibe los datos de una evidencia pendiente del SDK para la aplicación de la credencial, solo mientras su política de recolección está habilitada, y comprueba que su versión de workflow, su nodo `dataset.capture` y su versión de modelo son de esa aplicación. Guarda los datos una sola vez por `evidenceId` y responde una URL firmada para subir la imagen con `PUT` directamente al almacenamiento de objetos, sin la credencial; la URL vence 15 minutos después. La evidencia queda recibida solo cuando `POST /sdk/evidence/{evidenceId}/complete` lo confirma. Si el servidor ya la recibió, responde `received` y no hace falta subir la imagen otra vez.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `403` | `collectionDisabled` | La recolección de evidencia de esta aplicación está deshabilitada. | La aplicación recibe evidencia solo mientras su política de recolección está habilitada. |\n| `400` | `invalidEvidence` | La evidencia no tiene un formato válido. | Debe seguir el esquema de la evidencia del SDK, sin campos adicionales, con una imagen `image/jpeg` que no supera el tamaño máximo con que se optimizó. |\n| `413` | `evidenceTooLarge` | La evidencia supera el tamaño máximo permitido. | El cuerpo puede ocupar hasta 1024 KiB y la imagen, hasta 32 MiB. |\n| `404` | `evidenceSourceNotFound` | La evidencia no corresponde a un workflow publicado de esta aplicación. | La versión de workflow no es de la aplicación de la credencial, su nodo `dataset.capture` no recibe el resultado del modelo indicado, o ese modelo no es de la aplicación o no coincide en versión, SHA-256, tipo de tarea o etiquetas. |\n| `409` | `evidenceConflict` | El ID de evidencia ya se usó con otros datos. | Un mismo ID solo puede repetir los mismos datos en la misma aplicación. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl -X POST https://tu-servidor-ayni.example/sdk/evidence \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SdkEvidence"
+              },
+              "examples": {
+                "evidencia": {
+                  "summary": "Clasificación",
+                  "value": {
+                    "evidenceSchemaVersion": 1,
+                    "evidenceId": "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f",
+                    "capturedAt": "2026-10-03T12:00:00.000Z",
+                    "workflowId": "0b9f3c8e-2f4d-4c11-9a57-6f1e2d3c4b5a",
+                    "workflowVersionId": "5d2a7e91-8c3b-4f60-b1d4-9e8f7a6b5c4d",
+                    "workflowVersion": "1.2.0",
+                    "captureNodeId": "captura",
+                    "model": {
+                      "modelVersionId": "c7e4b2a1-6d5f-4e3c-8b9a-1f2e3d4c5b6a",
+                      "version": "2.0.0",
+                      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                    },
+                    "result": {
+                      "type": "classification",
+                      "nodeId": "modelo",
+                      "label": "enferma",
+                      "confidence": 0.62,
+                      "confidences": {
+                        "sana": 0.38,
+                        "enferma": 0.62
+                      }
+                    },
+                    "image": {
+                      "mediaType": "image/jpeg",
+                      "width": 1024,
+                      "height": 768,
+                      "maxImageSize": 1024,
+                      "imageQuality": 80,
+                      "byteSize": 182431,
+                      "sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dónde subir la imagen, o la confirmación si el servidor ya la recibió.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkEvidenceStart"
+                },
+                "examples": {
+                  "subir": {
+                    "summary": "Falta la imagen",
+                    "value": {
+                      "evidenceId": "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f",
+                      "status": "uploadRequired",
+                      "uploadUrl": "https://almacenamiento.example/staging/evidencia.jpg?firma=…",
+                      "uploadUrlExpiresAt": "2026-10-03T12:16:00.000Z"
+                    }
+                  },
+                  "recibida": {
+                    "summary": "Ya recibida",
+                    "value": {
+                      "evidenceId": "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f",
+                      "status": "received",
+                      "receivedAt": "2026-10-03T12:01:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud no válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidEvidence"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidEvidence": {
+                    "description": "Debe seguir el esquema de la evidencia del SDK, sin campos adicionales, con una imagen `image/jpeg` que no supera el tamaño máximo con que se optimizó.",
+                    "value": {
+                      "message": "La evidencia no tiene un formato válido.",
+                      "code": "invalidEvidence"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La política de recolección no está habilitada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["collectionDisabled"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "collectionDisabled": {
+                    "description": "La aplicación recibe evidencia solo mientras su política de recolección está habilitada.",
+                    "value": {
+                      "message": "La recolección de evidencia de esta aplicación está deshabilitada.",
+                      "code": "collectionDisabled"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["evidenceSourceNotFound"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "evidenceSourceNotFound": {
+                    "description": "La versión de workflow no es de la aplicación de la credencial, su nodo `dataset.capture` no recibe el resultado del modelo indicado, o ese modelo no es de la aplicación o no coincide en versión, SHA-256, tipo de tarea o etiquetas.",
+                    "value": {
+                      "message": "La evidencia no corresponde a un workflow publicado de esta aplicación.",
+                      "code": "evidenceSourceNotFound"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El identificador ya se usó con otros datos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["evidenceConflict"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "evidenceConflict": {
+                    "description": "Un mismo ID solo puede repetir los mismos datos en la misma aplicación.",
+                    "value": {
+                      "message": "El ID de evidencia ya se usó con otros datos.",
+                      "code": "evidenceConflict"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "La evidencia o su imagen superan el tamaño máximo permitido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["evidenceTooLarge"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "evidenceTooLarge": {
+                    "description": "El cuerpo puede ocupar hasta 1024 KiB y la imagen, hasta 32 MiB.",
+                    "value": {
+                      "message": "La evidencia supera el tamaño máximo permitido.",
+                      "code": "evidenceTooLarge"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sdk/evidence/{evidenceId}/complete": {
+      "post": {
+        "tags": ["Endpoints"],
+        "operationId": "confirmar-carga-de-evidencia",
+        "summary": "Confirmar la carga de una evidencia",
+        "description": "Comprueba la imagen que el SDK subió a la URL firmada: debe ser un JPEG con el tamaño, el SHA-256 y las dimensiones de la evidencia. La guarda junto a sus datos y confirma la recepción; el SDK solo considera enviada la evidencia con esta confirmación. Confirmar otra vez una evidencia recibida devuelve la misma fecha. La solicitud no lleva cuerpo.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `403` | `collectionDisabled` | La recolección de evidencia de esta aplicación está deshabilitada. | La aplicación recibe evidencia solo mientras su política de recolección está habilitada. |\n| `404` | `evidenceNotFound` | No encontramos esta evidencia. | Su carga no se inició con `POST /sdk/evidence` para la aplicación de la credencial. |\n| `409` | `evidenceImageMissing` | La imagen de la evidencia todavía no se subió. | No hay una imagen en la URL firmada de esta evidencia. |\n| `400` | `invalidEvidenceImage` | La imagen no coincide con la evidencia. | La imagen subida no es un JPEG o su tamaño, su SHA-256 o sus dimensiones no son los de la evidencia; el servidor la descarta. |",
+        "security": [
+          {
+            "sdkCredential": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "sh",
+            "label": "cURL",
+            "source": "curl -X POST https://tu-servidor-ayni.example/sdk/evidence/6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f/complete \\\n  -H \"Authorization: Bearer ayni_sk_…\""
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "ID de la evidencia, el mismo de `POST /sdk/evidence`.",
+              "example": "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f"
+            },
+            "required": true,
+            "description": "ID de la evidencia, el mismo de `POST /sdk/evidence`.",
+            "name": "evidenceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "La evidencia quedó recibida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SdkEvidenceReceipt"
+                },
+                "examples": {
+                  "recibida": {
+                    "summary": "Evidencia recibida",
+                    "value": {
+                      "evidenceId": "6f1d2c3b-4a59-4e8d-9c7b-0a1b2c3d4e5f",
+                      "status": "received",
+                      "receivedAt": "2026-10-03T12:01:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Solicitud no válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidEvidenceImage"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidEvidenceImage": {
+                    "description": "La imagen subida no es un JPEG o su tamaño, su SHA-256 o sus dimensiones no son los de la evidencia; el servidor la descarta.",
+                    "value": {
+                      "message": "La imagen no coincide con la evidencia.",
+                      "code": "invalidEvidenceImage"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial no válida o revocada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["invalidCredential", "credentialRevoked"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "invalidCredential": {
+                    "description": "Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada.",
+                    "value": {
+                      "message": "La credencial no es válida.",
+                      "code": "invalidCredential"
+                    }
+                  },
+                  "credentialRevoked": {
+                    "description": "Un administrador revocó o regeneró la credencial.",
+                    "value": {
+                      "message": "La credencial fue revocada. Genera una nueva credencial para continuar.",
+                      "code": "credentialRevoked"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La política de recolección no está habilitada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["collectionDisabled"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "collectionDisabled": {
+                    "description": "La aplicación recibe evidencia solo mientras su política de recolección está habilitada.",
+                    "value": {
+                      "message": "La recolección de evidencia de esta aplicación está deshabilitada.",
+                      "code": "collectionDisabled"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["evidenceNotFound"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "evidenceNotFound": {
+                    "description": "Su carga no se inició con `POST /sdk/evidence` para la aplicación de la credencial.",
+                    "value": {
+                      "message": "No encontramos esta evidencia.",
+                      "code": "evidenceNotFound"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La imagen todavía no está en el almacenamiento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Mensaje en español para mostrar o registrar."
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": ["evidenceImageMissing"],
+                      "description": "Código estable para decidir qué hacer."
+                    }
+                  },
+                  "required": ["message", "code"]
+                },
+                "examples": {
+                  "evidenceImageMissing": {
+                    "description": "No hay una imagen en la URL firmada de esta evidencia.",
+                    "value": {
+                      "message": "La imagen de la evidencia todavía no se subió.",
+                      "code": "evidenceImageMissing"
                     }
                   }
                 }

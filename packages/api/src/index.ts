@@ -37,7 +37,7 @@ export function createOpenApiDocument() {
     openapi: "3.1.0",
     info: {
       title: "ayni API",
-      version: "0.1.0",
+      version: "0.3.0",
       description: sdkApiDescription,
     },
     servers: [

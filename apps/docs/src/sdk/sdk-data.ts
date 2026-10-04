@@ -44,7 +44,11 @@ export type SdkRequest = {
   method: string;
   /** The server path, such as `/sdk/sync`, or `<variable>` for any other URL. */
   target: string;
-  /** The first argument of each `headers.set` or `headers.add` call, as written. */
+  /**
+   * The first argument of each `headers.set` or `headers.add` call, as
+   * written (cascades too), and `HttpHeaders.contentTypeHeader` for each
+   * `headers.contentType` it assigns.
+   */
   headers: string[];
   sendsCredential: boolean;
   followsRedirects: boolean;
@@ -59,6 +63,20 @@ function argument(source: string, open: number): string {
     if (source[index] === ")" && --depth === 0) return source.slice(open + 1, index).trim();
   }
   throw new Error("Unbalanced parentheses in the SDK source.");
+}
+
+/**
+ * The headers `request` gives the request `name`: the first argument of each
+ * `set` or `add` of a `name.headers` statement (cascades too), and
+ * `HttpHeaders.contentTypeHeader` for each `contentType` it assigns.
+ */
+function requestHeaders(request: string, name: string): string[] {
+  return [...request.matchAll(new RegExp(`\\b${name}\\.headers\\b[^;]*;`, "g"))].flatMap(
+    ([statement]) =>
+      [...statement.matchAll(/\.(?:set|add)\(\s*([^,]+),|\.contentType\s*=/g)].map(([, header]) =>
+        header === undefined ? "HttpHeaders.contentTypeHeader" : header.trim(),
+      ),
+  );
 }
 
 function unreadable(call: string): Error {
@@ -97,7 +115,8 @@ export function sdkRequests(source: string): SdkRequest[] {
     if (serverPath === undefined && variable === undefined) {
       throw unreadable(`${method}Url(${url})`);
     }
-    const name = /(\w+)\s*=\s*await\s+\w+(?:\.\w+)*$/.exec(code.slice(0, match.index))?.[1];
+    // `dart format` may break the chain before `.postUrl(`.
+    const name = /(\w+)\s*=\s*await\s+\w+(?:\s*\.\w+)*\s*$/.exec(code.slice(0, match.index))?.[1];
     if (!name) throw unreadable(`${method}Url( without a request variable`);
     const close = new RegExp(`\\b${name}\\.close\\(\\)`).exec(code.slice(open));
     if (!close) throw unreadable(`${name}.close()`);
@@ -105,9 +124,7 @@ export function sdkRequests(source: string): SdkRequest[] {
     return {
       method: method.toUpperCase(),
       target: serverPath?.replace(/\$\{?(\w+)\}?/g, "<$1>") ?? `<${variable}>`,
-      headers: [
-        ...request.matchAll(new RegExp(`\\b${name}\\.headers\\.(?:set|add)\\(\\s*([^,]+),`, "g")),
-      ].map(([, header = ""]) => header.trim()),
+      headers: requestHeaders(request, name),
       sendsCredential:
         /HttpHeaders\.authorizationHeader|['"]authorization['"]|\b_?credential\b/i.test(request),
       followsRedirects: !new RegExp(`\\b${name}\\.followRedirects = false;`).test(request),

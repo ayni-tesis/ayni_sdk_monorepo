@@ -107,9 +107,9 @@ jobs:
         working-directory: packages/sdk_flutter
         run: dart test
 
-      - name: Test Flutter-only device profile
+      - name: Test Flutter-only device profile and network type
         working-directory: packages/sdk_flutter
-        run: flutter test --no-test-assets flutter_test/device_profile_test.dart
+        run: flutter test --no-test-assets flutter_test/
 
       - name: Analyze SDK example app
         working-directory: packages/sdk_flutter/example/app

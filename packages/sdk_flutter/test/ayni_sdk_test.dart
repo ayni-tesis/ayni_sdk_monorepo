@@ -292,6 +292,7 @@ void main() {
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
           '/sdk/consents',
+          '/sdk/collection-policy',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
@@ -316,6 +317,7 @@ void main() {
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
           '/sdk/consents',
+          '/sdk/collection-policy',
           '/sdk/sync',
           '/sdk/workflow-versions/workflow-version-1.0.0',
           '/sdk/model-versions/model-version-1/manifest',
@@ -546,6 +548,7 @@ void main() {
           '/sdk/traces',
           '/sdk/telemetry-policy',
           '/sdk/traces',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
         expect(await outbox.pending(), isEmpty);
@@ -577,6 +580,7 @@ void main() {
           '/sdk/consents',
           '/sdk/telemetry-policy',
           '/sdk/traces',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
         expect(traceBodies.single['traceId'], trace['traceId']);
@@ -628,6 +632,7 @@ void main() {
             '/sdk/telemetry-policy',
             '/sdk/telemetry-policy',
             '/sdk/traces',
+            '/sdk/collection-policy',
             '/sdk/sync',
           ]);
         },
@@ -652,6 +657,7 @@ void main() {
         expect(traceBodies, isEmpty);
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
         expect((await outbox.pending()).single['traceId'], trace['traceId']);
@@ -689,6 +695,7 @@ void main() {
           '/sdk/traces',
           '/sdk/telemetry-policy',
           '/sdk/traces',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
       },
@@ -744,6 +751,7 @@ void main() {
         expect(requests.map((request) => request.uri.path), [
           '/sdk/telemetry-policy',
           '/sdk/telemetry-policy',
+          '/sdk/collection-policy',
           '/sdk/sync',
         ]);
       },
@@ -928,10 +936,12 @@ void main() {
 
       expect(requests.map((request) => request.uri.path), [
         '/sdk/telemetry-policy',
+        '/sdk/collection-policy',
         '/sdk/sync',
         '/sdk/workflow-versions/workflow-version-1.0.0',
         '/sdk/model-versions/model-version-1/manifest',
         '/sdk/telemetry-policy',
+        '/sdk/collection-policy',
         '/sdk/sync',
       ]);
     },
@@ -1096,7 +1106,7 @@ void main() {
         SyncResourceStatus.invalidRemoteResource,
       ]);
       expect(await inventory.readAsString(), before);
-      expect(requests.length, requestsBeforeSync + 4);
+      expect(requests.length, requestsBeforeSync + 6);
     },
   );
 
@@ -1446,6 +1456,7 @@ void main() {
     expect(await syncStatus(sdk()), SyncStatus.error);
     expect(requests.map((request) => request.uri.path), [
       '/sdk/telemetry-policy',
+      '/sdk/collection-policy',
       '/sdk/sync',
     ]);
     expect(
@@ -2547,8 +2558,38 @@ void main() {
           ).isValid,
           isFalse,
         );
+        expect(
+          AyniConfig(
+            serverUrl: Uri.parse('https://api.ayni.dev'),
+            credential: 'ayni_sk_valid_secret',
+            storageDirectory: storageDirectory,
+            maxEvidenceUploadAttempts: 0,
+          ).isValid,
+          isFalse,
+        );
       },
     );
+
+    test('initialize keeps the limit of evidence upload attempts (US-071)', () {
+      AyniConfig config({int? attempts}) => attempts == null
+          ? AyniConfig(
+              serverUrl: Uri.parse('https://api.ayni.dev'),
+              credential: 'ayni_sk_valid_secret',
+              storageDirectory: storageDirectory,
+            )
+          : AyniConfig(
+              serverUrl: Uri.parse('https://api.ayni.dev'),
+              credential: 'ayni_sk_valid_secret',
+              storageDirectory: storageDirectory,
+              maxEvidenceUploadAttempts: attempts,
+            );
+
+      expect(AyniSdk.initialize(config()).sdk!.maxEvidenceUploadAttempts, 5);
+      expect(
+        AyniSdk.initialize(config(attempts: 2)).sdk!.maxEvidenceUploadAttempts,
+        2,
+      );
+    });
 
     test('does not expose credential in AyniConfig.toString()', () {
       const secret = 'ayni_sk_super_secret_never_leak_this';

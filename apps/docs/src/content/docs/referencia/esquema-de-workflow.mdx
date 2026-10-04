@@ -21,7 +21,7 @@ Una definición publicada es un objeto `{ schemaVersion, nodes, connections }`:
 | --- | --- | --- |
 | `schemaVersion` | `"1"`, `"2"` o `"3"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
 | `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
-| `connections` | Lista de conexiones | Las conexiones de la entrada de imagen con los modelos y las capturas, y de un modelo con una captura. El servidor la publica vacía si no hay ninguna. |
+| `connections` | Lista de conexiones | Las conexiones de la entrada de imagen con los modelos y las capturas, de un modelo con una captura y de la rama de una condición con una captura. El servidor la publica vacía si no hay ninguna. |
 
 :::note
 La disposición del lienzo no forma parte de la versión publicada.
@@ -116,6 +116,15 @@ código.
 Cuando `run()` alcanza el nodo, el SDK guarda la evidencia en el dispositivo
 solo si la app indica que la persona dio su consentimiento; sin él, omite la
 captura. Un nodo cuyo modelo no se ejecutó en esa ejecución no crea evidencia.
+
+La captura puede colgar de la rama `true` o `false` de una condición que
+evalúa el mismo modelo cuyo resultado recibe, por ejemplo para guardar solo
+las predicciones de baja confianza. Esa conexión llega a su puerto de entrada
+opcional `condicion`, que no figura en `inputs`: el nodo es el mismo con o sin
+condición. `run()` alcanza entonces la captura solo si la condición toma esa
+rama; si toma la otra, no crea evidencia y el resultado no cambia. Una
+condición que solo decide una captura se evalúa cada vez que se ejecuta su
+modelo, aunque ninguna salida la lea.
 Qué guarda y cómo borrarlo está en
 [Datos y privacidad](/recursos/datos-y-privacidad/#evidencia-para-datasets).
 
@@ -123,7 +132,7 @@ Qué guarda y cómo borrarlo está en
 | --- | --- | --- |
 | `id` | Texto | Identificador del nodo. |
 | `type` | `"dataset.capture"` | Tipo del nodo. |
-| `inputs` | `{ "imagen": "image", "resultado": "inferenceResult" }` | Sus puertos de entrada: `imagen` recibe la imagen de entrada y `resultado`, el resultado de un modelo de clasificación o detección. Cada uno recibe exactamente una conexión en `connections`. |
+| `inputs` | `{ "imagen": "image", "resultado": "inferenceResult" }` | Sus puertos de entrada obligatorios: `imagen` recibe la imagen de entrada y `resultado`, el resultado de un modelo de clasificación o detección. Cada uno recibe exactamente una conexión en `connections`. El puerto opcional `condicion` recibe como mucho una. |
 
 ## Conexiones
 
@@ -149,6 +158,7 @@ Una condición y una salida guardan su origen en sus propios campos
 | `input.image`, puerto `imagen` | `model.tflite`, puerto `image` | En `connections`. Cada modelo recibe como mucho una conexión. |
 | `input.image`, puerto `imagen` | `dataset.capture`, puerto `imagen` | En `connections`. Cada captura recibe exactamente una. |
 | `model.tflite`, puerto `result` | `dataset.capture`, puerto `resultado` | En `connections`. Cada captura recibe exactamente una. |
+| `condition`, puerto `true` o `false` | `dataset.capture`, puerto `condicion` | En `connections`. Cada captura recibe como mucho una, de una condición cuyo `sourceNodeId` es el modelo conectado a su `resultado`. |
 | `model.tflite` de clasificación, puerto `result` | `condition` cuyo `label` está en las etiquetas del modelo | En el `sourceNodeId` de la condición. |
 | `model.tflite`, puerto `result` | `output` cuyo `resultType` es el tipo de salida del modelo | En el `sourceNodeId` de la salida, con `sourcePort` igual a `result`. |
 | `condition`, puerto `true` o `false` | `output` con `resultType` igual a `boolean` | En el `sourceNodeId` de la salida, con `sourcePort` igual a `true` o `false`. |
@@ -172,7 +182,7 @@ una de estas reglas:
 | Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
 | Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |
 | Grafo acíclico | El grafo no tiene ciclos (ver [Grafo acíclico](#grafo-acíclico)). |
-| Puertos compatibles | Cada arista une [puertos compatibles](#puertos-compatibles), cada modelo recibe como mucho una conexión de imagen y cada captura recibe exactamente una imagen y un resultado. |
+| Puertos compatibles | Cada arista une [puertos compatibles](#puertos-compatibles), cada modelo recibe como mucho una conexión de imagen y cada captura recibe exactamente una imagen y un resultado y, como mucho, una rama de una condición sobre el modelo de ese resultado. |
 
 ### Resultado de una definición rechazada
 
@@ -216,8 +226,8 @@ cuál.
 ## Ejemplo completo
 
 Este workflow clasifica una foto de una hoja, avisa cuando la confianza de
-`enferma` es de al menos 0,8 y pide guardar la foto como evidencia. Usa el
-esquema 3 porque incluye `dataset.capture`:
+`enferma` es de al menos 0,8 y, solo en ese caso, pide guardar la foto como
+evidencia. Usa el esquema 3 porque incluye `dataset.capture`:
 
 - `imagen` entrega la foto al modelo `modelo` y a la captura `captura` por
   las conexiones de `connections`.
@@ -227,6 +237,7 @@ esquema 3 porque incluye `dataset.capture`:
 - `revisar` lee la rama verdadera de la condición (`true`) y `sin-alerta`, la
   falsa (`false`); ambas son salidas `boolean`.
 - `captura` recibe la foto en `imagen` y la clasificación de `modelo` en
-  `resultado`.
+  `resultado`, y cuelga de la rama verdadera de `condicion` por su puerto
+  `condicion`.
 
 <Code code={workflowDefinition} lang="json" title="workflow_definition.json" />

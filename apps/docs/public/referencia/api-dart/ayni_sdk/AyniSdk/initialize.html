@@ -145,8 +145,12 @@ return AyniSdk.instance;
       syncTimeout: config.syncTimeout,
       allowInsecureLoopback: config.allowInsecureLoopback,
       onProgress: config.onProgress,
+      maxEvidenceUploadAttempts: config.maxEvidenceUploadAttempts,
     );
     sdk._ensureInstallationId();
+    &#47;&#47; US-072: what a stopped process left of the evidence queue goes even
+    &#47;&#47; if the app never syncs again; it never fails and never blocks.
+    unawaited(sdk._evidence.removeLeftovers());
     _instance = sdk;
     return AyniInitializationResult(
       status: InitializationStatus.ready,

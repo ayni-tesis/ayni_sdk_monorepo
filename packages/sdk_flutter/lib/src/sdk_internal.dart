@@ -15,6 +15,24 @@ import 'dart:io';
 /// ([workflow_definition_validator.dart]) both rely on when reading JSON.
 bool isNonEmptyString(Object? value) => value is String && value.isNotEmpty;
 
+/// `ENOSPC` (`No space left on device`), the same number on Android (Linux)
+/// and iOS (XNU). `dart:io` reports the operating system's own code in
+/// [OSError.errorCode].
+const _noSpaceLeftOnDevice = 28;
+
+/// `ERROR_HANDLE_DISK_FULL` and `ERROR_DISK_FULL`, Windows system error codes.
+const _windowsDiskFull = {39, 112};
+
+/// Whether [error] says the device has no space left to write a file, for
+/// the model installer and the evidence queue alike. [windows] is the
+/// platform whose error codes apply; it defaults to the current one.
+bool isOutOfStorage(FileSystemException error, {bool? windows}) {
+  final code = error.osError?.errorCode;
+  return (windows ?? Platform.isWindows)
+      ? _windowsDiskFull.contains(code)
+      : code == _noSpaceLeftOnDevice;
+}
+
 /// The permanent file a validated, downloaded workflow definition is installed
 /// to: `workflow-definitions/<base64url(versionId)>.json` under
 /// [storageDirectory].

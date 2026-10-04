@@ -3,6 +3,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'trace_payload.dart';
+
 class TraceOutboxStore {
   static const maxPayloadBytes = 2 * 1024 * 1024;
 
@@ -42,12 +44,15 @@ class TraceOutboxStore {
     }
   }
 
+  /// Saves [trace] with only the fields of the published trace schema: an
+  /// image or any other field a component attached never reaches the disk
+  /// (US-073).
   Future<void> enqueue(Map<String, Object?> trace) async {
     final traceId = trace['traceId'];
     if (traceId is! String || traceId.trim().isEmpty) {
       throw const FormatException('Invalid trace outbox entry');
     }
-    final encodedTrace = jsonEncode(trace);
+    final encodedTrace = jsonEncode(allowlistedTracePayload(trace));
     await _serialize(() async {
       final destination = _fileFor(traceId);
       if (await destination.exists()) {
@@ -77,12 +82,14 @@ class TraceOutboxStore {
     if (await file.exists()) await file.delete();
   });
 
+  // A file written by another copy of the outbox may carry fields the schema
+  // does not allow; only the allowed ones are read, and so sent (US-073).
   Future<Map<String, Object?>> _read(File file) async {
     final decoded = jsonDecode(await file.readAsString());
     if (decoded is! Map || decoded['traceId'] is! String) {
       throw const FormatException('Invalid trace outbox entry');
     }
-    return Map<String, Object?>.from(decoded);
+    return allowlistedTracePayload(Map<String, Object?>.from(decoded));
   }
 
   File _fileFor(String traceId) {

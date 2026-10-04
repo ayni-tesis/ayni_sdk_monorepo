@@ -15,6 +15,16 @@ export const COLLECTION_NETWORK_LABELS: Record<CollectionNetwork, string> = {
   wifiAndCellular: "Wi-Fi y datos móviles",
 };
 
+/**
+ * What each network means for the evidence the SDK sends (US-069); the SDK
+ * reports the evidence kept for Wi-Fi as `Pendiente de Wi-Fi`.
+ */
+export const COLLECTION_NETWORK_DESCRIPTIONS: Record<CollectionNetwork, string> = {
+  wifi: "La evidencia se envía solo por Wi-Fi: con datos móviles o sin conexión queda pendiente de Wi-Fi y no consume datos móviles.",
+  wifiAndCellular:
+    "La evidencia se envía por Wi-Fi o por datos móviles, así que puede consumir datos móviles.",
+};
+
 /** The longest side of an uploaded image, in pixels. */
 export const COLLECTION_MAX_IMAGE_SIZE = { min: 128, max: 4096 } as const;
 

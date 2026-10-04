@@ -283,17 +283,91 @@ consentimiento de recolección que tu app le pide:</p>
 );
 </code></pre>
 <p>El ejemplo comprobado está en <code>example/privacy.dart</code>.</p>
+<p>Si el nodo cuelga de una rama de una condición, por ejemplo para guardar solo
+las predicciones de baja confianza, <code>run()</code> lo alcanza solo cuando la condición
+toma esa rama; si toma la otra, no crea evidencia y el resultado es el mismo.</p>
 <p><code>run()</code> devuelve el resultado sin esperar la evidencia y una evidencia que no se
-puede guardar no lo cambia. Después, el SDK guarda en
-<code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> una copia de la imagen y
-<code>evidence.json</code>, con el resultado que recibió el nodo, el workflow, su versión y
-el modelo; luego llama a <code>onEvidence</code> con <code>EvidenceEvent.evidenceQueued</code> y a
-<code>onProgress</code> con <code>Evidencia guardada para envío posterior.</code> Sin consentimiento,
-el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
-la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
-deja de pasar <code>evidenceConsent: true</code> y elimina la evidencia guardada; un
-<code>run()</code> que ya estaba en curso tampoco guarda la suya:</p>
+puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
+imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección
+de la aplicación, que <code>sync()</code> consulta, y la guarda en
+<code>storageDirectory/evidence/&lt;evidenceId&gt;/</code> con <code>evidence.json</code>, con el resultado
+que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
+<code>run()</code> no cambia. <code>onEvidence</code> recibe <code>EvidenceEvent.evidenceOptimizing</code>,
+<code>evidencePrepared</code> cuando la imagen está lista y <code>evidenceQueued</code> cuando la
+evidencia queda pendiente en la cola local, y <code>onProgress</code>, sus mensajes:
+<code>Optimizando</code>, <code>Evidencia preparada para envío.</code> y
+<code>Evidencia guardada para envío posterior.</code> Si el dispositivo no tiene espacio,
+descarta esa evidencia sin dejar archivos a medias y avisa
+<code>evidenceStorageFull</code>:
+<code>No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.</code>
+Si no puede preparar una evidencia por otro motivo, por ejemplo porque ningún
+<code>sync()</code> guardó aún la política, también la descarta y avisa
+<code>evidenceDiscarded</code>:
+<code>No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.</code>
+Sin consentimiento, el SDK omite la captura y no conserva la imagen.</p>
+<p>La evidencia guardada queda pendiente de envío en una cola local que se
+conserva sin conexión y aunque la app se reinicie, y que no bloquea <code>run()</code>.
+<code>pendingEvidenceCount()</code> devuelve cuántas evidencias esperan, sin solicitudes de
+red, para que la app muestre <code>Evidencia pendiente de envío</code>:</p>
+<pre class="language-dart"><code class="language-dart">final pending = await sdk.pendingEvidenceCount();
+if (pending &gt; 0) {
+  showStatus('Evidencia pendiente de envío ($pending)');
+}
+</code></pre>
+<p>Si la persona retira su consentimiento, deja de pasar <code>evidenceConsent: true</code> y
+elimina la evidencia guardada; un <code>run()</code> que ya estaba en curso tampoco guarda
+la suya:</p>
 <pre class="language-dart"><code class="language-dart">await sdk.clearPendingEvidence();
+</code></pre>
+<p>La «Red permitida» de la política de recolección dice por qué conexión puede
+salir la evidencia: <code>Solo Wi-Fi</code> o <code>Wi-Fi y datos móviles</code>. <code>sync()</code> guarda esa
+red y si la recolección está habilitada junto con el tamaño y la calidad.
+<code>evidenceQueueStatus()</code> devuelve el estado de la cola, sin solicitudes de red:
+<code>EvidenceQueueStatus.waitingForWifi</code> (<code>Pendiente de Wi-Fi</code>) mientras haya
+evidencia pendiente, la política esté habilitada y solo permita Wi-Fi, y el
+dispositivo use datos móviles, otra conexión o ninguna; la evidencia sigue
+pendiente, sin cargas ni consumo de datos móviles. Si no, es <code>pending</code> con
+evidencia pendiente o <code>empty</code> sin ella:</p>
+<pre class="language-dart"><code class="language-dart">final status = await sdk.evidenceQueueStatus();
+if (status != EvidenceQueueStatus.empty) {
+  showStatus(status.message);
+}
+</code></pre>
+<p>Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
+(<code>ConnectivityManager</code> en Android, <code>NWPathMonitor</code> en iOS 12 o posterior) y no
+lo guarda ni lo envía.</p>
+<p><code>sync()</code> sube la evidencia pendiente a la aplicación de la credencial solo
+mientras la política de recolección, consultada antes de cada una, esté
+habilitada y permita la conexión actual. <code>onEvidence</code> de <code>sync()</code> recibe
+<code>evidenceUploading</code> (<code>Subiendo evidencia…</code>) y después <code>evidenceReceived</code>
+(<code>Evidencia recibida.</code>), <code>evidenceUploadFailed</code>
+(<code>No se pudo enviar la evidencia; se reintentará cuando sea posible.</code>) o
+<code>evidenceCredentialRevoked</code>
+(<code>No se puede enviar evidencia porque la credencial fue revocada.</code>):</p>
+<pre class="language-dart"><code class="language-dart">final result = await sdk.sync(
+  onEvidence: (event) =&gt; showStatus(event.message),
+);
+</code></pre>
+<p>El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
+la recibió, y entonces elimina su copia local antes de avisar
+<code>evidenceReceived</code>, sin tocar workflows ni modelos instalados. Sin esa
+confirmación la conserva, sin eliminar nada, y un <code>sync()</code> posterior la vuelve
+a intentar sin duplicarla hasta el límite de intentos.</p>
+<p>Cada carga sin confirmación cuenta como un intento, salvo con la credencial
+revocada, y la evidencia queda <code>Reintentando</code>: un <code>sync()</code> posterior la
+reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
+horas. <code>maxEvidenceUploadAttempts</code> (5 por defecto) limita los intentos; en el
+último, <code>onEvidence</code> recibe <code>evidenceRetriesExhausted</code>
+(<code>No se pudo enviar la evidencia después de varios intentos.</code>) y la evidencia
+queda <code>Fallida</code>: el SDK la conserva, pero no la vuelve a enviar
+automáticamente. <code>evidenceStatusCounts()</code> devuelve cuántas hay en cada estado
+(<code>Pendiente</code>, <code>Enviando</code>, <code>Reintentando</code>, <code>Enviada</code> o <code>Fallida</code>); la
+evidencia confirmada ya no se cuenta, porque el SDK la eliminó:</p>
+<pre class="language-dart"><code class="language-dart">final counts = await sdk.evidenceStatusCounts();
+final failed = counts[EvidenceStatus.failed]!;
+if (failed &gt; 0) {
+  showStatus('${EvidenceStatus.failed.message}: $failed');
+}
 </code></pre>
 <h2 id="estructura-del-paquete">Estructura del paquete</h2>
 <ul>
@@ -315,6 +389,9 @@ deja de pasar <code>evidenceConsent: true</code> y elimina la evidencia guardada
 <ul>
 <li>
 <p>Configura <code>minSdkVersion 26</code> (Android 8.0) y <code>compileSdkVersion 36</code> en <code>android/app/build.gradle</code>.</p>
+</li>
+<li>
+<p>El SDK declara el permiso <code>ACCESS_NETWORK_STATE</code> en su manifiesto para saber si el dispositivo usa Wi-Fi antes de enviar evidencia. Android lo concede al instalar la app, sin preguntar, y lo agrega al manifiesto de tu app al compilarla.</p>
 </li>
 <li>
 <p>Con Flutter 3.44 y <code>tflite_flutter</code> 0.12.1, alinea el target Java del subproyecto Android de <code>tflite_flutter</code> con Kotlin 17 en <code>android/build.gradle.kts</code>:</p>

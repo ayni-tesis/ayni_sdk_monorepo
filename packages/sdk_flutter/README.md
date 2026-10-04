@@ -302,19 +302,109 @@ final result = await sdk.run(
 
 El ejemplo comprobado está en `example/privacy.dart`.
 
+Si el nodo cuelga de una rama de una condición, por ejemplo para guardar solo
+las predicciones de baja confianza, `run()` lo alcanza solo cuando la condición
+toma esa rama; si toma la otra, no crea evidencia y el resultado es el mismo.
+
 `run()` devuelve el resultado sin esperar la evidencia y una evidencia que no se
-puede guardar no lo cambia. Después, el SDK guarda en
-`storageDirectory/evidence/<evidenceId>/` una copia de la imagen y
-`evidence.json`, con el resultado que recibió el nodo, el workflow, su versión y
-el modelo; luego llama a `onEvidence` con `EvidenceEvent.evidenceQueued` y a
-`onProgress` con `Evidencia guardada para envío posterior.` Sin consentimiento,
-el SDK omite la captura y no conserva la imagen. Esta versión todavía no envía
-la evidencia: queda en el dispositivo. Si la persona retira su consentimiento,
-deja de pasar `evidenceConsent: true` y elimina la evidencia guardada; un
-`run()` que ya estaba en curso tampoco guarda la suya:
+puede preparar no lo cambia. Después, el SDK reduce y comprime una copia de la
+imagen a un JPEG con el tamaño máximo y la calidad de la política de recolección
+de la aplicación, que `sync()` consulta, y la guarda en
+`storageDirectory/evidence/<evidenceId>/` con `evidence.json`, con el resultado
+que recibió el nodo, el workflow, su versión y el modelo. La imagen que recibió
+`run()` no cambia. `onEvidence` recibe `EvidenceEvent.evidenceOptimizing`,
+`evidencePrepared` cuando la imagen está lista y `evidenceQueued` cuando la
+evidencia queda pendiente en la cola local, y `onProgress`, sus mensajes:
+`Optimizando`, `Evidencia preparada para envío.` y
+`Evidencia guardada para envío posterior.` Si el dispositivo no tiene espacio,
+descarta esa evidencia sin dejar archivos a medias y avisa
+`evidenceStorageFull`:
+`No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`
+Si no puede preparar una evidencia por otro motivo, por ejemplo porque ningún
+`sync()` guardó aún la política, también la descarta y avisa
+`evidenceDiscarded`:
+`No se pudo preparar una evidencia. El resultado del análisis no se vio afectado.`
+Sin consentimiento, el SDK omite la captura y no conserva la imagen.
+
+La evidencia guardada queda pendiente de envío en una cola local que se
+conserva sin conexión y aunque la app se reinicie, y que no bloquea `run()`.
+`pendingEvidenceCount()` devuelve cuántas evidencias esperan, sin solicitudes de
+red, para que la app muestre `Evidencia pendiente de envío`:
+
+```dart
+final pending = await sdk.pendingEvidenceCount();
+if (pending > 0) {
+  showStatus('Evidencia pendiente de envío ($pending)');
+}
+```
+
+Si la persona retira su consentimiento, deja de pasar `evidenceConsent: true` y
+elimina la evidencia guardada; un `run()` que ya estaba en curso tampoco guarda
+la suya:
 
 ```dart
 await sdk.clearPendingEvidence();
+```
+
+La «Red permitida» de la política de recolección dice por qué conexión puede
+salir la evidencia: `Solo Wi-Fi` o `Wi-Fi y datos móviles`. `sync()` guarda esa
+red y si la recolección está habilitada junto con el tamaño y la calidad.
+`evidenceQueueStatus()` devuelve el estado de la cola, sin solicitudes de red:
+`EvidenceQueueStatus.waitingForWifi` (`Pendiente de Wi-Fi`) mientras haya
+evidencia pendiente, la política esté habilitada y solo permita Wi-Fi, y el
+dispositivo use datos móviles, otra conexión o ninguna; la evidencia sigue
+pendiente, sin cargas ni consumo de datos móviles. Si no, es `pending` con
+evidencia pendiente o `empty` sin ella:
+
+```dart
+final status = await sdk.evidenceQueueStatus();
+if (status != EvidenceQueueStatus.empty) {
+  showStatus(status.message);
+}
+```
+
+Para saberlo, el SDK lee el tipo de conexión del momento con su plugin nativo
+(`ConnectivityManager` en Android, `NWPathMonitor` en iOS 12 o posterior) y no
+lo guarda ni lo envía.
+
+`sync()` sube la evidencia pendiente a la aplicación de la credencial solo
+mientras la política de recolección, consultada antes de cada una, esté
+habilitada y permita la conexión actual. `onEvidence` de `sync()` recibe
+`evidenceUploading` (`Subiendo evidencia…`) y después `evidenceReceived`
+(`Evidencia recibida.`), `evidenceUploadFailed`
+(`No se pudo enviar la evidencia; se reintentará cuando sea posible.`) o
+`evidenceCredentialRevoked`
+(`No se puede enviar evidencia porque la credencial fue revocada.`):
+
+```dart
+final result = await sdk.sync(
+  onEvidence: (event) => showStatus(event.message),
+);
+```
+
+El SDK solo cuenta una evidencia como enviada cuando el servidor confirma que
+la recibió, y entonces elimina su copia local antes de avisar
+`evidenceReceived`, sin tocar workflows ni modelos instalados. Sin esa
+confirmación la conserva, sin eliminar nada, y un `sync()` posterior la vuelve
+a intentar sin duplicarla hasta el límite de intentos.
+
+Cada carga sin confirmación cuenta como un intento, salvo con la credencial
+revocada, y la evidencia queda `Reintentando`: un `sync()` posterior la
+reintenta tras una espera de 15 minutos que se duplica en cada fallo, hasta 6
+horas. `maxEvidenceUploadAttempts` (5 por defecto) limita los intentos; en el
+último, `onEvidence` recibe `evidenceRetriesExhausted`
+(`No se pudo enviar la evidencia después de varios intentos.`) y la evidencia
+queda `Fallida`: el SDK la conserva, pero no la vuelve a enviar
+automáticamente. `evidenceStatusCounts()` devuelve cuántas hay en cada estado
+(`Pendiente`, `Enviando`, `Reintentando`, `Enviada` o `Fallida`); la
+evidencia confirmada ya no se cuenta, porque el SDK la eliminó:
+
+```dart
+final counts = await sdk.evidenceStatusCounts();
+final failed = counts[EvidenceStatus.failed]!;
+if (failed > 0) {
+  showStatus('${EvidenceStatus.failed.message}: $failed');
+}
 ```
 
 ## Estructura del paquete
@@ -339,6 +429,7 @@ Estos mínimos corresponden al runtime de TensorFlow Lite usado por el SDK. Cons
 El paquete declara las dependencias requeridas por el runtime de TensorFlow Lite en Android a través de `tflite_flutter`.
 
 - Configura `minSdkVersion 26` (Android 8.0) y `compileSdkVersion 36` en `android/app/build.gradle`.
+- El SDK declara el permiso `ACCESS_NETWORK_STATE` en su manifiesto para saber si el dispositivo usa Wi-Fi antes de enviar evidencia. Android lo concede al instalar la app, sin preguntar, y lo agrega al manifiesto de tu app al compilarla.
 - Con Flutter 3.44 y `tflite_flutter` 0.12.1, alinea el target Java del subproyecto Android de `tflite_flutter` con Kotlin 17 en `android/build.gradle.kts`:
 
   ```kotlin

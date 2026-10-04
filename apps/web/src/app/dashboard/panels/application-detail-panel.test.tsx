@@ -3759,7 +3759,8 @@ describe("ApplicationDetailPanel", () => {
 
       const panel = await addAfter("condition-node", "Verdadero");
       expect(within(panel).getByText("Después de Verdadero de Condición: roya")).toBeTruthy();
-      expect(panelItems(panel)).toEqual(["Salida"]);
+      // The capture is listed too after a branch (US-074), disabled without collection.
+      expect(panelItems(panel)).toEqual(["Salida", "Capturar para dataset"]);
       fireEvent.click(within(panel).getByRole("button", { name: "Salida" }));
       // The result type follows from the port.
       const resultType = within(panel).getByLabelText("Tipo de resultado") as HTMLSelectElement;
@@ -4209,6 +4210,244 @@ describe("ApplicationDetailPanel", () => {
 
       expect(rowCells(panel)).toHaveLength(1);
       expect(screen.queryByText("El nodo de captura está listo.")).toBeNull();
+    });
+  });
+
+  describe("US-073: Enviar solo telemetría sin nodo de captura", () => {
+    stubWorkflowCanvasLayout();
+
+    const NO_CAPTURE = "Este workflow no recolecta imágenes.";
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const captureNode = {
+      id: "capture-node",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+
+    async function openWorkflow(nodes: unknown[], canManage: boolean) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: {
+              workflow: {
+                id: "workflow-1",
+                applicationId: "app-1",
+                name: "Detección de broca",
+                status: "draft",
+                createdAt: "2026-09-21T15:00:00.000Z",
+                updatedAt: "2026-09-21T16:00:00.000Z",
+              },
+              draft: { nodes, connections: [] },
+              versions: [],
+            },
+          };
+        if (url === "/applications/app-1/collection-policy")
+          return { data: { policy: { applicationId: "app-1", enabled: true } } };
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: { versions: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage={canManage}
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+    }
+
+    it.each([
+      ["an administrator", true],
+      ["a member", false],
+    ])(
+      "tells %s that a workflow without Capturar evidencia collects no images",
+      async (_, canManage) => {
+        await openWorkflow([imageNode], canManage);
+
+        expect(screen.getByText(NO_CAPTURE)).toBeTruthy();
+        expect(client.post).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not show it once the workflow has a Capturar evidencia node", async () => {
+      await openWorkflow([imageNode, captureNode], true);
+
+      expect(screen.queryByText(NO_CAPTURE)).toBeNull();
+    });
+  });
+
+  describe("US-074: Filtrar evidencia por confianza", () => {
+    stubWorkflowCanvasLayout();
+
+    const imageNode = { id: "image-node", type: "input.image", outputs: { imagen: "image" } };
+    const classifierNode = {
+      id: "classifier-node",
+      type: "model.tflite",
+      modelVersionId: "leaf-1",
+      modelName: "Clasificador de hojas",
+      version: "1.0.0",
+      inputs: {
+        image: { type: "image", width: 224, height: 224, channels: 3, normalization: "none" },
+      },
+      outputs: { result: { type: "classification", labels: ["roya", "sana"] } },
+    };
+    const conditionNode = {
+      id: "condition-node",
+      type: "condition",
+      sourceNodeId: "classifier-node",
+      label: "roya",
+      operator: "lt",
+      threshold: 0.6,
+      branches: { true: "Verdadero", false: "Falso" },
+    };
+    const captureNode = {
+      id: "capture-node",
+      type: "dataset.capture",
+      inputs: { imagen: "image", resultado: "inferenceResult" },
+    };
+    const imageToClassifier = {
+      sourceNodeId: "image-node",
+      sourcePort: "imagen",
+      targetNodeId: "classifier-node",
+      targetPort: "image",
+    };
+    const layout = {
+      "image-node": { x: 0, y: 0 },
+      "classifier-node": { x: 400, y: 0 },
+      "condition-node": { x: 800, y: 0 },
+    };
+    const COLLECTION_DISABLED =
+      "Habilita la recolección de evidencia en la configuración de la aplicación.";
+
+    async function openWorkflow(collectionEnabled: boolean) {
+      client.get.mockImplementation(async (url: string) => {
+        if (url.endsWith("/workflows/workflow-1"))
+          return {
+            data: {
+              workflow: {
+                id: "workflow-1",
+                applicationId: "app-1",
+                name: "Roya del café",
+                status: "draft",
+                createdAt: "2026-09-21T15:00:00.000Z",
+                updatedAt: "2026-09-21T16:00:00.000Z",
+              },
+              draft: {
+                nodes: [imageNode, classifierNode, conditionNode],
+                connections: [imageToClassifier],
+                layout,
+              },
+              versions: [],
+            },
+          };
+        if (url === "/applications/app-1/collection-policy")
+          return { data: { policy: { applicationId: "app-1", enabled: collectionEnabled } } };
+        if (url === "/applications/app-1/models") return { data: { models: [] } };
+        return { data: { versions: [] } };
+      });
+      render(
+        <TooltipProvider>
+          <ApplicationDetailPanel
+            application={activeApp}
+            workspaceName="Laboratorio Andino"
+            canManage
+            activeSection="workflows"
+            workflowId="workflow-1"
+            onBack={vi.fn()}
+            onApplicationUpdated={vi.fn()}
+            onApplicationArchived={vi.fn()}
+          />
+        </TooltipProvider>,
+      );
+      await screen.findByRole("region", { name: "Lienzo del workflow" });
+      await waitFor(() =>
+        expect(client.get).toHaveBeenCalledWith("/applications/app-1/collection-policy"),
+      );
+    }
+
+    const addAfterTrueBranch = () => {
+      fireEvent.click(
+        within(screen.getByTestId("workflow-node-condition-node")).getByRole("button", {
+          name: "Agregar nodo después de Verdadero",
+        }),
+      );
+      return screen.getByRole("complementary", { name: "Agregar nodo" });
+    };
+
+    it("adds a capture after a condition branch and labels the branches", async () => {
+      await openWorkflow(true);
+      client.post.mockResolvedValueOnce({
+        data: {
+          draft: {
+            nodes: [imageNode, classifierNode, conditionNode, captureNode],
+            connections: [
+              imageToClassifier,
+              {
+                sourceNodeId: "condition-node",
+                sourcePort: "true",
+                targetNodeId: "capture-node",
+                targetPort: "condicion",
+              },
+              {
+                sourceNodeId: "classifier-node",
+                sourcePort: "result",
+                targetNodeId: "capture-node",
+                targetPort: "resultado",
+              },
+              {
+                sourceNodeId: "image-node",
+                sourcePort: "imagen",
+                targetNodeId: "capture-node",
+                targetPort: "imagen",
+              },
+            ],
+            layout: { ...layout, "capture-node": { x: 1200, y: 0 } },
+          },
+          draftRevision: 1,
+        },
+      });
+
+      const panel = addAfterTrueBranch();
+      const capture = await within(panel).findByRole("button", { name: "Capturar para dataset" });
+      await waitFor(() => expect(capture.getAttribute("aria-disabled")).toBe("false"));
+      fireEvent.click(capture);
+
+      expect(client.post).toHaveBeenCalledExactlyOnceWith(
+        "/applications/app-1/workflows/workflow-1/nodes",
+        expect.objectContaining({
+          type: "dataset.capture",
+          sourceNodeId: "condition-node",
+          sourcePort: "true",
+        }),
+      );
+      await screen.findByTestId("workflow-node-capture-node");
+      const condition = screen.getByTestId("workflow-node-condition-node");
+      expect(within(condition).getByText("Capturar solo cuando roya < 0,6")).toBeTruthy();
+      const port = (id: string) => condition.querySelector(`[data-port="${id}"]`) as HTMLElement;
+      expect(within(port("true")).getByText("Capturar evidencia")).toBeTruthy();
+      expect(within(port("false")).getByText("No capturar")).toBeTruthy();
+      expect(screen.queryByText("Este workflow no recolecta imágenes.")).toBeNull();
+      expect(toastMock.success).toHaveBeenCalledWith("Nodo agregado y conectado.");
+    });
+
+    it("keeps Capturar para dataset disabled after a branch while collection is not enabled", async () => {
+      await openWorkflow(false);
+
+      const capture = await within(addAfterTrueBranch()).findByRole("button", {
+        name: "Capturar para dataset",
+      });
+
+      expect(capture.getAttribute("aria-disabled")).toBe("true");
+      expect(within(capture).getByText(COLLECTION_DISABLED)).toBeTruthy();
+      fireEvent.click(capture);
+      expect(client.post).not.toHaveBeenCalled();
     });
   });
 

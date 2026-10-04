@@ -1,6 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import collectionPolicySource from "../../../../packages/api/src/collection-policy.ts?raw";
+import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
+import sdkCollectionPolicySource from "../../../../packages/sdk_flutter/lib/src/collection_policy_store.dart?raw";
+import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
+import evidenceStoreSource from "../../../../packages/sdk_flutter/lib/src/evidence_store.dart?raw";
+import traceOutboxSource from "../../../../packages/sdk_flutter/lib/src/trace_outbox_store.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { dashboardTexts, quotedTexts } from "../guides/dashboard-texts";
 import { tableRows } from "../markdown-table";
@@ -13,6 +19,10 @@ const page = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 const version = sdkVersion(pubspec);
+const androidManifest = readFileSync(
+  join(repositoryRoot, "packages", "sdk_flutter", "android", "src", "main", "AndroidManifest.xml"),
+  "utf8",
+);
 const source = sdkLibrarySource();
 const requests = sdkRequests(source);
 
@@ -106,13 +116,27 @@ describe("Datos y privacidad (US-147)", () => {
 
     expect(
       requests.filter((request) => request.sendsBody).map((request) => request.target),
-    ).toEqual(["/sdk/consents", "/sdk/traces"]);
+    ).toEqual(["/sdk/consents", "/sdk/traces", "/sdk/evidence", "<uploadUrl>"]);
+    // Besides the credential, a request only declares the type of the body it sends.
     expect(
-      requests.flatMap(({ headers }) =>
-        headers.filter((header) => header !== "HttpHeaders.authorizationHeader"),
+      requests.flatMap(({ headers, sendsBody }) =>
+        headers.filter(
+          (header) =>
+            header !== "HttpHeaders.authorizationHeader" &&
+            !(sendsBody && header === "HttpHeaders.contentTypeHeader"),
+        ),
       ),
     ).toEqual([]);
-    expect(doesNot).toContain("No sube imágenes ni entradas del modelo.");
+    expect(
+      requests.filter(
+        (request) =>
+          request.sendsBody && !request.headers.includes("HttpHeaders.contentTypeHeader"),
+      ),
+    ).toEqual([]);
+    expect(page).toContain("`Content-Type`");
+    expect(doesNot.replace(/\s+/g, " ")).toContain(
+      "No sube imágenes ni entradas del modelo, salvo la copia optimizada de cada evidencia para datasets",
+    );
     expect(doesNot).toContain("`POST /sdk/traces`");
     expect(doesNot).toContain("`diagnostics/trace-outbox/`");
     expect(doesNot).toContain("`AyniSdk.getDeviceProfile()`");
@@ -146,6 +170,237 @@ describe("Datos y privacidad (US-147)", () => {
     ).toEqual([]);
     expect(storedSection).toContain("`installation-id`");
     expect(storedSection).toContain("`diagnostics/telemetry-policy.json`");
+  });
+
+  it("describes the optimized evidence image and the collection policy that sets it (US-067)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(evidence).toContain("`GET /sdk/collection-policy`");
+    expect(evidence).toContain("`diagnostics/collection-policy.json`");
+    expect(evidence).toContain("«Tamaño máximo»");
+    expect(evidence).toContain("«Calidad»");
+    expect(evidence).toContain("sin metadatos EXIF");
+    expect(evidence).toContain(
+      "La imagen que recibió `run()`, con la que el workflow hizo la inferencia, no cambia",
+    );
+    expect(evidence).toContain("`evidenceConsent: true`");
+    expect(evidence).toContain("no vence");
+    expect(storedSection).toContain("`diagnostics/collection-policy.json`");
+  });
+
+  it("describes the local queue of evidence pending upload and a full device (US-068)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(evidence).toContain("### Evidencia pendiente de envío");
+    expect(evidence).toContain('<Code code={privacy.pendingEvidence} lang="dart" />');
+    expect(evidence).toContain("`pendingEvidenceCount()`");
+    expect(evidence).toContain("aunque la app se reinicie");
+    expect(evidence).toContain("nunca marca una como enviada");
+    expect(evidence).toContain(
+      "`evidenceStorageFull` con `No se pudo guardar una imagen para el dataset; el análisis se completó normalmente.`",
+    );
+    expect(evidence).toContain("no vence");
+  });
+
+  it("describes the network evidence may use and the state of its queue (US-069)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const networks = (pattern: RegExp, source: string) => {
+      const match = pattern.exec(source);
+      if (!match) throw new Error(`No match for ${pattern} any more; update this test.`);
+      return [...(match[1] ?? "").matchAll(/\w+/g)].map(([name]) => name);
+    };
+
+    expect(evidence).toContain("### Red permitida para enviar evidencia");
+    expect(evidence).toContain('<Code code={privacy.evidenceQueueStatus} lang="dart" />');
+    expect(evidence).toContain("«Solo Wi-Fi»");
+    expect(evidence).toContain("«Wi-Fi y datos móviles»");
+    expect(evidence).toContain("`waitingForWifi`, con el texto `Pendiente de Wi-Fi`");
+    expect(evidence).toContain("no inicia ninguna carga ni usa datos móviles");
+    expect(evidence).toContain("No guarda ni envía el tipo de conexión");
+    expect(storedSection).toContain("`network`");
+    expect(networks(/enum CollectionNetwork \{([^}]*)\}/, sdkCollectionPolicySource)).toEqual(
+      networks(/COLLECTION_NETWORKS = \[([^\]]*)\]/, collectionPolicySource),
+    );
+  });
+
+  it("describes the upload of evidence, its confirmation and its retention (US-070)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const events = Object.fromEntries(
+      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, event, message]) => [event, message],
+      ),
+    );
+
+    expect(evidence).toContain("### Envío de la evidencia");
+    expect(evidence).toContain('<Code code={privacy.uploadEvidence} lang="dart" />');
+    for (const request of [
+      "`POST /sdk/evidence`",
+      "`PUT <uploadUrl>`",
+      "`POST /sdk/evidence/<evidenceId>/complete`",
+    ]) {
+      expect(evidence).toContain(request);
+    }
+    for (const event of [
+      "evidenceUploading",
+      "evidenceReceived",
+      "evidenceUploadFailed",
+      "evidenceCredentialRevoked",
+    ]) {
+      expect(evidence).toContain(`\`${event}\` (\`${events[event]}\`)`);
+    }
+    expect(evidence).toContain("`received.json`");
+    expect(evidence).toContain("### Retención de la evidencia en el servidor");
+    expect(storedSection).toContain("`evidence/<evidenceId>/received.json`");
+  });
+
+  it("describes the retries of evidence, their limit and the failed evidence it keeps (US-071)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const retries = evidence.slice(evidence.indexOf("### Reintentos de la evidencia"));
+    const events = Object.fromEntries(
+      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, event, message]) => [event, message],
+      ),
+    );
+    const defaultAttempts = /this\.maxEvidenceUploadAttempts = (\d+)/.exec(ayniSdkSource)?.[1];
+
+    expect(defaultAttempts, "the default limit changed; update this test").toBeDefined();
+    expect(evidence).toContain("### Reintentos de la evidencia");
+    expect(retries).toContain('<Code code={privacy.evidenceStatus} lang="dart" />');
+    expect(retries).toContain(
+      `\`maxEvidenceUploadAttempts\` de \`AyniSdk\` o de \`AyniConfig\`, ${defaultAttempts} si`,
+    );
+    expect(retries).toContain(
+      `\`evidenceRetriesExhausted\` con \`${events.evidenceRetriesExhausted}\``,
+    );
+    expect(retries).toContain("`evidence/<evidenceId>/upload-attempts.json`");
+    expect(retries).toContain("no cuenta como intento");
+    for (const status of ["Pendiente", "Enviando", "Reintentando", "Enviada", "Fallida"]) {
+      expect(retries).toContain(`\`${status}\``);
+    }
+    expect(retries).toContain("no vence");
+    const firstWait = /const first = Duration\(minutes: (\d+)\);/.exec(evidenceStoreSource)?.[1];
+    const longestWait = /const longest = Duration\(hours: (\d+)\);/.exec(evidenceStoreSource)?.[1];
+    expect(firstWait, "evidenceRetryDelay changed; update this test").toBeDefined();
+    expect(longestWait, "evidenceRetryDelay changed; update this test").toBeDefined();
+    expect(retries).toContain(
+      `una espera de ${firstWait} minutos después del primer fallo, el doble después de cada uno de los siguientes y como máximo ${longestWait} horas`,
+    );
+    expect(retries).not.toContain("no limita los reintentos");
+    expect(evidence).not.toContain("no limita los reintentos");
+    expect(storedSection).toContain("`evidence/<evidenceId>/upload-attempts.json`");
+  });
+
+  it("describes that the SDK deletes the local copy of a confirmed evidence and keeps the rest (US-072)", () => {
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+    const heading = "### Retención de la evidencia en el dispositivo";
+    const local = evidence.slice(
+      evidence.indexOf(heading),
+      evidence.indexOf("### Retención de la evidencia en el servidor"),
+    );
+
+    expect(evidence).toContain(heading);
+    for (const text of [
+      "elimina el directorio `evidence/<evidenceId>/` completo",
+      "`received.json`",
+      "`upload-attempts.json`",
+      "`evidenceReceived`",
+      "`Enviando`",
+      "`Enviada`",
+      "Una carga incierta conserva la evidencia",
+      "no elimina nada",
+      "`Fallida`",
+      "no toca workflows, modelos instalados",
+      "no sigue enlaces",
+      "`evidence/<evidenceId>.tmp/`",
+    ]) {
+      expect(local).toContain(text);
+    }
+    expect(evidence).not.toContain("conserva la copia local de la evidencia recibida");
+    expect(evidence).not.toContain("también la que ya se envió");
+    const rows = tableRows(storedSection).filter((row) =>
+      ["image", "evidence.json", "received.json", "upload-attempts.json"].some((file) =>
+        row[1]?.includes(`\`evidence/<evidenceId>/${file}\``),
+      ),
+    );
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(row[2], row[1]).toMatch(/^`sync\(\)` l[oa] elimina/);
+      expect(row[2], row[1]).not.toContain("también la enviada");
+    }
+  });
+
+  it("says telemetry carries no images and dataset.capture is the only way to collect them (US-073)", () => {
+    const telemetry = section("## Telemetría sin captura de imágenes").replace(/\s+/g, " ");
+    const rows = tableRows(section("## Telemetría sin captura de imágenes"));
+
+    for (const text of [
+      "La telemetría no incluye imágenes, secretos ni datos de entrada crudos.",
+      "el SDK descarta ese adjunto y envía la traza solo con los metadatos permitidos",
+      "`invalidTrace`",
+      "es el único mecanismo con el que el SDK recolecta imágenes",
+      "aunque la app pase `evidenceConsent: true`",
+      "«Este workflow no recolecta imágenes.»",
+      "«La telemetría no incluye imágenes de entrada.»",
+      "`tracePersistenceFailed: true`",
+      "un adjunto descartado no hace perder la traza",
+    ]) {
+      expect(telemetry).toContain(text);
+    }
+    // The SDK keeps only the schema's fields when it saves a trace, when it
+    // reads one to send it and before it checks its size, as the page says.
+    expect(traceOutboxSource).toContain("jsonEncode(allowlistedTracePayload(trace))");
+    expect(traceOutboxSource).toContain("return allowlistedTracePayload(");
+    expect(ayniSdkSource).toContain("allowlistedTracePayload(trace.toJson())");
+    expect(rows.map((row) => row[0])).toEqual([
+      "Qué guarda y envía",
+      "Política que la habilita",
+      "Consentimiento",
+      "Retención en el dispositivo",
+      "Retención en el servidor",
+    ]);
+    expect(rows.filter((row) => row.length !== 3 || row.some((cell) => cell === ""))).toEqual([]);
+  });
+
+  it("names every Android permission the SDK adds to the app", () => {
+    const permissions = [...androidManifest.matchAll(/android:name="android\.permission\.(\w+)"/g)];
+
+    expect(permissions.length).toBeGreaterThan(0);
+    for (const [, permission] of permissions) {
+      expect(page).toContain(`\`${permission}\``);
+    }
+  });
+
+  it("gives the size and quality ranges and defaults that the server and the SDK apply", () => {
+    const range = (source: string, pattern: RegExp) => {
+      const match = pattern.exec(source);
+      if (!match) throw new Error(`No range matches ${pattern} any more; update this test.`);
+      return { min: Number(match[1]), max: Number(match[2]) };
+    };
+    const defaults = /DEFAULT_COLLECTION_POLICY[^{]*\{([^}]*)\}/.exec(collectionPolicySource)?.[1];
+    const size = range(
+      collectionPolicySource,
+      /COLLECTION_MAX_IMAGE_SIZE = \{ min: (\d+), max: (\d+) \}/,
+    );
+    const quality = range(
+      collectionPolicySource,
+      /COLLECTION_IMAGE_QUALITY = \{ min: (\d+), max: (\d+) \}/,
+    );
+    const defaultSize = /maxImageSize: (\d+)/.exec(defaults ?? "")?.[1];
+    const defaultQuality = /imageQuality: (\d+)/.exec(defaults ?? "")?.[1];
+    const evidence = section("## Evidencia para datasets").replace(/\s+/g, " ");
+
+    expect(
+      range(sdkCollectionPolicySource, /maxImageSizeRange = \(min: (\d+), max: (\d+)\)/),
+    ).toEqual(size);
+    expect(
+      range(sdkCollectionPolicySource, /imageQualityRange = \(min: (\d+), max: (\d+)\)/),
+    ).toEqual(quality);
+    expect(evidence).toContain(
+      `de ${size.min} a ${size.max} píxeles, ${defaultSize} si nadie lo cambió`,
+    );
+    expect(evidence).toContain(
+      `de ${quality.min} a ${quality.max}, ${defaultQuality} si nadie la cambió`,
+    );
   });
 
   it("shows how to delete the data with an example CI analyzes", () => {

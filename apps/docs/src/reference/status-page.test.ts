@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import ayniSdkSource from "../../../../packages/sdk_flutter/lib/src/ayni_sdk.dart?raw";
 import evidenceEventSource from "../../../../packages/sdk_flutter/lib/src/evidence_event.dart?raw";
+import evidenceQueueStatusSource from "../../../../packages/sdk_flutter/lib/src/evidence_queue_status.dart?raw";
+import evidenceStatusSource from "../../../../packages/sdk_flutter/lib/src/evidence_status.dart?raw";
 import pubspec from "../../../../packages/sdk_flutter/pubspec.yaml?raw";
 import { tableRows } from "../markdown-table";
 import { dartEnumValues } from "../sdk/dart-enum";
@@ -64,20 +66,57 @@ describe("Estados y errores (US-146)", () => {
       statusEnumDrift(
         page,
         "referencia/estados-y-errores.md",
-        `${ayniSdkSource}\n${evidenceEventSource}`,
+        `${ayniSdkSource}\n${evidenceEventSource}\n${evidenceQueueStatusSource}\n${evidenceStatusSource}`,
       ),
     ).toEqual([]);
   });
 
-  it("gives the message of every EvidenceEvent (US-066)", () => {
+  it("gives the message of every EvidenceEvent (US-066 to US-068)", () => {
     const rows = tableRows(section("## Evidencia para datasets"));
     const messages = Object.fromEntries(
-      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) => '([^']+)'/g)].map(
+      [...evidenceEventSource.matchAll(/EvidenceEvent\.(\w+) =>\s*'([^']+)'/g)].map(
         ([, event, message]) => [event, message],
       ),
     );
 
     expect(documentedValues(rows)).toEqual(dartEnumValues(evidenceEventSource, "EvidenceEvent"));
+    for (const row of rows) {
+      expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);
+    }
+  });
+
+  it("gives the message of every EvidenceQueueStatus (US-069)", () => {
+    const rows = tableRows(section("## Cola de evidencia"));
+    const messages = Object.fromEntries(
+      [...evidenceQueueStatusSource.matchAll(/EvidenceQueueStatus\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, status, message]) => [status, message],
+      ),
+    );
+
+    expect(documentedValues(rows)).toEqual(
+      dartEnumValues(evidenceQueueStatusSource, "EvidenceQueueStatus"),
+    );
+    for (const row of rows) {
+      expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);
+    }
+  });
+
+  it("gives the message of every EvidenceStatus (US-071, US-072)", () => {
+    const rows = tableRows(section("## Estado de cada evidencia"));
+    const messages = Object.fromEntries(
+      [...evidenceStatusSource.matchAll(/EvidenceStatus\.(\w+) =>\s*'([^']+)'/g)].map(
+        ([, status, message]) => [status, message],
+      ),
+    );
+
+    expect(Object.values(messages)).toEqual([
+      "Pendiente",
+      "Enviando",
+      "Reintentando",
+      "Enviada",
+      "Fallida",
+    ]);
+    expect(documentedValues(rows)).toEqual(dartEnumValues(evidenceStatusSource, "EvidenceStatus"));
     for (const row of rows) {
       expect(row.at(-1), row[0]).toBe(`\`${messages[(row[0] ?? "").replace(/`/g, "")]}\``);
     }
@@ -151,11 +190,29 @@ describe("Estados y errores (US-146)", () => {
       "telemetryDisabled",
       "traceConflict",
       "traceTooLarge",
+      "invalidEvidence",
+      "collectionDisabled",
+      "evidenceSourceNotFound",
+      "evidenceConflict",
+      "evidenceTooLarge",
+      "invalidEvidenceImage",
+      "evidenceNotFound",
+      "evidenceImageMissing",
       "workflowVersionNotFound",
       "modelVersionNotFound",
       "datasetVersionNotFound",
       "datasetManifestUnavailable",
     ]);
+    const evidenceCodes = [
+      "invalidEvidence",
+      "collectionDisabled",
+      "evidenceSourceNotFound",
+      "evidenceConflict",
+      "evidenceTooLarge",
+      "invalidEvidenceImage",
+      "evidenceNotFound",
+      "evidenceImageMissing",
+    ];
     for (const row of rows) {
       const code = (row[0] ?? "").replace(/`/g, "");
       if (code.startsWith("dataset")) {
@@ -167,9 +224,15 @@ describe("Estados y errores (US-146)", () => {
           ? "`ConsentStatus.pending`"
           : ["invalidTrace", "traceTooLarge", "telemetryDisabled", "traceConflict"].includes(code)
             ? "outbox"
-            : "`SyncStatus.error`",
+            : evidenceCodes.includes(code)
+              ? "`evidenceUploadFailed`"
+              : "`SyncStatus.error`",
       );
     }
+    // US-070: a revoked credential while uploading evidence has its own event.
+    expect(rows.find((row) => row[0] === "`credentialRevoked`")?.at(-1)).toContain(
+      "`evidenceCredentialRevoked`",
+    );
   });
 
   it("distinguishes SDK method errors from direct dataset manifest responses", () => {

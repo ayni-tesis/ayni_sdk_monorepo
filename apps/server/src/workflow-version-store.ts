@@ -68,8 +68,9 @@ export async function publishWorkflowVersion(
       const hasCombinedOutput = draft.nodes.some(
         (node) => node.type === "output" && (node.sources?.length ?? 0) > 0,
       );
-      // Schema 3 adds the dataset capture (US-066): an SDK older than 0.3.0
-      // reports that the workflow needs a newer SDK instead of an unknown node.
+      // Schema 3 adds the dataset capture (US-066), and the condition branch
+      // it may hang from (US-074): an SDK older than 0.3.0 reports that the
+      // workflow needs a newer SDK instead of an unknown node.
       const hasCapture = draft.nodes.some((node) => node.type === "dataset.capture");
       const nodes = draft.nodes.map((node) =>
         node.type === "output" && (node.sources?.length ?? 0) > 0

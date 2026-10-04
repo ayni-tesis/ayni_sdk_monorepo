@@ -3,14 +3,20 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'collection_policy_store.dart';
 import 'device_profile.dart';
 import 'model_artifact_downloader.dart';
 import 'model_artifact_installer.dart';
 import 'model_artifact_integrity_verifier.dart';
 import 'consent_receipt_store.dart';
 import 'evidence_event.dart';
+import 'evidence_image_optimizer.dart';
+import 'evidence_queue_status.dart';
+import 'evidence_status.dart';
 import 'evidence_store.dart';
+import 'evidence_uploader.dart';
 import 'installation_id_store.dart';
+import 'network_type.dart';
 import 'sdk_consent.dart';
 import 'telemetry_policy_store.dart';
 import 'trace_outbox_store.dart';
@@ -19,6 +25,7 @@ import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'trace_payload.dart';
 import 'workflow_trace.dart';
 import 'supported_platform_stub.dart'
     if (dart.library.ui) 'supported_platform_flutter.dart'
@@ -26,6 +33,9 @@ import 'supported_platform_stub.dart'
 import 'device_profile_reader_stub.dart'
     if (dart.library.ui) 'device_profile_reader_flutter.dart'
     as device_profile_reader;
+import 'network_type_reader_stub.dart'
+    if (dart.library.ui) 'network_type_reader_flutter.dart'
+    as network_type_reader;
 
 /// The overall outcome of an [AyniSdk.sync] call, in [SyncResult.status].
 ///
@@ -301,8 +311,9 @@ class AyniConfig {
   /// Creates an SDK configuration instance.
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required.
-  /// [syncTimeout] defaults to 30 seconds and [allowInsecureLoopback] to
-  /// `false`; the [onProgress] callback is optional.
+  /// [syncTimeout] defaults to 30 seconds, [allowInsecureLoopback] to
+  /// `false` and [maxEvidenceUploadAttempts] to 5; the [onProgress] callback
+  /// is optional.
   /// The constructor never throws: [AyniSdk.initialize] reports an invalid
   /// configuration.
   AyniConfig({
@@ -312,6 +323,7 @@ class AyniConfig {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
+    this.maxEvidenceUploadAttempts = 5,
   });
 
   /// The server URL for the Ayni API (must use HTTPS, or HTTP for loopback
@@ -349,15 +361,22 @@ class AyniConfig {
   /// See [AyniSdk.onProgress].
   final void Function(String message)? onProgress;
 
+  /// How many times [AyniSdk.sync] tries to upload an evidence for datasets
+  /// before it stops. Defaults to 5 and must be at least 1.
+  ///
+  /// See [AyniSdk.maxEvidenceUploadAttempts].
+  final int maxEvidenceUploadAttempts;
+
   /// Whether this configuration is complete and valid for SDK initialization.
   ///
   /// It is `true` when [credential] and the [storageDirectory] path are not
-  /// blank, [syncTimeout] is positive, and [serverUrl] can receive the
-  /// credential.
+  /// blank, [syncTimeout] is positive, [maxEvidenceUploadAttempts] is at
+  /// least 1, and [serverUrl] can receive the credential.
   bool get isValid =>
       credential.trim().isNotEmpty &&
       storageDirectory.path.trim().isNotEmpty &&
       syncTimeout > Duration.zero &&
+      maxEvidenceUploadAttempts >= 1 &&
       AyniSdk._canSendCredentialTo(
         serverUrl,
         allowInsecureLoopback: allowInsecureLoopback,
@@ -370,7 +389,8 @@ class AyniConfig {
       'credential: [REDACTED], '
       'storageDirectory: ${storageDirectory.path}, '
       'syncTimeout: $syncTimeout, '
-      'allowInsecureLoopback: $allowInsecureLoopback'
+      'allowInsecureLoopback: $allowInsecureLoopback, '
+      'maxEvidenceUploadAttempts: $maxEvidenceUploadAttempts'
       ')';
 }
 
@@ -447,8 +467,8 @@ class AyniSdk {
   /// Creates a new [AyniSdk] instance directly.
   ///
   /// [serverUrl], [credential], and [storageDirectory] are required and mean
-  /// the same as in [AyniConfig]. [syncTimeout] defaults to 30 seconds and
-  /// [allowInsecureLoopback] to `false`.
+  /// the same as in [AyniConfig]. [syncTimeout] defaults to 30 seconds,
+  /// [allowInsecureLoopback] to `false` and [maxEvidenceUploadAttempts] to 5.
   ///
   /// Unlike [initialize], the constructor does not validate its arguments and
   /// does not set [instance]: a [serverUrl] that cannot receive the credential
@@ -463,6 +483,7 @@ class AyniSdk {
     this.syncTimeout = const Duration(seconds: 30),
     this.allowInsecureLoopback = false,
     this.onProgress,
+    this.maxEvidenceUploadAttempts = 5,
   }) : _credential = credential;
 
   /// The workflow schema versions supported by this SDK release (US-098).
@@ -599,8 +620,12 @@ class AyniSdk {
         syncTimeout: config.syncTimeout,
         allowInsecureLoopback: config.allowInsecureLoopback,
         onProgress: config.onProgress,
+        maxEvidenceUploadAttempts: config.maxEvidenceUploadAttempts,
       );
       sdk._ensureInstallationId();
+      // US-072: what a stopped process left of the evidence queue goes even
+      // if the app never syncs again; it never fails and never blocks.
+      unawaited(sdk._evidence.removeLeftovers());
       _instance = sdk;
       return AyniInitializationResult(
         status: InitializationStatus.ready,
@@ -681,6 +706,28 @@ class AyniSdk {
   /// Other messages include `Descargando modelos para <nombre>…` during
   /// [sync] and `Usando recursos guardados en este dispositivo.` during [run].
   final void Function(String message)? onProgress;
+
+  /// How many times [sync] tries to upload an evidence for datasets without
+  /// a confirmation from the server before it stops (US-071). Defaults to 5:
+  /// the first upload and up to four retries.
+  ///
+  /// Every upload that ends without a confirmation counts: no answer, a
+  /// timeout, a server error, or a server rejection of that evidence. A
+  /// revoked credential and a sync that never starts the upload, because of
+  /// the collection policy, the connection or the time left, do not count;
+  /// an upload that runs out of time halfway does. After each failed attempt
+  /// the evidence is [EvidenceStatus.retrying] and a later [sync] tries again
+  /// once a wait passes: 15 minutes after the first failure, twice as long
+  /// after each next one, and at most 6 hours. On the
+  /// last attempt it becomes [EvidenceStatus.failed], [sync] reports
+  /// [EvidenceEvent.evidenceRetriesExhausted], and the SDK keeps it on the
+  /// device without sending it again automatically. A value below 1 counts
+  /// as 1.
+  final int maxEvidenceUploadAttempts;
+
+  /// The clock the evidence retries use; tests replace it through
+  /// [createAyniSdkForTesting].
+  DateTime Function() _now = DateTime.now;
 
   /// Installation identity used only by policy-enabled diagnostic traces.
   String? _installationId;
@@ -768,7 +815,9 @@ class AyniSdk {
   Future<bool> _persistTrace(WorkflowTrace? trace, int generation) async {
     if (trace == null) return false;
     try {
-      final payload = trace.toJson();
+      // Only the allowed fields count against the size limit: an attachment
+      // is dropped, never a reason to lose the trace (US-073).
+      final payload = allowlistedTracePayload(trace.toJson());
       if (utf8.encode(jsonEncode(payload)).length >
           TraceOutboxStore.maxPayloadBytes) {
         return false;
@@ -936,7 +985,32 @@ class AyniSdk {
     storageDirectory,
   );
   late final TraceOutboxStore _traceOutbox = TraceOutboxStore(storageDirectory);
-  late final EvidenceStore _evidence = EvidenceStore(storageDirectory);
+  late final CollectionPolicyStore _collectionPolicy = CollectionPolicyStore(
+    storageDirectory,
+  );
+  late final EvidenceStore _evidence = EvidenceStore(
+    storageDirectory,
+    writeFile: _evidenceFileWriter,
+    maxUploadAttempts: maxEvidenceUploadAttempts,
+  );
+
+  /// Prepares each evidence image; tests may replace it through
+  /// [createAyniSdkForTesting].
+  EvidenceImageOptimizer _evidenceImageOptimizer = optimizeEvidenceImage;
+
+  /// Writes each evidence file; tests may replace it through
+  /// [createAyniSdkForTesting] to simulate a device without space.
+  EvidenceFileWriter _evidenceFileWriter = writeEvidenceFile;
+
+  /// Says which connection the device uses before each evidence upload and
+  /// for [evidenceQueueStatus]; tests may replace it through
+  /// [createAyniSdkForTesting].
+  NetworkTypeReader _readNetworkType = network_type_reader.readNetworkType;
+
+  /// Replaces the upload of each pending evidence (US-070) in tests, which
+  /// attach it through [createAyniSdkForTesting]; `null` uses
+  /// [EvidenceUploadClient].
+  EvidenceUploader? _evidenceUploader;
 
   /// Grows with each [clearPendingEvidence], so a [run] active at that moment
   /// keeps none of its captures.
@@ -988,11 +1062,101 @@ class AyniSdk {
   /// as `evidenceConsent`, after it stops passing `evidenceConsent: true`. It
   /// waits for the evidence the SDK is still saving and then deletes it too,
   /// and a [run] already active when it is called saves no evidence, so no
-  /// image of a capture stays on the device. It does not affect installed
-  /// workflows and models or pending traces.
+  /// image of a capture stays on the device. It deletes the evidence of
+  /// every [EvidenceStatus], also the [EvidenceStatus.failed] one; [sync]
+  /// already deletes each evidence the server confirmed (US-072). It does not
+  /// affect installed workflows and models or pending traces.
   Future<void> clearPendingEvidence() {
     _evidenceGeneration++;
     return _evidence.clear();
+  }
+
+  /// How many evidences for datasets are pending upload on this device
+  /// (US-068), for example to show `Evidencia pendiente de envío` while it is
+  /// more than zero.
+  ///
+  /// Each evidence a [run] keeps waits in a local queue in [storageDirectory]
+  /// and is already counted when [run] reports
+  /// [EvidenceEvent.evidenceQueued]. It stays pending across restarts of the
+  /// app and while the device has no connection, and the SDK never counts it
+  /// as sent before the server confirms its upload; then [sync] deletes it
+  /// from the device and it leaves the count (US-072). The count does not wait
+  /// for the evidence the SDK is still preparing or saving, and it makes no
+  /// network request. [clearPendingEvidence] empties the queue.
+  ///
+  /// It counts the [EvidenceStatus.pending], [EvidenceStatus.uploading] and
+  /// [EvidenceStatus.retrying] evidence, not the [EvidenceStatus.failed] one,
+  /// which the SDK no longer sends automatically (see
+  /// [evidenceStatusCounts]).
+  ///
+  /// ```dart
+  /// final pending = await sdk.pendingEvidenceCount();
+  /// if (pending > 0) {
+  ///   showStatus('Evidencia pendiente de envío ($pending)');
+  /// }
+  /// ```
+  Future<int> pendingEvidenceCount() => _evidence.pendingCount();
+
+  /// How many evidences for datasets kept on this device are in each
+  /// [EvidenceStatus] (US-071), for example to show how many are `Fallida`.
+  /// Every status is in the map, with 0 when no evidence has it.
+  ///
+  /// An evidence is [EvidenceStatus.pending] until its first upload,
+  /// [EvidenceStatus.uploading] while [sync] sends it,
+  /// [EvidenceStatus.retrying] after an upload without a confirmation, and
+  /// [EvidenceStatus.failed] after [maxEvidenceUploadAttempts] uploads
+  /// without one: the SDK keeps a failed evidence on the device but no
+  /// longer sends it automatically. Once the server confirms an evidence,
+  /// [sync] deletes it from the device (US-072), so it leaves the counts:
+  /// [EvidenceStatus.received] only counts one whose local copy the SDK
+  /// could not start deleting yet, which a later [sync] or [initialize]
+  /// deletes, and the app learns
+  /// of each confirmation through [EvidenceEvent.evidenceReceived]. Like
+  /// [pendingEvidenceCount], it reads the
+  /// queue on the device without a network request and without waiting for
+  /// the evidence the SDK is still preparing or saving.
+  /// [clearPendingEvidence] deletes the evidence of every status.
+  ///
+  /// ```dart
+  /// final counts = await sdk.evidenceStatusCounts();
+  /// final failed = counts[EvidenceStatus.failed]!;
+  /// if (failed > 0) {
+  ///   showStatus('${EvidenceStatus.failed.message}: $failed');
+  /// }
+  /// ```
+  Future<Map<EvidenceStatus, int>> evidenceStatusCounts() =>
+      _evidence.statusCounts();
+
+  /// The state of the queue of evidence for datasets pending upload on this
+  /// device (US-069), for example to show `Pendiente de Wi-Fi`.
+  ///
+  /// The application's collection policy says over which network the SDK may
+  /// send evidence. [EvidenceQueueStatus.waitingForWifi] means that evidence
+  /// is pending, the policy that [sync] last saved is enabled and allows only
+  /// Wi-Fi, and the device uses mobile data, another network or no
+  /// connection right now: the SDK keeps the evidence pending, starts no
+  /// upload and uses no mobile data for it. With pending evidence and any
+  /// other policy, or with Wi-Fi, it is [EvidenceQueueStatus.pending], and
+  /// without pending evidence, [EvidenceQueueStatus.empty].
+  ///
+  /// It reads the queue, the saved policy and the type of the current
+  /// connection on the device, without a network request. It does not keep
+  /// the type of connection or send it anywhere.
+  ///
+  /// ```dart
+  /// final status = await sdk.evidenceQueueStatus();
+  /// if (status != EvidenceQueueStatus.empty) {
+  ///   showStatus(status.message);
+  /// }
+  /// ```
+  Future<EvidenceQueueStatus> evidenceQueueStatus() async {
+    if (await _evidence.pending().isEmpty) return EvidenceQueueStatus.empty;
+    final policy = await _collectionPolicy.read();
+    if (policy != null &&
+        policy.waitsForWifiOn(await _currentNetworkType(networkTypeTimeout))) {
+      return EvidenceQueueStatus.waitingForWifi;
+    }
+    return EvidenceQueueStatus.pending;
   }
 
   void _queueEvidence(
@@ -1003,36 +1167,69 @@ class AyniSdk {
     required DateTime capturedAt,
     void Function(EvidenceEvent event)? onEvidence,
   }) {
+    void report(EvidenceEvent event) {
+      onProgress?.call(event.message);
+      onEvidence?.call(event);
+    }
+
+    final optimizer = _evidenceImageOptimizer;
     for (final capture in captures) {
       final evidenceId = createUuidV4();
       final model = inventory.models[capture.modelVersionId];
       unawaited(
         _evidence
-            .save(evidenceId, image, {
-              'evidenceSchemaVersion': 1,
-              'evidenceId': evidenceId,
-              'capturedAt': capturedAt.toIso8601String(),
-              'workflowId': workflow.id,
-              'workflowVersionId': workflow.workflowVersionId,
-              'workflowVersion': workflow.version,
-              'captureNodeId': capture.nodeId,
-              'model': {
-                'modelVersionId': capture.modelVersionId,
-                if (model != null) 'version': model.version,
-                if (model != null) 'sha256': model.sha256,
-              },
-              'result': WorkflowTrace.encodeOutputs({
-                'result': capture.result,
-              })['result'],
+            .save(evidenceId, () async {
+              report(EvidenceEvent.evidenceOptimizing);
+              // US-067: the evidence keeps the image reduced and compressed
+              // with the last collection policy sync() saved, never the
+              // app's bytes, which stay unchanged.
+              final policy = await _collectionPolicy.read();
+              if (policy == null) {
+                throw StateError('No collection policy has been synced.');
+              }
+              final optimized = await optimizeEvidenceImageInBackground(
+                optimizer,
+                image,
+                policy,
+              );
+              report(EvidenceEvent.evidencePrepared);
+              return (
+                image: optimized.bytes,
+                record: <String, Object?>{
+                  'evidenceSchemaVersion': 1,
+                  'evidenceId': evidenceId,
+                  'capturedAt': capturedAt.toIso8601String(),
+                  'workflowId': workflow.id,
+                  'workflowVersionId': workflow.workflowVersionId,
+                  'workflowVersion': workflow.version,
+                  'captureNodeId': capture.nodeId,
+                  'model': {
+                    'modelVersionId': capture.modelVersionId,
+                    if (model != null) 'version': model.version,
+                    if (model != null) 'sha256': model.sha256,
+                  },
+                  'result': WorkflowTrace.encodeOutputs({
+                    'result': capture.result,
+                  })['result'],
+                  'image': {
+                    'mediaType': evidenceImageMediaType,
+                    'width': optimized.width,
+                    'height': optimized.height,
+                    'maxImageSize': policy.maxImageSize,
+                    'imageQuality': policy.imageQuality,
+                  },
+                },
+              );
             })
             .then(
-              (_) {
-                onProgress?.call(EvidenceEvent.evidenceQueued.message);
-                onEvidence?.call(EvidenceEvent.evidenceQueued);
-              },
-              // The result was already returned; a capture that cannot be
-              // saved is dropped without affecting it.
-              onError: (Object _) {},
+              (_) => report(EvidenceEvent.evidenceQueued),
+              // The result was already returned; an evidence that cannot be
+              // prepared or saved is discarded without affecting it.
+              onError: (Object error) => report(
+                isEvidenceStorageFull(error)
+                    ? EvidenceEvent.evidenceStorageFull
+                    : EvidenceEvent.evidenceDiscarded,
+              ),
             ),
       );
     }
@@ -1085,14 +1282,29 @@ class AyniSdk {
   /// nodes after any currently running inference finishes.
   ///
   /// When the workflow reaches a `dataset.capture` node, the SDK creates
-  /// evidence for a dataset only if [evidenceConsent] is `true`: pass it only
-  /// while the person has given the consent your app requires for evidence
-  /// collection. The SDK saves a copy of [input] with the captured inference
-  /// result, the workflow version, and the model in [storageDirectory] after
-  /// returning the result, without delaying it or failing it, and then
-  /// reports [EvidenceEvent.evidenceQueued] to [onEvidence] and its message,
-  /// `Evidencia guardada para envío posterior.`, to [onProgress]. Without
-  /// consent (the default), it skips the capture and keeps no image.
+  /// evidence for a dataset only if [evidenceConsent] is `true`. A capture
+  /// that hangs from a branch of a condition, for example to keep only
+  /// low-confidence predictions, is reached only when the condition takes
+  /// that branch. When it takes the other branch, or when a condition that no
+  /// output reads cannot be evaluated, the SDK creates no evidence, reports
+  /// no [EvidenceEvent], marks the capture as skipped in the trace, and the
+  /// result does not change. Pass [evidenceConsent] only while the person has given the
+  /// consent your app requires for evidence collection. After returning the
+  /// result, without delaying it or failing it, the SDK reduces and
+  /// compresses a copy of [input] to a JPEG with the maximum size and
+  /// quality of the collection policy that [sync] saved, and keeps it in
+  /// [storageDirectory] with the captured inference result, the workflow
+  /// version, and the model, pending upload in a local queue that
+  /// [pendingEvidenceCount] counts. [input] itself never changes. It
+  /// reports to [onEvidence] [EvidenceEvent.evidenceOptimizing], then
+  /// [EvidenceEvent.evidencePrepared] once the image is optimized and
+  /// [EvidenceEvent.evidenceQueued] once the evidence is pending in the
+  /// queue, and each [EvidenceEvent.message] to [onProgress]. An evidence it cannot keep is discarded without partial
+  /// files: without space on the device it reports
+  /// [EvidenceEvent.evidenceStorageFull], and for any other reason, for
+  /// example before any [sync] saved the policy,
+  /// [EvidenceEvent.evidenceDiscarded]. Without consent (the default), it
+  /// skips the capture and keeps no image.
   ///
   /// ```dart
   /// try {
@@ -1384,11 +1596,33 @@ class AyniSdk {
   ///   }
   /// }
   /// ```
-  Future<SyncResult> sync() {
+  ///
+  /// As its last optional step, before the manifest, [sync] uploads the
+  /// evidence for datasets pending on this device (US-070) while the
+  /// application's collection policy, consulted right before each one,
+  /// allows it over the current connection. [onEvidence] receives, for each
+  /// evidence it starts to upload, [EvidenceEvent.evidenceUploading] and then
+  /// [EvidenceEvent.evidenceReceived] once the server confirmed it,
+  /// [EvidenceEvent.evidenceUploadFailed] when it stays pending for a later
+  /// sync, or [EvidenceEvent.evidenceCredentialRevoked] when the server
+  /// rejected the revoked credential; [onProgress] receives their messages.
+  /// An evidence counts as sent only after that confirmation, and then the
+  /// SDK deletes its local copy before it reports
+  /// [EvidenceEvent.evidenceReceived] (US-072); without it, the SDK keeps
+  /// the evidence and deletes nothing. The uploads
+  /// share the time [syncTimeout] leaves before the part kept for the
+  /// manifest, so an evidence that does not fit stays pending.
+  ///
+  /// ```dart
+  /// final result = await sdk.sync(
+  ///   onEvidence: (event) => showStatus(event.message),
+  /// );
+  /// ```
+  Future<SyncResult> sync({void Function(EvidenceEvent event)? onEvidence}) {
     final previousSync = _syncQueue;
     final syncFinished = Completer<void>();
     _syncQueue = syncFinished.future;
-    return _syncAfter(previousSync, syncFinished);
+    return _syncAfter(previousSync, syncFinished, onEvidence);
   }
 
   /// Records one user's explicit choice for one optional Ayni-owned purpose.
@@ -1679,6 +1913,235 @@ class AyniSdk {
     return policy;
   }
 
+  /// Processes the queue of evidence pending upload (US-069, US-070), the
+  /// last of the optional work of a [sync].
+  ///
+  /// It first refreshes the collection policy, which [run] also applies to
+  /// each evidence image, even when nothing is pending. Then, for each
+  /// pending evidence, it consults the policy on the server right before
+  /// sending it (that first refresh counts for the first one) and reads the
+  /// type of connection, and uploads it only while the policy is enabled and
+  /// allows that connection: only Wi-Fi for `wifi`. When the policy cannot be
+  /// consulted or does not allow it, it stops and every evidence left stays
+  /// pending for a later [sync]; so do an upload that failed and a revoked
+  /// credential. An evidence the server rejected stays pending too, but the
+  /// next one still goes. Only a confirmed upload marks an evidence received,
+  /// and then the SDK deletes its local copy (US-072). Before all that, it
+  /// deletes what a stopped process or a failed deletion left in the queue.
+  Future<void> _processEvidenceQueue(
+    HttpClient client,
+    _SyncDeadline deadline,
+    void Function(EvidenceEvent event)? onEvidence,
+  ) async {
+    // Taken before the first await, so a clearPendingEvidence() during the
+    // policy refresh still stops every upload of this sync.
+    final generation = _evidenceGeneration;
+    bool cleared() => generation != _evidenceGeneration;
+    await _evidence.removeLeftovers();
+    var policy = await _refreshCollectionPolicy(client, deadline);
+    final upload =
+        _evidenceUploader ??
+        EvidenceUploadClient(
+          client: client,
+          serverUrl: serverUrl,
+          credential: _credential,
+          canUploadTo: (url) => _canSendCredentialTo(
+            url,
+            allowInsecureLoopback: allowInsecureLoopback,
+          ),
+          requestTimeout: () {
+            final budget = deadline.optionalRequestBudget;
+            return budget < _optionalRequestAttemptTimeout
+                ? budget
+                : _optionalRequestAttemptTimeout;
+          },
+          uploadTimeout: () => deadline.optionalRequestBudget,
+          cancelled: () => cleared() || deadline.expired,
+        ).upload;
+    void report(EvidenceEvent event) {
+      onProgress?.call(event.message);
+      onEvidence?.call(event);
+    }
+
+    var consulted = true;
+    await for (final evidence in _evidence.pending()) {
+      // US-071: an evidence whose last upload failed waits before the next.
+      if (!isEvidenceUploadDue(await _evidence.attempts(evidence), _now())) {
+        continue;
+      }
+      if (!consulted) policy = await _refreshCollectionPolicy(client, deadline);
+      consulted = false;
+      if (policy == null ||
+          deadline.expired ||
+          cleared() ||
+          !policy.allowsEvidenceUploadOver(
+            await _currentNetworkType(_evidenceAttemptBudget(deadline)),
+          )) {
+        return;
+      }
+      // An upload that cannot even start uses up no attempt.
+      if (deadline.optionalRequestBudget <= Duration.zero) return;
+      final startedAt = _now();
+      final ({EvidenceEvent event, bool stopQueue}) ending;
+      // `Enviando` until the upload ends and its outcome is recorded.
+      _evidence.uploadingEvidence = evidence;
+      try {
+        report(EvidenceEvent.evidenceUploading);
+        final result = await upload(evidence);
+        // clearPendingEvidence() deleted it: there is nothing left to report.
+        if (cleared()) return;
+        ending = switch (result.outcome) {
+          EvidenceUploadOutcome.received => (
+            event: await _removeReceivedEvidence(
+              evidence,
+              result.receivedAt ?? _now(),
+            ),
+            stopQueue: false,
+          ),
+          // Only this evidence: the next one still goes.
+          EvidenceUploadOutcome.rejected => (
+            event: await _recordFailedUpload(evidence, startedAt),
+            stopQueue: false,
+          ),
+          EvidenceUploadOutcome.failed => (
+            event: await _recordFailedUpload(evidence, startedAt),
+            stopQueue: true,
+          ),
+          // Not a failure of this evidence: it uses up no attempt.
+          EvidenceUploadOutcome.credentialRevoked => (
+            event: EvidenceEvent.evidenceCredentialRevoked,
+            stopQueue: true,
+          ),
+        };
+      } finally {
+        _evidence.uploadingEvidence = null;
+      }
+      report(ending.event);
+      if (ending.stopQueue) return;
+    }
+  }
+
+  /// Records that the server received [evidence] at [receivedAt] and deletes
+  /// its local copy (US-072), and returns what [sync] reports. The
+  /// confirmation is written first, so an evidence whose copy cannot be
+  /// deleted now, or whose process stops in between, never goes back to the
+  /// queue: the next [sync] deletes it.
+  Future<EvidenceEvent> _removeReceivedEvidence(
+    Directory evidence,
+    DateTime receivedAt,
+  ) async {
+    try {
+      await _evidence.markReceived(evidence, receivedAt);
+    } on FileSystemException {
+      // The server holds it. If the deletion below fails too, a later sync
+      // asks again and the server answers that it already received it,
+      // without a new upload.
+    }
+    try {
+      await _evidence.remove(evidence);
+    } on FileSystemException {
+      // A locked file, or a clearPendingEvidence() that deleted it: its
+      // received.json keeps it out of the queue until the next sync.
+    }
+    return EvidenceEvent.evidenceReceived;
+  }
+
+  /// Counts an upload of [evidence] that started at [startedAt] and ended
+  /// without a confirmation, and returns what [sync] reports: it failed for
+  /// good once it reaches [maxEvidenceUploadAttempts] (US-071). When the SDK
+  /// cannot record it, the attempt does not count and the evidence keeps its
+  /// status.
+  Future<EvidenceEvent> _recordFailedUpload(
+    Directory evidence,
+    DateTime startedAt,
+  ) async {
+    try {
+      final attempts = await _evidence.recordFailedAttempt(evidence, startedAt);
+      if (attempts.failed) return EvidenceEvent.evidenceRetriesExhausted;
+    } on FileSystemException {
+      // A full device, or a clearPendingEvidence() that deleted it.
+    }
+    return EvidenceEvent.evidenceUploadFailed;
+  }
+
+  /// What a step of the evidence queue may still wait: the optional budget
+  /// left before the part of the sync timeout kept for the required sync.
+  Duration _evidenceAttemptBudget(_SyncDeadline deadline) {
+    final budget = deadline.optionalRequestBudget;
+    return budget < networkTypeTimeout ? budget : networkTypeTimeout;
+  }
+
+  /// The connection the device uses, or [NetworkType.other], which never
+  /// lets evidence go, when the reader fails or does not answer within
+  /// [limit].
+  Future<NetworkType> _currentNetworkType(Duration limit) async {
+    if (limit <= Duration.zero) return NetworkType.other;
+    try {
+      return await _readNetworkType().timeout(
+        limit,
+        onTimeout: () => NetworkType.other,
+      );
+    } on Object {
+      return NetworkType.other;
+    }
+  }
+
+  /// Refreshes the collection policy whose size and quality [run] applies to
+  /// each evidence image (US-067) and whose network and enablement decide
+  /// whether [sync] sends evidence (US-069), and returns it. Like the
+  /// telemetry policy, a failed refresh keeps the last valid policy and
+  /// returns `null`. It never waits into the part of the sync timeout kept
+  /// for the required sync.
+  Future<CollectionPolicy?> _refreshCollectionPolicy(
+    HttpClient client,
+    _SyncDeadline deadline,
+  ) async {
+    Duration timeout() {
+      final budget = deadline.optionalRequestBudget;
+      return budget < _optionalRequestAttemptTimeout
+          ? budget
+          : _optionalRequestAttemptTimeout;
+    }
+
+    if (deadline.expired || timeout() <= Duration.zero) return null;
+    final request = await client.getUrl(
+      serverUrl.resolve('/sdk/collection-policy'),
+    );
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_credential');
+    final requestTimeout = timeout();
+    if (requestTimeout <= Duration.zero) {
+      request.abort();
+      return null;
+    }
+    final response = await request.close().timeout(
+      requestTimeout,
+      onTimeout: () {
+        request.abort();
+        throw TimeoutException('Collection policy request timed out');
+      },
+    );
+    final responseTimeout = timeout();
+    if (responseTimeout <= Duration.zero) {
+      request.abort();
+      return null;
+    }
+    final body = await utf8.decoder
+        .bind(response)
+        .join()
+        .timeout(
+          responseTimeout,
+          onTimeout: () {
+            request.abort();
+            throw TimeoutException('Collection policy response timed out');
+          },
+        );
+    if (response.statusCode != HttpStatus.ok) return null;
+    final policy = CollectionPolicy.fromJson(jsonDecode(body));
+    if (policy != null) await _collectionPolicy.write(policy);
+    return policy;
+  }
+
   Duration get _optionalRequestAttemptTimeout {
     final share = syncTimeout ~/ 3;
     if (share <= Duration.zero) return const Duration(microseconds: 1);
@@ -1690,6 +2153,7 @@ class AyniSdk {
   Future<SyncResult> _syncAfter(
     Future<void> previousSync,
     Completer<void> syncFinished,
+    void Function(EvidenceEvent event)? onEvidence,
   ) async {
     await previousSync;
     final client = HttpClient();
@@ -1703,7 +2167,9 @@ class AyniSdk {
         return const SyncResult(SyncStatus.error);
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
-      final operation = _serializeConsentWork(() => _sync(client, deadline));
+      final operation = _serializeConsentWork(
+        () => _sync(client, deadline, onEvidence),
+      );
       return await operation.timeout(
         syncTimeout,
         onTimeout: () {
@@ -1736,7 +2202,11 @@ class AyniSdk {
     }
   }
 
-  Future<SyncResult> _sync(HttpClient client, _SyncDeadline deadline) async {
+  Future<SyncResult> _sync(
+    HttpClient client,
+    _SyncDeadline deadline,
+    void Function(EvidenceEvent event)? onEvidence,
+  ) async {
     try {
       await _refreshTelemetryPolicy(client);
     } on Exception {
@@ -1752,6 +2222,13 @@ class AyniSdk {
       await _sendPendingTraces(client, deadline: deadline);
     } on Exception {
       // A failed optional upload keeps traces local.
+    }
+    try {
+      // Last of the optional work, so it only takes what the others left.
+      await _processEvidenceQueue(client, deadline, onEvidence);
+    } on Exception {
+      // Optional too: evidence keeps using the last valid collection policy,
+      // and the evidence not sent stays pending.
     }
     if (deadline.expired) return const SyncResult(SyncStatus.error);
     final request = await client.postUrl(serverUrl.resolve('/sdk/sync'));
@@ -2487,6 +2964,12 @@ AyniSdk createAyniSdkForTesting({
   void Function(WorkflowVersionDownloadResult result)? onWorkflowDownload,
   WorkflowVersionDownloader? workflowVersionDownloader,
   WorkflowInferenceRunner? workflowInferenceRunner,
+  EvidenceImageOptimizer? evidenceImageOptimizer,
+  EvidenceFileWriter? evidenceFileWriter,
+  NetworkTypeReader? networkTypeReader,
+  EvidenceUploader? evidenceUploader,
+  int maxEvidenceUploadAttempts = 5,
+  DateTime Function()? clock,
 }) {
   final sdk = AyniSdk(
     serverUrl: serverUrl,
@@ -2495,6 +2978,7 @@ AyniSdk createAyniSdkForTesting({
     syncTimeout: syncTimeout,
     allowInsecureLoopback: allowInsecureLoopback,
     onProgress: onProgress,
+    maxEvidenceUploadAttempts: maxEvidenceUploadAttempts,
   );
   sdk._onBeforeInventoryPersist = onBeforeInventoryPersist;
   ConsentReceiptStore.beforeRemoveForTesting = onBeforeConsentReceiptRemoval;
@@ -2503,6 +2987,15 @@ AyniSdk createAyniSdkForTesting({
     sdk._workflowVersionDownloader = workflowVersionDownloader;
   }
   sdk._workflowInferenceRunner = workflowInferenceRunner;
+  if (evidenceImageOptimizer != null) {
+    sdk._evidenceImageOptimizer = evidenceImageOptimizer;
+  }
+  if (evidenceFileWriter != null) {
+    sdk._evidenceFileWriter = evidenceFileWriter;
+  }
+  if (networkTypeReader != null) sdk._readNetworkType = networkTypeReader;
+  sdk._evidenceUploader = evidenceUploader;
+  if (clock != null) sdk._now = clock;
   return sdk;
 }
 
@@ -2685,6 +3178,13 @@ class _SyncDeadline {
   final Duration timeout;
   final Stopwatch _stopwatch;
   var expired = false;
+
+  /// What an optional request before the required sync may still use: the
+  /// time left before the third of [timeout] kept for the required sync.
+  Duration get optionalRequestBudget {
+    final available = timeout - _stopwatch.elapsed - timeout ~/ 3;
+    return available <= Duration.zero ? Duration.zero : available;
+  }
 
   Duration get traceUploadBudget {
     final reserve = timeout ~/ 3;
