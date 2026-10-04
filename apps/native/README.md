@@ -21,8 +21,13 @@ Desde `apps/native`:
 ```powershell
 flutter pub get
 flutter devices
-flutter run -d <id-del-telefono>
+flutter emulators
+flutter emulators --launch <id-del-emulador>
+flutter devices
+flutter run -d <id-android>
 ```
+
+El emulador sirve para una prueba funcional; para resultados de medición de la tesis usa los dispositivos físicos definidos en el Plan.
 
 La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Después de preparar los recursos, el tratamiento requiere pulsar **Sincronizar SDK**. Antes de medir, confirma que el dataset y la condición muestran recursos verificados; ejecuta las fases medidas sin red. `PERF-01` se mide con el procedimiento externo del Plan. Los perfiles de red y los fallos se aplican manualmente.
 
