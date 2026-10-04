@@ -140,7 +140,9 @@ class EvidenceUploadClient {
     Map<String, Object?> body,
   ) async {
     if (_stopped(_requestTimeout)) return _failed;
-    final start = await _client.postUrl(serverUrl.resolve('/sdk/evidence'));
+    final start = await _client
+        .postUrl(serverUrl.resolve('/sdk/evidence'))
+        .timeout(_requestTimeout());
     start.followRedirects = false;
     start.headers
       ..set(HttpHeaders.authorizationHeader, 'Bearer $_credential')
@@ -166,7 +168,7 @@ class EvidenceUploadClient {
     if (uploadUrl == null || !_canUploadTo(uploadUrl)) return _failed;
 
     if (_stopped(_uploadTimeout)) return _failed;
-    final upload = await _client.putUrl(uploadUrl);
+    final upload = await _client.putUrl(uploadUrl).timeout(_uploadTimeout());
     upload.followRedirects = false;
     upload.headers.contentType = ContentType('image', 'jpeg');
     upload.contentLength = image.length;
@@ -190,9 +192,9 @@ class EvidenceUploadClient {
     }
 
     if (_stopped(_requestTimeout)) return _failed;
-    final complete = await _client.postUrl(
-      serverUrl.resolve('/sdk/evidence/$evidenceId/complete'),
-    );
+    final complete = await _client
+        .postUrl(serverUrl.resolve('/sdk/evidence/$evidenceId/complete'))
+        .timeout(_requestTimeout());
     complete.followRedirects = false;
     complete.headers.set(
       HttpHeaders.authorizationHeader,

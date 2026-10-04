@@ -71,6 +71,7 @@ void main() {
   late int Function() storageStatus;
   late (int, Object?) Function(String id) complete;
   late Future<void> Function() beforeCompleteAnswer;
+  late Future<void> Function() beforePolicyAnswer;
   late String uploadHost;
 
   setUp(() async {
@@ -95,6 +96,7 @@ void main() {
       {'evidenceId': id, 'status': 'received', 'receivedAt': _receivedAt},
     );
     beforeCompleteAnswer = () async {};
+    beforePolicyAnswer = () async {};
     server.listen((request) async {
       final body = await request.fold<List<int>>([], (all, part) {
         return all..addAll(part);
@@ -104,6 +106,7 @@ void main() {
       var status = 200;
       Object? answer;
       if (path == '/sdk/collection-policy') {
+        await beforePolicyAnswer();
         answer = {
           'enabled': true,
           'consentRequired': true,
@@ -424,6 +427,24 @@ void main() {
       hasLength(1),
     );
     expect(await client.pendingEvidenceCount(), 1);
+  });
+
+  test('uploads nothing in a sync during whose policy refresh the app '
+      'cleared the evidence', () async {
+    await pendingEvidence([_firstId]);
+    final events = <EvidenceEvent>[];
+    final client = sdk();
+    beforePolicyAnswer = () async {
+      beforePolicyAnswer = () async {};
+      await client.clearPendingEvidence();
+      // An evidence a save still in progress at the clear left behind.
+      await pendingEvidence([_secondId]);
+    };
+
+    await client.sync(onEvidence: events.add);
+
+    expect(events, isEmpty);
+    expect(evidenceRequests(), isEmpty);
   });
 
   test('reports nothing more for an evidence the app cleared while it was '

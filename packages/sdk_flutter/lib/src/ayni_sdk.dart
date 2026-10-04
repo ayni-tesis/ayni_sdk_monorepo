@@ -1842,9 +1842,11 @@ class AyniSdk {
     _SyncDeadline deadline,
     void Function(EvidenceEvent event)? onEvidence,
   ) async {
-    var policy = await _refreshCollectionPolicy(client, deadline);
+    // Taken before the first await, so a clearPendingEvidence() during the
+    // policy refresh still stops every upload of this sync.
     final generation = _evidenceGeneration;
     bool cleared() => generation != _evidenceGeneration;
+    var policy = await _refreshCollectionPolicy(client, deadline);
     final upload =
         _evidenceUploader ??
         EvidenceUploadClient(
