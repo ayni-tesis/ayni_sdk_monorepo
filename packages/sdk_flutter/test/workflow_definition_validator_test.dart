@@ -687,6 +687,156 @@ void main() {
         WorkflowValidationStatus.incompatiblePort,
       );
     });
+
+    group('behind a condition branch (US-074)', () {
+      Map<String, String> gate({
+        String conditionId = 'condition-1',
+        String branch = 'true',
+        String captureId = 'capture-1',
+      }) => imageConnection(
+        sourceNodeId: conditionId,
+        sourcePort: branch,
+        targetNodeId: captureId,
+        targetPort: 'condicion',
+      );
+
+      test('accepts a capture taken only on either branch of a condition on '
+          'the result it captures', () {
+        for (final branch in ['true', 'false']) {
+          expect(
+            validate(
+              definition(
+                schemaVersion: '3',
+                nodes: [
+                  imageInput(),
+                  model(),
+                  output(),
+                  condition(),
+                  capture(),
+                ],
+                connections: [
+                  ...captureConnections(),
+                  gate(branch: branch),
+                ],
+              ),
+            ),
+            WorkflowValidationStatus.valid,
+            reason: branch,
+          );
+        }
+      });
+
+      test('rejects a condition on another model than the captured one', () {
+        expect(
+          validate(
+            definition(
+              schemaVersion: '3',
+              nodes: [
+                imageInput(),
+                model(),
+                model(id: 'model-2', modelVersionId: 'model-version-2'),
+                output(),
+                condition(sourceNodeId: 'model-2'),
+                capture(),
+              ],
+              connections: [
+                ...captureConnections(),
+                imageConnection(targetNodeId: 'model-2'),
+                gate(),
+              ],
+            ),
+          ),
+          WorkflowValidationStatus.incompatiblePort,
+        );
+      });
+
+      test('rejects anything but one branch of a condition on condicion', () {
+        for (final connections in [
+          [...captureConnections(), gate(), gate(branch: 'false')],
+          [
+            ...captureConnections(),
+            imageConnection(
+              sourceNodeId: 'model-1',
+              sourcePort: 'result',
+              targetNodeId: 'capture-1',
+              targetPort: 'condicion',
+            ),
+          ],
+          [
+            ...captureConnections(),
+            imageConnection(targetNodeId: 'capture-1', targetPort: 'condicion'),
+          ],
+          [...captureConnections(), gate(branch: 'result')],
+        ]) {
+          expect(
+            validate(
+              definition(
+                schemaVersion: '3',
+                nodes: [
+                  imageInput(),
+                  model(),
+                  output(),
+                  condition(),
+                  capture(),
+                ],
+                connections: connections,
+              ),
+            ),
+            WorkflowValidationStatus.incompatiblePort,
+          );
+        }
+      });
+
+      test('still wants the image and the result of a gated capture', () {
+        final connections = captureConnections();
+        for (final broken in [
+          [connections[0], connections[1], gate()],
+          [connections[0], connections[2], gate()],
+        ]) {
+          expect(
+            validate(
+              definition(
+                schemaVersion: '3',
+                nodes: [
+                  imageInput(),
+                  model(),
+                  output(),
+                  condition(),
+                  capture(),
+                ],
+                connections: broken,
+              ),
+            ),
+            WorkflowValidationStatus.incompatiblePort,
+          );
+        }
+      });
+
+      test('keeps the published capture node unchanged', () {
+        expect(
+          validate(
+            definition(
+              schemaVersion: '3',
+              nodes: [
+                imageInput(),
+                model(),
+                output(),
+                condition(),
+                capture(
+                  inputs: const {
+                    'imagen': 'image',
+                    'resultado': 'inferenceResult',
+                    'condicion': 'boolean',
+                  },
+                ),
+              ],
+              connections: [...captureConnections(), gate()],
+            ),
+          ),
+          WorkflowValidationStatus.invalidSchema,
+        );
+      });
+    });
   });
 
   test('rejects duplicated node ids', () {

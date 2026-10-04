@@ -13,6 +13,7 @@ import 'package:ayni_sdk/src/collection_policy_store.dart';
 import 'package:ayni_sdk/src/evidence_image_optimizer.dart';
 import 'package:ayni_sdk/src/evidence_store.dart';
 import 'package:ayni_sdk/src/telemetry_policy_store.dart';
+import 'package:ayni_sdk/src/trace_outbox_store.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:image/image.dart' as img;
 import 'package:test/test.dart';
@@ -523,6 +524,104 @@ void main() {
     });
   });
 
+  group('capture behind a condition (US-074)', () {
+    // The capture hangs from the `true` branch of `gato < 0.9`: only
+    // low-confidence predictions are kept for the dataset.
+    test('creates the evidence when the result meets the condition', () async {
+      await install(definition: _gatedCaptureDefinition());
+
+      final (result, events) = await runAndWait(sdk(), png());
+
+      expect(
+        (result.outputs['Resultado']! as ClassificationResult).label,
+        'gato',
+      );
+      expect(events, _savedEvents);
+      final record =
+          jsonDecode(
+                File(
+                  '${savedEvidence().single.path}/evidence.json',
+                ).readAsStringSync(),
+              )
+              as Map;
+      expect(record, containsPair('captureNodeId', 'capture-1'));
+    });
+
+    test('follows the branch the capture hangs from', () async {
+      // `gato >= 0.9` is false for 0.8, and the capture hangs from `false`.
+      await install(
+        definition: _gatedCaptureDefinition(operator: 'gte', branch: 'false'),
+      );
+
+      final (_, events) = await runAndWait(sdk(), png());
+
+      expect(events, _savedEvents);
+      expect(savedEvidence(), hasLength(1));
+    });
+
+    test('creates no evidence when the result does not meet the condition, '
+        'and keeps the result and the allowed telemetry', () async {
+      await install(definition: _gatedCaptureDefinition());
+      await TelemetryPolicyStore(
+        storageDirectory,
+      ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+      final events = <EvidenceEvent>[];
+
+      final result = await sdk(scores: const [0.05, 0.95]).run(
+        'workflow-1',
+        png(),
+        evidenceConsent: true,
+        onEvidence: events.add,
+        traceContext: WorkflowTraceContext(runId: 'run-1', repetition: 1),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final classification =
+          result.outputs['Resultado']! as ClassificationResult;
+      expect(classification.label, 'gato');
+      expect(classification.confidence, closeTo(0.95, 1e-6));
+      expect(result.outputs.keys, ['Resultado']);
+      expect(events, isEmpty);
+      expect(evidenceDirectory.existsSync(), isFalse);
+      final nodes = {
+        for (final node in result.trace!.nodes) node.nodeId: node.status,
+      };
+      expect(nodes['condition-1'], 'completed');
+      expect(nodes['capture-1'], 'skipped');
+      final queued = await TraceOutboxStore(storageDirectory).pending();
+      final queuedCapture = (queued.single['nodes']! as List)
+          .cast<Map>()
+          .singleWhere((node) => node['nodeId'] == 'capture-1');
+      expect(queuedCapture['status'], 'skipped');
+    });
+
+    test('evaluates a condition that no output reads', () async {
+      // The condition only decides the capture: its unused branch must not
+      // fail the run as a branch that reaches no output.
+      await install(
+        definition: _gatedCaptureDefinition(operator: 'gte', branch: 'false'),
+      );
+
+      final result = await sdk(
+        scores: const [0.05, 0.95],
+      ).run('workflow-1', png(), evidenceConsent: true);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(result.outputs, contains('Resultado'));
+      expect(evidenceDirectory.existsSync(), isFalse);
+    });
+
+    test('creates no evidence without the consent of the app', () async {
+      await install(definition: _gatedCaptureDefinition());
+
+      final result = await sdk().run('workflow-1', png());
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(result.outputs, contains('Resultado'));
+      expect(evidenceDirectory.existsSync(), isFalse);
+    });
+  });
+
   group('local queue (US-068)', () {
     test('leaves the evidence pending on the device, without a connection '
         'and across a restart', () async {
@@ -889,3 +988,28 @@ Map<String, Object?> _captureDefinition() => {
     },
   ],
 };
+
+/// [_captureDefinition] with its capture behind the [branch] of a condition
+/// on the confidence of `gato` that no output reads (US-074).
+Map<String, Object?> _gatedCaptureDefinition({
+  String operator = 'lt',
+  String branch = 'true',
+}) {
+  final definition = _captureDefinition();
+  (definition['nodes'] as List).add({
+    'id': 'condition-1',
+    'type': 'condition',
+    'sourceNodeId': 'model-1',
+    'label': 'gato',
+    'operator': operator,
+    'threshold': 0.9,
+    'branches': {'true': 'Verdadero', 'false': 'Falso'},
+  });
+  (definition['connections'] as List).add({
+    'sourceNodeId': 'condition-1',
+    'sourcePort': branch,
+    'targetNodeId': 'capture-1',
+    'targetPort': 'condicion',
+  });
+  return definition;
+}

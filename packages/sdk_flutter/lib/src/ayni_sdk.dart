@@ -1282,9 +1282,12 @@ class AyniSdk {
   /// nodes after any currently running inference finishes.
   ///
   /// When the workflow reaches a `dataset.capture` node, the SDK creates
-  /// evidence for a dataset only if [evidenceConsent] is `true`: pass it only
-  /// while the person has given the consent your app requires for evidence
-  /// collection. After returning the result, without delaying it or failing
+  /// evidence for a dataset only if [evidenceConsent] is `true`. A capture
+  /// that hangs from a branch of a condition, for example to keep only
+  /// low-confidence predictions, is reached only when the condition takes
+  /// that branch; otherwise the SDK creates no evidence and the result does
+  /// not change. Pass [evidenceConsent] only while the person has given the
+  /// consent your app requires for evidence collection. After returning the result, without delaying it or failing
   /// it, the SDK reduces and compresses a copy of [input] to a JPEG with the
   /// maximum size and quality of the collection policy that [sync] saved,
   /// and keeps it in [storageDirectory] with the captured inference result,

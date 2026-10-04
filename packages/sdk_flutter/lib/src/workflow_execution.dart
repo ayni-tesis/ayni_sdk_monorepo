@@ -408,8 +408,10 @@ class WorkflowExecutor {
   /// node it reaches.
   ///
   /// [onCapture] receives each `dataset.capture` node reached: one whose image
-  /// and inference result were both produced in this execution. A capture
-  /// whose result source did not run is skipped, never an error.
+  /// and inference result were both produced in this execution and, when it
+  /// hangs from a condition branch (US-074), whose condition took that branch.
+  /// A capture whose result source did not run, or whose condition took the
+  /// other branch, is skipped, never an error.
   ///
   /// Throws a [WorkflowError] when the workflow cannot complete.
   Future<WorkflowResult> execute({
@@ -489,6 +491,14 @@ class WorkflowExecutor {
         for (final id in outputSources)
           if (byId[id]?['type'] == 'condition') id,
       };
+      // The conditions a capture hangs from (US-074). They run whenever their
+      // model does, even if no output reads them, but never make it run.
+      final captureConditionIds = {
+        for (final c in connections)
+          if (c['targetPort'] == 'condicion' &&
+              byId[c['targetNodeId']]?['type'] == 'dataset.capture')
+            c['sourceNodeId'] as String,
+      };
       final degree = {
         for (final n in nodes)
           n['id'] as String: incoming[n['id']]?.length ?? 0,
@@ -557,13 +567,15 @@ class WorkflowExecutor {
               );
               values[id] = BooleanResult(id, truth);
               final port = truth ? 'true' : 'false';
-              if (!workflowBranchReachesOutput(
-                conditionId: id,
-                branchPort: port,
-                nodes: byId,
-                outgoing: outgoing,
-                connections: connections,
-              )) {
+              // A condition only a capture reads decides that capture alone.
+              if (requiredConditionIds.contains(id) &&
+                  !workflowBranchReachesOutput(
+                    conditionId: id,
+                    branchPort: port,
+                    nodes: byId,
+                    outgoing: outgoing,
+                    connections: connections,
+                  )) {
                 throw WorkflowError(
                   WorkflowErrorCategory.invalidWorkflow,
                   nodeId: id,
@@ -610,7 +622,24 @@ class WorkflowExecutor {
                       as String?;
               final resultSource = sourceOf('resultado');
               final result = values[resultSource];
-              if (values[sourceOf('imagen')] is Uint8List &&
+              // Behind a condition (US-074), the capture is reached only when
+              // the condition ran and took the branch it hangs from.
+              final gate = connections
+                  .where(
+                    (c) =>
+                        c['targetNodeId'] == id &&
+                        c['targetPort'] == 'condicion',
+                  )
+                  .firstOrNull;
+              final gateValue = gate == null
+                  ? null
+                  : values[gate['sourceNodeId']];
+              final gateOpen =
+                  gate == null ||
+                  gateValue is BooleanResult &&
+                      (gate['sourcePort'] == 'true') == gateValue.value;
+              if (gateOpen &&
+                  values[sourceOf('imagen')] is Uint8List &&
                   (result is ClassificationResult ||
                       result is DetectionResult)) {
                 onCapture?.call(
@@ -622,8 +651,9 @@ class WorkflowExecutor {
                   ),
                 );
               } else {
-                // Its model did not run in this execution, so the capture is
-                // not reached; it never fails the workflow.
+                // Its model did not run in this execution, or its condition
+                // took the other branch, so the capture is not reached; it
+                // never fails the workflow.
                 active.remove(id);
               }
           }
@@ -658,7 +688,8 @@ class WorkflowExecutor {
             if (n['sourceNodeId'] == id &&
                 n['type'] == 'condition' &&
                 values[id] is ClassificationResult &&
-                requiredConditionIds.contains(to))
+                (requiredConditionIds.contains(to) ||
+                    captureConditionIds.contains(to)))
               active.add(to);
             if (n['type'] == 'output' &&
                 _outputSourceDefinitions(n).any(

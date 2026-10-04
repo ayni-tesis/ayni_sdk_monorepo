@@ -90,6 +90,12 @@
   que cuenta para el límite de 2 MiB de una traza. `dataset.capture`
   sigue siendo el único mecanismo que recolecta imágenes: un workflow sin ese
   nodo solo registra telemetría, aunque la app pase `evidenceConsent: true`.
+- Un nodo `dataset.capture` puede colgar, por su puerto `condicion`, de la
+  rama `true` o `false` de una condición sobre el mismo modelo cuyo resultado
+  recibe, por ejemplo para guardar solo las predicciones de baja confianza.
+  `run()` crea la evidencia solo si la condición toma esa rama; si no, no crea
+  evidencia, conserva la traza permitida y devuelve el mismo resultado. Una
+  condición que solo decide una captura se evalúa aunque ninguna salida la lea.
 - Requiere la API HTTP 0.3.0 del servidor, que agrega `POST /sdk/evidence` y
   `POST /sdk/evidence/<evidenceId>/complete`.
 
