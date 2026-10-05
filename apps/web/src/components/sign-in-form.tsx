@@ -23,7 +23,7 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
     defaultValues: {
       email: "",
       password: "",
-      acceptUpdatedTerms: false,
+      acceptTerms: false,
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null);
@@ -31,16 +31,12 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
         {
           email: value.email,
           password: value.password,
-          termsAcceptedVersion: value.acceptUpdatedTerms ? CURRENT_TERMS_VERSION : "",
+          termsAcceptedVersion: value.acceptTerms ? CURRENT_TERMS_VERSION : "",
         } as Parameters<typeof authClient.signIn.email>[0] & { termsAcceptedVersion: string },
         {
           onSuccess: () => {
             router.push(getBrowserPostAuthRedirect());
-            toast.success(
-              value.acceptUpdatedTerms
-                ? "Términos aceptados. Sesión iniciada correctamente."
-                : "Sesión iniciada correctamente",
-            );
+            toast.success("Términos aceptados. Sesión iniciada correctamente.");
           },
           onError: () => {
             const message =
@@ -55,7 +51,9 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
       onSubmit: z.object({
         email: z.email("Ingresa un correo electrónico válido."),
         password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-        acceptUpdatedTerms: z.boolean(),
+        acceptTerms: z.literal(true, {
+          error: "Debes aceptar los Términos y condiciones para iniciar sesión.",
+        }),
       }),
     },
   });
@@ -153,29 +151,36 @@ export default function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () 
             </form.Field>
           </div>
 
-          <form.Field name="acceptUpdatedTerms">
+          <form.Field name="acceptTerms">
             {(field) => (
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name={field.name}
-                  checked={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.checked)}
-                />
-                <span>
-                  Si los términos cambiaron, acepto la versión vigente tras revisarla en{" "}
-                  <a
-                    className="underline"
-                    href={`/terms/${CURRENT_TERMS_VERSION}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Términos y condiciones
-                  </a>
-                  .
-                </span>
-              </label>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name={field.name}
+                    checked={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.checked)}
+                  />
+                  <span>
+                    Acepto los{" "}
+                    <a
+                      className="underline"
+                      href={`/terms/${CURRENT_TERMS_VERSION}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Términos y condiciones ({CURRENT_TERMS_VERSION})
+                    </a>
+                    .
+                  </span>
+                </label>
+                {field.state.meta.errors.map((error) => (
+                  <p key={error?.message} className="text-destructive text-sm" role="alert">
+                    {error?.message}
+                  </p>
+                ))}
+              </div>
             )}
           </form.Field>
 

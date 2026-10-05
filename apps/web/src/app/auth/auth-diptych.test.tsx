@@ -23,6 +23,7 @@ vi.mock("@/lib/auth-client", () => ({
   },
 }));
 
+import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
 import { AuthDiptych } from "./auth-diptych";
 
 describe("AuthDiptych", () => {
@@ -74,6 +75,50 @@ describe("AuthDiptych", () => {
     expect(screen.getByRole("heading", { name: /crea tu cuenta/i })).toBeTruthy();
     expect(screen.getByLabelText(/correo electrónico/i)).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: /términos y condiciones/i })).toBeTruthy();
+  });
+
+  it("requires accepting the terms before signing in", async () => {
+    render(<AuthDiptych initialMode="sign-in" />);
+
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(
+      await screen.findByText("Debes aceptar los Términos y condiciones para iniciar sesión."),
+    ).toBeTruthy();
+    expect(signInEmailMock).not.toHaveBeenCalled();
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("sends the current terms version and continues to the invitation after signing in", async () => {
+    const next = "/join?token=tok-1";
+    window.history.replaceState({}, "", `/sign-in?next=${encodeURIComponent(next)}`);
+    signInEmailMock.mockImplementation(
+      async (_credentials: unknown, callbacks: { onSuccess?: () => void }) => {
+        callbacks.onSuccess?.();
+      },
+    );
+    render(<AuthDiptych initialMode="sign-in" next={next} />);
+
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith(next));
+    expect(signInEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ termsAcceptedVersion: CURRENT_TERMS_VERSION }),
+      expect.anything(),
+    );
   });
 
   it("preserves an invitation through sign-in, sign-up, and successful registration", async () => {

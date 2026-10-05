@@ -75,34 +75,13 @@ export const auth = betterAuth({
           message: "Debes aceptar los Términos y condiciones para crear tu cuenta.",
         });
       }
-      if (ctx.path === "/sign-in/email" && typeof ctx.body?.email === "string") {
-        const [existing] = await db
-          .select({ id: schema.user.id, termsAcceptedVersion: schema.user.termsAcceptedVersion })
-          .from(schema.user)
-          .where(eq(schema.user.email, ctx.body.email.toLowerCase()))
-          .limit(1);
-        const [acceptance] = existing
-          ? await db
-              .select({ id: schema.userTermsAcceptance.id })
-              .from(schema.userTermsAcceptance)
-              .where(
-                and(
-                  eq(schema.userTermsAcceptance.userId, existing.id),
-                  eq(schema.userTermsAcceptance.version, CURRENT_TERMS_VERSION),
-                ),
-              )
-              .limit(1)
-          : [];
-        if (
-          existing &&
-          (!acceptance || existing.termsAcceptedVersion !== CURRENT_TERMS_VERSION) &&
-          !hasAcceptedCurrentTerms(ctx.body.termsAcceptedVersion)
-        ) {
-          throw new APIError("UNAUTHORIZED", {
-            code: "INVALID_EMAIL_OR_PASSWORD",
-            message: "Invalid email or password",
-          });
-        }
+      if (
+        ctx.path === "/sign-in/email" &&
+        !hasAcceptedCurrentTerms(ctx.body?.termsAcceptedVersion)
+      ) {
+        throw new APIError("BAD_REQUEST", {
+          message: "Debes aceptar los Términos y condiciones para iniciar sesión.",
+        });
       }
     }),
     after: createAuthMiddleware(async (ctx) => {

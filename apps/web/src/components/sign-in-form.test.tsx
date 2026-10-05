@@ -19,13 +19,18 @@ vi.mock("@/lib/auth-client", () => ({
 
 import SignInForm from "./sign-in-form";
 
-async function submitForm() {
+function fillCredentials() {
   fireEvent.change(screen.getByLabelText("Correo electrónico"), {
     target: { value: "diego@biotec.io" },
   });
   fireEvent.change(screen.getByLabelText("Contraseña"), {
     target: { value: "secret1234" },
   });
+}
+
+async function submitForm() {
+  fillCredentials();
+  fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
   fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
   await waitFor(() => expect(signInEmailMock).toHaveBeenCalled());
 }
@@ -42,6 +47,17 @@ describe("SignInForm", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("requires accepting the terms before signing in", async () => {
+    render(<SignInForm onSwitchToSignUp={vi.fn()} />);
+    fillCredentials();
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(
+      await screen.findByText("Debes aceptar los Términos y condiciones para iniciar sesión."),
+    ).toBeTruthy();
+    expect(signInEmailMock).not.toHaveBeenCalled();
   });
 
   it("redirects to the next parameter after signing in", async () => {
