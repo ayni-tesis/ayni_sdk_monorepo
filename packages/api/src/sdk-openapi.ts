@@ -116,10 +116,22 @@ export const SdkModelVersionContractSchema = z
         type: z.literal("detection"),
         labels: z.array(z.string()),
         scoreThreshold: z.number(),
+        tensorIndices: z
+          .object({
+            boxes: z.number().int().min(0).max(3),
+            classes: z.number().int().min(0).max(3),
+            scores: z.number().int().min(0).max(3),
+            count: z.number().int().min(0).max(3),
+          })
+          .strict()
+          .refine((indices) => new Set(Object.values(indices)).size === 4)
+          .optional(),
       }),
     ]),
   })
   .openapi("SdkModelVersionContract");
+
+export type SdkModelVersionContract = z.infer<typeof SdkModelVersionContractSchema>;
 
 export const SdkModelVersionManifestSchema = z
   .object({

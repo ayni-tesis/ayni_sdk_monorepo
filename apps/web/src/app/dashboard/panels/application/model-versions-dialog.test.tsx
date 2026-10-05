@@ -9,7 +9,7 @@ import {
 } from "./model-versions-dialog";
 
 const { client, uploadMock, toastMock, writeTextMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), delete: vi.fn() },
+  client: { get: vi.fn(), patch: vi.fn(), delete: vi.fn() },
   uploadMock: vi.fn(),
   toastMock: { success: vi.fn(), error: vi.fn() },
   writeTextMock: vi.fn().mockResolvedValue(undefined),
@@ -68,6 +68,7 @@ function renderDialog(overrides?: { canManage?: boolean }) {
 beforeEach(() => {
   vi.clearAllMocks();
   client.get.mockReset();
+  client.patch.mockReset();
   client.delete.mockReset();
   uploadMock.mockReset();
   client.get.mockResolvedValue({ data: { versions: [listedVersion] } });
@@ -127,6 +128,130 @@ describe("ModelVersionsDialog", () => {
     expect(await screen.findByTestId("model-version-row-mv-1")).toBeTruthy();
     expect(screen.queryByTestId("model-versions-loading")).toBeNull();
   });
+
+  it("loads, saves, and reloads a non-default detection tensor role map", async () => {
+    const initialContract: NonNullable<ModelVersionListItem["contract"]> = {
+      input: {
+        type: "image",
+        width: 300,
+        height: 300,
+        channels: 3,
+        normalization: "minus_one_to_one",
+      },
+      output: {
+        type: "detection",
+        labels: ["leaf"],
+        scoreThreshold: 0.5,
+        tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
+      },
+    };
+    client.get.mockResolvedValue({
+      data: { versions: [{ ...listedVersion, contract: initialContract }] },
+    });
+    client.patch.mockImplementation(async (_url, payload) => ({ data: { contract: payload } }));
+
+    renderDialog({ canManage: true });
+    const row = await screen.findByTestId("model-version-row-mv-1");
+    fireEvent.click(within(row).getByRole("button", { name: "Editar contrato" }));
+
+    let editor = await screen.findByRole("dialog", { name: "Contrato de la versión 1.0.0" });
+    expect((within(editor).getByLabelText("Índice de cajas") as HTMLInputElement).value).toBe("2");
+    expect((within(editor).getByLabelText("Índice de clases") as HTMLInputElement).value).toBe("0");
+    expect((within(editor).getByLabelText("Índice de puntajes") as HTMLInputElement).value).toBe(
+      "3",
+    );
+    expect((within(editor).getByLabelText("Índice de detecciones") as HTMLInputElement).value).toBe(
+      "1",
+    );
+
+    const savedIndices = { boxes: 3, classes: 2, scores: 1, count: 0 };
+    for (const [role, value] of Object.entries(savedIndices)) {
+      const label = {
+        boxes: "Índice de cajas",
+        classes: "Índice de clases",
+        scores: "Índice de puntajes",
+        count: "Índice de detecciones",
+      }[role as keyof typeof savedIndices];
+      fireEvent.change(within(editor).getByLabelText(label), { target: { value: String(value) } });
+    }
+    fireEvent.click(within(editor).getByRole("button", { name: "Guardar contrato" }));
+
+    await waitFor(() => {
+      expect(client.patch).toHaveBeenCalledWith(
+        "/applications/app-1/models/model-1/versions/mv-1/contract",
+        {
+          input: initialContract.input,
+          output: {
+            type: "detection",
+            labels: ["leaf"],
+            scoreThreshold: 0.5,
+            tensorIndices: savedIndices,
+          },
+        },
+      );
+    });
+
+    fireEvent.click(within(row).getByRole("button", { name: "Editar contrato" }));
+    editor = await screen.findByRole("dialog", { name: "Contrato de la versión 1.0.0" });
+    expect((within(editor).getByLabelText("Índice de cajas") as HTMLInputElement).value).toBe("3");
+    expect((within(editor).getByLabelText("Índice de clases") as HTMLInputElement).value).toBe("2");
+    expect((within(editor).getByLabelText("Índice de puntajes") as HTMLInputElement).value).toBe(
+      "1",
+    );
+    expect((within(editor).getByLabelText("Índice de detecciones") as HTMLInputElement).value).toBe(
+      "0",
+    );
+  });
+
+  it.each([
+    {
+      field: "Índice de cajas",
+      value: "4",
+      message: "Cada índice debe ser un entero entre 0 y 3.",
+    },
+    {
+      field: "Índice de clases",
+      value: "0",
+      message: "Los índices de los tensores deben ser distintos.",
+    },
+  ])(
+    "rejects invalid tensor role values before saving: $field=$value",
+    async ({ field, value, message }) => {
+      client.get.mockResolvedValue({
+        data: {
+          versions: [
+            {
+              ...listedVersion,
+              contract: {
+                input: {
+                  type: "image",
+                  width: 300,
+                  height: 300,
+                  channels: 3,
+                  normalization: "minus_one_to_one",
+                },
+                output: {
+                  type: "detection",
+                  labels: ["leaf"],
+                  scoreThreshold: 0.5,
+                  tensorIndices: { boxes: 0, classes: 1, scores: 2, count: 3 },
+                },
+              },
+            },
+          ],
+        },
+      });
+      renderDialog({ canManage: true });
+      const row = await screen.findByTestId("model-version-row-mv-1");
+      fireEvent.click(within(row).getByRole("button", { name: "Editar contrato" }));
+      const editor = await screen.findByRole("dialog", { name: "Contrato de la versión 1.0.0" });
+      fireEvent.change(within(editor).getByLabelText(field), { target: { value } });
+      fireEvent.click(within(editor).getByRole("button", { name: "Guardar contrato" }));
+
+      expect((await within(editor).findByRole("alert")).textContent).toBe(message);
+      expect(client.patch).not.toHaveBeenCalled();
+    },
+  );
 
   it("shows the empty state for a model without versions", async () => {
     client.get.mockResolvedValue({ data: { versions: [] } });

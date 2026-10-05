@@ -100,6 +100,19 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   bool _sdkRunActive = false;
   final _operationGate = _AsyncGate();
 
+  // The old singleton fields summarize the first model; modelArtifacts is complete.
+  ValidationModelRequirement get _legacyModel =>
+      _profile.modelRequirements.first;
+
+  List<ValidationRunModelArtifact> get _modelArtifacts => [
+    for (final requirement in _profile.modelRequirements)
+      ValidationRunModelArtifact(
+        nodeId: requirement.nodeId,
+        modelVersionId: requirement.modelVersionId,
+        sha256: requirement.sha256,
+      ),
+  ];
+
   @override
   ValidationCondition get condition => ValidationCondition.treatment;
 
@@ -113,23 +126,26 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         'Configura las versiones publicadas del perfil antes de preparar.',
       );
     }
-    if (_profile.outputContract.any(
-      (output) => output.resultType == ValidationResultType.detection,
-    )) {
+    if (sdkVersion != '0.3.0' &&
+        _profile.outputContract.any(
+          (output) => output.resultType == ValidationResultType.detection,
+        )) {
       throw const ValidationExecutionException(
         'sdkDetectionTensorRolesUnsupported',
         'ayni_sdk 0.2.0 no puede validar todavía los índices de tensores de detección del perfil.',
       );
     }
     await _ensureInitialized();
-    final manifestSha256 = await _modelRepository.fetchSha256(
-      _profile.treatmentModelVersionId,
-    );
-    if (manifestSha256 != _profile.treatmentModelSha256) {
-      throw const ValidationExecutionException(
-        'modelHashMismatch',
-        'El SHA-256 publicado del modelo no coincide con el perfil.',
+    for (final requirement in _profile.modelRequirements) {
+      final manifestSha256 = await _modelRepository.fetchSha256(
+        requirement.modelVersionId,
       );
+      if (manifestSha256 != requirement.sha256) {
+        throw const ValidationExecutionException(
+          'modelHashMismatch',
+          'El SHA-256 publicado de un modelo no coincide con el perfil.',
+        );
+      }
     }
     final definition = await _workflowDefinitions.fetch(
       _profile.treatmentWorkflowVersionId,
@@ -160,6 +176,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         _normalizeAndVerifyResult(result);
         return result;
       });
+
+  Future<void> activate() =>
+      _operationGate.run(() => _ensureInitialized(force: true));
 
   Future<void> setTraceCaptureAllowed(bool allowed) async {
     if (allowed) {
@@ -225,8 +244,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     } on ValidationExecutionException catch (error) {
       return ConditionRunResult.failure(
         durationMicros: 0,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: error.code,
@@ -235,8 +255,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     } on Object {
       return ConditionRunResult.failure(
         durationMicros: 0,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: 'requestPreparationFailed',
@@ -260,8 +281,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       stopwatch.stop();
       return ConditionRunResult.success(
         durationMicros: stopwatch.elapsedMicroseconds,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: result.workflowVersion,
         normalizedOutput: output,
@@ -272,8 +294,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       if (error.category == WorkflowErrorCategory.cancelled) {
         return ConditionRunResult.cancelled(
           durationMicros: stopwatch.elapsedMicroseconds,
-          modelVersionId: _profile.treatmentModelVersionId,
-          modelSha256: _profile.treatmentModelSha256,
+          modelVersionId: _legacyModel.modelVersionId,
+          modelSha256: _legacyModel.sha256,
+          modelArtifacts: _modelArtifacts,
           workflowVersionId: _profile.treatmentWorkflowVersionId,
           workflowVersion: _profile.treatmentWorkflowVersion,
           tracePersistenceFailed: error.tracePersistenceFailed,
@@ -281,8 +304,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       }
       return ConditionRunResult.failure(
         durationMicros: stopwatch.elapsedMicroseconds,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: error.category.name,
@@ -294,8 +318,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       stopwatch.stop();
       return ConditionRunResult.failure(
         durationMicros: stopwatch.elapsedMicroseconds,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: error.code,
@@ -306,8 +331,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       stopwatch.stop();
       return ConditionRunResult.failure(
         durationMicros: stopwatch.elapsedMicroseconds,
-        modelVersionId: _profile.treatmentModelVersionId,
-        modelSha256: _profile.treatmentModelSha256,
+        modelVersionId: _legacyModel.modelVersionId,
+        modelSha256: _legacyModel.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: 'workflowExecutionFailed',
@@ -332,8 +358,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   @override
   Future<void> close() async {}
 
-  Future<void> _ensureInitialized() async {
-    if (_initialized) return;
+  Future<void> _ensureInitialized({bool force = false}) async {
+    if (_initialized && !force) return;
+    _initialized = false;
     await _storageDirectory.create(recursive: true);
     final serverUrl = Uri.tryParse(credentials.serverUrl);
     if (serverUrl == null ||
@@ -374,7 +401,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   }
 
   Map<String, Object?> _normalizeAndVerifyResult(WorkflowResult result) {
-    if (result.workflowId != _profile.treatmentWorkflowId ||
+    if (result.workflowId != _profile.workflowId ||
         result.workflowVersion != _profile.treatmentWorkflowVersion ||
         !result.usingOfflineCache) {
       throw const ValidationExecutionException(
@@ -399,7 +426,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     const requiredFields = {'schemaVersion', 'nodes', 'connections'};
     if (definition.keys.toSet().length != requiredFields.length ||
         !definition.keys.toSet().containsAll(requiredFields) ||
-        definition['schemaVersion'] != '1' ||
+        !{'1', '2'}.contains(definition['schemaVersion']) ||
         definition['nodes'] is! List ||
         definition['connections'] is! List) {
       throw const ValidationExecutionException(
@@ -407,56 +434,130 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         'La definición publicada del workflow no es compatible.',
       );
     }
-    final nodes = (definition['nodes'] as List).whereType<Map>().toList();
+    final rawNodes = definition['nodes'] as List;
+    final nodes = rawNodes.whereType<Map>().toList();
+    if (nodes.length != rawNodes.length) {
+      throw const ValidationExecutionException(
+        'workflowDefinitionInvalid',
+        'La definición publicada del workflow no es compatible.',
+      );
+    }
     final models = nodes
         .where((node) => node['type'] == 'model.tflite')
         .toList();
-    if (models.isEmpty ||
-        models.any(
-          (node) => node['modelVersionId'] != _profile.treatmentModelVersionId,
-        )) {
+    if (models.length != _profile.modelRequirements.length) {
       throw const ValidationExecutionException(
         'workflowModelVersionMismatch',
-        'El workflow no referencia la misma versión del modelo del modo directo.',
+        'El conjunto de modelos del workflow no coincide con el perfil.',
       );
     }
-    for (final node in models) {
+    for (final requirement in _profile.modelRequirements) {
+      final matches = models.where((node) => node['id'] == requirement.nodeId);
+      if (matches.length != 1 ||
+          matches.single['modelVersionId'] != requirement.modelVersionId) {
+        throw const ValidationExecutionException(
+          'workflowModelVersionMismatch',
+          'El workflow no referencia las versiones de modelo del perfil.',
+        );
+      }
+      final node = matches.single;
       final inputs = node['inputs'];
       final outputs = node['outputs'];
       if (inputs is! Map ||
           outputs is! Map ||
           inputs['image'] is! Map ||
-          outputs['result'] is! Map) {
+          outputs['result'] is! Map ||
+          !_matchesInputContract(inputs['image'], requirement) ||
+          !_matchesModelOutput(outputs['result'], requirement)) {
         throw const ValidationExecutionException(
           'workflowModelContractInvalid',
-          'El contrato del modelo publicado no está completo.',
-        );
-      }
-      final contract = <String, Object?>{
-        'input': inputs['image'],
-        'output': outputs['result'],
-      };
-      if (!modelContractMatchesValidationProfile(contract, _profile)) {
-        throw const ValidationExecutionException(
-          'workflowModelContractMismatch',
-          'El contrato del modelo del workflow no coincide con el perfil.',
+          'El contrato de un modelo del workflow no coincide con el perfil.',
         );
       }
     }
-    final outputNames = nodes
+    final outputNodes = nodes
         .where((node) => node['type'] == 'output')
-        .map((node) => node['name'])
-        .whereType<String>()
-        .toSet();
-    if (_profile.outputContract.any(
-      (contract) => !outputNames.contains(contract.name),
-    )) {
+        .toList();
+    if (outputNodes.length != _profile.outputContract.length) {
       throw const ValidationExecutionException(
         'workflowOutputsMismatch',
-        'El workflow no publica todas las salidas requeridas por el perfil.',
+        'El conjunto de salidas del workflow no coincide con el perfil.',
       );
     }
+    for (final contract in _profile.outputContract) {
+      final matches = outputNodes.where(
+        (node) => node['name'] == contract.name,
+      );
+      if (matches.length != 1 ||
+          !_matchesOutputType(matches.single, contract)) {
+        throw const ValidationExecutionException(
+          'workflowOutputsMismatch',
+          'Los nombres o tipos de salida del workflow no coinciden con el perfil.',
+        );
+      }
+    }
   }
+
+  bool _matchesInputContract(
+    Object? raw,
+    ValidationModelRequirement requirement,
+  ) {
+    if (raw is! Map) return false;
+    final contract = requirement.inputContract;
+    return raw.length == 5 &&
+        raw['type'] == 'image' &&
+        raw['width'] == contract.width &&
+        raw['height'] == contract.height &&
+        raw['channels'] == contract.channels &&
+        raw['normalization'] == contract.normalization;
+  }
+
+  bool _matchesModelOutput(
+    Object? raw,
+    ValidationModelRequirement requirement,
+  ) {
+    if (raw is! Map) return false;
+    final contract = requirement.modelOutputContract;
+    final keys = {'type', 'labels'};
+    if (contract.resultType == ValidationResultType.detection) {
+      keys.addAll({'scoreThreshold', 'tensorIndices'});
+    }
+    if (raw.keys.toSet().length != keys.length ||
+        !raw.keys.toSet().containsAll(keys) ||
+        raw['type'] != contract.resultType.name ||
+        raw['labels'] is! List ||
+        !_sameList(raw['labels'] as List, contract.labels)) {
+      return false;
+    }
+    if (contract.resultType != ValidationResultType.detection) return true;
+    final indices = raw['tensorIndices'];
+    return raw['scoreThreshold'] == contract.scoreThreshold &&
+        indices is Map &&
+        indices.length == contract.tensorIndices!.length &&
+        contract.tensorIndices!.entries.every(
+          (entry) => indices[entry.key] == entry.value,
+        );
+  }
+
+  bool _matchesOutputType(Map node, ValidationOutputContract contract) {
+    if (contract.resultType != ValidationResultType.boolean) {
+      return node['resultType'] == contract.resultType.name;
+    }
+    if (node['resultType'] == 'boolean') return true;
+    final sources = node['sources'];
+    return sources is List &&
+        sources.isNotEmpty &&
+        sources.every(
+          (source) => source is Map && source['resultType'] == 'boolean',
+        );
+  }
+
+  bool _sameList(List actual, List<String> expected) =>
+      actual.length == expected.length &&
+      List.generate(
+        actual.length,
+        (index) => actual[index] == expected[index],
+      ).every((matches) => matches);
 }
 
 class _AsyncGate {

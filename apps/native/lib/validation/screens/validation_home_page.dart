@@ -47,7 +47,10 @@ abstract interface class ValidationHomeRuntime {
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   });
 
-  Future<ValidationSyncState> synchronizeSdk({bool verifyWorkflow = true});
+  Future<ValidationSyncState> synchronizeSdk({
+    required ValidationResourceProfile profile,
+    bool verifyWorkflow = true,
+  });
 
   Future<BatchRunSummary> runPhase({
     required ValidationResourceProfile profile,
@@ -59,6 +62,15 @@ abstract interface class ValidationHomeRuntime {
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
+  });
+
+  Future<BatchRunSummary> runSuite({
+    required String pairRunId,
+    required List<ValidationCondition> conditions,
+    required bool captureTrace,
+    required Future<bool> Function() isCancelled,
+    required void Function(ValidationRunRecord record) onRecord,
+    required void Function(ValidationSuiteProgress progress) onProgress,
   });
 
   Future<void> cancel();
@@ -122,16 +134,15 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       const ValidationRunMetadataReader();
   ExperimentPlan? _plan;
   ValidationSdkCredentials? _credentials;
-  VerifiedDataset? _dataset;
-  ValidationConditionRunner? _activeRunner;
-  DirectTfliteRunner? _directRunner;
-  AyniSdkValidationRunner? _sdkRunner;
+  final Map<String, VerifiedDataset> _datasets = {};
+  final Map<String, DirectTfliteRunner> _directRunners = {};
+  final Map<String, AyniSdkValidationRunner> _sdkRunners = {};
+  final Set<String> _sdkReadyProfileIds = {};
   HttpDatasetTransport? _datasetTransport;
   HttpValidationModelRepository? _modelRepository;
   HttpWorkflowDefinitionRepository? _workflowRepository;
   ValidationBatchController? _batchController;
   Future<Directory>? _documentsDirectory;
-  bool _sdkReadyForRuns = false;
 
   @override
   Future<ExperimentPlan> loadPlan() async {
@@ -175,6 +186,12 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
         'Revisa la URL HTTPS y la credencial SDK.',
       );
     }
+    final previous = _credentials;
+    if (previous != null &&
+        (previous.serverUrl != credentials.serverUrl ||
+            previous.credential != credentials.credential)) {
+      await _closeRepositories();
+    }
     await _preferences.saveSdkCredentials(credentials);
     _credentials = credentials;
   }
@@ -203,8 +220,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       );
     }
     await saveCredentials(credentials);
-    await _closeRepositories();
-    final serverUrl = Uri.parse(credentials.serverUrl);
+    await _ensureRepositories(credentials);
     final documents = await _getDocumentsDirectory();
     final validationDirectory = Directory(
       '${documents.path}${Platform.pathSeparator}validation',
@@ -212,68 +228,31 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     final datasetsDirectory = Directory(
       '${validationDirectory.path}${Platform.pathSeparator}datasets',
     );
-    final modelsDirectory = Directory(
-      '${validationDirectory.path}${Platform.pathSeparator}models',
-    );
-    final sdkStorageDirectory = Directory(
-      '${validationDirectory.path}${Platform.pathSeparator}sdk',
-    );
+    final dataset =
+        _datasets[profile.id] ??
+        await DatasetRepository(
+          transport: _datasetTransport!,
+          datasetsDirectory: datasetsDirectory,
+          datasetVersionId: profile.datasetVersionId,
+          expectedArchiveSha256: profile.datasetSha256,
+          expectedPartition: profile.datasetPartition,
+        ).prepare(profile.datasetVersionId, onProgress: onDownloadProgress);
+    _datasets[profile.id] = dataset;
 
-    final transport = HttpDatasetTransport(
-      serverUrl: serverUrl,
-      credential: credentials.credential,
-    );
-    _datasetTransport = transport;
-    final datasetRepository = DatasetRepository(
-      transport: transport,
-      datasetsDirectory: datasetsDirectory,
-      datasetVersionId: profile.datasetVersionId,
-      expectedArchiveSha256: profile.datasetSha256,
-      expectedPartition: profile.datasetPartition,
-    );
-    final dataset = await datasetRepository.prepare(
-      profile.datasetVersionId,
-      onProgress: onDownloadProgress,
-    );
-    _dataset = dataset;
-
-    _sdkReadyForRuns = false;
     if (runnerKind == ValidationRunnerKind.direct) {
-      final modelRepository = HttpValidationModelRepository(
-        serverUrl: serverUrl,
-        credential: credentials.credential,
-        modelsDirectory: modelsDirectory,
+      final runner = _directRunners.putIfAbsent(
+        profile.id,
+        () => DirectTfliteRunner(
+          profile: profile,
+          modelRepository: _modelRepository!,
+          workflowDefinitions: _workflowRepository!,
+        ),
       );
-      _modelRepository = modelRepository;
-      _directRunner = DirectTfliteRunner(
-        profile: profile,
-        modelRepository: modelRepository,
-      );
-      await _directRunner!.prepare();
-      _activeRunner = _directRunner;
+      await runner.prepare();
     } else if (runnerKind == ValidationRunnerKind.sdk) {
-      final modelRepository = HttpValidationModelRepository(
-        serverUrl: serverUrl,
-        credential: credentials.credential,
-        modelsDirectory: modelsDirectory,
-      );
-      _modelRepository = modelRepository;
-      final workflowRepository = HttpWorkflowDefinitionRepository(
-        serverUrl: serverUrl,
-        credential: credentials.credential,
-      );
-      _workflowRepository = workflowRepository;
-      _sdkRunner = AyniSdkValidationRunner(
-        profile: profile,
-        credentials: credentials,
-        storageDirectory: sdkStorageDirectory,
-        sdk: PublicAyniSdkClient(),
-        modelRepository: modelRepository,
-        workflowDefinitions: workflowRepository,
-        preferences: _preferences,
-      );
-      await _sdkRunner!.prepare();
-      _activeRunner = _sdkRunner;
+      final runner = await _getSdkRunner(credentials, profile);
+      await runner.prepare();
+      _sdkReadyProfileIds.remove(profile.id);
     } else {
       throw const ValidationHomeException(
         'conditionUnavailable',
@@ -285,37 +264,39 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       datasetSha256: dataset.zipSha256,
       caseCount: dataset.cases.length,
       resourcesSummary: condition == ValidationCondition.control
-          ? 'Modelo ${profile.controlModelVersionId} verificado para CPU.'
+          ? '${profile.modelRequirements.length} modelo(s) verificado(s) para CPU.'
           : 'Workflow ${profile.treatmentWorkflowVersion} verificado.',
     );
   }
 
   @override
   Future<ValidationSyncState> synchronizeSdk({
+    required ValidationResourceProfile profile,
     bool verifyWorkflow = true,
   }) async {
-    final runner = _sdkRunner;
-    final dataset = _dataset;
+    final runner = _sdkRunners[profile.id];
+    final dataset = _datasets[profile.id];
     if (runner == null || dataset == null) {
       throw const ValidationHomeException(
         'treatmentNotPrepared',
         'Prepara primero los recursos de ayni_sdk.',
       );
     }
-    if (verifyWorkflow) _sdkReadyForRuns = false;
+    if (verifyWorkflow) _sdkReadyProfileIds.remove(profile.id);
+    await runner.activate();
     final result = await runner.synchronize();
     if (result.status != SyncStatus.updated &&
         result.status != SyncStatus.upToDate) {
       return ValidationSyncState(
         status: result.status.name,
-        ready: _sdkReadyForRuns,
+        ready: _sdkReadyProfileIds.contains(profile.id),
       );
     }
     if (!verifyWorkflow) {
       return ValidationSyncState(
         status: result.status.name,
-        ready: _sdkReadyForRuns,
-        workflowVersion: _plan?.activeResourceProfile.treatmentWorkflowVersion,
+        ready: _sdkReadyProfileIds.contains(profile.id),
+        workflowVersion: profile.treatmentWorkflowVersion,
       );
     }
     final testCase = dataset.cases.first;
@@ -327,7 +308,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       );
     }
     final preflight = await runner.preflight(Uint8List.fromList(bytes));
-    _sdkReadyForRuns = true;
+    _sdkReadyProfileIds.add(profile.id);
     return ValidationSyncState(
       status: result.status.name,
       ready: true,
@@ -347,20 +328,24 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
   }) async {
-    final runner = _activeRunner;
-    final dataset = _dataset;
+    final runner = condition == ValidationCondition.control
+        ? _directRunners[profile.id]
+        : _sdkRunners[profile.id];
+    final dataset = _datasets[profile.id];
     if (runner == null || dataset == null || runner.condition != condition) {
       throw const ValidationHomeException(
         'resourcesNotPrepared',
         'Prepara los recursos de la condición seleccionada antes de ejecutar.',
       );
     }
-    if (condition == ValidationCondition.treatment && !_sdkReadyForRuns) {
+    if (condition == ValidationCondition.treatment &&
+        !_sdkReadyProfileIds.contains(profile.id)) {
       throw const ValidationHomeException(
         'sdkNotSynced',
         'Sincroniza ayni_sdk y verifica el workflow antes de ejecutar.',
       );
     }
+    if (runner is AyniSdkValidationRunner) await runner.activate();
     final store = ValidationJsonlStore(await _resultFile());
     final batch = ValidationBatchController(
       store: store,
@@ -383,6 +368,45 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
   }
 
   @override
+  Future<BatchRunSummary> runSuite({
+    required String pairRunId,
+    required List<ValidationCondition> conditions,
+    required bool captureTrace,
+    required Future<bool> Function() isCancelled,
+    required void Function(ValidationRunRecord record) onRecord,
+    required void Function(ValidationSuiteProgress progress) onProgress,
+  }) async {
+    final plan = _plan ?? await loadPlan();
+    final batch = ValidationBatchController(
+      store: ValidationJsonlStore(await _resultFile()),
+      metadata: await _metadataReader.read(),
+      performanceTrace: _performanceTrace,
+    );
+    _batchController = batch;
+    final runnersByProfileId =
+        <String, Map<ValidationCondition, ValidationConditionRunner>>{};
+    for (final profile in plan.resourceProfiles) {
+      final runners = <ValidationCondition, ValidationConditionRunner>{};
+      final direct = _directRunners[profile.id];
+      final sdk = _sdkRunners[profile.id];
+      if (direct != null) runners[ValidationCondition.control] = direct;
+      if (sdk != null) runners[ValidationCondition.treatment] = sdk;
+      runnersByProfileId[profile.id] = runners;
+    }
+    return batch.runSuite(
+      plan: plan,
+      pairRunId: pairRunId,
+      datasetsByProfileId: _datasets,
+      runnersByProfileId: runnersByProfileId,
+      conditions: conditions,
+      captureTrace: captureTrace,
+      isCancelled: isCancelled,
+      onRecord: onRecord,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
   Future<void> cancel() => _batchController?.cancel() ?? Future<void>.value();
 
   @override
@@ -394,8 +418,8 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
   }
 
   Future<void> _purgePendingTraces() async {
-    if (_sdkRunner != null) {
-      await _sdkRunner!.clearPendingTracesForRevocation();
+    if (_sdkRunners.isNotEmpty) {
+      await _sdkRunners.values.first.clearPendingTracesForRevocation();
       return;
     }
     final credentials = _credentials ?? await _preferences.readSdkCredentials();
@@ -410,7 +434,10 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       );
     }
     final plan = _plan ?? await loadPlan();
-    final runner = await _getSdkRunner(credentials, plan.activeResourceProfile);
+    final profile = plan.resourceProfiles.firstWhere(
+      (profile) => profile.isConfigured,
+    );
+    final runner = await _getSdkRunner(credentials, profile);
     await runner.clearPendingTracesForRevocation();
   }
 
@@ -426,35 +453,49 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     ValidationSdkCredentials credentials,
     ValidationResourceProfile profile,
   ) async {
-    final current = _sdkRunner;
+    final current = _sdkRunners[profile.id];
     if (current != null) return current;
+    await _ensureRepositories(credentials);
     final documents = await _getDocumentsDirectory();
     final validationDirectory = Directory(
       '${documents.path}${Platform.pathSeparator}validation',
     );
-    final modelRepository = HttpValidationModelRepository(
-      serverUrl: Uri.parse(credentials.serverUrl),
-      credential: credentials.credential,
-      modelsDirectory: Directory(
-        '${validationDirectory.path}${Platform.pathSeparator}models',
-      ),
-    );
-    _modelRepository = modelRepository;
-    final repository = HttpWorkflowDefinitionRepository(
-      serverUrl: Uri.parse(credentials.serverUrl),
-      credential: credentials.credential,
-    );
-    _workflowRepository = repository;
-    return _sdkRunner = AyniSdkValidationRunner(
+    final runner = AyniSdkValidationRunner(
       profile: profile,
       credentials: credentials,
       storageDirectory: Directory(
         '${validationDirectory.path}${Platform.pathSeparator}sdk',
       ),
       sdk: PublicAyniSdkClient(),
-      modelRepository: modelRepository,
-      workflowDefinitions: repository,
+      modelRepository: _modelRepository!,
+      workflowDefinitions: _workflowRepository!,
       preferences: _preferences,
+    );
+    _sdkRunners[profile.id] = runner;
+    return runner;
+  }
+
+  Future<void> _ensureRepositories(ValidationSdkCredentials credentials) async {
+    if (_datasetTransport != null) return;
+    final serverUrl = Uri.parse(credentials.serverUrl);
+    final documents = await _getDocumentsDirectory();
+    final validationDirectory = Directory(
+      '${documents.path}${Platform.pathSeparator}validation',
+    );
+    _datasetTransport = HttpDatasetTransport(
+      serverUrl: serverUrl,
+      credential: credentials.credential,
+    );
+    _modelRepository = HttpValidationModelRepository(
+      serverUrl: serverUrl,
+      credential: credentials.credential,
+      modelsDirectory: Directory(
+        '${validationDirectory.path}${Platform.pathSeparator}models',
+      ),
+    );
+    _workflowRepository = HttpWorkflowDefinitionRepository(
+      serverUrl: serverUrl,
+      credential: credentials.credential,
     );
   }
 
@@ -471,16 +512,22 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       _documentsDirectory ??= _documentsDirectoryProvider();
 
   Future<void> _closeRepositories() async {
+    for (final runner in _directRunners.values) {
+      await runner.close();
+    }
+    for (final runner in _sdkRunners.values) {
+      await runner.close();
+    }
     _datasetTransport?.close(force: true);
     _modelRepository?.close(force: true);
     _workflowRepository?.close(force: true);
     _datasetTransport = null;
     _modelRepository = null;
     _workflowRepository = null;
-    _directRunner = null;
-    _sdkRunner = null;
-    _activeRunner = null;
-    _sdkReadyForRuns = false;
+    _datasets.clear();
+    _directRunners.clear();
+    _sdkRunners.clear();
+    _sdkReadyProfileIds.clear();
   }
 }
 
@@ -583,7 +630,14 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     }
   }
 
-  ValidationResourceProfile? get _profile => _plan?.activeResourceProfile;
+  ValidationResourceProfile? get _profile {
+    final profiles =
+        _plan?.resourceProfiles ?? const <ValidationResourceProfile>[];
+    return profiles
+            .where((profile) => profile.id == 'INT-01' && profile.isConfigured)
+            .firstOrNull ??
+        profiles.where((profile) => profile.isConfigured).firstOrNull;
+  }
 
   List<ValidationCondition> get _conditions => switch (_buildMode) {
     'control' => const [ValidationCondition.control],
@@ -599,6 +653,23 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       )
       .toList(growable: false);
 
+  List<ValidationResourceProfile> get _suiteProfiles {
+    final plan = _plan;
+    if (plan == null) return const [];
+    final ids = _automaticScenarios
+        .map((scenario) => scenario.resourceProfileId!)
+        .toSet();
+    return [
+      for (final profile in plan.resourceProfiles)
+        if (ids.contains(profile.id)) profile,
+    ];
+  }
+
+  List<String> get _pendingProfileIds => _suiteProfiles
+      .where((profile) => !profile.isConfigured)
+      .map((profile) => profile.id)
+      .toList(growable: false);
+
   int get _plannedRuns =>
       _automaticScenarios.fold<int>(
         0,
@@ -608,7 +679,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
   bool get _canStart =>
       !_busy &&
-      (_profile?.isConfigured ?? false) &&
+      _suiteProfiles.isNotEmpty &&
+      _pendingProfileIds.isEmpty &&
       _credentialController.text.trim().isNotEmpty &&
       _automaticScenarios.isNotEmpty;
 
@@ -637,7 +709,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         condition: launch.condition,
       );
       if (launch.condition == ValidationCondition.treatment) {
-        final sync = await _runtime.synchronizeSdk();
+        final sync = await _runtime.synchronizeSdk(profile: profile);
         if (!sync.ready) {
           throw ValidationHomeException(
             'sdkSyncFailed',
@@ -684,10 +756,14 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   }
 
   Future<void> _runValidation() async {
-    final profile = _profile;
     final credentials = _credentialsFromFields();
     final plan = _plan;
-    if (profile == null || credentials == null || plan == null) return;
+    if (credentials == null ||
+        plan == null ||
+        _suiteProfiles.isEmpty ||
+        _pendingProfileIds.isNotEmpty) {
+      return;
+    }
 
     var captureTrace = _traceAllowed;
     if (!captureTrace) {
@@ -701,7 +777,6 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     final totalRuns = _plannedRuns;
     final pairRunId = 'pair-${DateTime.now().toUtc().millisecondsSinceEpoch}';
     var treatmentPrepared = false;
-    var completedRuns = 0;
     setState(() {
       _busy = true;
       _running = true;
@@ -718,90 +793,98 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       await _runtime.saveCredentials(credentials);
       _addEvent('SDK Key guardada en almacenamiento seguro.');
 
-      for (final condition in _conditions) {
-        if (_cancelRequested) break;
-        setState(() {
-          _activity = 'Preparando ${_conditionLabel(condition)}…';
-          _downloadProgress = null;
-        });
-        final prepared = await _runtime.prepareResources(
-          profile: profile,
-          credentials: credentials,
-          condition: condition,
-          onDownloadProgress: (received, total) {
-            if (!mounted) return;
-            setState(() {
-              _downloadProgress = total <= 0 ? null : received / total;
-            });
-          },
-        );
-        _addEvent(
-          'Dataset ${prepared.datasetVersion} verificado · ${prepared.caseCount} imágenes.',
-        );
-        _addEvent(prepared.resourcesSummary);
-        if (_cancelRequested) break;
-
-        if (condition == ValidationCondition.treatment) {
-          treatmentPrepared = true;
-          setState(() {
-            _activity = 'Sincronizando SDK y verificando workflow…';
-            _downloadProgress = null;
-          });
-          final sync = await _runtime.synchronizeSdk();
-          if (!sync.ready) {
-            throw ValidationHomeException(
-              'sdkSyncFailed',
-              'La sincronización SDK terminó con estado ${sync.status}. Revisa la conexión y vuelve a iniciar.',
-            );
-          }
-          _addEvent(
-            'SDK ${sync.status} · workflow ${sync.workflowVersion ?? 'verificado'}.',
-          );
-        }
-
-        for (final scenario in scenarios) {
+      for (final profile in _suiteProfiles) {
+        for (final condition in _conditions) {
           if (_cancelRequested) break;
           setState(() {
             _activity =
-                '${_conditionLabel(condition)} · ${_phaseLabel(scenario.phase)}';
+                '${profile.id} · preparando ${_conditionLabel(condition)}…';
             _downloadProgress = null;
           });
-          final phaseStart = completedRuns;
-          final summary = await _runtime.runPhase(
+          final prepared = await _runtime.prepareResources(
             profile: profile,
-            pairRunId: pairRunId,
+            credentials: credentials,
             condition: condition,
-            scenarioId: scenario.id,
-            phase: scenario.phase,
-            captureTrace:
-                condition == ValidationCondition.treatment && captureTrace,
-            isCancelled: () async => _cancelRequested,
-            onRecord: (record) {
+            onDownloadProgress: (received, total) {
               if (!mounted) return;
-              final count = phaseStart + record.repetition;
               setState(() {
-                _completedRuns = count.clamp(0, totalRuns).toInt();
-                _hasJsonl = true;
+                _downloadProgress = total <= 0 ? null : received / total;
               });
-              if (record.repetition == 1 ||
-                  record.repetition % 100 == 0 ||
-                  record.repetition == scenario.repetitions) {
-                _addEvent(
-                  '${_conditionLabel(condition)} · ${scenario.id} · #${record.repetition} · ${record.outcome.name}',
-                );
-              }
             },
           );
-          completedRuns = phaseStart + summary.attempted;
-          if (mounted) {
+          _addEvent(
+            '${profile.id} · dataset ${prepared.datasetVersion} verificado · ${prepared.caseCount} imágenes.',
+          );
+          _addEvent('${profile.id} · ${prepared.resourcesSummary}');
+          if (_cancelRequested) break;
+
+          if (condition == ValidationCondition.treatment) {
+            treatmentPrepared = true;
             setState(() {
-              _completedRuns = completedRuns.clamp(0, totalRuns).toInt();
-              _hasJsonl = summary.attempted > 0 || _hasJsonl;
+              _activity =
+                  '${profile.id} · sincronizando SDK y verificando workflow…';
+              _downloadProgress = null;
             });
+            final sync = await _runtime.synchronizeSdk(profile: profile);
+            if (!sync.ready) {
+              throw ValidationHomeException(
+                'sdkSyncFailed',
+                'La sincronización SDK de ${profile.id} terminó con estado ${sync.status}. Revisa la conexión y vuelve a iniciar.',
+              );
+            }
+            _addEvent(
+              '${profile.id} · SDK ${sync.status} · workflow ${sync.workflowVersion ?? 'verificado'}.',
+            );
           }
-          if (summary.stoppedByCancellation) break;
         }
         if (_cancelRequested) break;
+      }
+
+      if (!_cancelRequested) {
+        setState(() {
+          _activity = 'Verificando todos los perfiles antes de medir…';
+          _downloadProgress = null;
+        });
+        final phaseSummary = await _runtime.runSuite(
+          pairRunId: pairRunId,
+          conditions: _conditions,
+          captureTrace: captureTrace,
+          isCancelled: () async => _cancelRequested,
+          onRecord: (record) {
+            if (!mounted) return;
+            setState(() {
+              _hasJsonl = true;
+            });
+            final scenario = scenarios.singleWhere(
+              (item) => item.id == record.scenarioId,
+            );
+            if (record.repetition == 1 ||
+                record.repetition % 100 == 0 ||
+                record.repetition == scenario.repetitions) {
+              _addEvent(
+                '${_conditionLabel(record.condition)} · ${record.scenarioId} · #${record.repetition} · ${record.outcome.name}',
+              );
+            }
+          },
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _completedRuns = progress.completedAttempts
+                  .clamp(0, totalRuns)
+                  .toInt();
+              _activity =
+                  '${progress.profileId} · ${_conditionLabel(progress.condition)} · ${_phaseLabel(progress.phase)}'
+                  '${progress.caseId == null ? '' : ' · ${progress.caseId}'}'
+                  '${progress.repetition == null ? '' : ' · #${progress.repetition}'}';
+            });
+          },
+        );
+        if (mounted) {
+          setState(() {
+            _completedRuns = phaseSummary.attempted.clamp(0, totalRuns).toInt();
+            _hasJsonl = phaseSummary.attempted > 0 || _hasJsonl;
+          });
+        }
       }
 
       if (treatmentPrepared) {
@@ -809,7 +892,10 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           _activity = 'Enviando trazas autorizadas…';
           _downloadProgress = null;
         });
-        final sync = await _runtime.synchronizeSdk(verifyWorkflow: false);
+        final sync = await _runtime.synchronizeSdk(
+          profile: _suiteProfiles.last,
+          verifyWorkflow: false,
+        );
         if (sync.status == 'updated' || sync.status == 'upToDate') {
           _addEvent(
             'Sincronización SDK ${sync.status}; confirma la recepción de trazas en el dashboard.',
@@ -986,7 +1072,6 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final profile = _profile;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Validación'),
@@ -1033,7 +1118,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
                 const SizedBox(height: 16),
                 _buildConnectionCard(),
                 const SizedBox(height: 12),
-                _buildActionsCard(profile),
+                _buildActionsCard(),
                 if (_busy || _totalRuns > 0) ...[
                   const SizedBox(height: 12),
                   _buildProgressCard(),
@@ -1087,7 +1172,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     ),
   );
 
-  Widget _buildActionsCard(ValidationResourceProfile? profile) => Card(
+  Widget _buildActionsCard() => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1099,9 +1184,9 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            profile?.isConfigured == true
-                ? '${_automaticScenarios.length} fases automáticas · ${_conditions.length} ${_conditions.length == 1 ? 'condición' : 'condiciones'} · $_plannedRuns intentos previstos.'
-                : 'Faltan los IDs publicados o los hashes del perfil en el APK.',
+            _pendingProfileIds.isEmpty && _suiteProfiles.isNotEmpty
+                ? '${_automaticScenarios.length} fases automáticas en ${_suiteProfiles.length} perfiles · ${_conditions.length} ${_conditions.length == 1 ? 'condición' : 'condiciones'} · $_plannedRuns intentos previstos.'
+                : 'Faltan recursos publicados en: ${_pendingProfileIds.join(', ')}.',
           ),
           const SizedBox(height: 12),
           SizedBox(

@@ -268,6 +268,30 @@ describe("GET /sdk/model-versions/{modelVersionId}/manifest", () => {
       { type: "null" },
     ]);
   });
+
+  it("documents optional explicit indexes for detection tensors", () => {
+    const modelContract = resolve(document.components.schemas.SdkModelVersionContract);
+    const contractProperties = modelContract.properties as Record<string, JsonObject>;
+    const output = contractProperties.output as JsonObject;
+    const detection = (output.oneOf as JsonObject[]).find((variant) => {
+      const properties = variant.properties as Record<string, JsonObject>;
+      return (properties.type?.enum as string[] | undefined)?.includes("detection");
+    });
+    const properties = detection?.properties as Record<string, JsonObject> | undefined;
+    const tensorIndices = properties?.tensorIndices as JsonObject | undefined;
+
+    expect(tensorIndices).toMatchObject({
+      type: "object",
+      required: ["boxes", "classes", "scores", "count"],
+      properties: {
+        boxes: { type: "integer", minimum: 0, maximum: 3 },
+        classes: { type: "integer", minimum: 0, maximum: 3 },
+        scores: { type: "integer", minimum: 0, maximum: 3 },
+        count: { type: "integer", minimum: 0, maximum: 3 },
+      },
+    });
+    expect(detection?.required).not.toContain("tensorIndices");
+  });
 });
 
 describe("curl request samples", () => {

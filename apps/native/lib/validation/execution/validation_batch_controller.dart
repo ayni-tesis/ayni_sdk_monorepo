@@ -67,6 +67,7 @@ class ValidationBatchController {
       );
     }
     final scenario = scenarios.single;
+    final profile = _profileForScenario(plan, scenario);
     final coldStartLabelIndex = coldStartRunLabel == null
         ? -1
         : scenario.runLabels.indexOf(coldStartRunLabel);
@@ -146,15 +147,19 @@ class ValidationBatchController {
               : await runner.runCase(request);
         } on Object {
           stopwatch.stop();
-          final profile = plan.activeResourceProfile;
+          final model = profile.modelRequirements.first;
           result = ConditionRunResult.failure(
             durationMicros: stopwatch.elapsedMicroseconds,
-            modelVersionId: runner.condition == ValidationCondition.control
-                ? profile.controlModelVersionId
-                : profile.treatmentModelVersionId,
-            modelSha256: runner.condition == ValidationCondition.control
-                ? profile.controlModelSha256
-                : profile.treatmentModelSha256,
+            modelVersionId: model.modelVersionId,
+            modelSha256: model.sha256,
+            modelArtifacts: [
+              for (final requirement in profile.modelRequirements)
+                ValidationRunModelArtifact(
+                  nodeId: requirement.nodeId,
+                  modelVersionId: requirement.modelVersionId,
+                  sha256: requirement.sha256,
+                ),
+            ],
             workflowVersionId: runner.condition == ValidationCondition.treatment
                 ? profile.treatmentWorkflowVersionId
                 : null,
@@ -178,6 +183,7 @@ class ValidationBatchController {
             modelSha256: result.modelSha256,
             workflowVersionId: result.workflowVersionId,
             workflowVersion: result.workflowVersion,
+            modelArtifacts: result.modelArtifacts,
             tracePersistenceFailed: result.tracePersistenceFailed,
           );
         }
@@ -196,6 +202,7 @@ class ValidationBatchController {
           inputSha256: inputHash,
           modelVersionId: result.modelVersionId,
           modelSha256: result.modelSha256,
+          modelArtifacts: result.modelArtifacts,
           workflowVersionId: result.workflowVersionId,
           workflowVersion: result.workflowVersion,
           backend: 'CPU',
@@ -243,6 +250,194 @@ class ValidationBatchController {
     );
   }
 
+  Future<BatchRunSummary> runSuite({
+    required ExperimentPlan plan,
+    required String pairRunId,
+    required Map<String, VerifiedDataset> datasetsByProfileId,
+    required Map<String, Map<ValidationCondition, ValidationConditionRunner>>
+    runnersByProfileId,
+    required List<ValidationCondition> conditions,
+    required bool captureTrace,
+    required Future<bool> Function() isCancelled,
+    required void Function(ValidationRunRecord) onRecord,
+    required void Function(ValidationSuiteProgress) onProgress,
+  }) async {
+    if (pairRunId.trim().isEmpty) {
+      throw const ValidationBatchException(
+        'invalidRunId',
+        'Ingresa un identificador para esta corrida pareada.',
+      );
+    }
+    await preflightSuite(
+      plan: plan,
+      datasetsByProfileId: datasetsByProfileId,
+      runnersByProfileId: runnersByProfileId,
+      conditions: conditions,
+    );
+    final scenarios = _automaticScenarios(plan);
+    final totalAttempts = scenarios.fold<int>(
+      0,
+      (total, scenario) => total + scenario.repetitions * conditions.length,
+    );
+    var attempted = 0;
+    var successes = 0;
+    var errors = 0;
+    var cancelled = 0;
+    var completed = 0;
+    var stopped = false;
+    final completedBlocks = <int>[];
+
+    for (final scenario in scenarios) {
+      final profileId = scenario.resourceProfileId!;
+      for (final condition in conditions) {
+        if (await isCancelled()) {
+          stopped = true;
+          break;
+        }
+        final runner = runnersByProfileId[profileId]![condition]!;
+        final phaseSummary = await runPhase(
+          plan: plan,
+          pairRunId: pairRunId,
+          runner: runner,
+          dataset: datasetsByProfileId[profileId]!,
+          scenarioId: scenario.id,
+          phase: scenario.phase,
+          captureTrace:
+              condition == ValidationCondition.treatment && captureTrace,
+          isCancelled: isCancelled,
+          onRecord: (record) {
+            onRecord(record);
+            completed++;
+            onProgress(
+              ValidationSuiteProgress(
+                completedAttempts: completed,
+                totalAttempts: totalAttempts,
+                profileId: profileId,
+                scenarioId: scenario.id,
+                phase: scenario.phase,
+                condition: condition,
+                caseId: record.caseId,
+                repetition: record.repetition,
+              ),
+            );
+          },
+        );
+        attempted += phaseSummary.attempted;
+        successes += phaseSummary.successes;
+        errors += phaseSummary.errors;
+        cancelled += phaseSummary.cancelled;
+        completedBlocks.addAll(phaseSummary.completedBlockSizes);
+        if (phaseSummary.attempted > 0 && completed < attempted) {
+          completed = attempted;
+          onProgress(
+            ValidationSuiteProgress(
+              completedAttempts: completed,
+              totalAttempts: totalAttempts,
+              profileId: profileId,
+              scenarioId: scenario.id,
+              phase: scenario.phase,
+              condition: condition,
+            ),
+          );
+        }
+        if (phaseSummary.stoppedByCancellation) {
+          stopped = true;
+          break;
+        }
+      }
+      if (stopped) break;
+    }
+    return BatchRunSummary(
+      attempted: attempted,
+      successes: successes,
+      errors: errors,
+      cancelled: cancelled,
+      completedBlockSizes: completedBlocks,
+      stoppedByCancellation: stopped || attempted < totalAttempts,
+    );
+  }
+
+  Future<void> preflightSuite({
+    required ExperimentPlan plan,
+    required Map<String, VerifiedDataset> datasetsByProfileId,
+    required Map<String, Map<ValidationCondition, ValidationConditionRunner>>
+    runnersByProfileId,
+    required List<ValidationCondition> conditions,
+  }) async {
+    final scenarios = _automaticScenarios(plan);
+    if (scenarios.isEmpty ||
+        conditions.isEmpty ||
+        conditions.toSet().length != conditions.length) {
+      throw const ValidationBatchException(
+        'invalidSuite',
+        'El plan no define una suite automática verificable.',
+      );
+    }
+    final profiles = <String, ValidationResourceProfile>{
+      for (final profile in plan.resourceProfiles) profile.id: profile,
+    };
+    final requiredProfileIds = scenarios
+        .map((scenario) => scenario.resourceProfileId!)
+        .toSet();
+    for (final profileId in requiredProfileIds) {
+      final profile = profiles[profileId];
+      if (profile == null || !profile.isConfigured) {
+        throw const ValidationBatchException(
+          'profileNotConfigured',
+          'Faltan recursos publicados para uno o más escenarios del plan.',
+        );
+      }
+      final dataset = datasetsByProfileId[profileId];
+      if (dataset == null ||
+          dataset.datasetId != profile.datasetId ||
+          dataset.datasetVersionId != profile.datasetVersionId ||
+          dataset.partition != profile.datasetPartition ||
+          dataset.zipSha256 != profile.datasetSha256) {
+        throw const ValidationBatchException(
+          'datasetProfileMismatch',
+          'Un dataset preparado no coincide con el perfil declarado en el plan.',
+        );
+      }
+      final runners = runnersByProfileId[profileId];
+      if (runners == null ||
+          conditions.any(
+            (condition) =>
+                runners[condition] == null ||
+                runners[condition]!.condition != condition,
+          )) {
+        throw const ValidationBatchException(
+          'conditionNotPrepared',
+          'No se prepararon ambas condiciones de uno o más perfiles.',
+        );
+      }
+    }
+
+    final selectedCases = <(String, List<VerifiedDatasetCase>)>[];
+    for (final scenario in scenarios) {
+      final profileId = scenario.resourceProfileId!;
+      selectedCases.add((
+        profileId,
+        _casesFor(plan, scenario, datasetsByProfileId[profileId]!),
+      ));
+    }
+    final verifiedPaths = <String, String>{};
+    for (final selection in selectedCases) {
+      for (final datasetCase in selection.$2) {
+        final previousHash = verifiedPaths[datasetCase.localPath];
+        if (previousHash != null && previousHash != datasetCase.sha256) {
+          throw const ValidationBatchException(
+            'datasetImageChanged',
+            'Una imagen aparece con hashes distintos entre los escenarios.',
+          );
+        }
+        if (previousHash == null) {
+          await _readVerifiedImage(datasetCase);
+          verifiedPaths[datasetCase.localPath] = datasetCase.sha256;
+        }
+      }
+    }
+  }
+
   Future<void> cancel() async {
     final runner = _activeRunner;
     if (runner == null || _cancelRequested) return;
@@ -271,10 +466,18 @@ class ValidationBatchController {
       }
       return List.unmodifiable(requestedIds.map((id) => byId[id]!));
     }
+    final measuredProfileId =
+        scenario.resourceProfileId ??
+        plan.resourceProfiles.firstWhere((profile) => profile.isConfigured).id;
     final caseScenarioId =
         scenario.phase == ValidationPhase.warmup ||
             scenario.phase == ValidationPhase.coldStart
-        ? plan.scenarioFor(ValidationPhase.measured).id
+        ? plan
+              .scenarioFor(
+                ValidationPhase.measured,
+                resourceProfileId: measuredProfileId,
+              )
+              .id
         : scenario.id;
     final matching = dataset.cases
         .where((datasetCase) => datasetCase.scenario == caseScenarioId)
@@ -287,6 +490,31 @@ class ValidationBatchController {
     }
     return List.unmodifiable(matching);
   }
+
+  ValidationResourceProfile _profileForScenario(
+    ExperimentPlan plan,
+    ValidationScenario scenario,
+  ) {
+    if (scenario.resourceProfileId case final profileId?) {
+      return plan.resourceProfiles.singleWhere(
+        (profile) => profile.id == profileId,
+      );
+    }
+    return plan.resourceProfiles.firstWhere((profile) => profile.isConfigured);
+  }
+
+  List<ValidationScenario> _automaticScenarios(ExperimentPlan plan) => plan
+      .scenarios
+      .where(
+        (scenario) =>
+            const {
+              ValidationPhase.warmup,
+              ValidationPhase.measured,
+              ValidationPhase.stress,
+            }.contains(scenario.phase) &&
+            !scenario.requiresExternalMeasurement,
+      )
+      .toList(growable: false);
 
   Future<Uint8List> _readVerifiedImage(VerifiedDatasetCase datasetCase) async {
     final file = File(datasetCase.localPath);
@@ -326,6 +554,28 @@ class BatchRunSummary {
   final int cancelled;
   final List<int> completedBlockSizes;
   final bool stoppedByCancellation;
+}
+
+class ValidationSuiteProgress {
+  const ValidationSuiteProgress({
+    required this.completedAttempts,
+    required this.totalAttempts,
+    required this.profileId,
+    required this.scenarioId,
+    required this.phase,
+    required this.condition,
+    this.caseId,
+    this.repetition,
+  });
+
+  final int completedAttempts;
+  final int totalAttempts;
+  final String profileId;
+  final String scenarioId;
+  final ValidationPhase phase;
+  final ValidationCondition condition;
+  final String? caseId;
+  final int? repetition;
 }
 
 class ValidationBatchException implements Exception {

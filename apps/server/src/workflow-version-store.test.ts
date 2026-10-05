@@ -154,7 +154,14 @@ describe("publishWorkflowVersion", () => {
           normalization: "none",
         },
       },
-      outputs: { result: { type: "detection", labels: ["hoja"], scoreThreshold: 0.5 } },
+      outputs: {
+        result: {
+          type: "detection",
+          labels: ["hoja"],
+          scoreThreshold: 0.5,
+          tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
+        },
+      },
     };
     const output = publishableDraft.nodes.find((node) => node.type === "output");
     if (output?.type !== "output") throw new Error("Missing fixture output");

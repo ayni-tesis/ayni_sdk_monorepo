@@ -30,8 +30,14 @@ void main() {
       final repository = _repository(server, temporaryDirectory);
       addTearDown(repository.close);
 
-      final profile = _profile(sha256.convert(server.modelBytes).toString());
-      final verified = await repository.prepare(profile);
+      final requirement = _requirement(
+        sha256.convert(server.modelBytes).toString(),
+      );
+      expect(
+        modelContractMatchesRequirement(server.contract!, requirement),
+        isTrue,
+      );
+      final verified = await repository.prepare(requirement);
 
       expect(verified.modelVersionId, 'model-version-1');
       expect(verified.sha256, sha256.convert(server.modelBytes).toString());
@@ -40,6 +46,56 @@ void main() {
       expect(server.objectAuthorization, isNull);
     },
   );
+
+  test('verifies explicit detector roles in a model contract', () async {
+    server.contract = {
+      'input': {
+        'type': 'image',
+        'width': 320,
+        'height': 320,
+        'channels': 3,
+        'normalization': 'zero_to_one',
+      },
+      'output': {
+        'type': 'detection',
+        'labels': ['coffee'],
+        'scoreThreshold': 0.5,
+        'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+      },
+    };
+    final requirement = ValidationModelRequirement(
+      nodeId: 'detector-node',
+      modelVersionId: 'model-version-1',
+      sha256: sha256.convert(server.modelBytes).toString(),
+      inputContract: const ValidationInputContract(
+        width: 320,
+        height: 320,
+        channels: 3,
+        normalization: 'zero_to_one',
+      ),
+      modelOutputContract: ValidationModelOutputContract(
+        resultType: ValidationResultType.detection,
+        labels: ['coffee'],
+        scoreThreshold: 0.5,
+        tensorIndices: const {
+          'boxes': 0,
+          'classes': 1,
+          'scores': 2,
+          'count': 3,
+        },
+      ),
+    );
+    final repository = _repository(server, temporaryDirectory);
+    addTearDown(repository.close);
+
+    final artifact = await repository.prepare(requirement);
+
+    expect(artifact.modelVersionId, requirement.modelVersionId);
+    expect(
+      modelContractMatchesRequirement(server.contract!, requirement),
+      isTrue,
+    );
+  });
 
   test('reads the model digest when the manifest contract is null', () async {
     server.contract = null;
@@ -59,7 +115,7 @@ void main() {
     addTearDown(repository.close);
 
     final verified = await repository.prepare(
-      _profile(sha256.convert(server.modelBytes).toString()),
+      _requirement(sha256.convert(server.modelBytes).toString()),
     );
 
     expect(server.manifestRequests, 2);
@@ -77,7 +133,7 @@ void main() {
       addTearDown(repository.close);
 
       await expectLater(
-        repository.prepare(_profile(expectedSha)),
+        repository.prepare(_requirement(expectedSha)),
         throwsA(
           isA<ValidationExecutionException>().having(
             (error) => error.code,
@@ -116,7 +172,7 @@ void main() {
 
       await expectLater(
         repository.prepare(
-          _profile(sha256.convert(server.modelBytes).toString()),
+          _requirement(sha256.convert(server.modelBytes).toString()),
         ),
         throwsA(
           isA<ValidationExecutionException>().having(
@@ -127,6 +183,67 @@ void main() {
         ),
       );
       expect(server.objectAuthorization, isNull);
+    },
+  );
+
+  test(
+    'prepares each model requirement independently within a profile',
+    () async {
+      final repository = _repository(server, temporaryDirectory);
+      addTearDown(repository.close);
+      final firstBytes = server.modelBytes;
+      final first = await repository.prepare(
+        _requirement(sha256.convert(firstBytes).toString()),
+      );
+
+      server.modelVersionId = 'model-version-2';
+      server.modelBytes = [9, 8, 7, 6];
+      final secondBytes = server.modelBytes;
+      final second = await repository.prepare(
+        _requirement(
+          sha256.convert(secondBytes).toString(),
+          nodeId: 'detector-node',
+          modelVersionId: 'model-version-2',
+        ),
+      );
+
+      expect(first.modelVersionId, 'model-version-1');
+      expect(second.modelVersionId, 'model-version-2');
+      expect(await first.file.readAsBytes(), firstBytes);
+      expect(await second.file.readAsBytes(), secondBytes);
+      expect(server.manifestRequests, 2);
+      expect(server.objectRequests, 2);
+    },
+  );
+
+  test(
+    'keeps an earlier verified artifact when a later model download fails',
+    () async {
+      final repository = _repository(server, temporaryDirectory);
+      addTearDown(repository.close);
+      final first = await repository.prepare(
+        _requirement(sha256.convert(server.modelBytes).toString()),
+      );
+      server.modelVersionId = 'model-version-2';
+      server.forceDownloadFailure = true;
+
+      await expectLater(
+        repository.prepare(
+          _requirement(
+            sha256.convert(server.modelBytes).toString(),
+            nodeId: 'detector-node',
+            modelVersionId: 'model-version-2',
+          ),
+        ),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'modelDownloadFailed',
+          ),
+        ),
+      );
+      expect(await first.file.readAsBytes(), [1, 2, 3, 4, 5]);
     },
   );
 }
@@ -146,6 +263,7 @@ class _ModelServer {
   late HttpServer _server;
   late Uri baseUrl;
   List<int> modelBytes = const [];
+  String modelVersionId = 'model-version-1';
   String? manifestSha256;
   Map<String, Object?>? contract = {
     'input': {
@@ -165,12 +283,13 @@ class _ModelServer {
   int manifestRequests = 0;
   int objectRequests = 0;
   bool expireFirstDownload = false;
+  bool forceDownloadFailure = false;
 
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUrl = Uri.parse('http://127.0.0.1:${_server.port}');
     _server.listen((request) async {
-      if (request.uri.path == '/sdk/model-versions/model-version-1/manifest') {
+      if (request.uri.path == '/sdk/model-versions/$modelVersionId/manifest') {
         manifestRequests++;
         manifestAuthorization = request.headers.value(
           HttpHeaders.authorizationHeader,
@@ -181,7 +300,7 @@ class _ModelServer {
             : '/signed/model.tflite';
         final manifest = {
           'manifest': {
-            'modelVersionId': 'model-version-1',
+            'modelVersionId': modelVersionId,
             'version': '1.0.0',
             'sha256': manifestSha256 ?? sha256.convert(bytes).toString(),
             'sizeBytes': bytes.length,
@@ -199,6 +318,8 @@ class _ModelServer {
         );
         if (request.uri.path == '/signed/expired-model.tflite') {
           request.response.statusCode = HttpStatus.forbidden;
+        } else if (forceDownloadFailure) {
+          request.response.statusCode = HttpStatus.internalServerError;
         } else {
           request.response.add(modelBytes);
         }
@@ -212,30 +333,22 @@ class _ModelServer {
   Future<void> close() => _server.close(force: true);
 }
 
-ValidationResourceProfile _profile(String modelSha256) =>
-    ValidationResourceProfile(
-      id: 'coffee',
-      datasetVersionId: 'dataset-version-1',
-      datasetPartition: 'test',
-      datasetSha256: 'a' * 64,
-      controlModelVersionId: 'model-version-1',
-      controlModelSha256: modelSha256,
-      treatmentWorkflowId: 'workflow-1',
-      treatmentWorkflowVersionId: 'workflow-version-1',
-      treatmentWorkflowVersion: '1.0.0',
-      treatmentModelVersionId: 'model-version-1',
-      treatmentModelSha256: modelSha256,
-      inputContract: const ValidationInputContract(
-        width: 224,
-        height: 224,
-        channels: 3,
-        normalization: 'zero_to_one',
-      ),
-      outputContract: [
-        ValidationOutputContract(
-          name: 'classification',
-          resultType: ValidationResultType.classification,
-          labels: ['sana', 'roya', 'minador'],
-        ),
-      ],
-    );
+ValidationModelRequirement _requirement(
+  String modelSha256, {
+  String nodeId = 'classifier-node',
+  String modelVersionId = 'model-version-1',
+}) => ValidationModelRequirement(
+  nodeId: nodeId,
+  modelVersionId: modelVersionId,
+  sha256: modelSha256,
+  inputContract: const ValidationInputContract(
+    width: 224,
+    height: 224,
+    channels: 3,
+    normalization: 'zero_to_one',
+  ),
+  modelOutputContract: ValidationModelOutputContract(
+    resultType: ValidationResultType.classification,
+    labels: ['sana', 'roya', 'minador'],
+  ),
+);

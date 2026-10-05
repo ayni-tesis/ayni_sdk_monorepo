@@ -1,16 +1,21 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.2.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara el dataset y los modelos, sincroniza el workflow y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
+`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.2.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
-1. Publica el modelo y su contrato desde el dashboard de la aplicación.
-2. En el dashboard, registra y carga una versión privada del dataset en **Datasets de validación**. El ZIP es un paquete comprimido que contiene `manifest.json` e imágenes; incluye los casos, escenario, rutas relativas y SHA-256 de cada imagen. Declara la fuente y licencia que permiten redistribuir las imágenes para este uso.
-3. Publica el workflow SDK, ligado a la misma versión del modelo que usa la integración directa.
-4. Reemplaza los valores plantilla del perfil activo en `assets/validation/experiment_plan.json` por los IDs publicados y SHA-256 del dataset y del modelo. Control y tratamiento deben usar el mismo ID y hash del modelo. No incluyas la credencial SDK en ese archivo.
-5. Ejecuta `flutter pub get` y prueba el APK en un teléfono Android con API 26 o posterior.
+El plan contiene cuatro perfiles positivos: `INT-01` (Coffee EfficientNetB0 y BRACOL), `S1` (Coffee MobileNetV2 sobre el mismo BRACOL), `REU-01` (clasificador de tomate de diez etiquetas y PlantVillage) y `S2` (workflow completo de café con clasificador, detector, condición `sana >= 0.8` y salidas tipadas). Hoy `INT-01` tiene recursos publicados; `S1`, `REU-01` y `S2` siguen `pending`. El botón queda deshabilitado mientras falte cualquiera de esos perfiles, así que no produce una corrida parcial.
 
-La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica el modelo y la definición publicada del workflow. Antes de las corridas de `ayni_sdk`, sincroniza el SDK y comprueba el workflow; después vuelve a sincronizar para intentar despachar las trazas autorizadas.
+Provisiona los perfiles en este orden:
+
+1. Confirma fuente, licencia y contrato de cada modelo; registra las versiones de los modelos y completa sus contratos de entrada y salida en el dashboard.
+2. Crea y publica cada workflow inmutable. Para S2, conserva el grafo completo de clasificador, detector, condición y todas las salidas declaradas; debe referenciar las mismas versiones de modelo que el modo directo.
+3. Registra una versión privada de cada dataset de prueba en **Datasets de validación**. El ZIP contiene `manifest.json` e imágenes; el manifiesto declara casos, escenario, rutas relativas y SHA-256 de cada imagen. Usa el partition `test` y declara la fuente y licencia que permiten distribuir las imágenes a los dispositivos.
+4. Para S2, filtra COCO a la muestra necesaria o consigue autorización explícita para redistribuir las imágenes en el bucket privado de R2. No incluyas imágenes de entrenamiento ni uses DeepLabV3 como caso positivo.
+5. Solo después de publicar y verificar los recursos, reemplaza el perfil correspondiente en `assets/validation/experiment_plan.json` con los IDs reales y SHA-256 del dataset y de cada modelo, el ID/versión del workflow y sus contratos. No copies IDs de ejemplo del ZIP ni incluyas una SDK Key.
+6. Ejecuta `flutter test test/validation/models/experiment_plan_test.dart`, `flutter test`, `flutter analyze` y `flutter build apk --debug`; luego genera el APK selector siguiendo las instrucciones de abajo.
+
+La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica todos los modelos y la definición publicada de cada workflow. Antes de escribir JSONL, comprueba todos los perfiles, ambas condiciones y todas las imágenes seleccionadas; un recurso ausente o inválido bloquea la suite completa. El lote automático incluye 12 filas de fase/escenario, 5 376 intentos por condición y 10 752 intentos en total cuando los cuatro perfiles están listos. Tras medir, vuelve a sincronizar el SDK para intentar despachar las trazas autorizadas.
 
 La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) está fijada en la app. La SDK Key se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
 
@@ -29,7 +34,7 @@ flutter run -d <id-android>
 
 El emulador sirve para una prueba funcional; para resultados de medición de la tesis usa los dispositivos físicos definidos en el Plan.
 
-La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. En selector, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para ambas condiciones: 1 344 intentos por condición, 2 688 en total. El progreso cuenta los intentos guardados en JSONL. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
+La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. Cuando los cuatro perfiles estén listos, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para cada perfil y ambas condiciones: 5 376 intentos por condición, 10 752 en total. El porcentaje y la actividad muestran el avance del lote completo. Con los recursos actuales, el botón permanece deshabilitado porque `S1`, `REU-01` y `S2` están pendientes. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
 
 La autorización de trazas comienza apagada. En el primer inicio puedes autorizarlas o ejecutar sin ellas; el menú superior permite revocar el permiso. Con autorización, la traza SDK puede incluir salidas tipadas decodificadas; imágenes, tensores y el JSONL completo no se envían. El envío también depende de que la política de telemetría de la aplicación esté habilitada en el dashboard. El lote no sincroniza durante la inferencia. Al terminar, revisa en el dashboard si el backend recibió las trazas. El JSONL permanece en el dispositivo; **Exportar JSONL**, en el menú superior, abre la hoja de compartir del sistema.
 
@@ -61,7 +66,7 @@ El APK selector incluye ambas condiciones; los valores de tamaño y SHA-256 se r
 
 ## Medir PERF-01 en el dispositivo físico
 
-Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique el dataset, modelo y workflow del perfil activo. La Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
+Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique los recursos del perfil que se mida. Para el perfil actual `INT-01`, la Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
 
 El módulo lanza 30 arranques en frío para `control` y 30 para `treatment`. Guarda una fila `PERF-01-001` a `PERF-01-030` por condición en `validation/runs.jsonl`; un identificador pareado nuevo distingue ejecuciones repetidas del benchmark. AndroidX registra `StartupTimingMetric`, el intervalo desde el inicio del proceso hasta terminar la primera inferencia y la sección `runCase` por separado. El intervalo completo incluye la preparación de recursos y la sincronización SDK; `runCase` excluye esa preparación y la escritura JSONL. Mantén la misma red durante las corridas. Conserva los JSON y archivos Perfetto generados por el test junto con el JSONL exportado desde la app.
 
@@ -97,7 +102,7 @@ Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro de
 ## Requisitos de validación
 
 - La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.2.0`.
-- El modo `ayni_sdk` rechaza perfiles de detección porque la versión 0.2.0 no consume los índices de tensores declarados por el Plan. No se ejecuta ni registra un resultado que pueda diferir del modo directo. Comparar detección requiere una versión publicada del SDK que admita esos índices.
+- El perfil S2 sigue pendiente y además requiere una versión publicada de `ayni_sdk` que interprete los roles de tensores de detección. No lo marques ejecutable ni compares sus resultados con el modo directo mientras la app siga fijada a 0.2.0.
 - La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
 - La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.
 - El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.

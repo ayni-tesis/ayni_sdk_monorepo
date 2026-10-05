@@ -7,6 +7,54 @@ enum ValidationCondition { control, treatment }
 
 enum ValidationRunOutcome { success, error, cancelled }
 
+class ValidationRunModelArtifact {
+  const ValidationRunModelArtifact({
+    required this.nodeId,
+    required this.modelVersionId,
+    required this.sha256,
+  });
+
+  final String nodeId;
+  final String modelVersionId;
+  final String sha256;
+
+  Map<String, Object?> toJson() => {
+    'nodeId': nodeId,
+    'modelVersionId': modelVersionId,
+    'sha256': sha256,
+  };
+
+  factory ValidationRunModelArtifact.fromJson(Map<String, Object?> json) {
+    const fields = {'nodeId', 'modelVersionId', 'sha256'};
+    if (json.keys.toSet().difference(fields).isNotEmpty ||
+        fields.difference(json.keys.toSet()).isNotEmpty) {
+      throw const FormatException(
+        'Model artifact has missing or unknown fields.',
+      );
+    }
+    final artifact = ValidationRunModelArtifact(
+      nodeId: _asString(json['nodeId'], 'modelArtifacts.nodeId'),
+      modelVersionId: _asString(
+        json['modelVersionId'],
+        'modelArtifacts.modelVersionId',
+      ),
+      sha256: _asString(json['sha256'], 'modelArtifacts.sha256'),
+    );
+    _requireDigest(artifact.sha256, 'modelArtifacts.sha256');
+    return artifact;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ValidationRunModelArtifact &&
+      other.nodeId == nodeId &&
+      other.modelVersionId == modelVersionId &&
+      other.sha256 == sha256;
+
+  @override
+  int get hashCode => Object.hash(nodeId, modelVersionId, sha256);
+}
+
 class ValidationRunRecord {
   ValidationRunRecord({
     required this.pairRunId,
@@ -21,6 +69,7 @@ class ValidationRunRecord {
     required this.inputSha256,
     required this.modelVersionId,
     required this.modelSha256,
+    List<ValidationRunModelArtifact> modelArtifacts = const [],
     required this.workflowVersionId,
     required this.workflowVersion,
     required this.backend,
@@ -33,7 +82,8 @@ class ValidationRunRecord {
     this.errorCode,
     this.errorMessage,
     DateTime? recordedAtUtc,
-  }) : normalizedOutput = freezeJsonMap(normalizedOutput),
+  }) : modelArtifacts = List.unmodifiable(modelArtifacts),
+       normalizedOutput = freezeJsonMap(normalizedOutput),
        recordedAtUtc = (recordedAtUtc ?? DateTime.now().toUtc()).toUtc() {
     _requiredString(pairRunId, 'pairRunId');
     _requiredString(scenarioId, 'scenarioId');
@@ -55,6 +105,15 @@ class ValidationRunRecord {
     _requireDigest(datasetSha256, 'datasetSha256');
     _requireDigest(inputSha256, 'inputSha256');
     _requireDigest(modelSha256, 'modelSha256');
+    if (modelArtifacts.map((artifact) => artifact.nodeId).toSet().length !=
+        modelArtifacts.length) {
+      throw const FormatException('Model artifact node ids must be unique.');
+    }
+    for (final artifact in modelArtifacts) {
+      _requiredString(artifact.nodeId, 'modelArtifacts.nodeId');
+      _requiredString(artifact.modelVersionId, 'modelArtifacts.modelVersionId');
+      _requireDigest(artifact.sha256, 'modelArtifacts.sha256');
+    }
     if (condition == ValidationCondition.control &&
         (workflowVersionId != null || workflowVersion != null)) {
       throw const FormatException(
@@ -96,6 +155,7 @@ class ValidationRunRecord {
   final String inputSha256;
   final String modelVersionId;
   final String modelSha256;
+  final List<ValidationRunModelArtifact> modelArtifacts;
   final String? workflowVersionId;
   final String? workflowVersion;
   final String backend;
@@ -122,6 +182,9 @@ class ValidationRunRecord {
     'inputSha256': inputSha256,
     'modelVersionId': modelVersionId,
     'modelSha256': modelSha256,
+    'modelArtifacts': [
+      for (final artifact in modelArtifacts) artifact.toJson(),
+    ],
     'workflowVersionId': workflowVersionId,
     'workflowVersion': workflowVersion,
     'backend': backend,
@@ -137,7 +200,7 @@ class ValidationRunRecord {
   };
 
   factory ValidationRunRecord.fromJson(Map<String, Object?> json) {
-    const keys = {
+    const legacyKeys = {
       'pairRunId',
       'repetition',
       'condition',
@@ -163,10 +226,19 @@ class ValidationRunRecord {
       'errorMessage',
       'recordedAtUtc',
     };
-    if (json.keys.toSet().difference(keys).isNotEmpty ||
-        keys.difference(json.keys.toSet()).isNotEmpty) {
+    const keys = {...legacyKeys, 'modelArtifacts'};
+    final actualKeys = json.keys.toSet();
+    final isLegacy =
+        actualKeys.length == legacyKeys.length &&
+        legacyKeys.containsAll(actualKeys);
+    final isCurrent =
+        actualKeys.length == keys.length && keys.containsAll(actualKeys);
+    if (!isLegacy && !isCurrent) {
       throw const FormatException('Run record has missing or unknown fields.');
     }
+    final modelArtifacts = json.containsKey('modelArtifacts')
+        ? _modelArtifacts(json['modelArtifacts'])
+        : const <ValidationRunModelArtifact>[];
     return ValidationRunRecord(
       pairRunId: _asString(json['pairRunId'], 'pairRunId'),
       repetition: _asInt(json['repetition'], 'repetition'),
@@ -184,6 +256,7 @@ class ValidationRunRecord {
       inputSha256: _asString(json['inputSha256'], 'inputSha256'),
       modelVersionId: _asString(json['modelVersionId'], 'modelVersionId'),
       modelSha256: _asString(json['modelSha256'], 'modelSha256'),
+      modelArtifacts: modelArtifacts,
       workflowVersionId: _nullableString(
         json['workflowVersionId'],
         'workflowVersionId',
@@ -218,6 +291,22 @@ class ValidationRunRecord {
       ),
     );
   }
+}
+
+List<ValidationRunModelArtifact> _modelArtifacts(Object? value) {
+  if (value is! List) {
+    throw const FormatException('modelArtifacts must be a list.');
+  }
+  return List.unmodifiable(
+    value.map((item) {
+      if (item is! Map) {
+        throw const FormatException('Model artifact must be an object.');
+      }
+      return ValidationRunModelArtifact.fromJson(
+        item.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    }),
+  );
 }
 
 void _requiredString(String value, String name) {

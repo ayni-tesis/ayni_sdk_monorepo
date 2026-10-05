@@ -268,6 +268,8 @@ El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/r
 
 `WorkflowResult` expone `executionId`, `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
 
+Los contratos de modelo para detección pueden declarar `tensorIndices`, un mapa con los roles `boxes`, `classes`, `scores` y `count`. Cada valor indica el índice del tensor de salida correspondiente; los cuatro índices deben ser distintos y estar entre 0 y 3. Los tensores deben tener formas `[1, N, 4]` para `boxes`, `[1, N]` para `classes` y `scores`, y `[1]` o `[1, 1]` para `count`. El SDK decodifica los primeros `count` resultados y entrega el mismo `DetectionResult` de la API pública. Los workflows publicados sin `tensorIndices` siguen usando el decodificador anterior.
+
 `run()` llama a `onExecutionStarted` con un ID antes de comenzar. Guárdalo para cancelar el análisis en curso:
 
 ```dart

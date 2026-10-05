@@ -9,7 +9,7 @@ void main() {
     final overrides = File('${projectDirectory.path}/pubspec_overrides.yaml');
     final lockfile = File('${projectDirectory.path}/pubspec.lock');
     final lockContents = lockfile.readAsStringSync();
-    final lines = lockContents.split('\n');
+    final lines = lockContents.split(RegExp(r'\r?\n'));
     final packageStart = lines.indexOf('  ayni_sdk:');
     final packageEnd = packageStart < 0
         ? -1

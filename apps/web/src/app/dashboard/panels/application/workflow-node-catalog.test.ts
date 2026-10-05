@@ -26,7 +26,12 @@ const classification: WorkflowModelVersionContract = {
 };
 const detection: WorkflowModelVersionContract = {
   input: imageContract,
-  output: { type: "detection", labels: ["broca"], scoreThreshold: 0.5 },
+  output: {
+    type: "detection",
+    labels: ["broca"],
+    scoreThreshold: 0.5,
+    tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
+  },
 };
 const modelNode = (id: string, contract: WorkflowModelVersionContract): WorkflowCanvasNode => ({
   id,

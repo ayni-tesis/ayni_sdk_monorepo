@@ -1169,6 +1169,33 @@
                   },
                   "scoreThreshold": {
                     "type": "number"
+                  },
+                  "tensorIndices": {
+                    "type": "object",
+                    "properties": {
+                      "boxes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      },
+                      "classes": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      },
+                      "scores": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      }
+                    },
+                    "required": ["boxes", "classes", "scores", "count"],
+                    "additionalProperties": false
                   }
                 },
                 "required": ["type", "labels", "scoreThreshold"]

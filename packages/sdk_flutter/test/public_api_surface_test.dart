@@ -370,7 +370,8 @@ void main() {
         // package_config.json (for example after adding the `lints`
         // dependency) would hide the real diagnostic behind an unresolved
         // include.
-        final pubGet = await Process.run(Platform.resolvedExecutable, [
+        final dart = _dartExecutable();
+        final pubGet = await Process.run(dart, [
           'pub',
           'get',
           '--offline',
@@ -383,7 +384,7 @@ void main() {
               '${pubGet.stdout}\n${pubGet.stderr}',
         );
 
-        final analyze = await Process.run(Platform.resolvedExecutable, [
+        final analyze = await Process.run(dart, [
           'analyze',
         ], workingDirectory: fixture.path);
         final output = 'stdout:\n${analyze.stdout}\nstderr:\n${analyze.stderr}';
@@ -413,4 +414,23 @@ void main() {
       timeout: const Timeout(Duration(minutes: 3)),
     );
   });
+}
+
+String _dartExecutable() {
+  final executable = File(Platform.resolvedExecutable);
+  final dartName = Platform.isWindows ? 'dart.exe' : 'dart';
+  if (executable.uri.pathSegments.last.toLowerCase() == dartName) {
+    return executable.path;
+  }
+
+  var directory = executable.parent;
+  while (directory.path != directory.parent.path) {
+    final candidate = File(
+      '${directory.path}${Platform.pathSeparator}'
+      'dart-sdk${Platform.pathSeparator}bin${Platform.pathSeparator}$dartName',
+    );
+    if (candidate.existsSync()) return candidate.path;
+    directory = directory.parent;
+  }
+  throw StateError('Could not find the Dart SDK executable.');
 }
