@@ -5,27 +5,27 @@
   "resourceProfiles": [
     {
       "id": "coffee-classification",
-      "datasetVersionId": "to-configure",
+      "datasetVersionId": "fc7729f8-5b8a-433e-b811-f0220b4474d8",
       "datasetPartition": "test",
-      "datasetSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "controlModelVersionId": "to-configure",
-      "controlModelSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "treatmentWorkflowId": "to-configure",
-      "treatmentWorkflowVersionId": "to-configure",
+      "datasetSha256": "6039f52b4c64b35f14b3ca3b992c74bb900300d200c58bf516e5d756306a1161",
+      "controlModelVersionId": "5d980cc6-447f-4e53-afb9-8596b59faa69",
+      "controlModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
+      "treatmentWorkflowId": "452ccaf5-d39a-4ce6-a5a6-bcf9b2b0be83",
+      "treatmentWorkflowVersionId": "c663e668-1a3b-498f-9cd1-858433de21ce",
       "treatmentWorkflowVersion": "1.0.0",
-      "treatmentModelVersionId": "to-configure",
-      "treatmentModelSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "treatmentModelVersionId": "5d980cc6-447f-4e53-afb9-8596b59faa69",
+      "treatmentModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
       "inputContract": {
         "width": 224,
         "height": 224,
         "channels": 3,
-        "normalization": "zero_to_one"
+        "normalization": "none"
       },
       "outputContract": [
         {
           "name": "classification",
           "resultType": "classification",
-          "labels": ["sana", "roya", "minador", "mancha-de-hierro", "araniata-roja"]
+          "labels": ["cercospora", "minador", "phoma", "roya", "sana"]
         }
       ]
     }

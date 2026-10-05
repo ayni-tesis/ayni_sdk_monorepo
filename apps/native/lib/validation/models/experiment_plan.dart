@@ -226,7 +226,10 @@ class ValidationResourceProfile {
         controlModelVersionId,
         treatmentWorkflowId,
         treatmentWorkflowVersionId,
-      ].any((value) => value.toLowerCase().contains('to_configure')) &&
+      ].any(
+        (value) =>
+            value.toLowerCase().replaceAll('-', '_').contains('to_configure'),
+      ) &&
       datasetSha256 != _emptySha256 &&
       controlModelSha256 != _emptySha256;
 

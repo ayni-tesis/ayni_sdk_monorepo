@@ -61,6 +61,26 @@ void main() {
     expect(find.byKey(const ValueKey('row-0')), findsOneWidget);
   });
 
+  testWidgets('prefills the production server URL without a credential', (
+    tester,
+  ) async {
+    runtime.hasSavedCredentials = false;
+    await _pumpHomePage(tester, _app(runtime));
+
+    final serverUrl = tester.widget<TextField>(
+      find.byKey(const ValueKey('server-url')),
+    );
+    final credential = tester.widget<TextField>(
+      find.byKey(const ValueKey('sdk-credential')),
+    );
+
+    expect(
+      serverUrl.controller!.text,
+      'https://ayni-sdk-monorepo-server.vercel.app/',
+    );
+    expect(credential.controller!.text, isEmpty);
+  });
+
   testWidgets('disables execution until verified resources are prepared', (
     tester,
   ) async {
@@ -245,6 +265,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
   int exportCalls = 0;
   bool failPreparation = false;
   bool failTracePermission = false;
+  bool hasSavedCredentials = true;
   bool traceAllowed = false;
   bool jsonlPresent = false;
   final tracePermissionChanges = <bool>[];
@@ -269,10 +290,12 @@ class _FakeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<ValidationSdkCredentials?> readCredentials() async =>
-      const ValidationSdkCredentials(
-        serverUrl: 'https://validation.example.test',
-        credential: 'private-test-credential',
-      );
+      hasSavedCredentials
+      ? const ValidationSdkCredentials(
+          serverUrl: 'https://validation.example.test',
+          credential: 'private-test-credential',
+        )
+      : null;
 
   @override
   Future<bool> readTracePermission() async => traceAllowed;

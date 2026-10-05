@@ -160,12 +160,33 @@ void main() {
     });
 
     test(
-      'loads the bundled Plan template without treating placeholder resources as verified',
+      'loads the bundled Plan with its production resource versions configured',
       () async {
         final plan = await ExperimentPlan.load(rootBundle);
+        final profile = plan.activeResourceProfile;
 
         expect(plan.schemaVersion, '1');
-        expect(plan.activeResourceProfile.isConfigured, isFalse);
+        expect(profile.isConfigured, isTrue);
+        expect(
+          profile.datasetVersionId,
+          'fc7729f8-5b8a-433e-b811-f0220b4474d8',
+        );
+        expect(
+          profile.controlModelVersionId,
+          '5d980cc6-447f-4e53-afb9-8596b59faa69',
+        );
+        expect(
+          profile.treatmentModelVersionId,
+          '5d980cc6-447f-4e53-afb9-8596b59faa69',
+        );
+        expect(
+          profile.treatmentWorkflowId,
+          '452ccaf5-d39a-4ce6-a5a6-bcf9b2b0be83',
+        );
+        expect(
+          profile.treatmentWorkflowVersionId,
+          'c663e668-1a3b-498f-9cd1-858433de21ce',
+        );
         expect(plan.scenarios, hasLength(10));
       },
     );

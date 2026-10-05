@@ -12,7 +12,7 @@
 
 La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. Al preparar `Integración directa`, también descarga y verifica el modelo. Al preparar `ayni_sdk`, verifica la definición publicada del workflow. El botón **Sincronizar SDK** instala después el modelo y workflow para uso offline y hace una corrida de preflight sin traza experimental.
 
-La credencial se introduce en la app y se guarda con `flutter_secure_storage`. Se requiere una URL HTTPS del servidor y una credencial SDK activa para la aplicación correspondiente. El APK no contiene el secreto.
+La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) viene precargada y puede cambiarse si hace falta. La credencial SDK se introduce en la app y se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
 
 ## Ejecutar en desarrollo
 
