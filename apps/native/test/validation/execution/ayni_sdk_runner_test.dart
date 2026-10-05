@@ -95,7 +95,7 @@ void main() {
   );
 
   test(
-    'rejects detection profiles until the pinned SDK honors tensor roles',
+    'rejects detection profiles when configured with the older SDK',
     () async {
       final detectionRunner = AyniSdkValidationRunner(
         profile: _profile(detection: true),
@@ -105,6 +105,7 @@ void main() {
         modelRepository: modelRepository,
         workflowDefinitions: definitions,
         preferences: preferences,
+        sdkVersion: '0.2.0',
       );
 
       await expectLater(
@@ -148,7 +149,6 @@ void main() {
         preferences: preferences,
         storageDirectory: temporaryDirectory,
         profile: profile,
-        sdkVersion: '0.3.0',
       );
 
       await runner.prepare();
@@ -561,7 +561,7 @@ AyniSdkValidationRunner _makeRunner({
   required _FakeWorkflowDefinitionRepository definitions,
   required ValidationPreferences preferences,
   ValidationResourceProfile? profile,
-  String sdkVersion = '0.2.0',
+  String sdkVersion = '0.3.0',
 }) => AyniSdkValidationRunner(
   profile: profile ?? _profile(),
   credentials: const ValidationSdkCredentials(

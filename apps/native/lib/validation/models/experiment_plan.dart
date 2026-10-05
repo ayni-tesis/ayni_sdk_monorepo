@@ -507,7 +507,7 @@ class ValidationInputContract {
         ![1, 3, 4].contains(channels) ||
         !{'none', 'zero_to_one', 'minus_one_to_one'}.contains(normalization)) {
       throw const FormatException(
-        'Unsupported input contract for ayni_sdk 0.2.0.',
+        'Unsupported input contract for the validation harness.',
       );
     }
     return ValidationInputContract(

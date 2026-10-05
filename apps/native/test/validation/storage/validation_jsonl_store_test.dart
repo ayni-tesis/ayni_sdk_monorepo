@@ -191,7 +191,7 @@ ValidationRunRecord _record(
     osVersion: '16',
     apiLevel: 36,
     appVersion: '1.0.0',
-    sdkVersion: '0.2.0',
+    sdkVersion: '0.3.0',
   ),
   durationMicros: 12,
   outcome: ValidationRunOutcome.success,

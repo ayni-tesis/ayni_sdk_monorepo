@@ -1,6 +1,6 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.2.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
+`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.3.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
@@ -101,8 +101,8 @@ Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro de
 
 ## Requisitos de validación
 
-- La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.2.0`.
-- El perfil S2 sigue pendiente y además requiere una versión publicada de `ayni_sdk` que interprete los roles de tensores de detección. No lo marques ejecutable ni compares sus resultados con el modo directo mientras la app siga fijada a 0.2.0.
+- La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.3.0`.
+- El SDK 0.3.0 y el arnés admiten workflows de detección S2 con `tensorIndices`. El perfil S2 sigue pendiente hasta registrar y verificar sus versiones de dataset, modelos y workflow en `experiment_plan.json`.
 - La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
 - La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.
 - El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.
