@@ -338,6 +338,26 @@ void main() {
       },
     );
 
+    test(
+      'keeps local examples and SDK credentials out of the bundled plan',
+      () async {
+        final source = await rootBundle.loadString(ExperimentPlan.assetPath);
+        expect(_isSafeBundledPlan(source), isTrue);
+        expect(_isSafeBundledPlan('$source dataset-version-1'), isFalse);
+        expect(_isSafeBundledPlan('$source ayni_sk_1234567890123456'), isFalse);
+
+        final plan = ExperimentPlan.fromJson(
+          (jsonDecode(source) as Map).cast<String, Object?>(),
+        );
+        expect(
+          plan.resourceProfiles
+              .where((profile) => profile.isPending)
+              .map((profile) => profile.id),
+          ['S1', 'REU-01', 'S2'],
+        );
+      },
+    );
+
     test('rejects an unsupported schema version', () {
       final json = _validPlan()..['schemaVersion'] = '3';
 
@@ -573,6 +593,20 @@ void main() {
       );
     });
   });
+}
+
+bool _isSafeBundledPlan(String source) {
+  const sampleIds = {
+    'dataset-1',
+    'dataset-version-1',
+    'dataset-version-to-configure',
+    'model-1',
+    'model-version-1',
+    'workflow-1',
+    'workflow-version-1',
+  };
+  return !sampleIds.any(source.contains) &&
+      !RegExp(r'ayni_sk_[A-Za-z0-9_-]{16,}').hasMatch(source);
 }
 
 Map<String, Object?> _validPlan() {

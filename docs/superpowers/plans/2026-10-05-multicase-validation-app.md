@@ -167,7 +167,7 @@ Run: cd apps/native; flutter test test/validation/execution/validation_batch_con
 
 Expected: the operator can start the complete configured suite with one action and see accurate suite progress and recent trace status.
 
-- [ ] **Step 5: Commit** the one-action suite flow and tests as feat(native): run the complete validation suite.
+- [x] **Step 5: Commit** the one-action suite flow and tests as feat(native): run the complete validation suite.
 
 ### Task 6: Document provisioning and verify the Android build
 
@@ -179,15 +179,15 @@ Expected: the operator can start the complete configured suite with one action a
 - Consumes: Completed Tasks 1–5 and the teammate's model/dataset bundle.
 - Produces: Operator instructions for provisioning the missing real IDs, hashes, workflow versions, and case manifests without embedding assets in Git or the APK.
 
-- [ ] **Step 1: Add a plan-asset test** that rejects ZIP example IDs and secrets and keeps profiles pending until real resource IDs and hashes are entered.
-- [ ] **Step 2: Run the new asset test to verify it fails**
+- [x] **Step 1: Add a plan-asset test** that rejects ZIP example IDs and secrets and keeps profiles pending until real resource IDs and hashes are entered.
+- [x] **Step 2: Run the new asset test**
 
 Run: cd apps/native; flutter test test/validation/models/experiment_plan_test.dart
 
-Expected: FAIL because the current bundled plan has no multi-case pending profiles or ZIP-ID guard.
+Expected: the test rejects a fixture containing example IDs or an SDK Key and confirms S1, REU-01, and S2 remain pending in the bundled plan.
 
-- [ ] **Step 3: Document the provisioning order**: register model versions and contracts; create/publish the complete S2 workflow; register private dataset versions and manifests; filter or obtain authorization for the COCO images; then replace pending profile fields with production IDs and hashes.
-- [ ] **Step 4: Run all native checks**
+- [x] **Step 3: Document the provisioning order**: register model versions and contracts; create/publish the complete S2 workflow; register private dataset versions and manifests; filter or obtain authorization for the COCO images; then replace pending profile fields with production IDs and hashes.
+- [x] **Step 4: Run all native checks**
 
 Run: cd apps/native; flutter pub get; flutter test; flutter analyze; flutter build apk --debug
 
