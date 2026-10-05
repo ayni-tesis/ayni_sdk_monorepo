@@ -5,5 +5,13 @@
     "theme": "Cobalt",
     "enrichment": "none",
     "brief": "Ayni developer introduction with registration and dashboard paths"
+  },
+  {
+    "date": "2026-10-05",
+    "macrostructure": "Workbench",
+    "theme": "Ayni Material 3 green (preserved)",
+    "enrichment": "progress ledger and activity stream",
+    "brief": "Android thesis validation: one SDK Key, one run action, plan-driven progress",
+    "variation": "replaced the previous selector-and-preparation flow with a single execution surface"
   }
 ]

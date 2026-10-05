@@ -1,6 +1,6 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa el paquete publicado `ayni_sdk` **0.2.0**, Android API 26 o posterior y CPU. El APK selector ofrece integración directa con `tflite_flutter` y tratamiento con `ayni_sdk`; también se pueden compilar APK de una sola condición para comparar tamaños.
+`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.2.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara el dataset y los modelos, sincroniza el workflow y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
@@ -10,9 +10,9 @@
 4. Reemplaza los valores plantilla del perfil activo en `assets/validation/experiment_plan.json` por los IDs publicados y SHA-256 del dataset y del modelo. Control y tratamiento deben usar el mismo ID y hash del modelo. No incluyas la credencial SDK en ese archivo.
 5. Ejecuta `flutter pub get` y prueba el APK en un teléfono Android con API 26 o posterior.
 
-La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. Al preparar `Integración directa`, también descarga y verifica el modelo. Al preparar `ayni_sdk`, verifica la definición publicada del workflow. El botón **Sincronizar SDK** instala después el modelo y workflow para uso offline y hace una corrida de preflight sin traza experimental.
+La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica el modelo y la definición publicada del workflow. Antes de las corridas de `ayni_sdk`, sincroniza el SDK y comprueba el workflow; después vuelve a sincronizar para intentar despachar las trazas autorizadas.
 
-La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) viene precargada y puede cambiarse si hace falta. La credencial SDK se introduce en la app y se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
+La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) está fijada en la app. La SDK Key se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
 
 ## Ejecutar en desarrollo
 
@@ -29,9 +29,11 @@ flutter run -d <id-android>
 
 El emulador sirve para una prueba funcional; para resultados de medición de la tesis usa los dispositivos físicos definidos en el Plan.
 
-La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Después de preparar los recursos, el tratamiento requiere pulsar **Sincronizar SDK**. Antes de medir, confirma que el dataset y la condición muestran recursos verificados; ejecuta las fases medidas sin red. `PERF-01` se mide con el procedimiento externo del Plan. Los perfiles de red y los fallos se aplican manualmente.
+La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. En selector, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para ambas condiciones: 1 344 intentos por condición, 2 688 en total. El progreso cuenta los intentos guardados en JSONL. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
 
-La autorización de trazas comienza apagada. Si la activas, la traza SDK puede incluir las salidas tipadas decodificadas; imágenes y tensores no se envían. El botón **Sincronizar SDK** también puede enviar trazas que estén en la outbox, por lo que la app no sincroniza durante un lote. Después revisa su recepción en el dashboard. El JSONL de resultados permanece en el dispositivo; **Exportar JSONL** abre la hoja de compartir del sistema.
+La autorización de trazas comienza apagada. En el primer inicio puedes autorizarlas o ejecutar sin ellas; el menú superior permite revocar el permiso. Con autorización, la traza SDK puede incluir salidas tipadas decodificadas; imágenes, tensores y el JSONL completo no se envían. El envío también depende de que la política de telemetría de la aplicación esté habilitada en el dashboard. El lote no sincroniza durante la inferencia. Al terminar, revisa en el dashboard si el backend recibió las trazas. El JSONL permanece en el dispositivo; **Exportar JSONL**, en el menú superior, abre la hoja de compartir del sistema.
+
+`PERF-01` (arranque en frío) y `F1–F6` (inyección de fallos) siguen pendientes de medición o intervención externa. La app tampoco activa el modo avión: si el procedimiento exige desconectar la radio durante una fase, esa condición debe comprobarse por separado. El lote automático no cuenta esos resultados como ejecutados.
 
 ## APK de medición
 
@@ -65,6 +67,6 @@ Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro de
 
 - La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.2.0`.
 - El modo `ayni_sdk` rechaza perfiles de detección porque la versión 0.2.0 no consume los índices de tensores declarados por el Plan. No se ejecuta ni registra un resultado que pueda diferir del modo directo. Comparar detección requiere una versión publicada del SDK que admita esos índices.
-- La ejecución de un lote no accede a la red. Preparación y sincronización se hacen antes, con botones separados.
-- La app no implementa la medición de arranque en frío del Plan ni sube el JSONL.
+- La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
+- La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.
 - El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.

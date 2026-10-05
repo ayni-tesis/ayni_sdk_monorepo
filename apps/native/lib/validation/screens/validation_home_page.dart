@@ -23,6 +23,7 @@ import '../storage/validation_preferences.dart';
 import '../validation_build_mode.dart';
 import '../validation_run_metadata_reader.dart';
 
+// Hallmark · macrostructure: Workbench · theme: existing Ayni Material green · variation: key → one run control → activity ledger · critique P5 H5 E4 S5 R5 V5 · contrast/a11y: pass
 const _defaultValidationServerUrl =
     'https://ayni-sdk-monorepo-server.vercel.app/';
 
@@ -44,7 +45,7 @@ abstract interface class ValidationHomeRuntime {
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   });
 
-  Future<ValidationSyncState> synchronizeSdk();
+  Future<ValidationSyncState> synchronizeSdk({bool verifyWorkflow = true});
 
   Future<BatchRunSummary> runPhase({
     required ValidationResourceProfile profile,
@@ -275,12 +276,14 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       caseCount: dataset.cases.length,
       resourcesSummary: condition == ValidationCondition.control
           ? 'Modelo ${profile.controlModelVersionId} verificado para CPU.'
-          : 'Workflow ${profile.treatmentWorkflowVersion} verificado. Pulsa “Sincronizar SDK” para instalar el modelo y el workflow offline.',
+          : 'Workflow ${profile.treatmentWorkflowVersion} verificado.',
     );
   }
 
   @override
-  Future<ValidationSyncState> synchronizeSdk() async {
+  Future<ValidationSyncState> synchronizeSdk({
+    bool verifyWorkflow = true,
+  }) async {
     final runner = _sdkRunner;
     final dataset = _dataset;
     if (runner == null || dataset == null) {
@@ -289,11 +292,21 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
         'Prepara primero los recursos de ayni_sdk.',
       );
     }
-    _sdkReadyForRuns = false;
+    if (verifyWorkflow) _sdkReadyForRuns = false;
     final result = await runner.synchronize();
     if (result.status != SyncStatus.updated &&
         result.status != SyncStatus.upToDate) {
-      return ValidationSyncState(status: result.status.name, ready: false);
+      return ValidationSyncState(
+        status: result.status.name,
+        ready: _sdkReadyForRuns,
+      );
+    }
+    if (!verifyWorkflow) {
+      return ValidationSyncState(
+        status: result.status.name,
+        ready: _sdkReadyForRuns,
+        workflowVersion: _plan?.activeResourceProfile.treatmentWorkflowVersion,
+      );
     }
     final testCase = dataset.cases.first;
     final bytes = await File(testCase.localPath).readAsBytes();
@@ -476,44 +489,37 @@ class ValidationHomePage extends StatefulWidget {
 
 class _ValidationHomePageState extends State<ValidationHomePage> {
   late final ValidationHomeRuntime _runtime;
-  final _serverUrlController = TextEditingController();
   final _credentialController = TextEditingController();
-  final _pairRunIdController = TextEditingController();
   ExperimentPlan? _plan;
-  ValidationCondition _condition = validationBuildMode == 'treatment'
-      ? ValidationCondition.treatment
-      : ValidationCondition.control;
-  ValidationScenario? _scenario;
-  ValidationPreparationState? _prepared;
   bool _bootstrapping = true;
   bool _busy = false;
   bool _running = false;
   bool _cancelRequested = false;
-  bool _credentialsSaved = false;
   bool _traceAllowed = false;
-  bool _sdkReady = false;
   bool _hasJsonl = false;
   double? _downloadProgress;
-  double _batchProgress = 0;
+  int _completedRuns = 0;
+  int _totalRuns = 0;
   String? _activity;
   String? _status;
   String? _error;
   final List<String> _events = [];
+  static const _automaticPhases = {
+    ValidationPhase.warmup,
+    ValidationPhase.measured,
+    ValidationPhase.stress,
+  };
 
   @override
   void initState() {
     super.initState();
     _runtime = widget.runtime ?? DefaultValidationHomeRuntime();
-    _pairRunIdController.text =
-        'pair-${DateTime.now().toUtc().millisecondsSinceEpoch}';
     unawaited(_bootstrap());
   }
 
   @override
   void dispose() {
-    _serverUrlController.dispose();
     _credentialController.dispose();
-    _pairRunIdController.dispose();
     unawaited(_runtime.dispose());
     super.dispose();
   }
@@ -531,12 +537,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       if (!mounted) return;
       setState(() {
         _plan = plan;
-        _scenario = plan.scenarioFor(ValidationPhase.measured);
         _traceAllowed = results[2]! as bool;
         _hasJsonl = results[3]! as bool;
-        _credentialsSaved = credentials != null;
-        _serverUrlController.text =
-            credentials?.serverUrl ?? _defaultValidationServerUrl;
         _credentialController.text = credentials?.credential ?? '';
         _bootstrapping = false;
       });
@@ -551,176 +553,178 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
   ValidationResourceProfile? get _profile => _plan?.activeResourceProfile;
 
-  bool get _hasConnection =>
-      _serverUrlController.text.trim().isNotEmpty &&
-      _credentialController.text.trim().isNotEmpty;
+  List<ValidationCondition> get _conditions => switch (validationBuildMode) {
+    'control' => const [ValidationCondition.control],
+    'treatment' => const [ValidationCondition.treatment],
+    _ => const [ValidationCondition.control, ValidationCondition.treatment],
+  };
 
-  bool get _canPrepare =>
+  List<ValidationScenario> get _automaticScenarios => (_plan?.scenarios ?? [])
+      .where(
+        (scenario) =>
+            _automaticPhases.contains(scenario.phase) &&
+            !scenario.requiresExternalMeasurement,
+      )
+      .toList(growable: false);
+
+  int get _plannedRuns =>
+      _automaticScenarios.fold<int>(
+        0,
+        (total, item) => total + item.repetitions,
+      ) *
+      _conditions.length;
+
+  bool get _canStart =>
       !_busy &&
       (_profile?.isConfigured ?? false) &&
-      _hasConnection &&
-      _conditionAvailable;
+      _credentialController.text.trim().isNotEmpty &&
+      _automaticScenarios.isNotEmpty;
 
-  bool get _conditionAvailable =>
-      validationRunnerKindFor(
-        buildMode: validationBuildMode,
-        condition: _condition,
-      ) !=
-      ValidationRunnerKind.unavailable;
-
-  bool get _canRun =>
-      !_busy &&
-      _prepared != null &&
-      _scenario != null &&
-      _scenario!.phase != ValidationPhase.coldStart &&
-      _pairRunIdController.text.trim().isNotEmpty &&
-      _conditionAvailable &&
-      (_condition == ValidationCondition.control || _sdkReady);
-
-  Future<void> _saveConnection() async {
-    final credentials = _credentialsFromFields();
-    if (credentials == null) {
-      return _showError('Ingresa la URL HTTPS y la credencial SDK.');
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-      _activity = 'Guardando conexión segura…';
-    });
-    try {
-      await _runtime.saveCredentials(credentials);
-      if (!mounted) return;
-      setState(() => _credentialsSaved = true);
-      _addEvent('Conexión guardada en el almacenamiento seguro.');
-    } on Object catch (error) {
-      _showError(_friendlyError(error));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = null;
-        });
-      }
-    }
-  }
-
-  Future<void> _prepareResources() async {
+  Future<void> _runValidation() async {
     final profile = _profile;
     final credentials = _credentialsFromFields();
-    if (profile == null || credentials == null) {
-      return _showError('Ingresa la URL HTTPS y la credencial SDK.');
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-      _activity = 'Preparando dataset y recursos…';
-      _downloadProgress = null;
-      _prepared = null;
-      _sdkReady = false;
-    });
-    try {
-      await _runtime.saveCredentials(credentials);
-      final result = await _runtime.prepareResources(
-        profile: profile,
-        credentials: credentials,
-        condition: _condition,
-        onDownloadProgress: (received, total) {
-          if (!mounted) return;
-          setState(() {
-            _downloadProgress = total <= 0 ? null : received / total;
-          });
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _credentialsSaved = true;
-        _prepared = result;
-        _sdkReady = false;
-      });
-      _addEvent(
-        'Dataset ${result.datasetVersion} verificado (${result.caseCount} imágenes).',
-      );
-      _addEvent(result.resourcesSummary);
-    } on Object catch (error) {
-      _showError(_friendlyError(error));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = null;
-          _downloadProgress = null;
-        });
-      }
-    }
-  }
+    final plan = _plan;
+    if (profile == null || credentials == null || plan == null) return;
 
-  Future<void> _synchronizeSdk() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _activity = 'Sincronizando recursos SDK y verificando workflow…';
-    });
-    try {
-      final result = await _runtime.synchronizeSdk();
-      if (!mounted) return;
-      setState(() => _sdkReady = result.ready);
-      _addEvent(
-        result.ready
-            ? 'SDK ${result.status}; workflow ${result.workflowVersion ?? 'verificado'}. Confirma la recepción de trazas en el dashboard después de sincronizar.'
-            : 'SDK ${result.status}; no se habilitaron las corridas de tratamiento.',
-      );
-    } on Object catch (error) {
-      if (mounted) setState(() => _sdkReady = false);
-      _showError(_friendlyError(error));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = null;
-        });
-      }
+    var captureTrace = _traceAllowed;
+    if (!captureTrace) {
+      final choice = await _askTracePermission();
+      if (choice == null) return;
+      captureTrace = choice;
+      if (captureTrace && !await _persistTracePermission(true)) return;
     }
-  }
 
-  Future<void> _runBatch() async {
-    final profile = _profile;
-    final scenario = _scenario;
-    if (profile == null || scenario == null) return;
+    final scenarios = _automaticScenarios;
+    final totalRuns = _plannedRuns;
+    final pairRunId = 'pair-${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    var treatmentPrepared = false;
+    var completedRuns = 0;
     setState(() {
       _busy = true;
       _running = true;
       _cancelRequested = false;
       _error = null;
-      _activity = 'Ejecutando lote…';
-      _batchProgress = 0;
+      _status = null;
+      _activity = 'Guardando SDK Key…';
+      _downloadProgress = null;
+      _completedRuns = 0;
+      _totalRuns = totalRuns;
     });
+
     try {
-      final summary = await _runtime.runPhase(
-        profile: profile,
-        pairRunId: _pairRunIdController.text.trim(),
-        condition: _condition,
-        scenarioId: scenario.id,
-        phase: scenario.phase,
-        captureTrace: _traceAllowed,
-        isCancelled: () async => _cancelRequested,
-        onRecord: (record) {
-          if (!mounted) return;
+      await _runtime.saveCredentials(credentials);
+      _addEvent('SDK Key guardada en almacenamiento seguro.');
+
+      for (final condition in _conditions) {
+        if (_cancelRequested) break;
+        setState(() {
+          _activity = 'Preparando ${_conditionLabel(condition)}…';
+          _downloadProgress = null;
+        });
+        final prepared = await _runtime.prepareResources(
+          profile: profile,
+          credentials: credentials,
+          condition: condition,
+          onDownloadProgress: (received, total) {
+            if (!mounted) return;
+            setState(() {
+              _downloadProgress = total <= 0 ? null : received / total;
+            });
+          },
+        );
+        _addEvent(
+          'Dataset ${prepared.datasetVersion} verificado · ${prepared.caseCount} imágenes.',
+        );
+        _addEvent(prepared.resourcesSummary);
+        if (_cancelRequested) break;
+
+        if (condition == ValidationCondition.treatment) {
+          treatmentPrepared = true;
           setState(() {
-            _batchProgress = record.repetition / scenario.repetitions;
-            _hasJsonl = true;
+            _activity = 'Sincronizando SDK y verificando workflow…';
+            _downloadProgress = null;
           });
+          final sync = await _runtime.synchronizeSdk();
+          if (!sync.ready) {
+            throw ValidationHomeException(
+              'sdkSyncFailed',
+              'La sincronización SDK terminó con estado ${sync.status}. Revisa la conexión y vuelve a iniciar.',
+            );
+          }
           _addEvent(
-            '#${record.repetition} · ${record.caseId} · ${record.outcome.name}',
+            'SDK ${sync.status} · workflow ${sync.workflowVersion ?? 'verificado'}.',
           );
-        },
-      );
+        }
+
+        for (final scenario in scenarios) {
+          if (_cancelRequested) break;
+          setState(() {
+            _activity =
+                '${_conditionLabel(condition)} · ${_phaseLabel(scenario.phase)}';
+            _downloadProgress = null;
+          });
+          final phaseStart = completedRuns;
+          final summary = await _runtime.runPhase(
+            profile: profile,
+            pairRunId: pairRunId,
+            condition: condition,
+            scenarioId: scenario.id,
+            phase: scenario.phase,
+            captureTrace:
+                condition == ValidationCondition.treatment && captureTrace,
+            isCancelled: () async => _cancelRequested,
+            onRecord: (record) {
+              if (!mounted) return;
+              final count = phaseStart + record.repetition;
+              setState(() {
+                _completedRuns = count.clamp(0, totalRuns).toInt();
+                _hasJsonl = true;
+              });
+              if (record.repetition == 1 ||
+                  record.repetition % 100 == 0 ||
+                  record.repetition == scenario.repetitions) {
+                _addEvent(
+                  '${_conditionLabel(condition)} · ${scenario.id} · #${record.repetition} · ${record.outcome.name}',
+                );
+              }
+            },
+          );
+          completedRuns = phaseStart + summary.attempted;
+          if (mounted) {
+            setState(() {
+              _completedRuns = completedRuns.clamp(0, totalRuns).toInt();
+              _hasJsonl = summary.attempted > 0 || _hasJsonl;
+            });
+          }
+          if (summary.stoppedByCancellation) break;
+        }
+        if (_cancelRequested) break;
+      }
+
+      if (treatmentPrepared) {
+        setState(() {
+          _activity = 'Enviando trazas autorizadas…';
+          _downloadProgress = null;
+        });
+        final sync = await _runtime.synchronizeSdk(verifyWorkflow: false);
+        if (sync.status == 'updated' || sync.status == 'upToDate') {
+          _addEvent(
+            'Sincronización SDK ${sync.status}; confirma la recepción de trazas en el dashboard.',
+          );
+        } else {
+          _addEvent(
+            'Sin conexión para sincronizar trazas (${sync.status}); los resultados JSONL siguen en el dispositivo.',
+          );
+        }
+      }
+
       if (!mounted) return;
-      setState(() => _hasJsonl = summary.attempted > 0 || _hasJsonl);
-      _addEvent(
-        summary.stoppedByCancellation
-            ? 'Lote cancelado: ${summary.attempted} intentos guardados.'
-            : 'Lote completo: ${summary.successes} correctos, ${summary.errors} errores.',
-      );
+      final wasCancelled = _cancelRequested;
+      final status = wasCancelled
+          ? 'Validación cancelada · $_completedRuns de $_totalRuns intentos guardados.'
+          : 'Validación terminada · $_completedRuns de $_totalRuns intentos guardados.';
+      setState(() => _status = status);
+      _addEvent(status);
     } on Object catch (error) {
       _showError(_friendlyError(error));
     } finally {
@@ -729,6 +733,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           _busy = false;
           _running = false;
           _activity = null;
+          _downloadProgress = null;
           _cancelRequested = false;
         });
       }
@@ -744,23 +749,69 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     }
   }
 
-  Future<void> _changeTracePermission(bool allowed) async {
-    setState(() {
-      _traceAllowed = allowed;
-      _error = null;
-    });
+  Future<bool?> _askTracePermission() => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Trazas técnicas SDK'),
+      content: const Text(ValidationPreferences.tracePermissionDisclosure),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Ejecutar sin trazas'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Autorizar y ejecutar'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _manageTracePermission() async {
+    if (_busy) return;
+    final allowed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          _traceAllowed ? 'Trazas autorizadas' : 'Trazas técnicas SDK',
+        ),
+        content: const Text(ValidationPreferences.tracePermissionDisclosure),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, !_traceAllowed),
+            child: Text(_traceAllowed ? 'Revocar permiso' : 'Autorizar trazas'),
+          ),
+        ],
+      ),
+    );
+    if (allowed != null) await _persistTracePermission(allowed);
+  }
+
+  Future<bool> _persistTracePermission(bool allowed) async {
+    if (!allowed) setState(() => _traceAllowed = false);
     try {
       await _runtime.setTracePermission(allowed);
+      if (!mounted) return false;
+      setState(() {
+        _traceAllowed = allowed;
+        _error = null;
+      });
       _addEvent(
         allowed
             ? 'Permiso de trazas activado.'
-            : 'Permiso revocado; se solicitó vaciar las trazas pendientes del SDK.',
+            : 'Permiso revocado; se vaciaron las trazas SDK pendientes.',
       );
+      return true;
     } on Object catch (error) {
       if (mounted && allowed) {
         setState(() => _traceAllowed = false);
       }
       _showError(_friendlyError(error));
+      return false;
     }
   }
 
@@ -786,31 +837,12 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   }
 
   ValidationSdkCredentials? _credentialsFromFields() {
-    final serverUrl = _serverUrlController.text.trim();
     final credential = _credentialController.text.trim();
-    if (serverUrl.isEmpty || credential.isEmpty) return null;
+    if (credential.isEmpty) return null;
     return ValidationSdkCredentials(
-      serverUrl: serverUrl,
+      serverUrl: _defaultValidationServerUrl,
       credential: credential,
     );
-  }
-
-  Future<void> _selectCondition(ValidationCondition? value) async {
-    if (value == null ||
-        value == _condition ||
-        validationBuildMode != 'selector') {
-      return;
-    }
-    setState(() {
-      _condition = value;
-      _prepared = null;
-      _sdkReady = false;
-    });
-  }
-
-  void _selectScenario(ValidationScenario? value) {
-    if (value == null) return;
-    setState(() => _scenario = value);
   }
 
   void _showError(String message) {
@@ -851,29 +883,55 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final plan = _plan;
     final profile = _profile;
-    final scenario = _scenario;
     return Scaffold(
-      appBar: AppBar(title: const Text('Validación ayni_sdk')),
+      appBar: AppBar(
+        title: const Text('Validación'),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Opciones de validación',
+            onSelected: (value) {
+              if (value == 'traces') unawaited(_manageTracePermission());
+              if (value == 'export') unawaited(_exportJsonl());
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'traces',
+                child: Text(
+                  _traceAllowed
+                      ? 'Revocar permiso de trazas'
+                      : 'Permitir trazas técnicas',
+                ),
+              ),
+              if (_hasJsonl)
+                const PopupMenuItem(
+                  value: 'export',
+                  child: Text('Exportar JSONL'),
+                ),
+            ],
+          ),
+        ],
+      ),
       body: _bootstrapping
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               key: const ValueKey('validation-home-scroll'),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                _buildProfileCard(profile),
-                const SizedBox(height: 12),
+                Text(
+                  'Ejecuta las fases automáticas del plan.',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'La app prepara los recursos, instala y sincroniza ayni_sdk, y guarda los resultados localmente.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
                 _buildConnectionCard(),
                 const SizedBox(height: 12),
-                _buildExperimentCard(plan, scenario),
-                const SizedBox(height: 12),
-                if (validationBuildMode != 'control') ...[
-                  _buildTraceCard(),
-                  const SizedBox(height: 12),
-                ],
-                _buildActionsCard(),
-                if (_activity != null || _downloadProgress != null) ...[
+                _buildActionsCard(profile),
+                if (_busy || _totalRuns > 0) ...[
                   const SizedBox(height: 12),
                   _buildProgressCard(),
                 ],
@@ -881,47 +939,17 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
                   const SizedBox(height: 12),
                   _buildErrorCard(_error!),
                 ],
-                if (_status != null || _events.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildEventsCard(),
-                ],
+                const SizedBox(height: 12),
+                _buildEventsCard(),
+                const SizedBox(height: 12),
+                Text(
+                  'Arranque en frío (PERF-01) y fallos F1–F6 requieren medición o intervención externa y quedan pendientes.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ],
             ),
     );
   }
-
-  Widget _buildProfileCard(ValidationResourceProfile? profile) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Perfil de recursos',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            profile?.isConfigured == true
-                ? 'Perfil publicado listo para verificar.'
-                : 'Perfil pendiente: completa IDs de versiones publicadas y SHA-256 en assets/validation/experiment_plan.json antes de crear el APK.',
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'El ZIP es un paquete comprimido con manifest.json e imágenes. La app lo descarga del bucket privado y verifica el paquete y cada imagen antes de ejecutar.',
-          ),
-          if (_prepared case final prepared?) ...[
-            const Divider(height: 24),
-            Text(
-              'Dataset ${prepared.datasetVersion} · ${prepared.caseCount} imágenes',
-            ),
-            SelectableText('SHA-256 ${prepared.datasetSha256}'),
-            Text(prepared.resourcesSummary),
-          ],
-        ],
-      ),
-    ),
-  );
 
   Widget _buildConnectionCard() => Card(
     child: Padding(
@@ -929,24 +957,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Conexión privada',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            key: const ValueKey('server-url'),
-            controller: _serverUrlController,
-            enabled: !_busy,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'URL HTTPS del servidor',
-              hintText: 'https://api.example.org',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 10),
+          Text('Conexión SDK', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
           TextField(
             key: const ValueKey('sdk-credential'),
             controller: _credentialController,
@@ -955,175 +967,55 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: const InputDecoration(
-              labelText: 'Credencial SDK',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                _credentialsSaved ? Icons.lock : Icons.lock_outline,
-                size: 18,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  _credentialsSaved
-                      ? 'Credencial guardada de forma segura.'
-                      : 'Sin conexión guardada.',
-                ),
-              ),
-              TextButton(
-                key: const ValueKey('save-connection'),
-                onPressed: _busy || !_hasConnection ? null : _saveConnection,
-                child: const Text('Guardar'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _buildExperimentCard(
-    ExperimentPlan? plan,
-    ValidationScenario? scenario,
-  ) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Corrida', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
-          if (validationBuildMode == 'selector') ...[
-            DropdownButtonFormField<ValidationCondition>(
-              key: const ValueKey('condition-selector'),
-              initialValue: _condition,
-              decoration: const InputDecoration(
-                labelText: 'Condición',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: ValidationCondition.control,
-                  child: Text('Integración directa'),
-                ),
-                DropdownMenuItem(
-                  value: ValidationCondition.treatment,
-                  child: Text('ayni_sdk'),
-                ),
-              ],
-              onChanged: _busy ? null : _selectCondition,
-            ),
-            const SizedBox(height: 10),
-          ] else ...[
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Condición fijada para este APK'),
-              subtitle: Text(
-                _condition == ValidationCondition.control
-                    ? 'Integración directa'
-                    : 'ayni_sdk',
-              ),
-            ),
-          ],
-          DropdownButtonFormField<ValidationScenario>(
-            key: const ValueKey('scenario-selector'),
-            initialValue: scenario,
-            decoration: const InputDecoration(
-              labelText: 'Escenario / fase',
-              border: OutlineInputBorder(),
-            ),
-            items: (plan?.scenarios ?? const <ValidationScenario>[])
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: item,
-                    child: Text('${item.id} · ${_phaseLabel(item.phase)}'),
-                  ),
-                )
-                .toList(),
-            onChanged: _busy ? null : _selectScenario,
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            key: const ValueKey('pair-run-id'),
-            controller: _pairRunIdController,
-            enabled: !_busy,
-            decoration: const InputDecoration(
-              labelText: 'run_id pareado',
+              labelText: 'SDK Key',
+              hintText: 'ayni_sk_…',
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 8),
           Text(
-            scenario == null
-                ? 'Elige una fase del Plan.'
-                : scenario.phase == ValidationPhase.coldStart
-                ? 'PERF-01 se mide con el procedimiento externo del Plan.'
-                : '${scenario.repetitions} repeticiones · bloques ${scenario.blockSizes.join(' / ')}',
+            'Servidor de producción · la clave se guarda de forma segura al iniciar.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
     ),
   );
 
-  Widget _buildTraceCard() => Card(
-    child: Column(
-      children: [
-        SwitchListTile(
-          key: const ValueKey('trace-permission-switch'),
-          value: _traceAllowed,
-          onChanged: _busy ? null : _changeTracePermission,
-          title: const Text('Autorizar trazas técnicas SDK'),
-          subtitle: const Text(ValidationPreferences.tracePermissionDisclosure),
-          controlAffinity: ListTileControlAffinity.trailing,
-        ),
-      ],
-    ),
-  );
-
-  Widget _buildActionsCard() => Card(
+  Widget _buildActionsCard(ValidationResourceProfile? profile) => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FilledButton(
-            key: const ValueKey('prepare-resources'),
-            onPressed: _canPrepare ? _prepareResources : null,
-            child: const Text('Preparar recursos'),
+          Text(
+            'Plan de pruebas',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          FilledButton.tonal(
-            key: const ValueKey('run-batch'),
-            onPressed: _canRun ? _runBatch : null,
-            child: const Text('Ejecutar lote'),
+          const SizedBox(height: 8),
+          Text(
+            profile?.isConfigured == true
+                ? '${_automaticScenarios.length} fases automáticas · ${_conditions.length} ${_conditions.length == 1 ? 'condición' : 'condiciones'} · $_plannedRuns intentos previstos.'
+                : 'Faltan los IDs publicados o los hashes del perfil en el APK.',
           ),
-          OutlinedButton(
-            key: const ValueKey('cancel-batch'),
-            onPressed: _running ? _cancelBatch : null,
-            child: const Text('Cancelar'),
-          ),
-          if (validationBuildMode != 'control')
-            OutlinedButton(
-              key: const ValueKey('sync-sdk'),
-              onPressed:
-                  !_busy &&
-                      _condition == ValidationCondition.treatment &&
-                      _prepared != null
-                  ? _synchronizeSdk
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('run-validation'),
+              onPressed: _running
+                  ? _cancelBatch
+                  : _canStart
+                  ? _runValidation
                   : null,
-              child: const Text('Sincronizar SDK'),
+              icon: Icon(
+                _running ? Icons.stop_circle_outlined : Icons.play_arrow,
+              ),
+              label: Text(
+                _running ? 'Cancelar validación' : 'Iniciar validación',
+              ),
             ),
-          OutlinedButton.icon(
-            key: const ValueKey('export-jsonl'),
-            onPressed: !_busy && _hasJsonl ? _exportJsonl : null,
-            icon: const Icon(Icons.ios_share),
-            label: const Text('Exportar JSONL'),
           ),
         ],
       ),
@@ -1131,6 +1023,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   );
 
   Widget _buildProgressCard() => Card(
+    key: const ValueKey('validation-progress'),
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1140,16 +1033,19 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             _activity ?? 'Procesando…',
             key: const ValueKey('activity-text'),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           LinearProgressIndicator(
-            value: _running ? _batchProgress : _downloadProgress,
+            value: _totalRuns > 0
+                ? _completedRuns / _totalRuns
+                : _downloadProgress,
+            semanticsLabel: 'Progreso de la validación',
           ),
-          if (_running)
+          if (_totalRuns > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '${(_batchProgress * (_scenario?.repetitions ?? 0)).floor()} / ${_scenario?.repetitions ?? 0}',
-                key: const ValueKey('batch-progress-text'),
+                '$_completedRuns / $_totalRuns · ${((_completedRuns / _totalRuns) * 100).floor()}%',
+                key: const ValueKey('validation-progress-text'),
               ),
             ),
         ],
@@ -1167,14 +1063,22 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   );
 
   Widget _buildEventsCard() => Card(
+    key: const ValueKey('validation-events'),
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Estado y trazas locales',
+            'Actividad y trazas',
             style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _traceAllowed
+                ? 'Se intentará sincronizarlas al terminar si la política del servidor las permite; el JSONL queda local.'
+                : 'Sin autorización no se capturan trazas SDK; el JSONL queda local.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           if (_status != null) ...[
             const SizedBox(height: 8),
@@ -1184,14 +1088,20 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             const Divider(),
             for (final event in _events.skip(1).take(5))
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Text(event),
               ),
+          ] else if (_status == null) ...[
+            const SizedBox(height: 8),
+            const Text('La actividad de la corrida aparecerá aquí.'),
           ],
         ],
       ),
     ),
   );
+
+  static String _conditionLabel(ValidationCondition condition) =>
+      condition == ValidationCondition.control ? 'Directa' : 'ayni_sdk';
 
   static String _phaseLabel(ValidationPhase phase) => switch (phase) {
     ValidationPhase.coldStart => 'arranque en frío',

@@ -1,12 +1,21 @@
 {
-  "date": "2026-09-24",
-  "framework": "Next.js App Router",
-  "frameworkSource": "apps/web/package.json",
-  "fonts": ["Geist Sans", "Geist Mono"],
-  "fontSource": "apps/web/src/app/layout.tsx",
-  "motion": "motion 13 is installed; landing page uses only restrained CSS transitions",
-  "motionSource": "apps/web/package.json",
-  "spacing": "Tailwind CSS 4; landing page defines a semantic 4pt-derived spacing scale",
-  "palette": "Existing app CSS uses Tailwind; landing page uses dedicated Cobalt OKLCH tokens",
-  "preserved": ["Geist font stack", "Next.js app shell", "existing API health check"]
+  "date": "2026-10-05",
+  "framework": "Flutter Material 3",
+  "frameworkSource": "apps/native/pubspec.yaml and apps/native/lib/main.dart",
+  "fonts": ["Android system sans-serif"],
+  "fontSource": "Flutter Material 3 platform defaults",
+  "motion": "Material interaction feedback; functional progress only",
+  "motionSource": "Flutter Material widgets",
+  "spacing": "4 px-derived values: 4, 8, 12, 16, and 24 logical pixels",
+  "palette": "Preserve Ayni's existing Material seed green #175C4B",
+  "paletteSource": "apps/native/lib/main.dart",
+  "preserved": [
+    "Material 3 app shell and green theme",
+    "Secure SDK credential storage",
+    "Explicit, revocable trace permission",
+    "Local JSONL and verified resource pipeline"
+  ],
+  "audience": "Operators running the thesis validation on Android phones",
+  "task": "Enter the SDK Key, run planned local phases, monitor progress and activity",
+  "tone": "Technical and direct"
 }

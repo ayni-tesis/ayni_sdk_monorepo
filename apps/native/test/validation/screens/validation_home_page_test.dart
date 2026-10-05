@@ -6,10 +6,10 @@ import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:better_fullstack_app/validation/screens/validation_home_page.dart';
 import 'package:better_fullstack_app/validation/storage/validation_preferences.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +22,7 @@ void main() {
 
   setUp(() => runtime = _FakeRuntime(planSource));
 
-  testWidgets('scrolls to lazy-list children in either direction', (
+  testWidgets('scroll helper finds lazy-list children in both directions', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -45,7 +45,6 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
-
     await _scrollToFinder(tester, find.byKey(const ValueKey('row-90')));
     final offsetAtRow90 = tester
         .state<ScrollableState>(scrollable)
@@ -56,226 +55,234 @@ void main() {
       tester.state<ScrollableState>(scrollable).position.pixels,
       lessThan(offsetAtRow90),
     );
-
     await _scrollToFinder(tester, find.byKey(const ValueKey('row-0')));
     expect(find.byKey(const ValueKey('row-0')), findsOneWidget);
   });
 
-  testWidgets('prefills the production server URL without a credential', (
+  testWidgets('asks only for the SDK Key and exposes one primary action', (
     tester,
   ) async {
     runtime.hasSavedCredentials = false;
-    await _pumpHomePage(tester, _app(runtime));
+    await _pumpHomePage(tester, runtime);
 
-    final serverUrl = tester.widget<TextField>(
-      find.byKey(const ValueKey('server-url')),
-    );
-    final credential = tester.widget<TextField>(
-      find.byKey(const ValueKey('sdk-credential')),
-    );
-
-    expect(
-      serverUrl.controller!.text,
-      'https://ayni-sdk-monorepo-server.vercel.app/',
-    );
-    expect(credential.controller!.text, isEmpty);
+    expect(find.byKey(const ValueKey('sdk-credential')), findsOneWidget);
+    expect(find.byKey(const ValueKey('server-url')), findsNothing);
+    expect(find.byKey(const ValueKey('condition-selector')), findsNothing);
+    expect(find.byKey(const ValueKey('scenario-selector')), findsNothing);
+    expect(find.byKey(const ValueKey('prepare-resources')), findsNothing);
+    expect(find.byKey(const ValueKey('sync-sdk')), findsNothing);
+    expect(_button(tester, 'run-validation').onPressed, isNull);
+    expect(find.byKey(const ValueKey('validation-events')), findsOneWidget);
   });
 
-  testWidgets('disables execution until verified resources are prepared', (
+  testWidgets(
+    'one action prepares both conditions, runs phases, and syncs SDK',
+    (tester) async {
+      runtime.hasSavedCredentials = false;
+      await _pumpHomePage(tester, runtime);
+      await tester.enterText(
+        find.byKey(const ValueKey('sdk-credential')),
+        'private-test-credential',
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('validation-error-card')), findsNothing);
+      expect(find.textContaining('3 fases automáticas'), findsOneWidget);
+      expect(_button(tester, 'run-validation').onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('run-validation')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(
+        find.textContaining('salidas tipadas decodificadas'),
+        findsOneWidget,
+      );
+      expect(runtime.prepareCalls, 0);
+      await tester.tap(find.text('Ejecutar sin trazas'));
+      await tester.pumpAndSettle();
+
+      expect(runtime.savedCredentials, 1);
+      expect(runtime.preparedConditions, [
+        ValidationCondition.control,
+        ValidationCondition.treatment,
+      ]);
+      expect(runtime.syncVerificationCalls, [true, false]);
+      expect(runtime.runCalls, [
+        'control:PERF-02-WARMUP:false',
+        'control:PERF-02:false',
+        'control:PERF-04:false',
+        'treatment:PERF-02-WARMUP:false',
+        'treatment:PERF-02:false',
+        'treatment:PERF-04:false',
+      ]);
+      expect(find.textContaining('100%'), findsOneWidget);
+      await _scrollToFinder(
+        tester,
+        find.byKey(const ValueKey('validation-events')),
+      );
+      expect(find.textContaining('Validación terminada'), findsWidgets);
+      expect(
+        find.textContaining('confirma la recepción de trazas'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('requires trace authorization and can run without it', (
     tester,
   ) async {
-    await _pumpHomePage(tester, _app(runtime));
+    runtime.hasSavedCredentials = false;
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(runtime.prepareCalls, 0);
 
-    expect(find.textContaining('ZIP'), findsOneWidget);
-    await _scrollToFinder(
-      tester,
-      find.text(ValidationPreferences.tracePermissionDisclosure),
+    await tester.tap(find.text('Autorizar y ejecutar'));
+    await tester.pumpAndSettle();
+
+    expect(runtime.tracePermissionChanges, [true]);
+    expect(
+      runtime.runCalls
+          .where((call) => call.startsWith('treatment:'))
+          .every((call) => call.endsWith(':true')),
+      isTrue,
     );
     expect(
-      find.text(ValidationPreferences.tracePermissionDisclosure),
+      runtime.runCalls
+          .where((call) => call.startsWith('control:'))
+          .every((call) => call.endsWith(':false')),
+      isTrue,
+    );
+  });
+
+  testWidgets('updates the one action to cancel a running validation', (
+    tester,
+  ) async {
+    runtime.traceAllowed = true;
+    runtime.holdRun = true;
+    await _pumpHomePage(tester, runtime);
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(runtime.runStarted.isCompleted, isTrue);
+    expect(find.text('Cancelar validación'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('validation-progress-text')),
       findsOneWidget,
     );
-    await _scrollToKey(tester, 'run-batch');
-    expect(_button(tester, 'run-batch').onPressed, isNull);
 
-    await _scrollToKey(tester, 'prepare-resources');
-    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
-    await tester.pumpAndSettle();
-    expect(runtime.prepareCalls, 1);
-    await _scrollToKey(tester, 'run-batch');
-    expect(_button(tester, 'run-batch').onPressed, isNotNull);
-  });
-
-  testWidgets('disables old resources when re-preparation fails', (
-    tester,
-  ) async {
-    await _pumpHomePage(tester, _app(runtime));
-    await _scrollToKey(tester, 'prepare-resources');
-    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
-    await tester.pumpAndSettle();
-    await _scrollToKey(tester, 'run-batch');
-    expect(_button(tester, 'run-batch').onPressed, isNotNull);
-
-    runtime.failPreparation = true;
-    await _scrollToKey(tester, 'prepare-resources');
-    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
-    await tester.pumpAndSettle();
-    await _scrollToKey(tester, 'run-batch');
-    expect(_button(tester, 'run-batch').onPressed, isNull);
-  });
-
-  testWidgets('preparation never performs SDK sync; sync stays explicit', (
-    tester,
-  ) async {
-    await _pumpHomePage(tester, _app(runtime));
-    await _selectTreatment(tester);
-    await _scrollToKey(tester, 'prepare-resources');
-    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
-    await tester.pumpAndSettle();
-
-    expect(runtime.syncCalls, 0);
-    await _scrollToKey(tester, 'run-batch');
-    expect(_button(tester, 'run-batch').onPressed, isNull);
-    expect(_button(tester, 'sync-sdk').onPressed, isNotNull);
-    await tester.tap(find.byKey(const ValueKey('sync-sdk')));
-    await tester.pumpAndSettle();
-    expect(runtime.syncCalls, 1);
-    expect(_button(tester, 'run-batch').onPressed, isNotNull);
-    await _scrollToFinder(tester, find.textContaining('dashboard'));
-    expect(find.textContaining('dashboard'), findsOneWidget);
-  });
-
-  testWidgets('shows run progress and cancellation', (tester) async {
-    await _pumpHomePage(tester, _app(runtime));
-    await _scrollToKey(tester, 'prepare-resources');
-    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
-    await tester.pumpAndSettle();
-    await _scrollToKey(tester, 'run-batch');
-    await tester.tap(find.byKey(const ValueKey('run-batch')));
-    await tester.pump();
-    expect(runtime.runStarted.isCompleted, isTrue);
-
-    expect(find.text('Ejecutando lote…'), findsOneWidget);
-    expect(_button(tester, 'cancel-batch').onPressed, isNotNull);
-    await tester.tap(find.byKey(const ValueKey('cancel-batch')));
-    await tester.pump();
-    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(runtime.cancelCalls, 1);
-    await _scrollToFinder(tester, find.textContaining('cancelad'));
-    expect(find.textContaining('cancelad'), findsOneWidget);
-  });
-
-  testWidgets('exports local JSONL and revocation clears queued traces', (
-    tester,
-  ) async {
-    runtime.jsonlPresent = true;
-    runtime.traceAllowed = true;
-    await _pumpHomePage(tester, _app(runtime));
-
-    await _scrollToKey(tester, 'export-jsonl');
-    await tester.tap(find.byKey(const ValueKey('export-jsonl')));
-    await tester.pumpAndSettle();
-    expect(runtime.exportCalls, 1);
-
     await _scrollToFinder(
       tester,
-      find.byKey(const ValueKey('trace-permission-switch')),
+      find.byKey(const ValueKey('validation-events')),
     );
-    await tester.tap(find.byKey(const ValueKey('trace-permission-switch')));
-    await tester.pumpAndSettle();
-    expect(runtime.tracePermissionChanges, [false]);
+    expect(find.textContaining('Validación cancelada'), findsOneWidget);
   });
 
-  testWidgets('rolls back trace permission when enabling it fails', (
+  testWidgets('trace permission can be revoked from the options menu', (
     tester,
   ) async {
-    runtime.failTracePermission = true;
-    await _pumpHomePage(tester, _app(runtime));
-    await _scrollToKey(tester, 'trace-permission-switch');
-
-    await tester.tap(find.byKey(const ValueKey('trace-permission-switch')));
+    runtime.traceAllowed = true;
+    await _pumpHomePage(tester, runtime);
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Revocar permiso de trazas'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Revocar permiso'));
     await tester.pumpAndSettle();
 
-    final switchTile = tester.widget<SwitchListTile>(
-      find.byKey(const ValueKey('trace-permission-switch')),
-    );
-    expect(switchTile.value, isFalse);
+    expect(runtime.tracePermissionChanges, [false]);
     expect(runtime.traceAllowed, isFalse);
-    expect(runtime.tracePermissionChanges, [true]);
+  });
+
+  testWidgets('fits common phone and tablet widths without overflow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final width in [320.0, 375.0, 414.0, 768.0]) {
+      tester.view.physicalSize = Size(width, 780);
+      await _pumpHomePage(tester, runtime);
+      await tester.ensureVisible(find.byKey(const ValueKey('run-validation')));
+
+      expect(
+        tester.getSize(find.byKey(const ValueKey('run-validation'))).width,
+        lessThan(width),
+      );
+      expect(tester.takeException(), isNull);
+    }
   });
 }
 
-MaterialApp _app(_FakeRuntime runtime) =>
-    MaterialApp(home: ValidationHomePage(runtime: runtime));
-
-Future<void> _pumpHomePage(WidgetTester tester, Widget app) async {
-  await tester.pumpWidget(app);
+Future<void> _pumpHomePage(WidgetTester tester, _FakeRuntime runtime) async {
+  await tester.pumpWidget(
+    MaterialApp(home: ValidationHomePage(runtime: runtime)),
+  );
   for (var frame = 0; frame < 100; frame++) {
-    if (find.text('Perfil de recursos').evaluate().isNotEmpty) {
-      return;
-    }
+    if (find.text('Conexión SDK').evaluate().isNotEmpty) return;
     await tester.pump(const Duration(milliseconds: 16));
   }
   fail('La pantalla de validación no terminó de iniciar.');
 }
 
-Future<void> _scrollToKey(WidgetTester tester, String key) async {
-  await _scrollToFinder(tester, find.byKey(ValueKey(key)));
-}
+ButtonStyleButton _button(WidgetTester tester, String key) =>
+    tester.widget<ButtonStyleButton>(find.byKey(ValueKey(key)));
 
 Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
+  const scrollKey = ValueKey('validation-home-scroll');
   final scrollable = find
-      .descendant(
-        of: find.byKey(const ValueKey('validation-home-scroll')),
-        matching: find.byType(Scrollable),
-      )
+      .descendant(of: find.byKey(scrollKey), matching: find.byType(Scrollable))
       .first;
-
+  var delta = 300.0;
   if (finder.evaluate().isEmpty) {
     final position = tester.state<ScrollableState>(scrollable).position;
     position.jumpTo(position.minScrollExtent);
     await tester.pump();
+  } else {
+    final viewport = tester.getRect(find.byKey(scrollKey));
+    final target = tester.getRect(finder.first);
+    if (target.bottom < viewport.top) delta = -300;
   }
   if (finder.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(finder, 300, scrollable: scrollable);
+    await tester.scrollUntilVisible(finder, delta, scrollable: scrollable);
+  } else {
+    await tester.scrollUntilVisible(finder, delta, scrollable: scrollable);
   }
   await tester.ensureVisible(finder.first);
   await tester.pump();
-}
-
-ButtonStyleButton _button(WidgetTester tester, String key) =>
-    tester.widget<ButtonStyleButton>(find.byKey(ValueKey(key)));
-
-Future<void> _selectTreatment(WidgetTester tester) async {
-  await _scrollToKey(tester, 'condition-selector');
-  await tester.tap(find.byKey(const ValueKey('condition-selector')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('ayni_sdk').last);
-  await tester.pumpAndSettle();
 }
 
 class _FakeRuntime implements ValidationHomeRuntime {
   _FakeRuntime(this.planSource);
 
   final String planSource;
-  int prepareCalls = 0;
-  int syncCalls = 0;
-  int cancelCalls = 0;
-  int exportCalls = 0;
   bool failPreparation = false;
-  bool failTracePermission = false;
   bool hasSavedCredentials = true;
   bool traceAllowed = false;
-  bool jsonlPresent = false;
+  bool holdRun = false;
+  int prepareCalls = 0;
+  int savedCredentials = 0;
+  int cancelCalls = 0;
+  final preparedConditions = <ValidationCondition>[];
+  final syncVerificationCalls = <bool>[];
+  final runCalls = <String>[];
   final tracePermissionChanges = <bool>[];
-  final Completer<void> runStarted = Completer<void>();
+  final runStarted = Completer<void>();
   Completer<BatchRunSummary>? activeRun;
 
-  @override
-  Future<ExperimentPlan> loadPlan() async {
-    final plan = (jsonDecode(planSource) as Map).cast<String, Object?>();
-    final profiles = (plan['resourceProfiles'] as List).cast<Map>();
+  ExperimentPlan get plan {
+    final source = (jsonDecode(planSource) as Map).cast<String, Object?>();
+    final profiles = (source['resourceProfiles'] as List).cast<Map>();
     final profile = profiles.single;
     profile['datasetVersionId'] = 'dataset-version-1';
     profile['datasetSha256'] = 'a' * 64;
@@ -285,8 +292,11 @@ class _FakeRuntime implements ValidationHomeRuntime {
     profile['treatmentModelSha256'] = 'b' * 64;
     profile['treatmentWorkflowId'] = 'workflow-1';
     profile['treatmentWorkflowVersionId'] = 'workflow-version-1';
-    return ExperimentPlan.fromJson(plan);
+    return ExperimentPlan.fromJson(source);
   }
+
+  @override
+  Future<ExperimentPlan> loadPlan() async => plan;
 
   @override
   Future<ValidationSdkCredentials?> readCredentials() async =>
@@ -301,10 +311,12 @@ class _FakeRuntime implements ValidationHomeRuntime {
   Future<bool> readTracePermission() async => traceAllowed;
 
   @override
-  Future<bool> hasJsonl() async => jsonlPresent;
+  Future<bool> hasJsonl() async => false;
 
   @override
-  Future<void> saveCredentials(ValidationSdkCredentials credentials) async {}
+  Future<void> saveCredentials(ValidationSdkCredentials credentials) async {
+    savedCredentials++;
+  }
 
   @override
   Future<ValidationPreparationState> prepareResources({
@@ -314,21 +326,22 @@ class _FakeRuntime implements ValidationHomeRuntime {
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   }) async {
     prepareCalls++;
-    if (failPreparation) throw StateError('re-preparation failed');
+    preparedConditions.add(condition);
+    if (failPreparation) throw StateError('preparation failed');
     onDownloadProgress?.call(10, 10);
     return ValidationPreparationState(
       datasetVersion: '1.0.0',
       datasetSha256: 'a' * 64,
       caseCount: 2,
-      resourcesSummary: condition == ValidationCondition.control
-          ? 'Modelo directo verificado'
-          : 'Workflow definido; sincronización explícita pendiente',
+      resourcesSummary: '${condition.name} preparado',
     );
   }
 
   @override
-  Future<ValidationSyncState> synchronizeSdk() async {
-    syncCalls++;
+  Future<ValidationSyncState> synchronizeSdk({
+    bool verifyWorkflow = true,
+  }) async {
+    syncVerificationCalls.add(verifyWorkflow);
     return const ValidationSyncState(
       status: 'upToDate',
       ready: true,
@@ -347,9 +360,25 @@ class _FakeRuntime implements ValidationHomeRuntime {
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
   }) {
+    runCalls.add('${condition.name}:$scenarioId:$captureTrace');
     if (!runStarted.isCompleted) runStarted.complete();
-    activeRun = Completer<BatchRunSummary>();
-    return activeRun!.future;
+    final scenario = plan.scenarios.singleWhere(
+      (item) => item.id == scenarioId,
+    );
+    if (holdRun) {
+      activeRun = Completer<BatchRunSummary>();
+      return activeRun!.future;
+    }
+    return Future.value(
+      BatchRunSummary(
+        attempted: scenario.repetitions,
+        successes: scenario.repetitions,
+        errors: 0,
+        cancelled: 0,
+        completedBlockSizes: scenario.blockSizes,
+        stoppedByCancellation: false,
+      ),
+    );
   }
 
   @override
@@ -370,12 +399,11 @@ class _FakeRuntime implements ValidationHomeRuntime {
   @override
   Future<void> setTracePermission(bool allowed) async {
     tracePermissionChanges.add(allowed);
-    if (failTracePermission) throw StateError('trace purge failed');
     traceAllowed = allowed;
   }
 
   @override
-  Future<void> exportJsonl() async => exportCalls++;
+  Future<void> exportJsonl() async {}
 
   @override
   Future<void> dispose() async {}
