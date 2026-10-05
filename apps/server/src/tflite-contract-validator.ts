@@ -1,6 +1,41 @@
 import type { ModelVersionContract } from "@ayni/db/schema/index";
 
 type Tensor = { shape: number[]; type: number };
+type DetectionTensorIndices = { boxes: number; classes: number; scores: number; count: number };
+
+export function isDetectionTensorRolesCompatible(
+  outputShapes: readonly number[][],
+  tensorIndices: DetectionTensorIndices,
+): boolean {
+  const indexes = Object.values(tensorIndices);
+  if (
+    outputShapes.length !== 4 ||
+    indexes.some((index) => !Number.isInteger(index) || index < 0 || index > 3) ||
+    new Set(indexes).size !== 4
+  ) {
+    return false;
+  }
+
+  const boxes = outputShapes[tensorIndices.boxes];
+  const classes = outputShapes[tensorIndices.classes];
+  const scores = outputShapes[tensorIndices.scores];
+  const count = outputShapes[tensorIndices.count];
+  return (
+    boxes?.length === 3 &&
+    boxes[0] === 1 &&
+    boxes[1] !== undefined &&
+    boxes[1] > 0 &&
+    boxes[2] === 4 &&
+    classes?.length === 2 &&
+    classes[0] === 1 &&
+    classes[1] === boxes[1] &&
+    scores?.length === 2 &&
+    scores[0] === 1 &&
+    scores[1] === boxes[1] &&
+    ((count?.length === 1 && count[0] === 1) ||
+      (count?.length === 2 && count[0] === 1 && count[1] === 1))
+  );
+}
 
 class FlatbufferReader {
   private readonly view: DataView;
@@ -125,7 +160,14 @@ export function isTfliteContractCompatible(
       );
     }
 
-    // ponytail: four-output SSD signature only; add formats when a supported model requires them.
+    if (contract.output.tensorIndices) {
+      return isDetectionTensorRolesCompatible(
+        outputs.map((tensor) => tensor.shape),
+        contract.output.tensorIndices,
+      );
+    }
+
+    // ponytail: legacy four-output SSD signature only; add formats when a supported model requires them.
     const boxes = outputs.find(
       (tensor) =>
         tensor.shape.length === 3 &&

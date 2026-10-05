@@ -51,5 +51,10 @@ export type ModelVersionContract = {
   };
   output:
     | { type: "classification"; labels: string[] }
-    | { type: "detection"; labels: string[]; scoreThreshold: number };
+    | {
+        type: "detection";
+        labels: string[];
+        scoreThreshold: number;
+        tensorIndices?: { boxes: number; classes: number; scores: number; count: number };
+      };
 };

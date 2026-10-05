@@ -497,6 +497,93 @@ describe("GET /applications/:applicationId/models/:modelId/versions", () => {
 });
 
 describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVersionId/contract", () => {
+  it("accepts legacy detection contracts without explicit tensor roles", async () => {
+    const { app } = makeApp();
+    const contract = {
+      input: {
+        type: "image",
+        width: 300,
+        height: 300,
+        channels: 3,
+        normalization: "minus_one_to_one",
+      },
+      output: {
+        type: "detection",
+        labels: ["leaf"],
+        scoreThreshold: 0.5,
+      },
+    };
+
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(contract),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ contract });
+  });
+
+  it("accepts a detection contract with roles in a non-default output order", async () => {
+    const { app } = makeApp();
+    const contract = {
+      input: {
+        type: "image",
+        width: 300,
+        height: 300,
+        channels: 3,
+        normalization: "minus_one_to_one",
+      },
+      output: {
+        type: "detection",
+        labels: ["leaf"],
+        scoreThreshold: 0.5,
+        tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
+      },
+    };
+
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(contract),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ contract });
+  });
+
+  it.each([
+    { boxes: 0, classes: 1, scores: 2 },
+    { boxes: 0, classes: 1, scores: 2, count: 3, metadata: 4 },
+    { boxes: 0.5, classes: 1, scores: 2, count: 3 },
+    { boxes: 0, classes: 0, scores: 2, count: 3 },
+    { boxes: 0, classes: 1, scores: 2, count: 4 },
+  ])("rejects invalid tensor role maps: %o", async (tensorIndices) => {
+    const { app } = makeApp();
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        input: {
+          type: "image",
+          width: 300,
+          height: 300,
+          channels: 3,
+          normalization: "minus_one_to_one",
+        },
+        output: {
+          type: "detection",
+          labels: ["leaf"],
+          scoreThreshold: 0.5,
+          tensorIndices,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "incompatibleContract" });
+  });
+
   it("accepts ImageNet classification contracts with 1001 labels", async () => {
     const { app } = makeApp();
     const contract = {

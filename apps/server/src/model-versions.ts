@@ -23,6 +23,16 @@ const versionFieldSchema = z
     message: INVALID_VERSION_MESSAGE,
   });
 
+const tensorIndicesSchema = z
+  .object({
+    boxes: z.number().int().min(0).max(3),
+    classes: z.number().int().min(0).max(3),
+    scores: z.number().int().min(0).max(3),
+    count: z.number().int().min(0).max(3),
+  })
+  .strict()
+  .refine((indices) => new Set(Object.values(indices)).size === 4);
+
 const contractSchema = z
   .object({
     input: z
@@ -46,6 +56,7 @@ const contractSchema = z
           type: z.literal("detection"),
           labels: z.array(z.string().trim().min(1)).min(1).max(1001),
           scoreThreshold: z.number().min(0).max(1),
+          tensorIndices: tensorIndicesSchema.optional(),
         })
         .strict(),
     ]),

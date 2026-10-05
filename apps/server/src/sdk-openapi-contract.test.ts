@@ -77,7 +77,12 @@ const modelManifest: SdkModelVersionManifest = {
   downloadUrlExpiresAt: "2026-09-21T01:00:00.000Z",
   contract: {
     input: { type: "image", width: 224, height: 224, channels: 3, normalization: "zero_to_one" },
-    output: { type: "detection", labels: ["hoja"], scoreThreshold: 0.5 },
+    output: {
+      type: "detection",
+      labels: ["hoja"],
+      scoreThreshold: 0.5,
+      tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
+    },
   },
 };
 
