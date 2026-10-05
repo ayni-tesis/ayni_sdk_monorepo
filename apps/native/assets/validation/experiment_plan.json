@@ -9,23 +9,23 @@
       "datasetPartition": "test",
       "datasetSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "controlModelVersionId": "to-configure",
-      "controlModelSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "controlModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
       "treatmentWorkflowId": "to-configure",
       "treatmentWorkflowVersionId": "to-configure",
       "treatmentWorkflowVersion": "1.0.0",
       "treatmentModelVersionId": "to-configure",
-      "treatmentModelSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "treatmentModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
       "inputContract": {
         "width": 224,
         "height": 224,
         "channels": 3,
-        "normalization": "zero_to_one"
+        "normalization": "none"
       },
       "outputContract": [
         {
           "name": "classification",
           "resultType": "classification",
-          "labels": ["sana", "roya", "minador", "mancha-de-hierro", "araniata-roja"]
+          "labels": ["cercospora", "minador", "phoma", "roya", "sana"]
         }
       ]
     }
