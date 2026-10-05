@@ -371,6 +371,43 @@ void main() {
     );
   }
 
+  Future<WorkflowResult> runDetectionWithTensors({
+    required List<({List<int> shape, Float32List values})> outputs,
+    required Map<String, int> tensorIndices,
+  }) async {
+    final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+    final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'model.tflite',
+    );
+    ((model['outputs'] as Map)['result'] as Map)
+      ..['type'] = 'detection'
+      ..['labels'] = ['mancha', 'roya']
+      ..['scoreThreshold'] = 0.5
+      ..['tensorIndices'] = tensorIndices;
+    (definition['nodes'] as List).cast<Map>().firstWhere(
+      (node) => node['type'] == 'output',
+    )['resultType'] = 'detection';
+    await installWorkflowFiles(
+      storageDirectory: storageDirectory,
+      inventoryJson: _inventory(),
+      workflowVersionId: 'workflow-version-1.0.0',
+      definitionJson: jsonEncode(definition),
+    );
+    await installModelArtifact();
+    final client = createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (error: null, outputs: outputs),
+    );
+    return client.run('workflow-1', pngBytes());
+  }
+
   group('WorkflowResult', () {
     test('reports the executed workflow context', () {
       const result = WorkflowResult(
@@ -1684,6 +1721,211 @@ void main() {
     expect(detection.detections.single.yMin, closeTo(0.1, 1e-6));
     expect(detection.detections.single.xMax, closeTo(0.5, 1e-6));
     expect(detection.detections.single.yMax, closeTo(0.4, 1e-6));
+  });
+
+  test(
+    'decodes mapped detection outputs in the declared tensor order',
+    () async {
+      final result = await runDetectionWithTensors(
+        tensorIndices: const {
+          'boxes': 0,
+          'classes': 2,
+          'scores': 1,
+          'count': 3,
+        },
+        outputs: [
+          (
+            shape: [1, 2, 4],
+            values: Float32List.fromList([
+              0.1,
+              0.2,
+              0.4,
+              0.5,
+              0.2,
+              0.3,
+              0.6,
+              0.7,
+            ]),
+          ),
+          (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+          (shape: [1, 2], values: Float32List.fromList([0, 1])),
+          (shape: [1, 1], values: Float32List.fromList([2])),
+        ],
+      );
+
+      final detections =
+          (result.outputs['Resultado']! as DetectionResult).detections;
+      expect(detections.map((detection) => detection.label), [
+        'mancha',
+        'roya',
+      ]);
+    },
+  );
+
+  test(
+    'decodes mapped detection outputs when roles are in a different order',
+    () async {
+      final result = await runDetectionWithTensors(
+        tensorIndices: const {
+          'boxes': 2,
+          'classes': 0,
+          'scores': 3,
+          'count': 1,
+        },
+        outputs: [
+          (shape: [1, 2], values: Float32List.fromList([0, 1])),
+          (shape: [1], values: Float32List.fromList([2])),
+          (
+            shape: [1, 2, 4],
+            values: Float32List.fromList([
+              0.1,
+              0.2,
+              0.4,
+              0.5,
+              0.2,
+              0.3,
+              0.6,
+              0.7,
+            ]),
+          ),
+          (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+        ],
+      );
+
+      final detections =
+          (result.outputs['Resultado']! as DetectionResult).detections;
+      expect(detections.map((detection) => detection.label), [
+        'mancha',
+        'roya',
+      ]);
+    },
+  );
+
+  test('uses the count tensor to truncate detection vectors', () async {
+    final result = await runDetectionWithTensors(
+      tensorIndices: const {'boxes': 2, 'classes': 0, 'scores': 3, 'count': 1},
+      outputs: [
+        (shape: [1, 2], values: Float32List.fromList([0, 99])),
+        (shape: [1], values: Float32List.fromList([1])),
+        (
+          shape: [1, 2, 4],
+          values: Float32List.fromList([
+            0.1,
+            0.2,
+            0.4,
+            0.5,
+            0.2,
+            0.3,
+            0.1,
+            0.7,
+          ]),
+        ),
+        (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+      ],
+    );
+
+    final detections =
+        (result.outputs['Resultado']! as DetectionResult).detections;
+    expect(detections, hasLength(1));
+    expect(detections.single.label, 'mancha');
+  });
+
+  test('returns no detections when the count tensor is zero', () async {
+    final result = await runDetectionWithTensors(
+      tensorIndices: const {'boxes': 2, 'classes': 0, 'scores': 3, 'count': 1},
+      outputs: [
+        (shape: [1, 2], values: Float32List.fromList([0, 1])),
+        (shape: [1], values: Float32List.fromList([0])),
+        (
+          shape: [1, 2, 4],
+          values: Float32List.fromList([
+            0.1,
+            0.2,
+            0.4,
+            0.5,
+            0.2,
+            0.3,
+            0.6,
+            0.7,
+          ]),
+        ),
+        (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+      ],
+    );
+
+    expect(
+      (result.outputs['Resultado']! as DetectionResult).detections,
+      isEmpty,
+    );
+  });
+
+  test('rejects malformed mapped box, vector, and count shapes', () async {
+    final malformedOutputs = [
+      <({List<int> shape, Float32List values})>[
+        (
+          shape: [1, 2, 3],
+          values: Float32List.fromList([0.1, 0.2, 0.4, 0.5, 0.2, 0.3]),
+        ),
+        (shape: [1], values: Float32List.fromList([2])),
+        (shape: [1, 2], values: Float32List.fromList([0, 1])),
+        (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+      ],
+      <({List<int> shape, Float32List values})>[
+        (
+          shape: [1, 2, 4],
+          values: Float32List.fromList([
+            0.1,
+            0.2,
+            0.4,
+            0.5,
+            0.2,
+            0.3,
+            0.6,
+            0.7,
+          ]),
+        ),
+        (shape: [1], values: Float32List.fromList([2])),
+        (shape: [1, 1], values: Float32List.fromList([0])),
+        (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+      ],
+      <({List<int> shape, Float32List values})>[
+        (
+          shape: [1, 2, 4],
+          values: Float32List.fromList([
+            0.1,
+            0.2,
+            0.4,
+            0.5,
+            0.2,
+            0.3,
+            0.6,
+            0.7,
+          ]),
+        ),
+        (shape: [1, 2], values: Float32List.fromList([2, 2])),
+        (shape: [1, 2], values: Float32List.fromList([0, 1])),
+        (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+      ],
+    ];
+
+    for (final outputs in malformedOutputs) {
+      await expectLater(
+        runDetectionWithTensors(
+          tensorIndices: const {
+            'boxes': 2,
+            'classes': 0,
+            'scores': 3,
+            'count': 1,
+          },
+          outputs: outputs,
+        ),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.modelOutputInvalid,
+          nodeId: 'model-1',
+          modelVersionId: 'model-version-1',
+        ),
+      );
+    }
   });
 
   test('reports invalid detections when no valid box remains', () async {

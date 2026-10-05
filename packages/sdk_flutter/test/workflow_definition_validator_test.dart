@@ -34,6 +34,7 @@ void main() {
     String resultType = 'classification',
     List<String> labels = const ['perro', 'gato'],
     Object? scoreThreshold,
+    Object? tensorIndices,
   }) => {
     'id': id,
     'type': 'model.tflite',
@@ -54,6 +55,7 @@ void main() {
         'type': resultType,
         'labels': labels,
         if (scoreThreshold != null) 'scoreThreshold': scoreThreshold,
+        if (tensorIndices != null) 'tensorIndices': tensorIndices,
       },
     },
   };
@@ -218,6 +220,58 @@ void main() {
 
     expect(validate(detection), WorkflowValidationStatus.valid);
   });
+
+  test('accepts explicit detection tensor indexes in a non-default order', () {
+    expect(
+      validate(
+        definition(
+          nodes: [
+            model(
+              resultType: 'detection',
+              scoreThreshold: 0.5,
+              tensorIndices: const {
+                'boxes': 2,
+                'classes': 0,
+                'scores': 3,
+                'count': 1,
+              },
+            ),
+          ],
+        ),
+      ),
+      WorkflowValidationStatus.valid,
+    );
+  });
+
+  test(
+    'rejects missing, unknown, duplicate, fractional, and out-of-range tensor indexes',
+    () {
+      const invalidMaps = [
+        {'boxes': 0, 'classes': 1, 'scores': 2},
+        {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3, 'extra': 4},
+        {'boxes': 0, 'classes': 0, 'scores': 2, 'count': 3},
+        {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3.5},
+        {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 4},
+      ];
+
+      for (final tensorIndices in invalidMaps) {
+        expect(
+          validate(
+            definition(
+              nodes: [
+                model(
+                  resultType: 'detection',
+                  scoreThreshold: 0.5,
+                  tensorIndices: tensorIndices,
+                ),
+              ],
+            ),
+          ),
+          WorkflowValidationStatus.invalidSchema,
+        );
+      }
+    },
+  );
 
   test('rejects definitions that are not workflow objects', () {
     expect(validate(null), WorkflowValidationStatus.invalidSchema);

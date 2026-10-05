@@ -322,7 +322,8 @@ class WorkflowDefinitionValidator {
   /// The model contract's output (mirrored by `addModelNode` from
   /// `packages/db/src/schema/model-version.ts`): classification results hold
   /// exactly their type and labels, while detection results may add a numeric
-  /// `scoreThreshold`. Anything else is a damaged contract.
+  /// `scoreThreshold` and an explicit map for the four output tensors.
+  /// Anything else is a damaged contract.
   bool _isModelResult(String resultType, Map result) =>
       resultType == 'detection'
       ? _hasExactFields(result, const {'type', 'labels'}) ||
@@ -331,8 +332,36 @@ class WorkflowDefinitionValidator {
                   'labels',
                   'scoreThreshold',
                 }) &&
-                result['scoreThreshold'] is num)
+                result['scoreThreshold'] is num) ||
+            (_hasExactFields(result, const {
+                  'type',
+                  'labels',
+                  'scoreThreshold',
+                  'tensorIndices',
+                }) &&
+                result['scoreThreshold'] is num &&
+                _isDetectionTensorIndices(result['tensorIndices']))
       : _hasExactFields(result, const {'type', 'labels'});
+
+  bool _isDetectionTensorIndices(Object? value) {
+    if (value is! Map ||
+        !_hasExactFields(value, const {
+          'boxes',
+          'classes',
+          'scores',
+          'count',
+        })) {
+      return false;
+    }
+    final indexes = [
+      value['boxes'],
+      value['classes'],
+      value['scores'],
+      value['count'],
+    ];
+    return indexes.every((index) => index is int && index >= 0 && index < 4) &&
+        indexes.toSet().length == 4;
+  }
 
   WorkflowValidationStatus? _readCondition(_Node node, Map item) {
     final threshold = item['threshold'];

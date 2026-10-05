@@ -879,53 +879,137 @@ class WorkflowExecutor {
           nodeId: nodeId,
         );
       }
-      final boxIndex = tensors.indexWhere(
-        (t) => t.shape.length == 3 && t.shape.first == 1 && t.shape.last == 4,
-      );
-      if (tensors.length != 4 || boxIndex < 0) {
-        throw WorkflowError(
-          WorkflowErrorCategory.modelOutputInvalid,
-          nodeId: nodeId,
-        );
-      }
-      final boxes = tensors[boxIndex].values;
-      final vectors = <Float32List>[];
-      for (var i = 0; i < tensors.length; i++) {
-        if (i != boxIndex &&
-            tensors[i].shape.length == 2 &&
-            tensors[i].shape.first == 1 &&
-            tensors[i].shape.last == boxes.length ~/ 4) {
-          vectors.add(tensors[i].values);
+      late final Float32List boxes, scores, classes;
+      late final int detectionCount;
+      if (result.containsKey('tensorIndices')) {
+        final indices = result['tensorIndices'];
+        if (tensors.length != 4 || indices is! Map) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
         }
-      }
-      if (vectors.length < 2) {
-        throw WorkflowError(
-          WorkflowErrorCategory.modelOutputInvalid,
-          nodeId: nodeId,
+        final boxIndex = indices['boxes'],
+            classIndex = indices['classes'],
+            scoreIndex = indices['scores'],
+            countIndex = indices['count'];
+        final mappedIndexes = [boxIndex, classIndex, scoreIndex, countIndex];
+        if (!mappedIndexes.every(
+              (index) => index is int && index >= 0 && index < 4,
+            ) ||
+            mappedIndexes.toSet().length != 4) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        final boxTensor = tensors[boxIndex as int],
+            classTensor = tensors[classIndex as int],
+            scoreTensor = tensors[scoreIndex as int],
+            countTensor = tensors[countIndex as int];
+        final boxShape = boxTensor.shape,
+            classShape = classTensor.shape,
+            scoreShape = scoreTensor.shape,
+            countShape = countTensor.shape;
+        if (boxShape.length != 3 ||
+            boxShape[0] != 1 ||
+            boxShape[1] < 1 ||
+            boxShape[2] != 4 ||
+            classShape.length != 2 ||
+            classShape[0] != 1 ||
+            classShape[1] != boxShape[1] ||
+            scoreShape.length != 2 ||
+            scoreShape[0] != 1 ||
+            scoreShape[1] != boxShape[1] ||
+            !(countShape.length == 1 && countShape[0] == 1 ||
+                countShape.length == 2 &&
+                    countShape[0] == 1 &&
+                    countShape[1] == 1) ||
+            boxTensor.values.length != boxShape[1] * 4 ||
+            classTensor.values.length != boxShape[1] ||
+            scoreTensor.values.length != boxShape[1] ||
+            countTensor.values.length != 1) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        boxes = boxTensor.values;
+        classes = classTensor.values;
+        scores = scoreTensor.values;
+        final countValue = countTensor.values.single;
+        if (!countValue.isFinite ||
+            countValue != countValue.roundToDouble() ||
+            countValue < 0 ||
+            countValue > boxShape[1]) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        detectionCount = countValue.toInt();
+        for (var i = 0; i < detectionCount; i++) {
+          if (!scores[i].isFinite ||
+              scores[i] < 0 ||
+              scores[i] > 1 ||
+              !classes[i].isFinite ||
+              classes[i] != classes[i].roundToDouble()) {
+            throw WorkflowError(
+              WorkflowErrorCategory.modelOutputInvalid,
+              nodeId: nodeId,
+            );
+          }
+        }
+      } else {
+        final boxIndex = tensors.indexWhere(
+          (t) => t.shape.length == 3 && t.shape.first == 1 && t.shape.last == 4,
         );
+        if (tensors.length != 4 || boxIndex < 0) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        boxes = tensors[boxIndex].values;
+        final vectors = <Float32List>[];
+        for (var i = 0; i < tensors.length; i++) {
+          if (i != boxIndex &&
+              tensors[i].shape.length == 2 &&
+              tensors[i].shape.first == 1 &&
+              tensors[i].shape.last == boxes.length ~/ 4) {
+            vectors.add(tensors[i].values);
+          }
+        }
+        if (vectors.length < 2) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        scores = vectors.firstWhere(
+          (v) => v.every((score) => score.isFinite && score >= 0 && score <= 1),
+          orElse: () => throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          ),
+        );
+        classes = vectors.firstWhere(
+          (v) =>
+              !identical(v, scores) &&
+              v.every(
+                (label) => label.isFinite && label == label.roundToDouble(),
+              ),
+          orElse: () => throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          ),
+        );
+        detectionCount = scores.length;
       }
-      final scores = vectors.firstWhere(
-        (v) => v.every((score) => score.isFinite && score >= 0 && score <= 1),
-        orElse: () => throw WorkflowError(
-          WorkflowErrorCategory.modelOutputInvalid,
-          nodeId: nodeId,
-        ),
-      );
-      final classes = vectors.firstWhere(
-        (v) =>
-            !identical(v, scores) &&
-            v.every(
-              (label) => label.isFinite && label == label.roundToDouble(),
-            ),
-        orElse: () => throw WorkflowError(
-          WorkflowErrorCategory.modelOutputInvalid,
-          nodeId: nodeId,
-        ),
-      );
       final threshold = (result['scoreThreshold'] as num).toDouble();
       final detections = <Detection>[];
       var invalidAboveThreshold = false;
-      for (var i = 0; i < scores.length; i++) {
+      for (var i = 0; i < detectionCount; i++) {
         final score = scores[i],
             labelIndex = classes[i].toInt(),
             y0 = boxes[i * 4],
