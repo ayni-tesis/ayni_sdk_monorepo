@@ -258,9 +258,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "403": errorResponse("No tienes permiso para subir datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),
       "409": errorResponse("La aplicación está archivada o la versión ya existe."),
-      "413": errorResponse(
-        "El ZIP supera el límite de 128 MiB.",
-      ),
+      "413": errorResponse("El ZIP supera el límite de 128 MiB."),
       "500": errorResponse("No se pudo verificar o guardar el ZIP."),
     },
   });
