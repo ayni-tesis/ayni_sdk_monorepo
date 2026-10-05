@@ -169,6 +169,7 @@ describe("US-132: deleting several nodes at once", () => {
     await waitFor(() =>
       expect(toastMock.error).toHaveBeenCalledWith("No pudimos eliminar los nodos."),
     );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(toastMock.success).not.toHaveBeenCalled();
     for (const nodeId of ["image", "model-a", "model-b", "condition"])
       expect(screen.getByTestId(`workflow-node-${nodeId}`)).toBeTruthy();
