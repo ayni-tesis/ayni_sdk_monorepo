@@ -10,8 +10,8 @@ void main() {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final android = File('android/app/build.gradle.kts').readAsStringSync();
 
-    expect(pubspec, matches(RegExp(r'^  ayni_sdk: 0\.2\.0$', multiLine: true)));
-    expect(validationSdkVersion, '0.2.0');
+    expect(pubspec, matches(RegExp(r'^  ayni_sdk: 0\.3\.0$', multiLine: true)));
+    expect(validationSdkVersion, '0.3.0');
     expect(android, contains('compileSdk = 36'));
     expect(android, contains('minSdk = 26'));
   });

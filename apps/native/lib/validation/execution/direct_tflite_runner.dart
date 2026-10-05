@@ -812,7 +812,7 @@ List<ValidationTensor> _runTfliteCpu(
   );
   Interpreter? interpreter;
   try {
-    // Like ayni_sdk 0.2.0, this creates the default CPU interpreter without delegates.
+    // Like ayni_sdk 0.3.0, this creates the default CPU interpreter without delegates.
     interpreter = Interpreter.fromFile(File(modelPath));
     final inputs = interpreter.getInputTensors();
     final acceptedShapes = [

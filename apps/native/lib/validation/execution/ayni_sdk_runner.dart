@@ -72,7 +72,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         const ValidationOutputNormalizer(),
     this.allowInsecureLoopback = false,
     this.appVersion = '1.0.0',
-    this.sdkVersion = '0.2.0',
+    this.sdkVersion = '0.3.0',
   }) : _profile = profile,
        _storageDirectory = storageDirectory,
        _sdk = sdk,
@@ -132,7 +132,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         )) {
       throw const ValidationExecutionException(
         'sdkDetectionTensorRolesUnsupported',
-        'ayni_sdk 0.2.0 no puede validar todavía los índices de tensores de detección del perfil.',
+        'La versión fijada del SDK no interpreta los índices de tensores de detección del perfil.',
       );
     }
     await _ensureInitialized();

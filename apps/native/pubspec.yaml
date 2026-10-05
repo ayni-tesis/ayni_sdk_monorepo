@@ -7,7 +7,7 @@ environment:
   sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
-  ayni_sdk: 0.2.0
+  ayni_sdk: 0.3.0
   archive: ^4.3.0
   crypto: ^3.0.7
   flutter:
