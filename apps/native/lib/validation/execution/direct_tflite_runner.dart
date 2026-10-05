@@ -71,7 +71,9 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         'Configura las versiones publicadas del perfil antes de preparar.',
       );
     }
-    final artifact = await _modelRepository.prepare(_profile);
+    final artifact = await _modelRepository.prepare(
+      _profile.modelRequirements.single,
+    );
     if (artifact.modelVersionId != _profile.controlModelVersionId ||
         artifact.sha256 != _profile.controlModelSha256 ||
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(artifact.sha256) ||

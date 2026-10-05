@@ -26,7 +26,7 @@ class VerifiedModelArtifact {
 }
 
 abstract interface class ValidationModelRepository {
-  Future<VerifiedModelArtifact> prepare(ValidationResourceProfile profile);
+  Future<VerifiedModelArtifact> prepare(ValidationModelRequirement requirement);
 
   Future<String> fetchSha256(String modelVersionId);
 }
@@ -77,15 +77,15 @@ class HttpValidationModelRepository implements ValidationModelRepository {
 
   @override
   Future<VerifiedModelArtifact> prepare(
-    ValidationResourceProfile profile,
+    ValidationModelRequirement requirement,
   ) async {
-    _validateProfile(profile);
-    final manifest = await _fetchManifest(profile.controlModelVersionId);
+    _validateRequirement(requirement);
+    final manifest = await _fetchManifest(requirement.modelVersionId);
     final contract = manifest.contract;
-    if (manifest.modelVersionId != profile.controlModelVersionId ||
-        manifest.sha256 != profile.controlModelSha256 ||
+    if (manifest.modelVersionId != requirement.modelVersionId ||
+        manifest.sha256 != requirement.sha256 ||
         contract == null ||
-        !modelContractMatchesValidationProfile(contract, profile)) {
+        !modelContractMatchesRequirement(contract, requirement)) {
       throw const ValidationExecutionException(
         'modelManifestMismatch',
         'El manifiesto del modelo no coincide con el perfil de validación.',
@@ -120,17 +120,14 @@ class HttpValidationModelRepository implements ValidationModelRepository {
         await _downloadArtifact(manifest, stageFile);
       } on ValidationExecutionException catch (error) {
         if (error.code != 'modelDownloadUrlExpired') rethrow;
-        final refreshed = await _fetchManifest(profile.controlModelVersionId);
+        final refreshed = await _fetchManifest(requirement.modelVersionId);
         final refreshedContract = refreshed.contract;
         if (refreshed.modelVersionId != manifest.modelVersionId ||
             refreshed.version != manifest.version ||
             refreshed.sha256 != manifest.sha256 ||
             refreshed.sizeBytes != manifest.sizeBytes ||
             refreshedContract == null ||
-            !modelContractMatchesValidationProfile(
-              refreshedContract,
-              profile,
-            )) {
+            !modelContractMatchesRequirement(refreshedContract, requirement)) {
           throw const ValidationExecutionException(
             'modelManifestMismatch',
             'El manifiesto renovado del modelo no coincide con el perfil.',
@@ -380,12 +377,82 @@ class _ModelManifest {
   }
 }
 
-void _validateProfile(ValidationResourceProfile profile) {
-  if (!profile.isConfigured) {
+void _validateRequirement(ValidationModelRequirement requirement) {
+  if (!_safeIdentifier(requirement.nodeId) ||
+      !_safeIdentifier(requirement.modelVersionId) ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(requirement.sha256) ||
+      requirement.sha256 == '0' * 64) {
     throw const ValidationExecutionException(
-      'resourcesNotConfigured',
-      'Configura las versiones publicadas del perfil antes de preparar.',
+      'invalidModelRequirement',
+      'El requisito del modelo configurado no es válido.',
     );
+  }
+}
+
+bool modelContractMatchesRequirement(
+  Map<String, Object?> rawContract,
+  ValidationModelRequirement requirement,
+) {
+  try {
+    _requireKeys(rawContract, const {'input', 'output'}, 'model contract');
+    final input = _asObject(rawContract['input'], 'contract.input');
+    _requireKeys(input, const {
+      'type',
+      'width',
+      'height',
+      'channels',
+      'normalization',
+    }, 'contract.input');
+    final expectedInput = requirement.inputContract;
+    if (input['type'] != 'image' ||
+        input['width'] != expectedInput.width ||
+        input['height'] != expectedInput.height ||
+        input['channels'] != expectedInput.channels ||
+        input['normalization'] != expectedInput.normalization) {
+      return false;
+    }
+
+    final expected = requirement.modelOutputContract;
+    final output = _asObject(rawContract['output'], 'contract.output');
+    final type = switch (expected.resultType) {
+      ValidationResultType.classification => 'classification',
+      ValidationResultType.detection => 'detection',
+      ValidationResultType.boolean => null,
+    };
+    if (type == null || output['type'] != type) return false;
+    final labels = output['labels'];
+    if (labels is! List ||
+        labels.length != expected.labels.length ||
+        !List.generate(
+          labels.length,
+          (index) => labels[index] == expected.labels[index],
+        ).every((match) => match)) {
+      return false;
+    }
+    if (expected.resultType == ValidationResultType.detection) {
+      if (output['scoreThreshold'] != expected.scoreThreshold ||
+          expected.tensorIndices == null) {
+        return false;
+      }
+      final rawIndices = _asObject(
+        output['tensorIndices'],
+        'contract.output.tensorIndices',
+      );
+      const roles = {'boxes', 'classes', 'scores', 'count'};
+      _requireKeys(rawIndices, roles, 'contract.output.tensorIndices');
+      if (rawIndices.entries.any(
+        (entry) => entry.value != expected.tensorIndices![entry.key],
+      )) {
+        return false;
+      }
+    }
+    final outputKeys = type == 'detection'
+        ? const {'type', 'labels', 'scoreThreshold', 'tensorIndices'}
+        : const {'type', 'labels'};
+    _requireKeys(output, outputKeys, 'contract.output');
+    return true;
+  } on Object {
+    return false;
   }
 }
 

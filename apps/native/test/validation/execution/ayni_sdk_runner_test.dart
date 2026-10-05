@@ -415,8 +415,9 @@ class _FakeValidationModelRepository implements ValidationModelRepository {
   Future<String> fetchSha256(String modelVersionId) async => sha256;
 
   @override
-  Future<VerifiedModelArtifact> prepare(ValidationResourceProfile profile) =>
-      throw UnimplementedError();
+  Future<VerifiedModelArtifact> prepare(
+    ValidationModelRequirement requirement,
+  ) => throw UnimplementedError();
 }
 
 AyniSdkValidationRunner _makeRunner({

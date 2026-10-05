@@ -176,7 +176,7 @@ class _ModelRepository implements ValidationModelRepository {
 
   @override
   Future<VerifiedModelArtifact> prepare(
-    ValidationResourceProfile profile,
+    ValidationModelRequirement requirement,
   ) async => artifact;
 
   @override

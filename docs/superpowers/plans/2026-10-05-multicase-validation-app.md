@@ -43,21 +43,21 @@
 - Consumes: Existing dataset, scenario, phase, and output contract models.
 - Produces: Experiment plan schemaVersion 2; ValidationResourceProfile with either status pending and only its id, or status ready plus dataset id/version/partition/SHA-256, workflow id/version id/SemVer, a nonempty list of model requirements {nodeId, modelVersionId, sha256, inputContract, modelOutputContract}, and final named output contracts. Each executable ValidationScenario declares its resourceProfileId. The asset has one scenario/profile row for each positive case; each row keeps the existing Plan repetition and block sizes, so counts and criteria per case do not change. External PERF-01 and separate F1–F6 definitions remain outside the ordinary one-button suite.
 
-- [ ] **Step 1: Write failing parser tests** for one-model INT-01 and S1 profiles, two-model S2 profile, pending MobileNet/Tomato/COCO profiles, duplicate IDs/node IDs, invalid hash/index contracts, unknown profile references, every positive case/profile mapping, and unchanged phase/block counts on each runnable row.
-- [ ] **Step 2: Run the focused parser tests**
+- [x] **Step 1: Write failing parser tests** for one-model INT-01 and S1 profiles, two-model S2 profile, pending MobileNet/Tomato/COCO profiles, duplicate IDs/node IDs, invalid hash/index contracts, unknown profile references, every positive case/profile mapping, and unchanged phase/block counts on each runnable row.
+- [x] **Step 2: Run the focused parser tests**
 
 Run: cd apps/native; flutter test test/validation/models/experiment_plan_test.dart
 
 Expected: tests fail because the parser only accepts schemaVersion 1 and one active model profile.
 
-- [ ] **Step 3: Implement schemaVersion 2 models** with strict ready/pending variants. Add the four case profiles and the Plan's case/profile scenario rows; preserve the existing repetitions and block sizes on each case row. Keep unknown production IDs out of the asset and keep an unprovisioned profile visibly pending.
-- [ ] **Step 4: Rerun parser tests**
+- [x] **Step 3: Implement schemaVersion 2 models** with strict ready/pending variants. Add the four case profiles and the Plan's case/profile scenario rows; preserve the existing repetitions and block sizes on each case row. Keep unknown production IDs out of the asset and keep an unprovisioned profile visibly pending.
+- [x] **Step 4: Rerun parser tests**
 
 Run: cd apps/native; flutter test test/validation/models/experiment_plan_test.dart
 
 Expected: valid suite profiles parse, invalid mappings reject, and the Plan's repetition/block values remain unchanged.
 
-- [ ] **Step 5: Commit** the parser, plan asset, and tests as feat(native): define multi-case validation profiles.
+- [x] **Step 5: Commit** the parser, plan asset, and tests as feat(native): define multi-case validation profiles.
 
 ### Task 2: Prepare all model resources in a profile
 
@@ -69,15 +69,15 @@ Expected: valid suite profiles parse, invalid mappings reject, and the Plan's re
 - Consumes: Task 1's ready profiles and ayni_sdk 0.3.0 contract shape.
 - Produces: ValidationModelRepository.prepare(ValidationModelRequirement requirement) -> Future<VerifiedModelArtifact> and preparation for every model in a profile. This task makes each profile's resources available for the suite preflight; the all-profile/no-row gate is implemented in Task 5.
 
-- [ ] **Step 1: Write failing repository tests** for every model manifest in one profile, refreshed signed URLs, hash/contract mismatch, and preservation of previously verified local artifacts after a later model download fails.
-- [ ] **Step 2: Run the focused repository tests**
+- [x] **Step 1: Write failing repository tests** for every model manifest in one profile, refreshed signed URLs, hash/contract mismatch, and preservation of previously verified local artifacts after a later model download fails.
+- [x] **Step 2: Run the focused repository tests**
 
 Run: cd apps/native; flutter test test/validation/data/validation_model_repository_test.dart
 
 Expected: repository preparation returns all verified model artifacts for a ready profile or fails without replacing a previous valid artifact.
 
-- [ ] **Step 3: Implement model preparation keyed by one ValidationModelRequirement**. Reuse the existing manifest/download/hash/install path for each required model; preserve prior valid cache on failure and keep credentials off signed artifact requests. Reuse the existing dataset and workflow repositories by their exact version IDs.
-- [ ] **Step 4: Rerun focused tests**
+- [x] **Step 3: Implement model preparation keyed by one ValidationModelRequirement**. Reuse the existing manifest/download/hash/install path for each required model; preserve prior valid cache on failure and keep credentials off signed artifact requests. Reuse the existing dataset and workflow repositories by their exact version IDs.
+- [x] **Step 4: Rerun focused tests**
 
 Run: cd apps/native; flutter test test/validation/data/validation_model_repository_test.dart
 
