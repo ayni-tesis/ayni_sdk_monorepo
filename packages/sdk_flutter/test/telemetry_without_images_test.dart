@@ -249,6 +249,24 @@ void main() {
         expect(await TraceOutboxStore(storageDirectory).pending(), isEmpty);
       },
     );
+
+    test(
+      'syncs the required manifest without uploading queued traces when requested',
+      () async {
+        final trace = _completeTrace().toJson();
+        await TraceOutboxStore(storageDirectory).enqueue(trace);
+        await TelemetryPolicyStore(
+          storageDirectory,
+        ).write(const TelemetryPolicy(enabled: true, retentionDays: 30));
+
+        final result = await sdk().sync(uploadPendingTraces: false);
+
+        expect(result.status, SyncStatus.upToDate);
+        expect(requests, contains('/sdk/sync'));
+        expect(requests, isNot(contains('/sdk/traces')));
+        expect(await TraceOutboxStore(storageDirectory).pending(), [trace]);
+      },
+    );
   });
 }
 

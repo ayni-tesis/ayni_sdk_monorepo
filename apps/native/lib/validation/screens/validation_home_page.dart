@@ -50,6 +50,7 @@ abstract interface class ValidationHomeRuntime {
   Future<ValidationSyncState> synchronizeSdk({
     required ValidationResourceProfile profile,
     bool verifyWorkflow = true,
+    bool uploadPendingTraces = true,
   });
 
   Future<BatchRunSummary> runPhase({
@@ -67,6 +68,7 @@ abstract interface class ValidationHomeRuntime {
   Future<BatchRunSummary> runSuite({
     required String pairRunId,
     required List<ValidationCondition> conditions,
+    bool quickRun = false,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
@@ -101,11 +103,13 @@ class ValidationSyncState {
     required this.status,
     required this.ready,
     this.workflowVersion,
+    this.issues = const [],
   });
 
   final String status;
   final bool ready;
   final String? workflowVersion;
+  final List<String> issues;
 }
 
 class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
@@ -273,6 +277,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
   Future<ValidationSyncState> synchronizeSdk({
     required ValidationResourceProfile profile,
     bool verifyWorkflow = true,
+    bool uploadPendingTraces = true,
   }) async {
     final runner = _sdkRunners[profile.id];
     final dataset = _datasets[profile.id];
@@ -284,12 +289,18 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     }
     if (verifyWorkflow) _sdkReadyProfileIds.remove(profile.id);
     await runner.activate();
-    final result = await runner.synchronize();
+    final result = await runner.synchronize(
+      uploadPendingTraces: uploadPendingTraces,
+    );
     if (result.status != SyncStatus.updated &&
         result.status != SyncStatus.upToDate) {
       return ValidationSyncState(
         status: result.status.name,
         ready: _sdkReadyProfileIds.contains(profile.id),
+        issues: result.resources
+            .map((resource) => resource.message)
+            .whereType<String>()
+            .toList(growable: false),
       );
     }
     if (!verifyWorkflow) {
@@ -371,6 +382,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
   Future<BatchRunSummary> runSuite({
     required String pairRunId,
     required List<ValidationCondition> conditions,
+    bool quickRun = false,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
@@ -399,6 +411,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       datasetsByProfileId: _datasets,
       runnersByProfileId: runnersByProfileId,
       conditions: conditions,
+      quickRun: quickRun,
       captureTrace: captureTrace,
       isCancelled: isCancelled,
       onRecord: onRecord,
@@ -565,6 +578,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   bool _cancelRequested = false;
   bool _traceAllowed = false;
   bool _hasJsonl = false;
+  bool _runFinished = false;
   double? _downloadProgress;
   int _completedRuns = 0;
   int _totalRuns = 0;
@@ -645,18 +659,19 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     _ => const [ValidationCondition.control, ValidationCondition.treatment],
   };
 
-  List<ValidationScenario> get _automaticScenarios => (_plan?.scenarios ?? [])
-      .where(
-        (scenario) =>
-            _automaticPhases.contains(scenario.phase) &&
-            !scenario.requiresExternalMeasurement,
-      )
-      .toList(growable: false);
+  List<ValidationScenario> get _allAutomaticScenarios =>
+      (_plan?.scenarios ?? [])
+          .where(
+            (scenario) =>
+                _automaticPhases.contains(scenario.phase) &&
+                !scenario.requiresExternalMeasurement,
+          )
+          .toList(growable: false);
 
   List<ValidationResourceProfile> get _suiteProfiles {
     final plan = _plan;
     if (plan == null) return const [];
-    final ids = _automaticScenarios
+    final ids = _allAutomaticScenarios
         .map((scenario) => scenario.resourceProfileId!)
         .toSet();
     return [
@@ -665,22 +680,47 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     ];
   }
 
+  List<ValidationResourceProfile> get _readySuiteProfiles => _suiteProfiles
+      .where((profile) => profile.isConfigured)
+      .toList(growable: false);
+
   List<String> get _pendingProfileIds => _suiteProfiles
       .where((profile) => !profile.isConfigured)
       .map((profile) => profile.id)
       .toList(growable: false);
 
+  List<ValidationScenario> get _automaticScenarios {
+    final readyProfileIds = _readySuiteProfiles
+        .map((profile) => profile.id)
+        .toSet();
+    return _allAutomaticScenarios
+        .where(
+          (scenario) => readyProfileIds.contains(scenario.resourceProfileId),
+        )
+        .toList(growable: false);
+  }
+
   int get _plannedRuns =>
       _automaticScenarios.fold<int>(
         0,
-        (total, item) => total + item.repetitions,
+        (total, item) =>
+            total +
+            ValidationBatchController.repetitionsFor(item, quickRun: false),
+      ) *
+      _conditions.length;
+
+  int get _quickPlannedRuns =>
+      _automaticScenarios.fold<int>(
+        0,
+        (total, item) =>
+            total +
+            ValidationBatchController.repetitionsFor(item, quickRun: true),
       ) *
       _conditions.length;
 
   bool get _canStart =>
       !_busy &&
-      _suiteProfiles.isNotEmpty &&
-      _pendingProfileIds.isEmpty &&
+      _readySuiteProfiles.isNotEmpty &&
       _credentialController.text.trim().isNotEmpty &&
       _automaticScenarios.isNotEmpty;
 
@@ -694,6 +734,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     setState(() {
       _busy = true;
       _running = true;
+      _runFinished = false;
       _cancelRequested = false;
       _error = null;
       _status = null;
@@ -713,7 +754,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         if (!sync.ready) {
           throw ValidationHomeException(
             'sdkSyncFailed',
-            'La sincronización SDK terminó con estado ${sync.status}.',
+            _sdkSyncFailureMessage(profile.id, sync),
           );
         }
       }
@@ -750,18 +791,19 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           _busy = false;
           _running = false;
           _activity = null;
+          _runFinished = true;
         });
       }
     }
   }
 
-  Future<void> _runValidation() async {
+  Future<void> _runValidation({bool quickRun = false}) async {
     final credentials = _credentialsFromFields();
     final plan = _plan;
     if (credentials == null ||
         plan == null ||
-        _suiteProfiles.isEmpty ||
-        _pendingProfileIds.isNotEmpty) {
+        _readySuiteProfiles.isEmpty ||
+        _automaticScenarios.isEmpty) {
       return;
     }
 
@@ -774,12 +816,14 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     }
 
     final scenarios = _automaticScenarios;
-    final totalRuns = _plannedRuns;
-    final pairRunId = 'pair-${DateTime.now().toUtc().millisecondsSinceEpoch}';
+    final totalRuns = quickRun ? _quickPlannedRuns : _plannedRuns;
+    final pairRunId =
+        '${quickRun ? 'quick' : 'pair'}-${DateTime.now().toUtc().millisecondsSinceEpoch}';
     var treatmentPrepared = false;
     setState(() {
       _busy = true;
       _running = true;
+      _runFinished = false;
       _cancelRequested = false;
       _error = null;
       _status = null;
@@ -788,12 +832,17 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       _completedRuns = 0;
       _totalRuns = totalRuns;
     });
+    if (quickRun) {
+      _addEvent(
+        'Prueba rápida iniciada: ${ValidationBatchController.quickRunPercentage}% de los intentos del plan.',
+      );
+    }
 
     try {
       await _runtime.saveCredentials(credentials);
       _addEvent('SDK Key guardada en almacenamiento seguro.');
 
-      for (final profile in _suiteProfiles) {
+      for (final profile in _readySuiteProfiles) {
         for (final condition in _conditions) {
           if (_cancelRequested) break;
           setState(() {
@@ -822,14 +871,17 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             treatmentPrepared = true;
             setState(() {
               _activity =
-                  '${profile.id} · sincronizando SDK y verificando workflow…';
+                  '${profile.id} · sincronizando SDK; la primera descarga puede tardar unos minutos…';
               _downloadProgress = null;
             });
-            final sync = await _runtime.synchronizeSdk(profile: profile);
+            final sync = await _runtime.synchronizeSdk(
+              profile: profile,
+              uploadPendingTraces: false,
+            );
             if (!sync.ready) {
               throw ValidationHomeException(
                 'sdkSyncFailed',
-                'La sincronización SDK de ${profile.id} terminó con estado ${sync.status}. Revisa la conexión y vuelve a iniciar.',
+                _sdkSyncFailureMessage(profile.id, sync),
               );
             }
             _addEvent(
@@ -848,6 +900,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         final phaseSummary = await _runtime.runSuite(
           pairRunId: pairRunId,
           conditions: _conditions,
+          quickRun: quickRun,
           captureTrace: captureTrace,
           isCancelled: () async => _cancelRequested,
           onRecord: (record) {
@@ -893,8 +946,9 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           _downloadProgress = null;
         });
         final sync = await _runtime.synchronizeSdk(
-          profile: _suiteProfiles.last,
+          profile: _readySuiteProfiles.last,
           verifyWorkflow: false,
+          uploadPendingTraces: true,
         );
         if (sync.status == 'updated' || sync.status == 'upToDate') {
           _addEvent(
@@ -909,12 +963,26 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
       if (!mounted) return;
       final wasCancelled = _cancelRequested;
-      final status = wasCancelled
-          ? 'Validación cancelada · $_completedRuns de $_totalRuns intentos guardados.'
-          : 'Validación terminada · $_completedRuns de $_totalRuns intentos guardados.';
+      final outcome = wasCancelled
+          ? quickRun
+                ? 'Prueba rápida cancelada'
+                : 'Validación cancelada'
+          : quickRun
+          ? 'Prueba rápida terminada'
+          : _pendingProfileIds.isEmpty
+          ? 'Validación terminada'
+          : 'Validación parcial terminada';
+      final pendingStatus = _pendingProfileIds.isEmpty
+          ? ''
+          : ' · perfiles pendientes: ${_pendingProfileIds.join(', ')}';
+      final status =
+          '$outcome · $_completedRuns de $_totalRuns intentos guardados$pendingStatus.';
       setState(() => _status = status);
       _addEvent(status);
     } on Object catch (error) {
+      _addEvent(
+        '${quickRun ? 'Prueba rápida' : 'Validación'} detenida antes de medir · $_completedRuns de $_totalRuns intentos guardados.',
+      );
       _showError(_friendlyError(error));
     } finally {
       if (mounted) {
@@ -924,6 +992,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           _activity = null;
           _downloadProgress = null;
           _cancelRequested = false;
+          _runFinished = true;
         });
       }
     }
@@ -1048,6 +1117,20 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     });
   }
 
+  String _sdkSyncFailureMessage(String profileId, ValidationSyncState sync) {
+    final detail = sync.issues.isNotEmpty
+        ? ' Detalle: ${sync.issues.join(' ')}'
+        : sync.status == 'offline'
+        ? ' No se pudo conectar al servidor; verifica la red.'
+        : ' El SDK no indicó qué recurso falló; revisa el manifiesto y el almacenamiento local.';
+    return 'La sincronización SDK de $profileId terminó con estado ${sync.status}.$detail';
+  }
+
+  static String _formatCount(int value) => value.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => '.',
+  );
+
   String _friendlyError(Object error) {
     if (error is ValidationHomeException) return error.message;
     if (error is ValidationExecutionException) return error.message;
@@ -1094,7 +1177,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
               if (_hasJsonl)
                 const PopupMenuItem(
                   value: 'export',
-                  child: Text('Exportar JSONL'),
+                  child: Text('Compartir JSONL de validación'),
                 ),
             ],
           ),
@@ -1119,6 +1202,10 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
                 _buildConnectionCard(),
                 const SizedBox(height: 12),
                 _buildActionsCard(),
+                if (_runFinished && _hasJsonl) ...[
+                  const SizedBox(height: 12),
+                  _buildShareJsonlCard(),
+                ],
                 if (_busy || _totalRuns > 0) ...[
                   const SizedBox(height: 12),
                   _buildProgressCard(),
@@ -1184,26 +1271,68 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _pendingProfileIds.isEmpty && _suiteProfiles.isNotEmpty
-                ? '${_automaticScenarios.length} fases automáticas en ${_suiteProfiles.length} perfiles · ${_conditions.length} ${_conditions.length == 1 ? 'condición' : 'condiciones'} · $_plannedRuns intentos previstos.'
-                : 'Faltan recursos publicados en: ${_pendingProfileIds.join(', ')}.',
+            '${_automaticScenarios.length} fases automáticas en ${_readySuiteProfiles.length} perfiles listos · prueba rápida: ${_formatCount(_quickPlannedRuns)} intentos (${ValidationBatchController.quickRunPercentage}%) · completa: ${_formatCount(_plannedRuns)} intentos.'
+            '${_pendingProfileIds.isEmpty ? '' : ' Pendientes: ${_pendingProfileIds.join(', ')}.'}',
           ),
           const SizedBox(height: 12),
+          if (_running)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('run-validation'),
+                onPressed: _cancelBatch,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('Cancelar validación'),
+              ),
+            )
+          else ...[
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('quick-run-validation'),
+                onPressed: _canStart
+                    ? () => _runValidation(quickRun: true)
+                    : null,
+                icon: const Icon(Icons.flash_on),
+                label: const Text('Prueba rápida · 20%'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('run-validation'),
+                onPressed: _canStart ? () => _runValidation() : null,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Validación completa'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildShareJsonlCard() => Card(
+    key: const ValueKey('share-jsonl-card'),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Archivo de validación listo.'),
+          const SizedBox(height: 8),
+          const Text(
+            'Incluye cada intento, el resultado y el estado de captura de trazas. Las trazas SDK completas se sincronizan con el servidor si están autorizadas.',
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              key: const ValueKey('run-validation'),
-              onPressed: _running
-                  ? _cancelBatch
-                  : _canStart
-                  ? _runValidation
-                  : null,
-              icon: Icon(
-                _running ? Icons.stop_circle_outlined : Icons.play_arrow,
-              ),
-              label: Text(
-                _running ? 'Cancelar validación' : 'Iniciar validación',
-              ),
+              key: const ValueKey('share-jsonl'),
+              onPressed: _busy ? null : _exportJsonl,
+              icon: const Icon(Icons.ios_share),
+              label: const Text('Compartir JSONL de validación'),
             ),
           ),
         ],
@@ -1219,7 +1348,11 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _activity ?? 'Procesando…',
+            _busy
+                ? _activity ?? 'Preparando validación…'
+                : _error == null
+                ? 'Validación finalizada'
+                : 'Validación detenida',
             key: const ValueKey('activity-text'),
           ),
           const SizedBox(height: 8),
@@ -1265,8 +1398,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           const SizedBox(height: 4),
           Text(
             _traceAllowed
-                ? 'Se intentará sincronizarlas al terminar si la política del servidor las permite; el JSONL queda local.'
-                : 'Sin autorización no se capturan trazas SDK; el JSONL queda local.',
+                ? 'Se enviarán trazas SDK autorizadas al terminar; el JSONL de intentos queda local.'
+                : 'Sin autorización no se capturan trazas SDK; el JSONL de intentos queda local.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (_status != null) ...[

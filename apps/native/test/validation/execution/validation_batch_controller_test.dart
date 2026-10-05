@@ -295,54 +295,122 @@ void main() {
   );
 
   test(
-    'pending or mismatched final profile blocks the suite before any write',
+    'skips pending profile scenarios when running the configured suite',
     () async {
-      for (final suitePlan in [
-        _allReadyPlan(plan, dataset, pendingLast: true),
-        _allReadyPlan(plan, dataset, mismatchLastDataset: true),
-      ]) {
-        var imageReads = 0;
-        final calls = <String>[];
-        final store = ValidationJsonlStore(
-          File('${directory.path}${Platform.pathSeparator}blocked.jsonl'),
-        );
-        final controller = _CountingBatchController(
-          store: store,
-          metadata: _metadata,
-          calls: calls,
-          readBytes: (path) async {
-            imageReads++;
-            return File(path).readAsBytes();
-          },
-        );
+      final suitePlan = _allReadyPlan(plan, dataset, pendingLast: true);
+      final calls = <String>[];
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}pending.jsonl'),
+      );
+      final controller = _CountingBatchController(
+        store: store,
+        metadata: _metadata,
+        calls: calls,
+      );
 
-        await expectLater(
-          controller.runSuite(
-            plan: suitePlan,
-            pairRunId: 'pair-blocked',
-            datasetsByProfileId: {
-              for (final profile in suitePlan.resourceProfiles)
-                profile.id: dataset,
-            },
-            runnersByProfileId: _runnersFor(suitePlan),
-            conditions: const [
-              ValidationCondition.control,
-              ValidationCondition.treatment,
-            ],
-            captureTrace: false,
-            isCancelled: () async => false,
-            onRecord: (_) {},
-            onProgress: (_) {},
-          ),
-          throwsA(isA<ValidationBatchException>()),
-        );
+      final summary = await controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-pending',
+        datasetsByProfileId: {
+          for (final profile in suitePlan.resourceProfiles) profile.id: dataset,
+        },
+        runnersByProfileId: _runnersFor(suitePlan),
+        conditions: const [
+          ValidationCondition.control,
+          ValidationCondition.treatment,
+        ],
+        captureTrace: false,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      );
 
-        expect(calls, isEmpty);
-        expect(imageReads, 0);
-        expect(await store.readAll(), isEmpty);
-      }
+      expect(calls, hasLength(18));
+      expect(calls.any((call) => call.startsWith('S2:')), isFalse);
+      expect(summary.attempted, 8064);
+      expect(summary.stoppedByCancellation, isFalse);
+      expect(await store.readAll(), isEmpty);
     },
   );
+
+  test('quick suite runs twenty percent of every automatic scenario', () async {
+    final suitePlan = _allReadyPlan(plan, dataset);
+    final calls = <String>[];
+    final controller = _CountingBatchController(
+      store: ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}quick.jsonl'),
+      ),
+      metadata: _metadata,
+      calls: calls,
+    );
+
+    final summary = await controller.runSuite(
+      plan: suitePlan,
+      pairRunId: 'quick-suite',
+      datasetsByProfileId: {
+        for (final profile in suitePlan.resourceProfiles) profile.id: dataset,
+      },
+      runnersByProfileId: _runnersFor(suitePlan),
+      conditions: const [
+        ValidationCondition.control,
+        ValidationCondition.treatment,
+      ],
+      quickRun: true,
+      captureTrace: false,
+      isCancelled: () async => false,
+      onRecord: (_) {},
+      onProgress: (_) {},
+    );
+
+    expect(calls, hasLength(24));
+    expect(controller.repetitions, contains('INT-01:PERF-02-WARMUP:control:4'));
+    expect(controller.repetitions, contains('INT-01:PERF-02:control:60'));
+    expect(controller.repetitions, contains('INT-01:PERF-04:control:205'));
+    expect(summary.attempted, 2152);
+    expect(summary.stoppedByCancellation, isFalse);
+  });
+
+  test('mismatched ready profile blocks the suite before any write', () async {
+    final suitePlan = _allReadyPlan(plan, dataset, mismatchLastDataset: true);
+    var imageReads = 0;
+    final calls = <String>[];
+    final store = ValidationJsonlStore(
+      File('${directory.path}${Platform.pathSeparator}mismatched.jsonl'),
+    );
+    final controller = _CountingBatchController(
+      store: store,
+      metadata: _metadata,
+      calls: calls,
+      readBytes: (path) async {
+        imageReads++;
+        return File(path).readAsBytes();
+      },
+    );
+
+    await expectLater(
+      controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-mismatched',
+        datasetsByProfileId: {
+          for (final profile in suitePlan.resourceProfiles) profile.id: dataset,
+        },
+        runnersByProfileId: _runnersFor(suitePlan),
+        conditions: const [
+          ValidationCondition.control,
+          ValidationCondition.treatment,
+        ],
+        captureTrace: false,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      ),
+      throwsA(isA<ValidationBatchException>()),
+    );
+
+    expect(calls, isEmpty);
+    expect(imageReads, 0);
+    expect(await store.readAll(), isEmpty);
+  });
 
   test(
     'suite cancellation during S2 stops before its paired SDK run',
@@ -492,6 +560,7 @@ class _CountingBatchController extends ValidationBatchController {
   });
 
   final List<String> calls;
+  final repetitions = <String>[];
   final bool cancelAtS2Control;
 
   @override
@@ -503,6 +572,7 @@ class _CountingBatchController extends ValidationBatchController {
     required String scenarioId,
     required ValidationPhase phase,
     String? coldStartRunLabel,
+    int? repetitionLimit,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord) onRecord,
     bool captureTrace = false,
@@ -513,7 +583,11 @@ class _CountingBatchController extends ValidationBatchController {
     final profile = plan.resourceProfiles.singleWhere(
       (item) => item.id == scenario.resourceProfileId,
     );
+    final repetitions = repetitionLimit ?? scenario.repetitions;
     calls.add('${profile.id}:$scenarioId:${runner.condition.name}');
+    this.repetitions.add(
+      '${profile.id}:$scenarioId:${runner.condition.name}:$repetitions',
+    );
     if (cancelAtS2Control &&
         profile.id == 'S2' &&
         runner.condition == ValidationCondition.control) {
@@ -527,11 +601,13 @@ class _CountingBatchController extends ValidationBatchController {
       );
     }
     return BatchRunSummary(
-      attempted: scenario.repetitions,
-      successes: scenario.repetitions,
+      attempted: repetitions,
+      successes: repetitions,
       errors: 0,
       cancelled: 0,
-      completedBlockSizes: scenario.blockSizes,
+      completedBlockSizes: repetitionLimit == null
+          ? scenario.blockSizes
+          : [repetitions],
       stoppedByCancellation: false,
     );
   }

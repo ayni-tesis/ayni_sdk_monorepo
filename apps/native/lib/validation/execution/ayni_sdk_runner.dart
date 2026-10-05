@@ -16,7 +16,7 @@ import 'validation_output_normalizer.dart';
 abstract interface class AyniSdkClient {
   Future<AyniInitializationResult> initialize(AyniConfig config);
 
-  Future<SyncResult> sync();
+  Future<SyncResult> sync({bool uploadPendingTraces = true});
 
   Future<WorkflowResult> run(
     String workflowId,
@@ -36,7 +36,8 @@ class PublicAyniSdkClient implements AyniSdkClient {
       AyniSdk.initialize(config);
 
   @override
-  Future<SyncResult> sync() => AyniSdk.instance.sync();
+  Future<SyncResult> sync({bool uploadPendingTraces = true}) =>
+      AyniSdk.instance.sync(uploadPendingTraces: uploadPendingTraces);
 
   @override
   Future<WorkflowResult> run(
@@ -72,7 +73,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         const ValidationOutputNormalizer(),
     this.allowInsecureLoopback = false,
     this.appVersion = '1.0.0',
-    this.sdkVersion = '0.3.0',
+    this.sdkVersion = '0.3.1',
   }) : _profile = profile,
        _storageDirectory = storageDirectory,
        _sdk = sdk,
@@ -126,7 +127,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         'Configura las versiones publicadas del perfil antes de preparar.',
       );
     }
-    if (sdkVersion != '0.3.0' &&
+    if (sdkVersion != '0.3.1' &&
         _profile.outputContract.any(
           (output) => output.resultType == ValidationResultType.detection,
         )) {
@@ -154,7 +155,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     _workflowVerified = true;
   }
 
-  Future<SyncResult> synchronize() => _operationGate.run(() async {
+  Future<SyncResult> synchronize({
+    bool uploadPendingTraces = true,
+  }) => _operationGate.run(() async {
     if (!_initialized) {
       throw const ValidationExecutionException(
         'sdkNotInitialized',
@@ -166,7 +169,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     if (!await _preferences.traceCaptureAllowed) {
       await _sdk.clearPendingTraces();
     }
-    return _sdk.sync();
+    return _sdk.sync(uploadPendingTraces: uploadPendingTraces);
   });
 
   Future<WorkflowResult> preflight(Uint8List inputBytes) =>
@@ -379,6 +382,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       serverUrl: serverUrl,
       credential: credentials.credential,
       storageDirectory: _storageDirectory,
+      syncTimeout: const Duration(minutes: 3),
       allowInsecureLoopback: allowInsecureLoopback,
     );
     final result = await _sdk.initialize(config);

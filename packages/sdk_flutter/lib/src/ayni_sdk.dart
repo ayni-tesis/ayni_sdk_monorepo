@@ -1562,6 +1562,10 @@ class AyniSdk {
   /// [syncTimeout] elapses, and [SyncStatus.offline] when the server cannot
   /// be reached.
   ///
+  /// By default, the SDK uploads authorized pending traces before requesting
+  /// the manifest. Set [uploadPendingTraces] to `false` to defer that optional
+  /// upload while still syncing workflows and models; the traces stay queued.
+  ///
   /// Calls never overlap: a call made while another sync is running starts
   /// when the previous one finishes.
   ///
@@ -1618,11 +1622,19 @@ class AyniSdk {
   ///   onEvidence: (event) => showStatus(event.message),
   /// );
   /// ```
-  Future<SyncResult> sync({void Function(EvidenceEvent event)? onEvidence}) {
+  Future<SyncResult> sync({
+    void Function(EvidenceEvent event)? onEvidence,
+    bool uploadPendingTraces = true,
+  }) {
     final previousSync = _syncQueue;
     final syncFinished = Completer<void>();
     _syncQueue = syncFinished.future;
-    return _syncAfter(previousSync, syncFinished, onEvidence);
+    return _syncAfter(
+      previousSync,
+      syncFinished,
+      onEvidence,
+      uploadPendingTraces,
+    );
   }
 
   /// Records one user's explicit choice for one optional Ayni-owned purpose.
@@ -2154,6 +2166,7 @@ class AyniSdk {
     Future<void> previousSync,
     Completer<void> syncFinished,
     void Function(EvidenceEvent event)? onEvidence,
+    bool uploadPendingTraces,
   ) async {
     await previousSync;
     final client = HttpClient();
@@ -2168,7 +2181,12 @@ class AyniSdk {
       }
       if (serverUrl.scheme == 'http') client.findProxy = (_) => 'DIRECT';
       final operation = _serializeConsentWork(
-        () => _sync(client, deadline, onEvidence),
+        () => _sync(
+          client,
+          deadline,
+          onEvidence,
+          uploadPendingTraces: uploadPendingTraces,
+        ),
       );
       return await operation.timeout(
         syncTimeout,
@@ -2205,8 +2223,9 @@ class AyniSdk {
   Future<SyncResult> _sync(
     HttpClient client,
     _SyncDeadline deadline,
-    void Function(EvidenceEvent event)? onEvidence,
-  ) async {
+    void Function(EvidenceEvent event)? onEvidence, {
+    required bool uploadPendingTraces,
+  }) async {
     try {
       await _refreshTelemetryPolicy(client);
     } on Exception {
@@ -2218,10 +2237,12 @@ class AyniSdk {
       // A pending optional-use receipt must not block required resource sync.
       // Validation traces use a separate host-managed permission.
     }
-    try {
-      await _sendPendingTraces(client, deadline: deadline);
-    } on Exception {
-      // A failed optional upload keeps traces local.
+    if (uploadPendingTraces) {
+      try {
+        await _sendPendingTraces(client, deadline: deadline);
+      } on Exception {
+        // A failed optional upload keeps traces local.
+      }
     }
     try {
       // Last of the optional work, so it only takes what the others left.

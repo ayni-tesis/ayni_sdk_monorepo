@@ -57,6 +57,7 @@ void main() {
       await runner.prepare();
 
       expect(sdk.initialized, isTrue);
+      expect(sdk.lastConfig?.syncTimeout, const Duration(minutes: 3));
       expect(definitions.requestedVersionIds, ['workflow-version-1']);
       expect(sdk.syncCalls, 0);
       expect(runner.condition, ValidationCondition.treatment);
@@ -216,7 +217,7 @@ void main() {
           preferences: preferences,
           storageDirectory: temporaryDirectory,
           profile: _multiProfile(),
-          sdkVersion: '0.3.0',
+          sdkVersion: '0.3.1',
         );
         await expectLater(
           runner.prepare(),
@@ -247,6 +248,14 @@ void main() {
       expect(result.workflowVersion, '1.0.0');
     },
   );
+
+  test('forwards the choice to defer pending trace uploads', () async {
+    await runner.prepare();
+
+    await runner.synchronize(uploadPendingTraces: false);
+
+    expect(sdk.syncUploadPendingTraces, [false]);
+  });
 
   test(
     'cancels the active SDK execution without waiting on the operation gate',
@@ -450,6 +459,7 @@ class _FakeAyniSdkClient implements AyniSdkClient {
   bool initialized = false;
   int initializeCalls = 0;
   int syncCalls = 0;
+  final syncUploadPendingTraces = <bool>[];
   int clearTraceCalls = 0;
   bool failTraceClear = false;
   bool tracePersistenceFailed = false;
@@ -480,8 +490,9 @@ class _FakeAyniSdkClient implements AyniSdkClient {
   }
 
   @override
-  Future<SyncResult> sync() async {
+  Future<SyncResult> sync({bool uploadPendingTraces = true}) async {
     syncCalls++;
+    syncUploadPendingTraces.add(uploadPendingTraces);
     return const SyncResult(SyncStatus.upToDate);
   }
 
@@ -561,7 +572,7 @@ AyniSdkValidationRunner _makeRunner({
   required _FakeWorkflowDefinitionRepository definitions,
   required ValidationPreferences preferences,
   ValidationResourceProfile? profile,
-  String sdkVersion = '0.3.0',
+  String sdkVersion = '0.3.1',
 }) => AyniSdkValidationRunner(
   profile: profile ?? _profile(),
   credentials: const ValidationSdkCredentials(

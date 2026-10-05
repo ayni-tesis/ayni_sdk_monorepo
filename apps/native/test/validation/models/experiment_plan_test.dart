@@ -281,7 +281,9 @@ void main() {
       'loads the multi-case asset and maps each positive case to a profile',
       () async {
         final plan = await ExperimentPlan.load(rootBundle);
-        final profile = plan.activeResourceProfile;
+        final profile = plan.resourceProfiles.singleWhere(
+          (profile) => profile.id == 'INT-01',
+        );
 
         expect(plan.schemaVersion, '2');
         expect(profile.id, 'INT-01');
@@ -306,12 +308,28 @@ void main() {
           profile.treatmentWorkflowVersionId,
           'c663e668-1a3b-498f-9cd1-858433de21ce',
         );
+        final tomatoProfile = plan.resourceProfiles.singleWhere(
+          (profile) => profile.id == 'REU-01',
+        );
+        expect(tomatoProfile.isConfigured, isTrue);
+        expect(
+          tomatoProfile.datasetVersionId,
+          'bf671a9e-1668-496c-83b2-f60cf198373f',
+        );
+        expect(
+          tomatoProfile.workflowVersionId,
+          '85cd6afd-903b-467d-bc20-e3887f3fcc38',
+        );
+        expect(
+          tomatoProfile.modelRequirements.single.nodeId,
+          '96c2e159-e4e4-4c2e-b7c5-ee30063c43fa',
+        );
         expect(plan.resourceProfiles, hasLength(4));
         expect(
           plan.resourceProfiles
-              .where((profile) => !profile.isConfigured)
+              .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          containsAll(['S1', 'REU-01', 'S2']),
+          containsAll(['S1', 'S2']),
         );
         final runnable = plan.scenarios
             .where(
@@ -353,7 +371,7 @@ void main() {
           plan.resourceProfiles
               .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          ['S1', 'REU-01', 'S2'],
+          ['S1', 'S2'],
         );
       },
     );

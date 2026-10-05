@@ -1,3 +1,11 @@
+## 0.3.1 - 2026-10-05
+
+### Correcciones
+
+- `sync(uploadPendingTraces: false)` sincroniza los recursos obligatorios sin
+  procesar la outbox de trazas. Las trazas quedan pendientes para una
+  sincronización posterior.
+
 ## 0.3.0 - 2026-10-03
 
 ### Novedades
