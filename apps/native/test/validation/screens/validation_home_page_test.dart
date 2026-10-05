@@ -166,6 +166,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(runtime.tracePermissionChanges, [false]);
   });
+
+  testWidgets('rolls back trace permission when enabling it fails', (
+    tester,
+  ) async {
+    runtime.failTracePermission = true;
+    await _pumpHomePage(tester, _app(runtime));
+    await _scrollToKey(tester, 'trace-permission-switch');
+
+    await tester.tap(find.byKey(const ValueKey('trace-permission-switch')));
+    await tester.pumpAndSettle();
+
+    final switchTile = tester.widget<SwitchListTile>(
+      find.byKey(const ValueKey('trace-permission-switch')),
+    );
+    expect(switchTile.value, isFalse);
+    expect(runtime.traceAllowed, isFalse);
+    expect(runtime.tracePermissionChanges, [true]);
+  });
 }
 
 MaterialApp _app(_FakeRuntime runtime) =>
@@ -226,6 +244,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
   int cancelCalls = 0;
   int exportCalls = 0;
   bool failPreparation = false;
+  bool failTracePermission = false;
   bool traceAllowed = false;
   bool jsonlPresent = false;
   final tracePermissionChanges = <bool>[];
@@ -328,6 +347,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
   @override
   Future<void> setTracePermission(bool allowed) async {
     tracePermissionChanges.add(allowed);
+    if (failTracePermission) throw StateError('trace purge failed');
     traceAllowed = allowed;
   }
 

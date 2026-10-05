@@ -409,7 +409,9 @@ class ValidationOutputContract {
       if (rawTensorIndices is! Map ||
           rawTensorIndices.keys.toSet().difference(tensorRoles).isNotEmpty ||
           tensorRoles.difference(rawTensorIndices.keys.toSet()).isNotEmpty ||
-          rawTensorIndices.values.any((value) => value is! int || value < 0) ||
+          rawTensorIndices.values.any(
+            (value) => value is! int || value < 0 || value >= 4,
+          ) ||
           rawTensorIndices.values.toSet().length != tensorRoles.length) {
         throw const FormatException(
           'Detection outputs require distinct tensor indices for boxes, classes, scores, and count.',

@@ -3964,7 +3964,7 @@
             }
           },
           "413": {
-            "description": "El ZIP supera el límite de 128 MiB o no coincide con su tamaño firmado.",
+            "description": "El ZIP supera el límite de 128 MiB.",
             "content": {
               "application/json": {
                 "schema": {

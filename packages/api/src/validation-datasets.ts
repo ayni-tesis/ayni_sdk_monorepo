@@ -259,7 +259,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos la aplicación o el dataset."),
       "409": errorResponse("La aplicación está archivada o la versión ya existe."),
       "413": errorResponse(
-        "El ZIP supera el límite de 128 MiB o no coincide con su tamaño firmado.",
+        "El ZIP supera el límite de 128 MiB.",
       ),
       "500": errorResponse("No se pudo verificar o guardar el ZIP."),
     },

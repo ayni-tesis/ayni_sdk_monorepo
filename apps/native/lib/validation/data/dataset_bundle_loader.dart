@@ -351,8 +351,7 @@ class DatasetBundleLoader {
       // A bundle may expand close to 1 GiB, which must not all be materialized
       // in the Android process at once.
       for (final entry in entries) {
-        if (entry.isDirectory ||
-            entry.name == 'manifest.json' ||
+        if (entry.name == 'manifest.json' ||
             caseEntries.containsKey(entry.name)) {
           continue;
         }
@@ -799,7 +798,7 @@ Future<Uint8List> _extractZipEntry(
   int maximumBytes, {
   bool retain = true,
 }) async {
-  if (entry.isDirectory || entry.uncompressedSize > maximumBytes) {
+  if (entry.uncompressedSize > maximumBytes) {
     throw const DatasetBundleException(
       DatasetBundleErrorCode.expandedContentTooLarge,
       'Una entrada del ZIP supera el límite permitido.',

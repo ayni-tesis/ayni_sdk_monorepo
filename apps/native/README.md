@@ -64,6 +64,7 @@ Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro de
 ## Requisitos de validación
 
 - La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.2.0`.
+- El modo `ayni_sdk` rechaza perfiles de detección porque la versión 0.2.0 no consume los índices de tensores declarados por el Plan. No se ejecuta ni registra un resultado que pueda diferir del modo directo. Comparar detección requiere una versión publicada del SDK que admita esos índices.
 - La ejecución de un lote no accede a la red. Preparación y sincronización se hacen antes, con botones separados.
 - La app no implementa la medición de arranque en frío del Plan ni sube el JSONL.
 - El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.

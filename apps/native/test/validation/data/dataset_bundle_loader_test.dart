@@ -189,6 +189,28 @@ void main() {
     );
   });
 
+  test('validates checksums on empty ZIP directory members', () async {
+    final image = utf8.encode('image');
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.bytes(
+          'manifest.json',
+          utf8.encode(
+            jsonEncode(_manifest([_case('case-1', 'images/a.jpg', image)])),
+          ),
+        ),
+      )
+      ..addFile(ArchiveFile.directory('images/'))
+      ..addFile(ArchiveFile.bytes('images/a.jpg', image));
+    final encoded = ZipEncoder().encode(archive);
+    final malformed = _rewriteDirectoryChecksum(encoded, 'images/');
+
+    await expectLater(
+      install(await writeArchive(malformed)),
+      throwsA(isA<DatasetBundleException>()),
+    );
+  });
+
   test(
     'rejects expanded content over the configured limit before installation',
     () async {
@@ -355,6 +377,42 @@ Uint8List _rewriteUncompressedSize(
       final localOffset = data.getUint32(cursor + 42, Endian.little);
       data.setUint32(cursor + 24, declaredSize, Endian.little);
       data.setUint32(localOffset + 22, declaredSize, Endian.little);
+      return bytes;
+    }
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  throw StateError('Generated ZIP does not contain $targetName.');
+}
+
+Uint8List _rewriteDirectoryChecksum(List<int> archiveBytes, String targetName) {
+  final bytes = Uint8List.fromList(archiveBytes);
+  final data = ByteData.sublistView(bytes);
+  var eocd = -1;
+  for (
+    var offset = bytes.length - 22;
+    offset >= max(0, bytes.length - 22 - 65535);
+    offset--
+  ) {
+    if (data.getUint32(offset, Endian.little) == 0x06054b50 &&
+        offset + 22 + data.getUint16(offset + 20, Endian.little) ==
+            bytes.length) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw StateError('Generated ZIP has no end record.');
+  final count = data.getUint16(eocd + 10, Endian.little);
+  final centralOffset = data.getUint32(eocd + 16, Endian.little);
+  var cursor = centralOffset;
+  for (var index = 0; index < count; index++) {
+    final nameLength = data.getUint16(cursor + 28, Endian.little);
+    final extraLength = data.getUint16(cursor + 30, Endian.little);
+    final commentLength = data.getUint16(cursor + 32, Endian.little);
+    final name = utf8.decode(
+      bytes.sublist(cursor + 46, cursor + 46 + nameLength),
+    );
+    if (name == targetName) {
+      data.setUint32(cursor + 16, 1, Endian.little);
       return bytes;
     }
     cursor += 46 + nameLength + extraLength + commentLength;

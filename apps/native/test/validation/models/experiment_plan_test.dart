@@ -82,6 +82,17 @@ void main() {
         }),
         throwsFormatException,
       );
+
+      expect(
+        () => ValidationOutputContract.fromJson({
+          'name': 'objects',
+          'resultType': 'detection',
+          'labels': ['coffee'],
+          'scoreThreshold': 0.5,
+          'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 4},
+        }),
+        throwsFormatException,
+      );
     });
 
     test(

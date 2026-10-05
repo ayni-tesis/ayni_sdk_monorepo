@@ -41,6 +41,18 @@ void main() {
     },
   );
 
+  test('reads the model digest when the manifest contract is null', () async {
+    server.contract = null;
+    final repository = _repository(server, temporaryDirectory);
+    addTearDown(repository.close);
+
+    expect(
+      await repository.fetchSha256('model-version-1'),
+      sha256.convert(server.modelBytes).toString(),
+    );
+    expect(server.objectRequests, 0);
+  });
+
   test('refreshes a signed model URL once after an expired request', () async {
     server.expireFirstDownload = true;
     final repository = _repository(server, temporaryDirectory);
@@ -135,7 +147,7 @@ class _ModelServer {
   late Uri baseUrl;
   List<int> modelBytes = const [];
   String? manifestSha256;
-  Map<String, Object?> contract = {
+  Map<String, Object?>? contract = {
     'input': {
       'type': 'image',
       'width': 224,

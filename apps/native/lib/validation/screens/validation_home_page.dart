@@ -753,6 +753,9 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
             : 'Permiso revocado; se solicitó vaciar las trazas pendientes del SDK.',
       );
     } on Object catch (error) {
+      if (mounted && allowed) {
+        setState(() => _traceAllowed = false);
+      }
       _showError(_friendlyError(error));
     }
   }

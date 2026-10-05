@@ -113,6 +113,14 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         'Configura las versiones publicadas del perfil antes de preparar.',
       );
     }
+    if (_profile.outputContract.any(
+      (output) => output.resultType == ValidationResultType.detection,
+    )) {
+      throw const ValidationExecutionException(
+        'sdkDetectionTensorRolesUnsupported',
+        'ayni_sdk 0.2.0 no puede validar todavía los índices de tensores de detección del perfil.',
+      );
+    }
     await _ensureInitialized();
     final manifestSha256 = await _modelRepository.fetchSha256(
       _profile.treatmentModelVersionId,

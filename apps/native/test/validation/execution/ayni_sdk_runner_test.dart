@@ -72,6 +72,34 @@ void main() {
   );
 
   test(
+    'rejects detection profiles until the pinned SDK honors tensor roles',
+    () async {
+      final detectionRunner = AyniSdkValidationRunner(
+        profile: _profile(detection: true),
+        credentials: runner.credentials,
+        storageDirectory: temporaryDirectory,
+        sdk: sdk,
+        modelRepository: modelRepository,
+        workflowDefinitions: definitions,
+        preferences: preferences,
+      );
+
+      await expectLater(
+        detectionRunner.prepare(),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'sdkDetectionTensorRolesUnsupported',
+          ),
+        ),
+      );
+      expect(sdk.initialized, isFalse);
+      expect(definitions.requestedVersionIds, isEmpty);
+    },
+  );
+
+  test(
     'checks workflow and model versions, shares the same bytes, and normalizes SDK output',
     () async {
       await runner.prepare();
@@ -426,32 +454,47 @@ ValidationRunRequest _request(Uint8List bytes, {bool captureTrace = false}) =>
       captureTrace: captureTrace,
     );
 
-ValidationResourceProfile _profile() => ValidationResourceProfile(
-  id: 'coffee',
-  datasetVersionId: 'dataset-version-1',
-  datasetPartition: 'test',
-  datasetSha256: 'a' * 64,
-  controlModelVersionId: 'model-version-1',
-  controlModelSha256: 'b' * 64,
-  treatmentWorkflowId: 'workflow-1',
-  treatmentWorkflowVersionId: 'workflow-version-1',
-  treatmentWorkflowVersion: '1.0.0',
-  treatmentModelVersionId: 'model-version-1',
-  treatmentModelSha256: 'b' * 64,
-  inputContract: const ValidationInputContract(
-    width: 224,
-    height: 224,
-    channels: 3,
-    normalization: 'zero_to_one',
-  ),
-  outputContract: [
-    ValidationOutputContract(
-      name: 'classification',
-      resultType: ValidationResultType.classification,
-      labels: ['sana', 'roya', 'minador'],
-    ),
-  ],
-);
+ValidationResourceProfile _profile({bool detection = false}) =>
+    ValidationResourceProfile(
+      id: 'coffee',
+      datasetVersionId: 'dataset-version-1',
+      datasetPartition: 'test',
+      datasetSha256: 'a' * 64,
+      controlModelVersionId: 'model-version-1',
+      controlModelSha256: 'b' * 64,
+      treatmentWorkflowId: 'workflow-1',
+      treatmentWorkflowVersionId: 'workflow-version-1',
+      treatmentWorkflowVersion: '1.0.0',
+      treatmentModelVersionId: 'model-version-1',
+      treatmentModelSha256: 'b' * 64,
+      inputContract: const ValidationInputContract(
+        width: 224,
+        height: 224,
+        channels: 3,
+        normalization: 'zero_to_one',
+      ),
+      outputContract: [
+        if (detection)
+          ValidationOutputContract(
+            name: 'objects',
+            resultType: ValidationResultType.detection,
+            labels: ['sana'],
+            scoreThreshold: 0.5,
+            tensorIndices: const {
+              'boxes': 0,
+              'classes': 1,
+              'scores': 2,
+              'count': 3,
+            },
+          )
+        else
+          ValidationOutputContract(
+            name: 'classification',
+            resultType: ValidationResultType.classification,
+            labels: ['sana', 'roya', 'minador'],
+          ),
+      ],
+    );
 
 Map<String, Object?> _workflowDefinition({
   String modelVersionId = 'model-version-1',

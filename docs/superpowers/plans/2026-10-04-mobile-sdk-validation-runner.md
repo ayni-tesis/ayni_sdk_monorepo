@@ -22,7 +22,8 @@
 - Results JSONL stays on the device and can be exported by the operator. No image bytes, tensors, or full JSONL are uploaded.
 - Validation trace capture defaults off and requires a separate host-managed permission; its text explicitly says that typed decoded outputs are included. `sdkImprovement` consent remains separate.
 - On trace permission revocation, stop further capture and call public `AyniSdk.instance.clearPendingTraces()`; do not call 0.3.0-only evidence APIs.
-- The common selector APK has one common size. For SDK-size comparison, also build isolated control-only and treatment-only release variants from the same source and report their actual artifact sizes separately.
+- The approved deliverable is one selector APK. Optional compile-time condition restrictions do not isolate runner dependencies, and this plan makes no separate APK-size comparison.
+- The direct runner supports detection tensor-role indices from the Plan. The pinned `ayni_sdk` 0.2.0 decoder does not consume those indices, so treatment preparation rejects detection profiles rather than recording a potentially divergent result; paired detection measurements require a later published SDK version with role-index support.
 - Plan phases represent 20 warmups, 300 measured in 3 blocks of 100, 1,024 stress runs, and 30 repeats per fault scenario. Cold-start timing remains measured by the Plan's external Macrobenchmark/system procedure and is linked by `run_id`.
 
 ## Review Focus
@@ -281,7 +282,7 @@ Run: `cd apps/native; flutter test test/validation/build_configuration_test.dart
 The build-configuration test passes as part of the Flutter suite.
 
 - [ ] **Step 3: Build the approved selector app**. Keep the default `VALIDATION_CONDITION=selector` for the thesis pilot. The existing `control` and `treatment` values may restrict the operator flow for a run, but Flutter still packages the shared app dependencies, so do not describe those artifacts as dependency-isolated variants. Record the selector APK's actual byte size and SHA-256.
-- [x] **Step 4: Run all Flutter, release, and device checks**
+- [ ] **Step 4: Run all Flutter, release, and device checks**
 
 Run: `cd apps/native && flutter test && flutter analyze && flutter build apk --release && flutter devices`
 

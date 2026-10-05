@@ -81,9 +81,11 @@ class HttpValidationModelRepository implements ValidationModelRepository {
   ) async {
     _validateProfile(profile);
     final manifest = await _fetchManifest(profile.controlModelVersionId);
+    final contract = manifest.contract;
     if (manifest.modelVersionId != profile.controlModelVersionId ||
         manifest.sha256 != profile.controlModelSha256 ||
-        !modelContractMatchesValidationProfile(manifest.contract, profile)) {
+        contract == null ||
+        !modelContractMatchesValidationProfile(contract, profile)) {
       throw const ValidationExecutionException(
         'modelManifestMismatch',
         'El manifiesto del modelo no coincide con el perfil de validación.',
@@ -102,7 +104,7 @@ class HttpValidationModelRepository implements ValidationModelRepository {
         modelVersionId: manifest.modelVersionId,
         sha256: manifest.sha256,
         version: manifest.version,
-        contract: manifest.contract,
+        contract: contract,
       );
     }
 
@@ -119,12 +121,14 @@ class HttpValidationModelRepository implements ValidationModelRepository {
       } on ValidationExecutionException catch (error) {
         if (error.code != 'modelDownloadUrlExpired') rethrow;
         final refreshed = await _fetchManifest(profile.controlModelVersionId);
+        final refreshedContract = refreshed.contract;
         if (refreshed.modelVersionId != manifest.modelVersionId ||
             refreshed.version != manifest.version ||
             refreshed.sha256 != manifest.sha256 ||
             refreshed.sizeBytes != manifest.sizeBytes ||
+            refreshedContract == null ||
             !modelContractMatchesValidationProfile(
-              refreshed.contract,
+              refreshedContract,
               profile,
             )) {
           throw const ValidationExecutionException(
@@ -171,7 +175,7 @@ class HttpValidationModelRepository implements ValidationModelRepository {
       modelVersionId: manifest.modelVersionId,
       sha256: manifest.sha256,
       version: manifest.version,
-      contract: manifest.contract,
+      contract: contract,
     );
   }
 
@@ -311,7 +315,7 @@ class _ModelManifest {
   final String sha256;
   final int sizeBytes;
   final Uri downloadUrl;
-  final Map<String, Object?> contract;
+  final Map<String, Object?>? contract;
 
   factory _ModelManifest.fromJson(
     Map<String, Object?> json, {
@@ -369,7 +373,9 @@ class _ModelManifest {
       sha256: digest,
       sizeBytes: sizeBytes,
       downloadUrl: url,
-      contract: _asObject(json['contract'], 'contract'),
+      contract: json['contract'] == null
+          ? null
+          : _asObject(json['contract'], 'contract'),
     );
   }
 }

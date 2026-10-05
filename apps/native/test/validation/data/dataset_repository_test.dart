@@ -135,7 +135,11 @@ void main() {
       request.response.write('{"manifest":');
       await request.response.flush();
       await Future<void>.delayed(const Duration(milliseconds: 250));
-      await request.response.close();
+      try {
+        await request.response.close();
+      } on HttpException {
+        // The client's idle timeout closes the socket before this response.
+      }
     });
     final transport = HttpDatasetTransport(
       serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
