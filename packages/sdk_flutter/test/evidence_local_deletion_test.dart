@@ -275,6 +275,7 @@ void main() {
       '${storage.path}/evidence/$_stoppedId.tmp/image',
     ).create(recursive: true);
 
+    AyniSdk.setPlatformForTesting(isAndroid: true, androidSdkVersion: 26);
     final result = AyniSdk.initialize(
       AyniConfig(
         serverUrl: Uri.parse('https://api.ayni.dev'),
