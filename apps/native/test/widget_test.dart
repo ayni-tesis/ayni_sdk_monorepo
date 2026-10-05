@@ -10,7 +10,7 @@ void main() {
   testWidgets('renders the validation operator app', (tester) async {
     await tester.pumpWidget(BetterFullstackApp(runtime: _BootstrapRuntime()));
     await tester.pumpAndSettle();
-    expect(find.text('Validación ayni_sdk'), findsOneWidget);
+    expect(find.text('Validación'), findsOneWidget);
     expect(find.byKey(const ValueKey('validation-error-card')), findsNothing);
   });
 }
