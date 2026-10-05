@@ -72,6 +72,29 @@ void main() {
   );
 
   test(
+    'reactivates its SDK instance after another profile initialized',
+    () async {
+      await runner.prepare();
+      final otherProfileRunner = AyniSdkValidationRunner(
+        profile: _profile(),
+        credentials: runner.credentials,
+        storageDirectory: temporaryDirectory,
+        sdk: sdk,
+        modelRepository: modelRepository,
+        workflowDefinitions: definitions,
+        preferences: preferences,
+      );
+      await otherProfileRunner.prepare();
+      expect(sdk.initializeCalls, 2);
+
+      await runner.activate();
+
+      expect(sdk.initializeCalls, 3);
+      expect(runner.condition, ValidationCondition.treatment);
+    },
+  );
+
+  test(
     'rejects detection profiles until the pinned SDK honors tensor roles',
     () async {
       final detectionRunner = AyniSdkValidationRunner(
@@ -425,6 +448,7 @@ class _MemorySecureStore implements ValidationSecureStore {
 
 class _FakeAyniSdkClient implements AyniSdkClient {
   bool initialized = false;
+  int initializeCalls = 0;
   int syncCalls = 0;
   int clearTraceCalls = 0;
   bool failTraceClear = false;
@@ -446,6 +470,7 @@ class _FakeAyniSdkClient implements AyniSdkClient {
 
   @override
   Future<AyniInitializationResult> initialize(AyniConfig config) async {
+    initializeCalls++;
     lastConfig = config;
     initialized = true;
     return const AyniInitializationResult(

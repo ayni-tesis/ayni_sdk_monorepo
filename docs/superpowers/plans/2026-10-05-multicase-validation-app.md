@@ -153,15 +153,15 @@ Expected: the hosted 0.3.0 decoder is used and old and new JSONL records both lo
 - Consumes: fully preflighted profiles, direct and SDK runners, existing JSONL store, and trace-permission setting.
 - Produces: one start action that runs the Plan-declared suite in order, reports overall percent plus current case/phase and recent trace status, pairs each direct/SDK attempt by pairRunId and case/image hash, and stops future attempts on cancellation.
 
-- [ ] **Step 1: Write failing orchestration/UI tests** for one action running every positive case/profile row, overall progress across profiles and ordinary phases, no case/integration selector, a pending or invalid last profile blocking all JSONL writes, authorized SDK trace synchronization, and cancellation during an in-flight S2 node.
-- [ ] **Step 2: Run the focused controller and screen tests**
+- [x] **Step 1: Write failing orchestration/UI tests** for one action running every positive case/profile row, overall progress across profiles and ordinary phases, no case/integration selector, a pending or invalid last profile blocking all JSONL writes, authorized SDK trace synchronization, and cancellation during an in-flight S2 node.
+- [x] **Step 2: Run the focused controller and screen tests**
 
 Run: cd apps/native; flutter test test/validation/execution/validation_batch_controller_test.dart test/validation/screens/validation_home_page_test.dart
 
 Expected: the controller runs only the active profile and progress is not suite-wide.
 
-- [ ] **Step 3: Implement suite sequencing**. Preflight every case/profile row and both conditions before the first append; run automatic SDK synchronization during preparation only, retain the current separate trace permission, keep measured inference offline, append each attempt locally, and stop after the in-flight inference when cancelled.
-- [ ] **Step 4: Rerun screen/controller tests**
+- [x] **Step 3: Implement suite sequencing**. Preflight every case/profile row and both conditions before the first append; run automatic SDK synchronization during preparation only, retain the current separate trace permission, keep measured inference offline, append each attempt locally, and stop after the in-flight inference when cancelled.
+- [x] **Step 4: Rerun screen/controller tests**
 
 Run: cd apps/native; flutter test test/validation/execution/validation_batch_controller_test.dart test/validation/screens/validation_home_page_test.dart
 

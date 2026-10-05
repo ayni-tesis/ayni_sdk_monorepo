@@ -77,6 +77,48 @@ void main() {
     expect(find.byKey(const ValueKey('validation-events')), findsOneWidget);
   });
 
+  testWidgets('pending suite profiles keep the one action disabled', (
+    tester,
+  ) async {
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+
+    expect(find.textContaining('S1, REU-01, S2'), findsOneWidget);
+    expect(_button(tester, 'run-validation').onPressed, isNull);
+    expect(runtime.prepareCalls, 0);
+    expect(runtime.runSuiteCalls, 0);
+  });
+
+  testWidgets('a final profile preparation failure writes no suite rows', (
+    tester,
+  ) async {
+    runtime.allProfilesReady = true;
+    runtime.traceAllowed = true;
+    runtime.failPreparationProfile = 'S2';
+    runtime.failPreparationCondition = ValidationCondition.treatment;
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pumpAndSettle();
+
+    expect(runtime.preparedProfileConditions.last, 'S2:treatment');
+    expect(runtime.runSuiteCalls, 0);
+    expect(runtime.runCalls, isEmpty);
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-error-card')),
+    );
+    expect(find.byKey(const ValueKey('validation-error-card')), findsOneWidget);
+  });
+
   testWidgets('PERF-01 lab launch runs one direct cold-start attempt', (
     tester,
   ) async {
@@ -136,6 +178,7 @@ void main() {
   testWidgets(
     'one action prepares both conditions, runs phases, and syncs SDK',
     (tester) async {
+      runtime.allProfilesReady = true;
       runtime.hasSavedCredentials = false;
       await _pumpHomePage(tester, runtime);
       await tester.enterText(
@@ -144,7 +187,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byKey(const ValueKey('validation-error-card')), findsNothing);
-      expect(find.textContaining('3 fases automáticas'), findsOneWidget);
+      expect(find.textContaining('12 fases automáticas'), findsOneWidget);
       expect(_button(tester, 'run-validation').onPressed, isNotNull);
       await tester.tap(find.byKey(const ValueKey('run-validation')));
       await tester.pumpAndSettle();
@@ -159,18 +202,24 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(runtime.savedCredentials, 1);
-      expect(runtime.preparedConditions, [
-        ValidationCondition.control,
-        ValidationCondition.treatment,
+      expect(runtime.preparedProfileConditions, [
+        'INT-01:control',
+        'INT-01:treatment',
+        'S1:control',
+        'S1:treatment',
+        'REU-01:control',
+        'REU-01:treatment',
+        'S2:control',
+        'S2:treatment',
       ]);
-      expect(runtime.syncVerificationCalls, [true, false]);
-      expect(runtime.runCalls, [
+      expect(runtime.syncVerificationCalls, [true, true, true, true, false]);
+      expect(runtime.runSuiteCalls, 1);
+      expect(runtime.runCalls, hasLength(24));
+      expect(runtime.runCalls.take(4), [
         'control:PERF-02-WARMUP:false',
-        'control:PERF-02:false',
-        'control:PERF-04:false',
         'treatment:PERF-02-WARMUP:false',
+        'control:PERF-02:false',
         'treatment:PERF-02:false',
-        'treatment:PERF-04:false',
       ]);
       expect(find.textContaining('100%'), findsOneWidget);
       await _scrollToFinder(
@@ -188,6 +237,7 @@ void main() {
   testWidgets('requires trace authorization and can run without it', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     runtime.hasSavedCredentials = false;
     await _pumpHomePage(tester, runtime);
     await tester.enterText(
@@ -220,6 +270,7 @@ void main() {
   testWidgets('updates the one action to cancel a running validation', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     runtime.traceAllowed = true;
     runtime.holdRun = true;
     await _pumpHomePage(tester, runtime);
@@ -248,6 +299,7 @@ void main() {
   testWidgets('trace permission can be revoked from the options menu', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     runtime.traceAllowed = true;
     await _pumpHomePage(tester, runtime);
     await tester.tap(find.byType(PopupMenuButton<String>));
@@ -325,6 +377,9 @@ class _FakeRuntime implements ValidationHomeRuntime {
 
   final String planSource;
   bool failPreparation = false;
+  String? failPreparationProfile;
+  ValidationCondition? failPreparationCondition;
+  bool allProfilesReady = false;
   bool hasSavedCredentials = true;
   bool traceAllowed = false;
   bool holdRun = false;
@@ -332,25 +387,35 @@ class _FakeRuntime implements ValidationHomeRuntime {
   int savedCredentials = 0;
   int cancelCalls = 0;
   final preparedConditions = <ValidationCondition>[];
+  final preparedProfileConditions = <String>[];
   final coldStartRunLabels = <String?>[];
   final syncVerificationCalls = <bool>[];
+  final syncProfileIds = <String>[];
   final runCalls = <String>[];
   final tracePermissionChanges = <bool>[];
+  int runSuiteCalls = 0;
   final runStarted = Completer<void>();
   Completer<BatchRunSummary>? activeRun;
 
   ExperimentPlan get plan {
     final source = (jsonDecode(planSource) as Map).cast<String, Object?>();
     final profiles = (source['resourceProfiles'] as List).cast<Map>();
-    final profile = profiles.single;
-    profile['datasetVersionId'] = 'dataset-version-1';
-    profile['datasetSha256'] = 'a' * 64;
-    profile['controlModelVersionId'] = 'model-version-1';
-    profile['controlModelSha256'] = 'b' * 64;
-    profile['treatmentModelVersionId'] = 'model-version-1';
-    profile['treatmentModelSha256'] = 'b' * 64;
-    profile['treatmentWorkflowId'] = 'workflow-1';
-    profile['treatmentWorkflowVersionId'] = 'workflow-version-1';
+    if (allProfilesReady) {
+      final template = jsonDecode(jsonEncode(profiles.first)) as Map;
+      for (var index = 0; index < profiles.length; index++) {
+        final id = profiles[index]['id'] as String;
+        if (profiles[index]['status'] == 'ready') continue;
+        final profile = jsonDecode(jsonEncode(template)) as Map;
+        profile['id'] = id;
+        profile['workflowId'] = 'workflow-$id';
+        profile['workflowVersionId'] = 'workflow-version-$id';
+        final requirement =
+            (profile['modelRequirements'] as List).single as Map;
+        requirement['nodeId'] = 'model-node-$id';
+        requirement['modelVersionId'] = 'model-version-$id';
+        profiles[index] = profile;
+      }
+    }
     return ExperimentPlan.fromJson(source);
   }
 
@@ -386,7 +451,13 @@ class _FakeRuntime implements ValidationHomeRuntime {
   }) async {
     prepareCalls++;
     preparedConditions.add(condition);
-    if (failPreparation) throw StateError('preparation failed');
+    preparedProfileConditions.add('${profile.id}:${condition.name}');
+    if (failPreparation ||
+        (failPreparationProfile == profile.id &&
+            (failPreparationCondition == null ||
+                failPreparationCondition == condition))) {
+      throw StateError('preparation failed');
+    }
     onDownloadProgress?.call(10, 10);
     return ValidationPreparationState(
       datasetVersion: '1.0.0',
@@ -398,14 +469,71 @@ class _FakeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<ValidationSyncState> synchronizeSdk({
+    required ValidationResourceProfile profile,
     bool verifyWorkflow = true,
   }) async {
     syncVerificationCalls.add(verifyWorkflow);
+    syncProfileIds.add(profile.id);
     return const ValidationSyncState(
       status: 'upToDate',
       ready: true,
       workflowVersion: '1.0.0',
     );
+  }
+
+  @override
+  Future<BatchRunSummary> runSuite({
+    required String pairRunId,
+    required List<ValidationCondition> conditions,
+    required bool captureTrace,
+    required Future<bool> Function() isCancelled,
+    required void Function(ValidationRunRecord record) onRecord,
+    required void Function(ValidationSuiteProgress progress) onProgress,
+  }) async {
+    runSuiteCalls++;
+    final scenarios = plan.scenarios
+        .where(
+          (scenario) => {
+            ValidationPhase.warmup,
+            ValidationPhase.measured,
+            ValidationPhase.stress,
+          }.contains(scenario.phase),
+        )
+        .toList();
+    for (final scenario in scenarios) {
+      for (final condition in conditions) {
+        runCalls.add(
+          '${condition.name}:${scenario.id}:${condition == ValidationCondition.treatment && captureTrace}',
+        );
+      }
+    }
+    if (!runStarted.isCompleted) runStarted.complete();
+    final total = scenarios.fold<int>(
+      0,
+      (sum, scenario) => sum + scenario.repetitions * conditions.length,
+    );
+    final summary = holdRun
+        ? await (activeRun = Completer<BatchRunSummary>()).future
+        : BatchRunSummary(
+            attempted: total,
+            successes: total,
+            errors: 0,
+            cancelled: 0,
+            completedBlockSizes: const [],
+            stoppedByCancellation: false,
+          );
+    final last = scenarios.last;
+    onProgress(
+      ValidationSuiteProgress(
+        completedAttempts: summary.attempted,
+        totalAttempts: total,
+        profileId: last.resourceProfileId!,
+        scenarioId: last.id,
+        phase: last.phase,
+        condition: conditions.last,
+      ),
+    );
+    return summary;
   }
 
   @override

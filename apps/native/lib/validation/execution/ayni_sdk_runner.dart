@@ -177,6 +177,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         return result;
       });
 
+  Future<void> activate() =>
+      _operationGate.run(() => _ensureInitialized(force: true));
+
   Future<void> setTraceCaptureAllowed(bool allowed) async {
     if (allowed) {
       await _operationGate.run(
@@ -355,8 +358,9 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   @override
   Future<void> close() async {}
 
-  Future<void> _ensureInitialized() async {
-    if (_initialized) return;
+  Future<void> _ensureInitialized({bool force = false}) async {
+    if (_initialized && !force) return;
+    _initialized = false;
     await _storageDirectory.create(recursive: true);
     final serverUrl = Uri.tryParse(credentials.serverUrl);
     if (serverUrl == null ||

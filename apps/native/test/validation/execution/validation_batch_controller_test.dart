@@ -243,6 +243,144 @@ void main() {
     );
     expect(runner.calls, 0);
   });
+
+  test(
+    'preflights every profile before running ordered paired phases',
+    () async {
+      final suitePlan = _allReadyPlan(plan, dataset);
+      final calls = <String>[];
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}suite.jsonl'),
+      );
+      final controller = _CountingBatchController(
+        store: store,
+        metadata: _metadata,
+        calls: calls,
+      );
+      final datasets = {
+        for (final profile in suitePlan.resourceProfiles) profile.id: dataset,
+      };
+      final runners = _runnersFor(suitePlan);
+
+      final summary = await controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-suite',
+        datasetsByProfileId: datasets,
+        runnersByProfileId: runners,
+        conditions: const [
+          ValidationCondition.control,
+          ValidationCondition.treatment,
+        ],
+        captureTrace: true,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      );
+
+      expect(calls, hasLength(24));
+      expect(calls.take(4), [
+        'INT-01:PERF-02-WARMUP:control',
+        'INT-01:PERF-02-WARMUP:treatment',
+        'INT-01:PERF-02:control',
+        'INT-01:PERF-02:treatment',
+      ]);
+      expect(
+        calls.skip(18).take(6).every((call) => call.startsWith('S2:')),
+        isTrue,
+      );
+      expect(summary.attempted, 10752);
+      expect(summary.stoppedByCancellation, isFalse);
+      expect(await store.readAll(), isEmpty);
+    },
+  );
+
+  test(
+    'pending or mismatched final profile blocks the suite before any write',
+    () async {
+      for (final suitePlan in [
+        _allReadyPlan(plan, dataset, pendingLast: true),
+        _allReadyPlan(plan, dataset, mismatchLastDataset: true),
+      ]) {
+        var imageReads = 0;
+        final calls = <String>[];
+        final store = ValidationJsonlStore(
+          File('${directory.path}${Platform.pathSeparator}blocked.jsonl'),
+        );
+        final controller = _CountingBatchController(
+          store: store,
+          metadata: _metadata,
+          calls: calls,
+          readBytes: (path) async {
+            imageReads++;
+            return File(path).readAsBytes();
+          },
+        );
+
+        await expectLater(
+          controller.runSuite(
+            plan: suitePlan,
+            pairRunId: 'pair-blocked',
+            datasetsByProfileId: {
+              for (final profile in suitePlan.resourceProfiles)
+                profile.id: dataset,
+            },
+            runnersByProfileId: _runnersFor(suitePlan),
+            conditions: const [
+              ValidationCondition.control,
+              ValidationCondition.treatment,
+            ],
+            captureTrace: false,
+            isCancelled: () async => false,
+            onRecord: (_) {},
+            onProgress: (_) {},
+          ),
+          throwsA(isA<ValidationBatchException>()),
+        );
+
+        expect(calls, isEmpty);
+        expect(imageReads, 0);
+        expect(await store.readAll(), isEmpty);
+      }
+    },
+  );
+
+  test(
+    'suite cancellation during S2 stops before its paired SDK run',
+    () async {
+      final suitePlan = _allReadyPlan(plan, dataset);
+      final calls = <String>[];
+      final controller = _CountingBatchController(
+        store: ValidationJsonlStore(
+          File('${directory.path}${Platform.pathSeparator}s2-cancel.jsonl'),
+        ),
+        metadata: _metadata,
+        calls: calls,
+        cancelAtS2Control: true,
+      );
+
+      final summary = await controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-s2-cancel',
+        datasetsByProfileId: {
+          for (final profile in suitePlan.resourceProfiles) profile.id: dataset,
+        },
+        runnersByProfileId: _runnersFor(suitePlan),
+        conditions: const [
+          ValidationCondition.control,
+          ValidationCondition.treatment,
+        ],
+        captureTrace: true,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      );
+
+      expect(calls.last, 'S2:S2-PERF-02-WARMUP:control');
+      expect(calls.where((call) => call.startsWith('S2:')), hasLength(1));
+      expect(summary.cancelled, 1);
+      expect(summary.stoppedByCancellation, isTrue);
+    },
+  );
 }
 
 const _metadata = ValidationRunMetadata(
@@ -305,6 +443,9 @@ Map<String, Object?> _case(String id, String path, List<int> bytes) => {
 };
 
 class _FakeRunner implements ValidationConditionRunner {
+  _FakeRunner({this.runCondition = ValidationCondition.control});
+
+  final ValidationCondition runCondition;
   int calls = 0;
   Completer<void>? barrier;
   final Completer<void> started = Completer<void>();
@@ -312,7 +453,7 @@ class _FakeRunner implements ValidationConditionRunner {
   final caseIds = <String>[];
 
   @override
-  ValidationCondition get condition => ValidationCondition.control;
+  ValidationCondition get condition => runCondition;
 
   @override
   Future<void> prepare() async {}
@@ -340,3 +481,166 @@ class _FakeRunner implements ValidationConditionRunner {
   @override
   Future<void> close() async {}
 }
+
+class _CountingBatchController extends ValidationBatchController {
+  _CountingBatchController({
+    required super.store,
+    required super.metadata,
+    required this.calls,
+    this.cancelAtS2Control = false,
+    super.readBytes,
+  });
+
+  final List<String> calls;
+  final bool cancelAtS2Control;
+
+  @override
+  Future<BatchRunSummary> runPhase({
+    required ExperimentPlan plan,
+    required String pairRunId,
+    required ValidationConditionRunner runner,
+    required VerifiedDataset dataset,
+    required String scenarioId,
+    required ValidationPhase phase,
+    String? coldStartRunLabel,
+    required Future<bool> Function() isCancelled,
+    required void Function(ValidationRunRecord) onRecord,
+    bool captureTrace = false,
+  }) async {
+    final scenario = plan.scenarios.singleWhere(
+      (item) => item.id == scenarioId,
+    );
+    final profile = plan.resourceProfiles.singleWhere(
+      (item) => item.id == scenario.resourceProfileId,
+    );
+    calls.add('${profile.id}:$scenarioId:${runner.condition.name}');
+    if (cancelAtS2Control &&
+        profile.id == 'S2' &&
+        runner.condition == ValidationCondition.control) {
+      return BatchRunSummary(
+        attempted: 1,
+        successes: 0,
+        errors: 0,
+        cancelled: 1,
+        completedBlockSizes: [],
+        stoppedByCancellation: true,
+      );
+    }
+    return BatchRunSummary(
+      attempted: scenario.repetitions,
+      successes: scenario.repetitions,
+      errors: 0,
+      cancelled: 0,
+      completedBlockSizes: scenario.blockSizes,
+      stoppedByCancellation: false,
+    );
+  }
+}
+
+ExperimentPlan _allReadyPlan(
+  ExperimentPlan original,
+  VerifiedDataset dataset, {
+  bool pendingLast = false,
+  bool mismatchLastDataset = false,
+}) {
+  final source = <String, Object?>{
+    'schemaVersion': '2',
+    'caseIds': <String>[],
+    'resourceProfiles': <Object?>[],
+    'scenarios': <Object?>[],
+  };
+  final profileTemplate =
+      jsonDecode(
+            jsonEncode({
+              'id': 'template',
+              'status': 'ready',
+              'datasetId': dataset.datasetId,
+              'datasetVersionId': dataset.datasetVersionId,
+              'datasetPartition': dataset.partition,
+              'datasetSha256': dataset.zipSha256,
+              'workflowId': 'workflow-template',
+              'workflowVersionId': 'workflow-version-template',
+              'workflowVersion': '1.0.0',
+              'modelRequirements': [
+                {
+                  'nodeId': 'model-node-template',
+                  'modelVersionId': 'model-version-template',
+                  'sha256': 'b' * 64,
+                  'inputContract': {
+                    'width': 224,
+                    'height': 224,
+                    'channels': 3,
+                    'normalization': 'none',
+                  },
+                  'modelOutputContract': {
+                    'type': 'classification',
+                    'labels': ['roya'],
+                  },
+                },
+              ],
+              'outputContract': [
+                {
+                  'name': 'classification',
+                  'resultType': 'classification',
+                  'labels': ['roya'],
+                },
+              ],
+            }),
+          )
+          as Map<String, Object?>;
+  final profiles = <Object?>[];
+  for (final originalProfile in original.resourceProfiles) {
+    if (pendingLast &&
+        originalProfile.id == original.resourceProfiles.last.id) {
+      profiles.add({'id': originalProfile.id, 'status': 'pending'});
+      continue;
+    }
+    final profile =
+        jsonDecode(jsonEncode(profileTemplate)) as Map<String, Object?>;
+    profile['id'] = originalProfile.id;
+    profile['workflowId'] = 'workflow-${originalProfile.id}';
+    profile['workflowVersionId'] = 'workflow-version-${originalProfile.id}';
+    (profile['modelRequirements'] as List).single['nodeId'] =
+        'model-node-${originalProfile.id}';
+    (profile['modelRequirements'] as List).single['modelVersionId'] =
+        'model-version-${originalProfile.id}';
+    if (mismatchLastDataset &&
+        originalProfile.id == original.resourceProfiles.last.id) {
+      profile['datasetSha256'] = 'd' * 64;
+    }
+    profiles.add(profile);
+  }
+  source['resourceProfiles'] = profiles;
+  source['scenarios'] = original.scenarios.map((scenario) {
+    final raw = <String, Object?>{
+      'id': scenario.id,
+      'phase': scenario.phase.name,
+      'repetitions': scenario.repetitions,
+      'blockSizes': scenario.blockSizes,
+      'caseIds': scenario.caseIds,
+      'runLabels': scenario.runLabels,
+      'requiresExternalMeasurement': scenario.requiresExternalMeasurement,
+      if (scenario.resourceProfileId != null)
+        'resourceProfileId': scenario.resourceProfileId,
+    };
+    if (scenario.resourceProfileId != null &&
+        scenario.phase != ValidationPhase.coldStart &&
+        scenario.phase != ValidationPhase.fault) {
+      raw['caseIds'] = ['coffee-1', 'coffee-2'];
+    }
+    return raw;
+  }).toList();
+  return ExperimentPlan.fromJson(source);
+}
+
+Map<String, Map<ValidationCondition, ValidationConditionRunner>> _runnersFor(
+  ExperimentPlan plan,
+) => {
+  for (final profile in plan.resourceProfiles)
+    profile.id: {
+      ValidationCondition.control: _FakeRunner(),
+      ValidationCondition.treatment: _FakeRunner(
+        runCondition: ValidationCondition.treatment,
+      ),
+    },
+};
