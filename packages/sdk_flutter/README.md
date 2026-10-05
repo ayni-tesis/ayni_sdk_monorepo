@@ -91,7 +91,7 @@ resuelve localmente y queda cacheada en esa instancia.
 
 ## Sincronización
 
-Después de inicializar, sincroniza para instalar nuevas versiones publicadas. `SyncResult.status` indica el resultado general: `updated`, `upToDate`, `offline` o `error`. Ante `offline`, conserva y usa los workflows ya instalados. Ante `error`, no des por descartados todos los cambios: puede haber recursos actualizados junto con recursos fallidos. Recorre `result.resources` y maneja el `status` de cada recurso; la lista puede estar vacía si el fallo ocurrió antes de compararlos con el servidor.
+Después de inicializar, sincroniza para instalar nuevas versiones publicadas. Por defecto, `sync()` también envía trazas autorizadas pendientes. Para sincronizar los recursos antes de medir y dejar esas trazas en la outbox hasta el cierre, usa `sync(uploadPendingTraces: false)`; conserva el envío pendiente y la próxima sincronización predeterminada lo intentará. `SyncResult.status` indica el resultado general: `updated`, `upToDate`, `offline` o `error`. Ante `offline`, conserva y usa los workflows ya instalados. Ante `error`, no des por descartados todos los cambios: puede haber recursos actualizados junto con recursos fallidos. Recorre `result.resources` y maneja el `status` de cada recurso; la lista puede estar vacía si el fallo ocurrió antes de compararlos con el servidor.
 
 ```dart
 final result = await sdk.sync();
@@ -130,7 +130,10 @@ for (final resource in result.resources) {
 ## Trazas técnicas locales y envío
 
 Cada `sync()` intenta actualizar la política de captura técnica de la
-aplicación. Una respuesta válida se guarda en
+aplicación. Cuando `uploadPendingTraces` es `true` (valor predeterminado),
+también intenta subir la outbox autorizada antes de solicitar el manifiesto.
+Una llamada con `uploadPendingTraces: false` no la procesa ni la borra. Una
+respuesta válida de política se guarda en
 `storageDirectory/diagnostics/telemetry-policy.json`; una falla mantiene la
 última política válida. Sin una política válida habilitada, el SDK no crea
 trazas. La política de telemetría y el consentimiento opcional `sdkImprovement`
@@ -174,8 +177,8 @@ allowlisted y errores tipados sanitizados. Nunca serializa bytes de imagen ni
 tensores arbitrarios. `run()` guarda la traza, antes de devolver el resultado o
 lanzar el error, en una outbox local durable dentro de
 `storageDirectory/diagnostics/trace-outbox/`. Cada `traceId` queda pendiente una
-sola vez y sobrevive a reinicios. En `sync()`, el SDK consulta la política vigente
-antes de cada `POST /sdk/traces` y elimina la traza local solo tras validar el
+sola vez y sobrevive a reinicios. En una sincronización que sube trazas, el SDK
+consulta la política vigente antes de cada `POST /sdk/traces` y elimina la traza local solo tras validar el
 acuse del servidor. Si la política no se obtiene, está deshabilitada, la red
 falla o el servidor rechaza el contenido, queda pendiente para otro intento. Si
 la escritura falla, la ejecución conserva su resultado o error original y

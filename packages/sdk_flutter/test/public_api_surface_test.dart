@@ -253,6 +253,7 @@ void main() {
           isA<
             Future<SyncResult> Function({
               void Function(EvidenceEvent)? onEvidence,
+              bool uploadPendingTraces,
             })
           >(),
         );

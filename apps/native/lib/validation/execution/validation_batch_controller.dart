@@ -13,6 +13,15 @@ import '../validation_performance_trace.dart';
 import 'validation_condition_runner.dart';
 
 class ValidationBatchController {
+  static const quickRunPercentage = 20;
+
+  static int repetitionsFor(
+    ValidationScenario scenario, {
+    required bool quickRun,
+  }) => quickRun
+      ? (scenario.repetitions * quickRunPercentage + 99) ~/ 100
+      : scenario.repetitions;
+
   ValidationBatchController({
     required ValidationJsonlStore store,
     required ValidationRunMetadata metadata,
@@ -39,6 +48,7 @@ class ValidationBatchController {
     required String scenarioId,
     required ValidationPhase phase,
     String? coldStartRunLabel,
+    int? repetitionLimit,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord) onRecord,
     bool captureTrace = false,
@@ -82,7 +92,16 @@ class ValidationBatchController {
     final cases = _casesFor(plan, scenario, dataset);
     final repetitions = phase == ValidationPhase.coldStart
         ? 1
-        : scenario.repetitions;
+        : repetitionLimit ?? scenario.repetitions;
+    if (repetitions < 1 || repetitions > scenario.repetitions) {
+      throw const ValidationBatchException(
+        'invalidRepetitionLimit',
+        'El límite de intentos debe estar dentro del escenario.',
+      );
+    }
+    final blockSizes = repetitionLimit == null
+        ? scenario.blockSizes
+        : [repetitions];
     _activeRunner = runner;
     _cancelRequested = false;
     var cancellationCheckInProgress = false;
@@ -107,14 +126,19 @@ class ValidationBatchController {
     var cancelled = 0;
     final completedBlocks = <int>[];
     var nextBlockIndex = 0;
-    var nextBlockEnd = scenario.blockSizes.first;
+    var nextBlockEnd = blockSizes.first;
     try {
       for (var index = 0; index < repetitions; index++) {
         if (_cancelRequested || await isCancelled()) {
           await cancel();
           break;
         }
-        final selectedCase = cases[index % cases.length];
+        final selectedCase = repetitionLimit == null
+            ? cases[index % cases.length]
+            : cases[(index * cases.length ~/ repetitions).clamp(
+                0,
+                cases.length - 1,
+              )];
         final bytes = await _readVerifiedImage(selectedCase);
         if (_cancelRequested || await isCancelled()) {
           await cancel();
@@ -227,10 +251,10 @@ class ValidationBatchController {
             cancelled++;
         }
         if (attempted == nextBlockEnd) {
-          completedBlocks.add(scenario.blockSizes[nextBlockIndex]);
+          completedBlocks.add(blockSizes[nextBlockIndex]);
           nextBlockIndex++;
-          if (nextBlockIndex < scenario.blockSizes.length) {
-            nextBlockEnd += scenario.blockSizes[nextBlockIndex];
+          if (nextBlockIndex < blockSizes.length) {
+            nextBlockEnd += blockSizes[nextBlockIndex];
           }
         }
         if (cancelledDuringRun || _cancelRequested) break;
@@ -257,6 +281,7 @@ class ValidationBatchController {
     required Map<String, Map<ValidationCondition, ValidationConditionRunner>>
     runnersByProfileId,
     required List<ValidationCondition> conditions,
+    bool quickRun = false,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord) onRecord,
@@ -275,9 +300,13 @@ class ValidationBatchController {
       conditions: conditions,
     );
     final scenarios = _automaticScenarios(plan);
-    final totalAttempts = scenarios.fold<int>(
+    final repetitionsByScenario = {
+      for (final scenario in scenarios)
+        scenario.id: repetitionsFor(scenario, quickRun: quickRun),
+    };
+    final totalAttempts = repetitionsByScenario.values.fold<int>(
       0,
-      (total, scenario) => total + scenario.repetitions * conditions.length,
+      (total, repetitions) => total + repetitions * conditions.length,
     );
     var attempted = 0;
     var successes = 0;
@@ -302,6 +331,7 @@ class ValidationBatchController {
           dataset: datasetsByProfileId[profileId]!,
           scenarioId: scenario.id,
           phase: scenario.phase,
+          repetitionLimit: quickRun ? repetitionsByScenario[scenario.id] : null,
           captureTrace:
               condition == ValidationCondition.treatment && captureTrace,
           isCancelled: isCancelled,
@@ -503,18 +533,24 @@ class ValidationBatchController {
     return plan.resourceProfiles.firstWhere((profile) => profile.isConfigured);
   }
 
-  List<ValidationScenario> _automaticScenarios(ExperimentPlan plan) => plan
-      .scenarios
-      .where(
-        (scenario) =>
-            const {
-              ValidationPhase.warmup,
-              ValidationPhase.measured,
-              ValidationPhase.stress,
-            }.contains(scenario.phase) &&
-            !scenario.requiresExternalMeasurement,
-      )
-      .toList(growable: false);
+  List<ValidationScenario> _automaticScenarios(ExperimentPlan plan) {
+    final readyProfileIds = plan.resourceProfiles
+        .where((profile) => profile.isConfigured)
+        .map((profile) => profile.id)
+        .toSet();
+    return plan.scenarios
+        .where(
+          (scenario) =>
+              const {
+                ValidationPhase.warmup,
+                ValidationPhase.measured,
+                ValidationPhase.stress,
+              }.contains(scenario.phase) &&
+              !scenario.requiresExternalMeasurement &&
+              readyProfileIds.contains(scenario.resourceProfileId),
+        )
+        .toList(growable: false);
+  }
 
   Future<Uint8List> _readVerifiedImage(VerifiedDatasetCase datasetCase) async {
     final file = File(datasetCase.localPath);

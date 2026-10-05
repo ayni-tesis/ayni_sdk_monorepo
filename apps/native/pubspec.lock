@@ -28,11 +28,10 @@ packages:
   ayni_sdk:
     dependency: "direct main"
     description:
-      name: ayni_sdk
-      sha256: d53f53a9135f215e232086a344f8c0afc39d42113774e9555ca69c9b6fae9dee
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.0"
+      path: "../../packages/sdk_flutter"
+      relative: true
+    source: path
+    version: "0.3.1"
   boolean_selector:
     dependency: transitive
     description:

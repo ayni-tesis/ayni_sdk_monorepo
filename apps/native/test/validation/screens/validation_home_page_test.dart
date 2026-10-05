@@ -74,12 +74,17 @@ void main() {
     expect(find.byKey(const ValueKey('prepare-resources')), findsNothing);
     expect(find.byKey(const ValueKey('sync-sdk')), findsNothing);
     expect(_button(tester, 'run-validation').onPressed, isNull);
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-events')),
+    );
     expect(find.byKey(const ValueKey('validation-events')), findsOneWidget);
   });
 
-  testWidgets('pending suite profiles keep the one action disabled', (
+  testWidgets('one action runs ready profiles while others stay pending', (
     tester,
   ) async {
+    runtime.traceAllowed = true;
     await _pumpHomePage(tester, runtime);
     await tester.enterText(
       find.byKey(const ValueKey('sdk-credential')),
@@ -87,10 +92,113 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.textContaining('S1, REU-01, S2'), findsOneWidget);
-    expect(_button(tester, 'run-validation').onPressed, isNull);
-    expect(runtime.prepareCalls, 0);
+    expect(find.textContaining('S1, S2'), findsOneWidget);
+    expect(_button(tester, 'run-validation').onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pumpAndSettle();
+
+    expect(runtime.preparedProfileConditions, [
+      'INT-01:control',
+      'INT-01:treatment',
+      'REU-01:control',
+      'REU-01:treatment',
+    ]);
+    expect(runtime.runSuiteCalls, 1);
+    expect(runtime.runCalls.any((call) => call.contains(':S1-')), isFalse);
+    expect(runtime.runCalls.any((call) => call.contains(':S2-')), isFalse);
+    expect(runtime.runCalls.any((call) => call.contains(':REU-01-')), isTrue);
+    await _scrollToFinder(tester, find.byKey(const ValueKey('status-text')));
+    expect(find.textContaining('Validación parcial terminada'), findsWidgets);
+  });
+
+  testWidgets('quick test runs twenty percent and offers the JSONL share', (
+    tester,
+  ) async {
+    runtime.traceAllowed = true;
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+
+    expect(_button(tester, 'quick-run-validation').onPressed, isNotNull);
+    expect(find.textContaining('1.076'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('quick-run-validation')));
+    await tester.pumpAndSettle();
+
+    expect(runtime.lastQuickRun, isTrue);
+    expect(runtime.pairRunIds.single, startsWith('quick-'));
+    expect(runtime.lastSuiteRunCount, 1076);
+    await _scrollToFinder(tester, find.byKey(const ValueKey('status-text')));
+    expect(find.textContaining('Prueba rápida terminada'), findsWidgets);
+    await _scrollToFinder(tester, find.byKey(const ValueKey('share-jsonl')));
+    expect(find.byKey(const ValueKey('share-jsonl')), findsOneWidget);
+    expect(find.textContaining('estado de captura de trazas'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('share-jsonl')));
+    await tester.pumpAndSettle();
+    expect(runtime.exportCalls, 1);
+  });
+
+  testWidgets('SDK sync error shows per-resource details when available', (
+    tester,
+  ) async {
+    runtime.traceAllowed = true;
+    runtime.syncState = const ValidationSyncState(
+      status: 'error',
+      ready: false,
+      issues: ['No se pudo guardar la actualización de Coffee EfficientNetB0.'],
+    );
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('run-validation')));
+    await tester.pumpAndSettle();
+
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-error-card')),
+    );
+    expect(
+      find.textContaining('No se pudo guardar la actualización de Coffee'),
+      findsOneWidget,
+    );
     expect(runtime.runSuiteCalls, 0);
+  });
+
+  testWidgets('offline pre-run sync stops cleanly without stale progress', (
+    tester,
+  ) async {
+    runtime.traceAllowed = true;
+    runtime.syncState = const ValidationSyncState(
+      status: 'offline',
+      ready: false,
+    );
+    await _pumpHomePage(tester, runtime);
+    await tester.enterText(
+      find.byKey(const ValueKey('sdk-credential')),
+      'private-test-credential',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('quick-run-validation')));
+    await tester.pumpAndSettle();
+
+    expect(runtime.runSuiteCalls, 0);
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-progress')),
+    );
+    expect(find.text('Procesando…'), findsNothing);
+    expect(
+      find.textContaining('Prueba rápida detenida antes de medir'),
+      findsOneWidget,
+    );
+    expect(runtime.syncTraceUploadCalls, [false]);
+    expect(find.textContaining('estado offline'), findsOneWidget);
   });
 
   testWidgets('a final profile preparation failure writes no suite rows', (
@@ -213,6 +321,7 @@ void main() {
         'S2:treatment',
       ]);
       expect(runtime.syncVerificationCalls, [true, true, true, true, false]);
+      expect(runtime.syncTraceUploadCalls, [false, false, false, false, true]);
       expect(runtime.runSuiteCalls, 1);
       expect(runtime.runCalls, hasLength(24));
       expect(runtime.runCalls.take(4), [
@@ -221,6 +330,10 @@ void main() {
         'control:PERF-02:false',
         'treatment:PERF-02:false',
       ]);
+      await _scrollToFinder(
+        tester,
+        find.byKey(const ValueKey('validation-progress-text')),
+      );
       expect(find.textContaining('100%'), findsOneWidget);
       await _scrollToFinder(
         tester,
@@ -390,10 +503,20 @@ class _FakeRuntime implements ValidationHomeRuntime {
   final preparedProfileConditions = <String>[];
   final coldStartRunLabels = <String?>[];
   final syncVerificationCalls = <bool>[];
+  final syncTraceUploadCalls = <bool>[];
   final syncProfileIds = <String>[];
   final runCalls = <String>[];
   final tracePermissionChanges = <bool>[];
   int runSuiteCalls = 0;
+  bool? lastQuickRun;
+  int lastSuiteRunCount = 0;
+  int exportCalls = 0;
+  final pairRunIds = <String>[];
+  ValidationSyncState syncState = const ValidationSyncState(
+    status: 'upToDate',
+    ready: true,
+    workflowVersion: '1.0.0',
+  );
   final runStarted = Completer<void>();
   Completer<BatchRunSummary>? activeRun;
 
@@ -471,33 +594,40 @@ class _FakeRuntime implements ValidationHomeRuntime {
   Future<ValidationSyncState> synchronizeSdk({
     required ValidationResourceProfile profile,
     bool verifyWorkflow = true,
+    bool uploadPendingTraces = true,
   }) async {
     syncVerificationCalls.add(verifyWorkflow);
+    syncTraceUploadCalls.add(uploadPendingTraces);
     syncProfileIds.add(profile.id);
-    return const ValidationSyncState(
-      status: 'upToDate',
-      ready: true,
-      workflowVersion: '1.0.0',
-    );
+    return syncState;
   }
 
   @override
   Future<BatchRunSummary> runSuite({
     required String pairRunId,
     required List<ValidationCondition> conditions,
+    bool quickRun = false,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
     required void Function(ValidationSuiteProgress progress) onProgress,
   }) async {
     runSuiteCalls++;
+    lastQuickRun = quickRun;
+    pairRunIds.add(pairRunId);
+    final readyProfileIds = plan.resourceProfiles
+        .where((profile) => profile.isConfigured)
+        .map((profile) => profile.id)
+        .toSet();
     final scenarios = plan.scenarios
         .where(
-          (scenario) => {
-            ValidationPhase.warmup,
-            ValidationPhase.measured,
-            ValidationPhase.stress,
-          }.contains(scenario.phase),
+          (scenario) =>
+              {
+                ValidationPhase.warmup,
+                ValidationPhase.measured,
+                ValidationPhase.stress,
+              }.contains(scenario.phase) &&
+              readyProfileIds.contains(scenario.resourceProfileId),
         )
         .toList();
     for (final scenario in scenarios) {
@@ -508,10 +638,13 @@ class _FakeRuntime implements ValidationHomeRuntime {
       }
     }
     if (!runStarted.isCompleted) runStarted.complete();
-    final total = scenarios.fold<int>(
-      0,
-      (sum, scenario) => sum + scenario.repetitions * conditions.length,
-    );
+    final total = scenarios.fold<int>(0, (sum, scenario) {
+      final repetitions = quickRun
+          ? (scenario.repetitions * 20 + 99) ~/ 100
+          : scenario.repetitions;
+      return sum + repetitions * conditions.length;
+    });
+    lastSuiteRunCount = total;
     final summary = holdRun
         ? await (activeRun = Completer<BatchRunSummary>()).future
         : BatchRunSummary(
@@ -595,7 +728,9 @@ class _FakeRuntime implements ValidationHomeRuntime {
   }
 
   @override
-  Future<void> exportJsonl() async {}
+  Future<void> exportJsonl() async {
+    exportCalls++;
+  }
 
   @override
   Future<void> dispose() async {}

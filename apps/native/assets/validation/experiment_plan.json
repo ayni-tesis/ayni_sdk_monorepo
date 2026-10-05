@@ -43,7 +43,60 @@
     },
     {
       "id": "REU-01",
-      "status": "pending"
+      "status": "ready",
+      "datasetId": "5f2b8458-430b-4053-8dca-542a58d1934f",
+      "datasetVersionId": "bf671a9e-1668-496c-83b2-f60cf198373f",
+      "datasetPartition": "test",
+      "datasetSha256": "df0070c6f535d97f2b0cecba45bfb7fc8eb932a9d53f82b26656209d20501937",
+      "workflowId": "7cd94e74-0f71-46b1-a108-26c6cda0f466",
+      "workflowVersionId": "85cd6afd-903b-467d-bc20-e3887f3fcc38",
+      "workflowVersion": "1.0.0",
+      "modelRequirements": [
+        {
+          "nodeId": "96c2e159-e4e4-4c2e-b7c5-ee30063c43fa",
+          "modelVersionId": "e14d294b-d2cd-4ef5-92d2-3d4cec9075ad",
+          "sha256": "e1940bfdf35e8c8a92528cae961b5e7bdd68db719936b950860e2b5df97c93d3",
+          "inputContract": {
+            "width": 224,
+            "height": 224,
+            "channels": 3,
+            "normalization": "none"
+          },
+          "modelOutputContract": {
+            "type": "classification",
+            "labels": [
+              "bacterial_spot",
+              "early_blight",
+              "healthy",
+              "late_blight",
+              "leaf_mold",
+              "septoria_leaf_spot",
+              "spider_mites",
+              "target_spot",
+              "tomato_mosaic_virus",
+              "tomato_yellow_leaf_curl_virus"
+            ]
+          }
+        }
+      ],
+      "outputContract": [
+        {
+          "name": "Diagnóstico",
+          "resultType": "classification",
+          "labels": [
+            "bacterial_spot",
+            "early_blight",
+            "healthy",
+            "late_blight",
+            "leaf_mold",
+            "septoria_leaf_spot",
+            "spider_mites",
+            "target_spot",
+            "tomato_mosaic_virus",
+            "tomato_yellow_leaf_curl_virus"
+          ]
+        }
+      ]
     },
     {
       "id": "S2",
