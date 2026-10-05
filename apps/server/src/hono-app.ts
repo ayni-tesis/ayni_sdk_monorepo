@@ -89,10 +89,14 @@ import {
   storeSdkTrace,
 } from "./sdk-trace-store";
 import { createSdkTracesApp } from "./sdk-traces";
+import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";
 import { getTelemetryPolicy, updateTelemetryPolicy } from "./telemetry-policy-store";
 import { createTelemetryRetentionApp } from "./telemetry-retention";
+import { r2ValidationDatasetStorage } from "./validation-dataset-storage";
+import { createValidationDatasetStore } from "./validation-dataset-store";
+import { createValidationDatasetsApp } from "./validation-datasets";
 import {
   addConditionNode,
   addDatasetCaptureNode,
@@ -236,6 +240,11 @@ const modelVersions = {
   },
 };
 
+const validationDatasets = createValidationDatasetStore({
+  db,
+  storage: r2ValidationDatasetStorage,
+});
+
 const workflows = {
   create(input: { applicationId: string; userId: string; name: string }) {
     return createWorkflow(db, input);
@@ -329,6 +338,12 @@ const sdkModelVersions = {
   },
   getManifest(applicationId: string, modelVersionId: string) {
     return getSdkModelVersionManifest(db, r2ModelVersionStorage, applicationId, modelVersionId);
+  },
+};
+
+const sdkValidationDatasetCredentials = {
+  verify(secret: string) {
+    return useSdkCredential(db, secret, { reportArchivedApplication: true });
   },
 };
 
@@ -827,6 +842,15 @@ app.route(
 );
 app.route(
   "/",
+  createValidationDatasetsApp({
+    getSession: getCurrentTermsSession,
+    applications,
+    validationDatasets,
+    storage: r2ValidationDatasetStorage,
+  }),
+);
+app.route(
+  "/",
   createWorkflowsApp({
     getSession: getCurrentTermsSession,
     applications,
@@ -838,6 +862,14 @@ app.route(
   createSdkModelVersionsApp({
     credentials: sdkModelVersions,
     modelVersions: sdkModelVersions,
+  }),
+);
+app.route(
+  "/",
+  createSdkValidationDatasetsApp({
+    credentials: sdkValidationDatasetCredentials,
+    datasets: validationDatasets,
+    storage: r2ValidationDatasetStorage,
   }),
 );
 app.route("/", createSdkSyncApp({ credentials: sdkSync, sync: sdkSync }));

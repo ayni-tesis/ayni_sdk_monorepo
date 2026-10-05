@@ -11,6 +11,7 @@ import { PrivacyRightsRequestsView } from "./application/privacy-rights-requests
 import { PrivacyTreatmentMapView } from "./application/privacy-treatment-map-view";
 import { SettingsView } from "./application/settings-view";
 import { TelemetryPolicyView } from "./application/telemetry-policy-view";
+import { ValidationDatasetsPanel } from "./application/validation-datasets-panel";
 import { WorkflowDetailView } from "./application/workflow-detail-view";
 import { WorkflowsView } from "./application/workflows-view";
 
@@ -144,6 +145,15 @@ export function ApplicationDetailPanel({
 
       {activeSection === "credentials" && (
         <CredentialsView application={application} canManage={canManage} />
+      )}
+
+      {activeSection === "datasets" && (
+        <ValidationDatasetsPanel
+          key={application.id}
+          applicationId={application.id}
+          canManage={canManage}
+          applicationStatus={application.status}
+        />
       )}
 
       {activeSection === "privacy" && (

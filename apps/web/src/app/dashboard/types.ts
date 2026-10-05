@@ -40,6 +40,7 @@ export type DashboardView =
   | "overview"
   | "workflows"
   | "models"
+  | "datasets"
   | "credentials"
   | "privacy"
   | "collection"
@@ -50,6 +51,7 @@ export type ApplicationSection =
   | "overview"
   | "workflows"
   | "models"
+  | "datasets"
   | "credentials"
   | "privacy"
   | "collection"
@@ -68,6 +70,7 @@ export const DASHBOARD_VIEWS: Record<DashboardView, DashboardViewDescriptor> = {
   overview: { id: "overview", label: "Resumen", segment: "overview" },
   workflows: { id: "workflows", label: "Workflows", segment: "workflows" },
   models: { id: "models", label: "Modelos", segment: "models" },
+  datasets: { id: "datasets", label: "Datasets de validación", segment: "validation-datasets" },
   credentials: { id: "credentials", label: "Credenciales SDK", segment: "credentials" },
   privacy: { id: "privacy", label: "Privacidad y datos", segment: "privacy" },
   collection: { id: "collection", label: "Recolección de evidencia", segment: "collection" },

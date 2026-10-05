@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "validation_dataset_application_name_unique" ON "validation_dataset" USING btree ("application_id","name");

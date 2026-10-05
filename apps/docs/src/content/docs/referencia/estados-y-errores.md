@@ -169,7 +169,9 @@ lo recibe: ve el resultado de la última columna.
 | `evidenceImageMissing` | `409` | La imagen de la evidencia todavía no está en el almacenamiento. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, cuenta un intento de esa evidencia y sigue con la siguiente. |
 | `workflowVersionNotFound` | `404` | La versión de workflow que listó el servidor ya no se puede descargar, por ejemplo porque su workflow se archivó durante la sincronización. | El workflow trae `workflowUnavailable` y `sync()` devuelve `SyncStatus.error`. |
 | `modelVersionNotFound` | `404` | La versión de modelo que usa un workflow ya no se puede descargar. | El workflow trae `dependencyFailed` con esa versión en `<modelo>`, y `sync()` devuelve `SyncStatus.error`. |
+| `datasetVersionNotFound` | `404` | La versión no existe, pertenece a otra aplicación o la aplicación está archivada. | El cliente de validación recibe este error y no obtiene una URL de descarga. |
+| `datasetManifestUnavailable` | `500` | No se pudo consultar la versión o crear la URL firmada. | El cliente de validación recibe este error y no obtiene una URL de descarga. |
 
 :::note
-El SDK no expone el código HTTP a la app: ante una credencial revocada devuelve `SyncStatus.error`.
+Los métodos de `ayni_sdk` no exponen el código HTTP a la app: ante una credencial revocada, `sync()` devuelve `SyncStatus.error`. El endpoint de manifiesto de dataset responde directamente al cliente de validación con su estado HTTP y su JSON.
 :::

@@ -6,6 +6,7 @@ import {
 import { z } from "zod";
 
 import { registerSdkRoutes, sdkApiDescription } from "./sdk-openapi";
+import { registerValidationDatasetRoutes } from "./validation-datasets";
 
 extendZodWithOpenApi(z);
 
@@ -30,6 +31,7 @@ export function createOpenApiDocument() {
     },
   });
   registerSdkRoutes(registry);
+  registerValidationDatasetRoutes(registry);
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
@@ -48,3 +50,5 @@ export function createOpenApiDocument() {
 }
 
 export const openApiDocument = createOpenApiDocument();
+
+export * from "./validation-datasets";

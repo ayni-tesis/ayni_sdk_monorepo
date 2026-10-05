@@ -63,6 +63,18 @@ y solo la cuenta como enviada cuando el servidor confirma que la recibió.
 | Solo la imagen JPEG optimizada de esa evidencia, sin credencial | Justo después, si el servidor responde que todavía no la tiene. | `PUT <uploadUrl>`: la URL firmada del almacenamiento de objetos que indica el servidor, un host distinto del servidor, que vence 15 minutos después. | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la evidencia, en la ruta | Después de subir la imagen, para que el servidor la compruebe y confirme la recepción. | `POST /sdk/evidence/<evidenceId>/complete`, en el servidor de Ayni (`serverUrl`). | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
 
+### Descarga del dataset de validación
+
+`ayni_sdk.sync()` no descarga datasets. Para repetir las corridas de validación,
+la aplicación anfitriona puede pedir el manifiesto con la credencial de su SDK
+y el ID de la versión en `GET /sdk/dataset-versions/<datasetVersionId>/manifest`.
+El manifiesto incluye metadatos, SHA-256, tamaño y una URL de descarga firmada
+que vence en 15 minutos; no entrega la clave R2. El consumidor descarga el ZIP
+desde esa URL temporal. El SHA-256 del ZIP que declara el manifiesto permite comprobar el archivo
+antes de usarlo. Esta descarga no envía imágenes, tensores ni resultados al
+servidor de Ayni; las trazas usan el permiso y el flujo independiente descrito
+arriba.
+
 El esquema de ingesta rechaza imágenes, bytes de entrada, tensores y campos
 adicionales; cada cuerpo está limitado a 2 MiB.
 El servidor limita cada traza a la aplicación de la credencial,
