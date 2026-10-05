@@ -126,21 +126,21 @@ Expected: S2's complete normalized output matches the expected fixture and inval
 - Consumes: Task 1 profiles, Task 2 verified model artifacts, Task 3's direct workflow and output contract, Task 5 suite preflight, and published ayni_sdk 0.3.0.
 - Produces: SDK runner verification of the exact workflow/model-node set and all final output names/types; run records add modelArtifacts [{nodeId, modelVersionId, sha256}] while retaining legacy singleton fields for existing JSONL compatibility.
 
-- [ ] **Step 1: Write failing SDK-runner and JSONL tests** for exact two-model S2 verification, a changed/missing/extra model node, explicit tensor roles, all typed outputs, old singleton-row readback, and new multi-model round-trip. Update the package configuration test to expect hosted ayni_sdk 0.3.0 after that release is available.
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 1: Write failing SDK-runner and JSONL tests** for exact two-model S2 verification, a changed/missing/extra model node, explicit tensor roles, all typed outputs, old singleton-row readback, and new multi-model round-trip. Update the package configuration test to expect hosted ayni_sdk 0.3.0 after that release is available.
+- [x] **Step 2: Run the focused tests**
 
 Run: cd apps/native; flutter test test/validation/execution/ayni_sdk_runner_test.dart test/validation/execution/validation_output_normalizer_test.dart test/validation/storage/validation_jsonl_store_test.dart
 
 Expected: current SDK runner rejects detection and only records one model version/hash.
 
-- [ ] **Step 3: Implement exact SDK verification and record compatibility**. Remove the detection rejection only when the prepared contract carries all explicit roles; require exact published workflow/model versions and output set; parse old rows without rewriting the JSONL file.
+- [x] **Step 3: Implement exact SDK verification and record compatibility**. Remove the detection rejection only when the prepared contract carries all explicit roles; require exact published workflow/model versions and output set; parse old rows without rewriting the JSONL file.
 - [ ] **Step 4: Resolve ayni_sdk 0.3.0 and verify the focused tests**
 
 Run: cd apps/native; flutter pub get; flutter test test/validation/execution/ayni_sdk_runner_test.dart test/validation/execution/validation_output_normalizer_test.dart test/validation/storage/validation_jsonl_store_test.dart
 
 Expected: the hosted 0.3.0 decoder is used and old and new JSONL records both load.
 
-- [ ] **Step 5: Commit** runner, record, dependency pin, and tests as feat(native): validate multi-model SDK runs.
+- [x] **Step 5: Commit** runner, record compatibility, and tests as feat(native): validate multi-model SDK runs. Keep the hosted pin at 0.2.0 until 0.3.0 is published.
 
 ### Task 5: Run the suite from one action and report progress
 

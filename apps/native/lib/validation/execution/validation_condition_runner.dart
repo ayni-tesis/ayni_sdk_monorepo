@@ -50,18 +50,21 @@ class ConditionRunResult {
     required this.durationMicros,
     required this.modelVersionId,
     required this.modelSha256,
+    required List<ValidationRunModelArtifact> modelArtifacts,
     required Map<String, Object?> normalizedOutput,
     required this.workflowVersionId,
     required this.workflowVersion,
     required this.errorCode,
     required this.errorMessage,
     required this.tracePersistenceFailed,
-  }) : normalizedOutput = freezeObjectMap(normalizedOutput);
+  }) : modelArtifacts = List.unmodifiable(modelArtifacts),
+       normalizedOutput = freezeObjectMap(normalizedOutput);
 
   factory ConditionRunResult.success({
     required int durationMicros,
     required String modelVersionId,
     required String modelSha256,
+    List<ValidationRunModelArtifact> modelArtifacts = const [],
     required Map<String, Object?> normalizedOutput,
     String? workflowVersionId,
     String? workflowVersion,
@@ -71,6 +74,7 @@ class ConditionRunResult {
     durationMicros: durationMicros,
     modelVersionId: modelVersionId,
     modelSha256: modelSha256,
+    modelArtifacts: modelArtifacts,
     normalizedOutput: normalizedOutput,
     workflowVersionId: workflowVersionId,
     workflowVersion: workflowVersion,
@@ -83,6 +87,7 @@ class ConditionRunResult {
     required int durationMicros,
     required String modelVersionId,
     required String modelSha256,
+    List<ValidationRunModelArtifact> modelArtifacts = const [],
     required String errorCode,
     required String errorMessage,
     String? workflowVersionId,
@@ -93,6 +98,7 @@ class ConditionRunResult {
     durationMicros: durationMicros,
     modelVersionId: modelVersionId,
     modelSha256: modelSha256,
+    modelArtifacts: modelArtifacts,
     normalizedOutput: const {},
     workflowVersionId: workflowVersionId,
     workflowVersion: workflowVersion,
@@ -105,6 +111,7 @@ class ConditionRunResult {
     required int durationMicros,
     required String modelVersionId,
     required String modelSha256,
+    List<ValidationRunModelArtifact> modelArtifacts = const [],
     String? workflowVersionId,
     String? workflowVersion,
     bool tracePersistenceFailed = false,
@@ -113,6 +120,7 @@ class ConditionRunResult {
     durationMicros: durationMicros,
     modelVersionId: modelVersionId,
     modelSha256: modelSha256,
+    modelArtifacts: modelArtifacts,
     normalizedOutput: const {},
     workflowVersionId: workflowVersionId,
     workflowVersion: workflowVersion,
@@ -125,6 +133,7 @@ class ConditionRunResult {
   final int durationMicros;
   final String modelVersionId;
   final String modelSha256;
+  final List<ValidationRunModelArtifact> modelArtifacts;
   final Map<String, Object?> normalizedOutput;
   final String? workflowVersionId;
   final String? workflowVersion;

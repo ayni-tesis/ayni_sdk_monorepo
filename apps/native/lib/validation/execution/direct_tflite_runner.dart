@@ -62,6 +62,15 @@ class DirectTfliteRunner implements ValidationConditionRunner {
   final ValidationOutputNormalizer _outputNormalizer;
   Map<String, VerifiedModelArtifact> _artifacts = const {};
   Map<String, Object?>? _workflow;
+
+  List<ValidationRunModelArtifact> get _modelArtifacts => [
+    for (final requirement in _profile.modelRequirements)
+      ValidationRunModelArtifact(
+        nodeId: requirement.nodeId,
+        modelVersionId: requirement.modelVersionId,
+        sha256: requirement.sha256,
+      ),
+  ];
   bool _runActive = false;
   bool _cancelRequested = false;
 
@@ -111,7 +120,9 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         'Prepara los recursos antes de ejecutar el lote.',
       );
     }
-    final primaryArtifact = _artifacts.values.first;
+    // Legacy singleton fields summarize the first profile model.
+    final primaryRequirement = _profile.modelRequirements.first;
+    final primaryArtifact = _artifacts[primaryRequirement.nodeId]!;
     try {
       validateRequestDataset(request, _profile);
       if (sha256.convert(request.inputBytes).toString() !=
@@ -126,6 +137,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         durationMicros: 0,
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
+        modelArtifacts: _modelArtifacts,
         errorCode: error.code,
         errorMessage: error.message,
       );
@@ -141,6 +153,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
           durationMicros: stopwatch.elapsedMicroseconds,
           modelVersionId: primaryArtifact.modelVersionId,
           modelSha256: primaryArtifact.sha256,
+          modelArtifacts: _modelArtifacts,
           workflowVersionId: _profile.workflowVersionId,
           workflowVersion: _profile.workflowVersion,
         );
@@ -149,6 +162,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         durationMicros: stopwatch.elapsedMicroseconds,
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.workflowVersionId,
         workflowVersion: _profile.workflowVersion,
         normalizedOutput: output,
@@ -160,6 +174,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
           durationMicros: stopwatch.elapsedMicroseconds,
           modelVersionId: primaryArtifact.modelVersionId,
           modelSha256: primaryArtifact.sha256,
+          modelArtifacts: _modelArtifacts,
           workflowVersionId: _profile.workflowVersionId,
           workflowVersion: _profile.workflowVersion,
         );
@@ -168,6 +183,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         durationMicros: stopwatch.elapsedMicroseconds,
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.workflowVersionId,
         workflowVersion: _profile.workflowVersion,
         errorCode: error.code,
@@ -179,6 +195,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         durationMicros: stopwatch.elapsedMicroseconds,
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.workflowVersionId,
         workflowVersion: _profile.workflowVersion,
         errorCode: error.code,
@@ -191,6 +208,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         durationMicros: stopwatch.elapsedMicroseconds,
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
+        modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.workflowVersionId,
         workflowVersion: _profile.workflowVersion,
         errorCode: 'inferenceFailed',

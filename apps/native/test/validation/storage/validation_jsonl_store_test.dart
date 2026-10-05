@@ -35,6 +35,56 @@ void main() {
     expect(await file.readAsString(), endsWith('\n'));
   });
 
+  test('round-trips all model node version and hash associations', () async {
+    final record = _record(
+      1,
+      modelArtifacts: [
+        ValidationRunModelArtifact(
+          nodeId: 'classifier-node',
+          modelVersionId: 'classifier-version',
+          sha256: 'c' * 64,
+        ),
+        ValidationRunModelArtifact(
+          nodeId: 'detector-node',
+          modelVersionId: 'detector-version',
+          sha256: 'd' * 64,
+        ),
+      ],
+    );
+    await ValidationJsonlStore(file).append(record);
+
+    final loaded = (await ValidationJsonlStore(file).readAll()).single;
+    expect(loaded.modelArtifacts, record.modelArtifacts);
+    expect(jsonDecode(await file.readAsString())['modelArtifacts'], [
+      {
+        'nodeId': 'classifier-node',
+        'modelVersionId': 'classifier-version',
+        'sha256': 'c' * 64,
+      },
+      {
+        'nodeId': 'detector-node',
+        'modelVersionId': 'detector-version',
+        'sha256': 'd' * 64,
+      },
+    ]);
+  });
+
+  test(
+    'reads legacy singleton rows without rewriting their JSONL bytes',
+    () async {
+      final legacy = _record(1).toJson()..remove('modelArtifacts');
+      final line = '${jsonEncode(legacy)}\n';
+      await file.writeAsString(line);
+
+      final loaded = (await ValidationJsonlStore(file).readAll()).single;
+
+      expect(loaded.modelVersionId, 'model-version-1');
+      expect(loaded.modelSha256, 'c' * 64);
+      expect(loaded.modelArtifacts, isEmpty);
+      expect(await file.readAsString(), line);
+    },
+  );
+
   test(
     'drops only a malformed final line and can append after recovery',
     () async {
@@ -117,6 +167,7 @@ class _FakeShare implements ValidationFileShare {
 ValidationRunRecord _record(
   int repetition, {
   bool tracePersistenceFailed = false,
+  List<ValidationRunModelArtifact> modelArtifacts = const [],
 }) => ValidationRunRecord(
   pairRunId: 'pair-1',
   repetition: repetition,
@@ -130,6 +181,7 @@ ValidationRunRecord _record(
   inputSha256: 'b' * 64,
   modelVersionId: 'model-version-1',
   modelSha256: 'c' * 64,
+  modelArtifacts: modelArtifacts,
   workflowVersionId: null,
   workflowVersion: null,
   backend: 'CPU',

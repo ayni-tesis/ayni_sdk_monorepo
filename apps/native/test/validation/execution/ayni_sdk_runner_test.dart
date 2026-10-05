@@ -100,6 +100,110 @@ void main() {
   );
 
   test(
+    'validates every S2 model contract and preserves its typed outputs',
+    () async {
+      final profile = _multiProfile();
+      modelRepository.sha256ByVersion = {
+        'classifier-version': 'b' * 64,
+        'detector-version': 'd' * 64,
+      };
+      definitions = _FakeWorkflowDefinitionRepository(_multiModelWorkflow());
+      sdk.outputs = const {
+        'classification': ClassificationResult('classifier-node', 'sana', 0.9, {
+          'sana': 0.9,
+          'roya': 0.1,
+        }),
+        'objects': DetectionResult('detector-node', [
+          Detection('coffee', 0.9, 0.1, 0.2, 0.8, 0.9),
+        ]),
+        'accepted': BooleanResult('condition-node', true),
+      };
+      runner = _makeRunner(
+        sdk: sdk,
+        modelRepository: modelRepository,
+        definitions: definitions,
+        preferences: preferences,
+        storageDirectory: temporaryDirectory,
+        profile: profile,
+        sdkVersion: '0.3.0',
+      );
+
+      await runner.prepare();
+      final result = await runner.runCase(
+        _requestForProfile(Uint8List.fromList([9, 8, 7]), profile),
+      );
+
+      expect(modelRepository.requestedVersionIds, [
+        'classifier-version',
+        'detector-version',
+      ]);
+      expect(definitions.requestedVersionIds, ['workflow-version-1']);
+      expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.normalizedOutput.keys, [
+        'classification',
+        'objects',
+        'accepted',
+      ]);
+      expect(result.normalizedOutput['objects'], {
+        'type': 'detection',
+        'detections': [
+          {
+            'label': 'coffee',
+            'confidence': 0.9,
+            'xMin': 0.1,
+            'yMin': 0.2,
+            'xMax': 0.8,
+            'yMax': 0.9,
+          },
+        ],
+      });
+      expect(result.modelArtifacts, [
+        ValidationRunModelArtifact(
+          nodeId: 'classifier-node',
+          modelVersionId: 'classifier-version',
+          sha256: 'b' * 64,
+        ),
+        ValidationRunModelArtifact(
+          nodeId: 'detector-node',
+          modelVersionId: 'detector-version',
+          sha256: 'd' * 64,
+        ),
+      ]);
+    },
+  );
+
+  test(
+    'rejects S2 workflows with missing, extra, or changed model nodes',
+    () async {
+      modelRepository.sha256ByVersion = {
+        'classifier-version': 'b' * 64,
+        'detector-version': 'd' * 64,
+      };
+      final invalidDefinitions = [
+        _multiModelWorkflow(removeDetector: true),
+        _multiModelWorkflow(addUnexpectedModel: true),
+        _multiModelWorkflow(detectorVersionId: 'wrong-version'),
+      ];
+      for (final definition in invalidDefinitions) {
+        definitions = _FakeWorkflowDefinitionRepository(definition);
+        runner = _makeRunner(
+          sdk: sdk,
+          modelRepository: modelRepository,
+          definitions: definitions,
+          preferences: preferences,
+          storageDirectory: temporaryDirectory,
+          profile: _multiProfile(),
+          sdkVersion: '0.3.0',
+        );
+        await expectLater(
+          runner.prepare(),
+          throwsA(isA<ValidationExecutionException>()),
+        );
+      }
+    },
+  );
+
+  test(
     'checks workflow and model versions, shares the same bytes, and normalizes SDK output',
     () async {
       await runner.prepare();
@@ -410,9 +514,14 @@ class _FakeValidationModelRepository implements ValidationModelRepository {
   _FakeValidationModelRepository(this.sha256);
 
   String sha256;
+  Map<String, String> sha256ByVersion = {};
+  final requestedVersionIds = <String>[];
 
   @override
-  Future<String> fetchSha256(String modelVersionId) async => sha256;
+  Future<String> fetchSha256(String modelVersionId) async {
+    requestedVersionIds.add(modelVersionId);
+    return sha256ByVersion[modelVersionId] ?? sha256;
+  }
 
   @override
   Future<VerifiedModelArtifact> prepare(
@@ -426,8 +535,10 @@ AyniSdkValidationRunner _makeRunner({
   required _FakeValidationModelRepository modelRepository,
   required _FakeWorkflowDefinitionRepository definitions,
   required ValidationPreferences preferences,
+  ValidationResourceProfile? profile,
+  String sdkVersion = '0.2.0',
 }) => AyniSdkValidationRunner(
-  profile: _profile(),
+  profile: profile ?? _profile(),
   credentials: const ValidationSdkCredentials(
     serverUrl: 'https://validation.example.test',
     credential: 'secret-sdk-credential',
@@ -437,6 +548,7 @@ AyniSdkValidationRunner _makeRunner({
   modelRepository: modelRepository,
   workflowDefinitions: definitions,
   preferences: preferences,
+  sdkVersion: sdkVersion,
 );
 
 ValidationRunRequest _request(Uint8List bytes, {bool captureTrace = false}) =>
@@ -454,6 +566,25 @@ ValidationRunRequest _request(Uint8List bytes, {bool captureTrace = false}) =>
       inputSha256: sha256.convert(bytes).toString(),
       captureTrace: captureTrace,
     );
+
+ValidationRunRequest _requestForProfile(
+  Uint8List bytes,
+  ValidationResourceProfile profile, {
+  bool captureTrace = false,
+}) => ValidationRunRequest(
+  pairRunId: 'pair-1',
+  repetition: 1,
+  phase: ValidationPhase.measured,
+  scenarioId: 'PERF-02',
+  caseId: 'coffee-1',
+  datasetId: profile.datasetId,
+  datasetVersionId: profile.datasetVersionId,
+  datasetPartition: profile.datasetPartition,
+  datasetSha256: profile.datasetSha256,
+  inputBytes: bytes,
+  inputSha256: sha256.convert(bytes).toString(),
+  captureTrace: captureTrace,
+);
 
 ValidationResourceProfile _profile({bool detection = false}) =>
     ValidationResourceProfile(
@@ -508,7 +639,7 @@ Map<String, Object?> _workflowDefinition({
       'outputs': {'imagen': 'image'},
     },
     {
-      'id': 'model-node',
+      'id': 'legacy-model-node',
       'type': 'model.tflite',
       'modelVersionId': modelVersionId,
       'inputs': {
@@ -531,17 +662,210 @@ Map<String, Object?> _workflowDefinition({
       'id': 'output-node',
       'type': 'output',
       'name': 'classification',
-      'inputs': {
-        'source': {'sourceNodeId': 'model-node', 'sourcePort': 'result'},
-      },
+      'sourceNodeId': 'legacy-model-node',
+      'sourcePort': 'result',
+      'resultType': 'classification',
     },
   ],
   'connections': [
     {
       'sourceNodeId': 'input-node',
       'sourcePort': 'imagen',
-      'targetNodeId': 'model-node',
+      'targetNodeId': 'legacy-model-node',
       'targetPort': 'image',
     },
   ],
 };
+
+ValidationResourceProfile _multiProfile() => ValidationResourceProfile.fromJson(
+  {
+    'id': 'coffee-s2',
+    'status': 'ready',
+    'datasetId': 'dataset-1',
+    'datasetVersionId': 'dataset-version-1',
+    'datasetPartition': 'test',
+    'datasetSha256': 'a' * 64,
+    'workflowId': 'workflow-1',
+    'workflowVersionId': 'workflow-version-1',
+    'workflowVersion': '1.0.0',
+    'modelRequirements': [
+      {
+        'nodeId': 'classifier-node',
+        'modelVersionId': 'classifier-version',
+        'sha256': 'b' * 64,
+        'inputContract': {
+          'width': 224,
+          'height': 224,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        },
+        'modelOutputContract': {
+          'type': 'classification',
+          'labels': ['sana', 'roya'],
+        },
+      },
+      {
+        'nodeId': 'detector-node',
+        'modelVersionId': 'detector-version',
+        'sha256': 'd' * 64,
+        'inputContract': {
+          'width': 320,
+          'height': 320,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        },
+        'modelOutputContract': {
+          'type': 'detection',
+          'labels': ['coffee'],
+          'scoreThreshold': 0.5,
+          'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+        },
+      },
+    ],
+    'outputContract': [
+      {
+        'name': 'classification',
+        'resultType': 'classification',
+        'labels': ['sana', 'roya'],
+      },
+      {
+        'name': 'objects',
+        'resultType': 'detection',
+        'labels': ['coffee'],
+        'scoreThreshold': 0.5,
+        'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+      },
+      {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+    ],
+  },
+);
+
+Map<String, Object?> _multiModelWorkflow({
+  bool removeDetector = false,
+  bool addUnexpectedModel = false,
+  String detectorVersionId = 'detector-version',
+}) {
+  final nodes = <Map<String, Object?>>[
+    {
+      'id': 'input-node',
+      'type': 'input.image',
+      'outputs': {'imagen': 'image'},
+    },
+    {
+      'id': 'classifier-node',
+      'type': 'model.tflite',
+      'modelVersionId': 'classifier-version',
+      'modelName': 'Coffee classifier',
+      'version': '1.0.0',
+      'inputs': {
+        'image': {
+          'type': 'image',
+          'width': 224,
+          'height': 224,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        },
+      },
+      'outputs': {
+        'result': {
+          'type': 'classification',
+          'labels': ['sana', 'roya'],
+        },
+      },
+    },
+    {
+      'id': 'condition-node',
+      'type': 'condition',
+      'sourceNodeId': 'classifier-node',
+      'label': 'sana',
+      'operator': 'gte',
+      'threshold': 0.8,
+      'branches': {'true': 'boolean', 'false': 'boolean'},
+    },
+    {
+      'id': 'detector-node',
+      'type': 'model.tflite',
+      'modelVersionId': detectorVersionId,
+      'modelName': 'Coffee detector',
+      'version': '1.0.0',
+      'inputs': {
+        'image': {
+          'type': 'image',
+          'width': 320,
+          'height': 320,
+          'channels': 3,
+          'normalization': 'zero_to_one',
+        },
+      },
+      'outputs': {
+        'result': {
+          'type': 'detection',
+          'labels': ['coffee'],
+          'scoreThreshold': 0.5,
+          'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+        },
+      },
+    },
+    {
+      'id': 'classification-output',
+      'type': 'output',
+      'name': 'classification',
+      'sourceNodeId': 'classifier-node',
+      'sourcePort': 'result',
+      'resultType': 'classification',
+    },
+    {
+      'id': 'detection-output',
+      'type': 'output',
+      'name': 'objects',
+      'sourceNodeId': 'detector-node',
+      'sourcePort': 'result',
+      'resultType': 'detection',
+    },
+    {
+      'id': 'accepted-output',
+      'type': 'output',
+      'name': 'accepted',
+      'sources': [
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'true',
+          'resultType': 'boolean',
+        },
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'false',
+          'resultType': 'boolean',
+        },
+      ],
+    },
+  ];
+  if (removeDetector) {
+    nodes.removeWhere((node) => node['id'] == 'detector-node');
+  }
+  if (addUnexpectedModel) {
+    nodes.add({
+      'id': 'unexpected-node',
+      'type': 'model.tflite',
+      'modelVersionId': 'unexpected-version',
+    });
+  }
+  return {
+    'schemaVersion': '2',
+    'nodes': nodes,
+    'connections': [
+      {
+        'sourceNodeId': 'input-node',
+        'sourcePort': 'imagen',
+        'targetNodeId': 'classifier-node',
+        'targetPort': 'image',
+      },
+      {
+        'sourceNodeId': 'input-node',
+        'sourcePort': 'imagen',
+        'targetNodeId': 'detector-node',
+        'targetPort': 'image',
+      },
+    ],
+  };
+}

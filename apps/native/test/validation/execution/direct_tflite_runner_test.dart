@@ -245,6 +245,18 @@ void main() {
         },
       );
       expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.modelArtifacts, [
+        ValidationRunModelArtifact(
+          nodeId: 'classifier-node',
+          modelVersionId: 'classifier-version',
+          sha256: 'b' * 64,
+        ),
+        ValidationRunModelArtifact(
+          nodeId: 'detector-node',
+          modelVersionId: 'detector-version',
+          sha256: 'c' * 64,
+        ),
+      ]);
       expect(result.normalizedOutput, {
         'classification': {
           'type': 'classification',
