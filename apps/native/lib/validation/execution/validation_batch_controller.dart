@@ -9,6 +9,7 @@ import '../models/experiment_plan.dart';
 import '../models/validation_run_metadata.dart';
 import '../models/validation_run_record.dart';
 import '../storage/validation_jsonl_store.dart';
+import '../validation_performance_trace.dart';
 import 'validation_condition_runner.dart';
 
 class ValidationBatchController {
@@ -16,13 +17,17 @@ class ValidationBatchController {
     required ValidationJsonlStore store,
     required ValidationRunMetadata metadata,
     Future<List<int>> Function(String path)? readBytes,
+    ValidationPerformanceTrace? performanceTrace,
   }) : _store = store,
        _metadata = metadata,
-       _readBytes = readBytes ?? _readFileBytes;
+       _readBytes = readBytes ?? _readFileBytes,
+       _performanceTrace =
+           performanceTrace ?? const ValidationPerformanceTrace(enabled: false);
 
   final ValidationJsonlStore _store;
   final ValidationRunMetadata _metadata;
   final Future<List<int>> Function(String path) _readBytes;
+  final ValidationPerformanceTrace _performanceTrace;
   ValidationConditionRunner? _activeRunner;
   bool _cancelRequested = false;
 
@@ -33,6 +38,7 @@ class ValidationBatchController {
     required VerifiedDataset dataset,
     required String scenarioId,
     required ValidationPhase phase,
+    String? coldStartRunLabel,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord) onRecord,
     bool captureTrace = false,
@@ -61,14 +67,21 @@ class ValidationBatchController {
       );
     }
     final scenario = scenarios.single;
-    if (scenario.requiresExternalMeasurement ||
-        phase == ValidationPhase.coldStart) {
+    final coldStartLabelIndex = coldStartRunLabel == null
+        ? -1
+        : scenario.runLabels.indexOf(coldStartRunLabel);
+    if (phase == ValidationPhase.coldStart
+        ? !scenario.requiresExternalMeasurement || coldStartLabelIndex < 0
+        : scenario.requiresExternalMeasurement || coldStartRunLabel != null) {
       throw const ValidationBatchException(
         'externalMeasurementRequired',
-        'PERF-01 requiere la medición externa indicada por el Plan.',
+        'PERF-01 requiere una etiqueta del benchmark externo indicada por el Plan.',
       );
     }
     final cases = _casesFor(plan, scenario, dataset);
+    final repetitions = phase == ValidationPhase.coldStart
+        ? 1
+        : scenario.repetitions;
     _activeRunner = runner;
     _cancelRequested = false;
     var cancellationCheckInProgress = false;
@@ -95,7 +108,7 @@ class ValidationBatchController {
     var nextBlockIndex = 0;
     var nextBlockEnd = scenario.blockSizes.first;
     try {
-      for (var index = 0; index < scenario.repetitions; index++) {
+      for (var index = 0; index < repetitions; index++) {
         if (_cancelRequested || await isCancelled()) {
           await cancel();
           break;
@@ -125,7 +138,12 @@ class ValidationBatchController {
         final stopwatch = Stopwatch()..start();
         ConditionRunResult result;
         try {
-          result = await runner.runCase(request);
+          result = phase == ValidationPhase.coldStart
+              ? await _performanceTrace.measure(
+                  ValidationPerformanceTrace.firstInference,
+                  () => runner.runCase(request),
+                )
+              : await runner.runCase(request);
         } on Object {
           stopwatch.stop();
           final profile = plan.activeResourceProfile;
@@ -147,6 +165,9 @@ class ValidationBatchController {
             errorMessage: 'No se pudo completar esta ejecución local.',
           );
         }
+        if (phase == ValidationPhase.coldStart) {
+          await _performanceTrace.finishColdStart();
+        }
         final cancelledDuringRun = _cancelRequested || await isCancelled();
         if (cancelledDuringRun && !_cancelRequested) await cancel();
         if (cancelledDuringRun &&
@@ -162,7 +183,9 @@ class ValidationBatchController {
         }
         final record = ValidationRunRecord(
           pairRunId: pairRunId,
-          repetition: index + 1,
+          repetition: phase == ValidationPhase.coldStart
+              ? coldStartLabelIndex + 1
+              : index + 1,
           condition: runner.condition,
           phase: phase,
           scenarioId: scenario.id,
@@ -216,7 +239,7 @@ class ValidationBatchController {
       errors: errors,
       cancelled: cancelled,
       completedBlockSizes: completedBlocks,
-      stoppedByCancellation: cancelled > 0 || attempted < scenario.repetitions,
+      stoppedByCancellation: cancelled > 0 || attempted < repetitions,
     );
   }
 
@@ -248,7 +271,9 @@ class ValidationBatchController {
       }
       return List.unmodifiable(requestedIds.map((id) => byId[id]!));
     }
-    final caseScenarioId = scenario.phase == ValidationPhase.warmup
+    final caseScenarioId =
+        scenario.phase == ValidationPhase.warmup ||
+            scenario.phase == ValidationPhase.coldStart
         ? plan.scenarioFor(ValidationPhase.measured).id
         : scenario.id;
     final matching = dataset.cases

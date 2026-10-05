@@ -33,7 +33,7 @@ La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ing
 
 La autorización de trazas comienza apagada. En el primer inicio puedes autorizarlas o ejecutar sin ellas; el menú superior permite revocar el permiso. Con autorización, la traza SDK puede incluir salidas tipadas decodificadas; imágenes, tensores y el JSONL completo no se envían. El envío también depende de que la política de telemetría de la aplicación esté habilitada en el dashboard. El lote no sincroniza durante la inferencia. Al terminar, revisa en el dashboard si el backend recibió las trazas. El JSONL permanece en el dispositivo; **Exportar JSONL**, en el menú superior, abre la hoja de compartir del sistema.
 
-`PERF-01` (arranque en frío) y `F1–F6` (inyección de fallos) siguen pendientes de medición o intervención externa. La app tampoco activa el modo avión: si el procedimiento exige desconectar la radio durante una fase, esa condición debe comprobarse por separado. El lote automático no cuenta esos resultados como ejecutados.
+`PERF-01` se mide con el módulo AndroidX Macrobenchmark descrito abajo; no forma parte del lote del botón. `F1–F6` siguen pendientes porque requieren fallos controlados de red, servidor o almacenamiento. El lote automático no cuenta esos resultados como ejecutados.
 
 ## APK de medición
 
@@ -58,6 +58,37 @@ Get-FileHash artifacts/ayni-validation-selector.apk -Algorithm SHA256
 ```
 
 El APK selector incluye ambas condiciones; los valores de tamaño y SHA-256 se registran después de una compilación exitosa. No se entregan APK distintos para `control` y `treatment`: esos modos solo restringen el flujo y comparten las dependencias del selector. El APK se firma con la clave debug para el piloto y no está configurado para Google Play.
+
+## Medir PERF-01 en el dispositivo físico
+
+Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique el dataset, modelo y workflow del perfil activo. La Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
+
+El módulo lanza 30 arranques en frío para `control` y 30 para `treatment`. Guarda una fila `PERF-01-001` a `PERF-01-030` por condición en `validation/runs.jsonl`; un identificador pareado nuevo distingue ejecuciones repetidas del benchmark. AndroidX registra `StartupTimingMetric`, el intervalo desde el inicio del proceso hasta terminar la primera inferencia y la sección `runCase` por separado. El intervalo completo incluye la preparación de recursos y la sincronización SDK; `runCase` excluye esa preparación y la escritura JSONL. Mantén la misma red durante las corridas. Conserva los JSON y archivos Perfetto generados por el test junto con el JSONL exportado desde la app.
+
+Desde `apps/native/android` en PowerShell, con el JDK de Android Studio disponible y el teléfono visible en `adb devices`, ejecuta:
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat :app:assembleBenchmark :macrobenchmark:assembleBenchmark
+.\gradlew.bat :macrobenchmark:connectedBenchmarkAndroidTest
+```
+
+No declares la medición completa hasta revisar las 60 filas, las salidas JSON de ambas condiciones y sus trazas Perfetto. Este host detecta un Samsung SM-A556E por ADB; la ejecución aún depende de que Application Control permita los binarios AOT oficiales de Flutter.
+
+## Cómo se validarán F1–F6
+
+Estas pruebas deben correr en un dispositivo de laboratorio o emulador y contra servicios de prueba; no se deben inyectar fallos en el backend de producción.
+
+| Escenario | Fallo que se induce | Evidencia para aprobar |
+| --- | --- | --- |
+| F1 | Activar modo avión después de preparar los recursos y ejecutar inferencia offline; reiniciar el proceso y reconectar una vez. | Resultado y traza quedan persistidos; la reconexión entrega el evento pendiente sin pérdida ni duplicado. |
+| F2 | Interrumpir la conectividad al iniciar una sincronización y restaurarla después. | Reintentos acotados, evento pendiente hasta ACK y convergencia tras reconectar. |
+| F3 | Reenviar el mismo evento y terminar el proceso antes/después del commit local, envío, commit del servidor y ACK. | El backend conserva exactamente un evento lógico por ID en cada punto de corte. |
+| F4 | Retrasar o perder respuestas de sincronización y cortar la red a mitad del intercambio. | El cliente conserva la cola, aplica reintentos acotados y converge sin duplicados. |
+| F5 | Agotar los reintentos con un fallo transitorio y probar un rechazo permanente. | No hay bucle infinito; el evento permanente termina en dead-letter y los demás eventos siguen procesándose. |
+| F6 | Agotar la cuota de almacenamiento del contenedor de la app en una instancia aislada. | Error tipado, JSONL previo intacto y ningún registro parcial presentado como válido. |
+
+La app aún no expone un ejecutor automático para F1–F6. F2–F5 necesitan un servidor de prueba o proxy con puntos de fallo reproducibles; F6 debe usar almacenamiento aislado, nunca llenar el teléfono de uso diario. Hasta añadir esos controles y repetir 30 veces cada escenario, mantén esos resultados como pendientes.
 
 ## Evidencia local
 

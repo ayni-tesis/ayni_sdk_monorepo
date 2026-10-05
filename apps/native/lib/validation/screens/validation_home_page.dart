@@ -21,6 +21,8 @@ import '../storage/validation_jsonl_exporter.dart';
 import '../storage/validation_jsonl_store.dart';
 import '../storage/validation_preferences.dart';
 import '../validation_build_mode.dart';
+import '../validation_lab_launch.dart';
+import '../validation_performance_trace.dart';
 import '../validation_run_metadata_reader.dart';
 
 // Hallmark · macrostructure: Workbench · theme: existing Ayni Material green · variation: key → one run control → activity ledger · critique P5 H5 E4 S5 R5 V5 · contrast/a11y: pass
@@ -53,6 +55,7 @@ abstract interface class ValidationHomeRuntime {
     required ValidationCondition condition,
     required String scenarioId,
     required ValidationPhase phase,
+    String? coldStartRunLabel,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
@@ -98,16 +101,23 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     ValidationPreferences? preferences,
     AssetBundle? assetBundle,
     Future<Directory> Function()? documentsDirectory,
+    String buildMode = validationBuildMode,
+    ValidationPerformanceTrace? performanceTrace,
   }) : _preferences =
            preferences ??
            ValidationPreferences(secureStore: FlutterValidationSecureStore()),
        _assetBundle = assetBundle ?? rootBundle,
        _documentsDirectoryProvider =
-           documentsDirectory ?? getApplicationDocumentsDirectory;
+           documentsDirectory ?? getApplicationDocumentsDirectory,
+       _buildMode = buildMode,
+       _performanceTrace =
+           performanceTrace ?? const ValidationPerformanceTrace(enabled: false);
 
   final ValidationPreferences _preferences;
   final AssetBundle _assetBundle;
   final Future<Directory> Function() _documentsDirectoryProvider;
+  final String _buildMode;
+  final ValidationPerformanceTrace _performanceTrace;
   final ValidationRunMetadataReader _metadataReader =
       const ValidationRunMetadataReader();
   ExperimentPlan? _plan;
@@ -125,7 +135,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<ExperimentPlan> loadPlan() async {
-    if (!validationBuildModeIsValid) {
+    if (!isValidationBuildModeValid(_buildMode)) {
       throw const ValidationHomeException(
         'invalidBuildMode',
         'La condición fijada para este APK no es válida.',
@@ -177,7 +187,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   }) async {
     final runnerKind = validationRunnerKindFor(
-      buildMode: validationBuildMode,
+      buildMode: _buildMode,
       condition: condition,
     );
     if (runnerKind == ValidationRunnerKind.unavailable) {
@@ -332,6 +342,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     required ValidationCondition condition,
     required String scenarioId,
     required ValidationPhase phase,
+    String? coldStartRunLabel,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
@@ -354,6 +365,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     final batch = ValidationBatchController(
       store: store,
       metadata: await _metadataReader.read(),
+      performanceTrace: _performanceTrace,
     );
     _batchController = batch;
     return batch.runPhase(
@@ -363,6 +375,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       dataset: dataset,
       scenarioId: scenarioId,
       phase: phase,
+      coldStartRunLabel: coldStartRunLabel,
       captureTrace: captureTrace,
       isCancelled: isCancelled,
       onRecord: onRecord,
@@ -479,9 +492,16 @@ class ValidationHomeException implements Exception {
 }
 
 class ValidationHomePage extends StatefulWidget {
-  const ValidationHomePage({super.key, this.runtime});
+  const ValidationHomePage({
+    super.key,
+    this.runtime,
+    this.labLaunch,
+    this.performanceTrace,
+  });
 
   final ValidationHomeRuntime? runtime;
+  final ValidationLabLaunch? labLaunch;
+  final ValidationPerformanceTrace? performanceTrace;
 
   @override
   State<ValidationHomePage> createState() => _ValidationHomePageState();
@@ -489,6 +509,7 @@ class ValidationHomePage extends StatefulWidget {
 
 class _ValidationHomePageState extends State<ValidationHomePage> {
   late final ValidationHomeRuntime _runtime;
+  late final ValidationPerformanceTrace _performanceTrace;
   final _credentialController = TextEditingController();
   ExperimentPlan? _plan;
   bool _bootstrapping = true;
@@ -504,6 +525,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   String? _status;
   String? _error;
   final List<String> _events = [];
+  String get _buildMode =>
+      widget.labLaunch?.condition.name ?? validationBuildMode;
   static const _automaticPhases = {
     ValidationPhase.warmup,
     ValidationPhase.measured,
@@ -513,7 +536,15 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   @override
   void initState() {
     super.initState();
-    _runtime = widget.runtime ?? DefaultValidationHomeRuntime();
+    _performanceTrace =
+        widget.performanceTrace ??
+        ValidationPerformanceTrace(enabled: widget.labLaunch != null);
+    _runtime =
+        widget.runtime ??
+        DefaultValidationHomeRuntime(
+          buildMode: _buildMode,
+          performanceTrace: _performanceTrace,
+        );
     unawaited(_bootstrap());
   }
 
@@ -542,6 +573,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         _credentialController.text = credentials?.credential ?? '';
         _bootstrapping = false;
       });
+      if (widget.labLaunch != null) unawaited(_runPerf01());
     } on Object catch (error) {
       if (!mounted) return;
       setState(() {
@@ -553,7 +585,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
 
   ValidationResourceProfile? get _profile => _plan?.activeResourceProfile;
 
-  List<ValidationCondition> get _conditions => switch (validationBuildMode) {
+  List<ValidationCondition> get _conditions => switch (_buildMode) {
     'control' => const [ValidationCondition.control],
     'treatment' => const [ValidationCondition.treatment],
     _ => const [ValidationCondition.control, ValidationCondition.treatment],
@@ -579,6 +611,77 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       (_profile?.isConfigured ?? false) &&
       _credentialController.text.trim().isNotEmpty &&
       _automaticScenarios.isNotEmpty;
+
+  Future<void> _runPerf01() async {
+    final launch = widget.labLaunch;
+    final profile = _profile;
+    final credentials = _credentialsFromFields();
+    if (launch == null || profile == null || credentials == null) return;
+
+    const totalRuns = 1;
+    setState(() {
+      _busy = true;
+      _running = true;
+      _cancelRequested = false;
+      _error = null;
+      _status = null;
+      _activity = '${launch.runLabel} · preparación';
+      _completedRuns = 0;
+      _totalRuns = totalRuns;
+    });
+
+    try {
+      await _runtime.prepareResources(
+        profile: profile,
+        credentials: credentials,
+        condition: launch.condition,
+      );
+      if (launch.condition == ValidationCondition.treatment) {
+        final sync = await _runtime.synchronizeSdk();
+        if (!sync.ready) {
+          throw ValidationHomeException(
+            'sdkSyncFailed',
+            'La sincronización SDK terminó con estado ${sync.status}.',
+          );
+        }
+      }
+      await _runtime.runPhase(
+        profile: profile,
+        pairRunId:
+            'perf01-${launch.condition.name}-${launch.runLabel}-${DateTime.now().toUtc().microsecondsSinceEpoch}',
+        condition: launch.condition,
+        scenarioId: 'PERF-01',
+        phase: ValidationPhase.coldStart,
+        coldStartRunLabel: launch.runLabel,
+        captureTrace: false,
+        isCancelled: () async => false,
+        onRecord: (record) {
+          if (!mounted) return;
+          setState(() {
+            _completedRuns = 1;
+            _hasJsonl = true;
+          });
+          _addEvent(
+            '${launch.runLabel} · ${_conditionLabel(launch.condition)} · ${record.durationMicros} µs · ${record.outcome.name}',
+          );
+        },
+      );
+      await _performanceTrace.finishColdStart();
+      if (mounted) {
+        setState(() => _status = '${launch.runLabel} · medición guardada.');
+      }
+    } on Object catch (error) {
+      _showError(_friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _running = false;
+          _activity = null;
+        });
+      }
+    }
+  }
 
   Future<void> _runValidation() async {
     final profile = _profile;
@@ -942,10 +1045,11 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
                 const SizedBox(height: 12),
                 _buildEventsCard(),
                 const SizedBox(height: 12),
-                Text(
-                  'Arranque en frío (PERF-01) y fallos F1–F6 requieren medición o intervención externa y quedan pendientes.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                if (widget.labLaunch == null)
+                  Text(
+                    'PERF-01 se mide con AndroidX Macrobenchmark en cada dispositivo. F1–F6 requieren inyección controlada de fallos y siguen pendientes.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
     );
