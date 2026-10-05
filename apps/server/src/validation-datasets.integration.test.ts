@@ -66,7 +66,7 @@ describe("private validation dataset delivery integration", () => {
     const datasets = new Map<string, ValidationDataset>();
     const versions = new Map<string, ValidationDatasetVersion & { storageKey: string }>();
     const objects = new Map<string, Uint8Array>();
-    const signedUploads = new Map<string, string>();
+    const signedUploads = new Map<string, { key: string; sizeBytes: number }>();
     let uploadNumber = 0;
     let signedDownloadKey: string | undefined;
 
@@ -81,9 +81,9 @@ describe("private validation dataset delivery integration", () => {
       async getArtifactSize(key: string) {
         return objects.get(key)?.byteLength ?? null;
       },
-      async createUploadUrl(key: string, expiresIn: number) {
-        const url = `https://private-r2.test/upload?token=put-${++uploadNumber}&ttl=${expiresIn}`;
-        signedUploads.set(url, key);
+      async createUploadUrl(key: string, expiresIn: number, sizeBytes: number) {
+        const url = `https://private-r2.test/upload?token=put-${++uploadNumber}&ttl=${expiresIn}&size=${sizeBytes}`;
+        signedUploads.set(url, { key, sizeBytes });
         return url;
       },
       async removeArtifact(key: string) {
@@ -214,7 +214,7 @@ describe("private validation dataset delivery integration", () => {
 
     const uploadStart = await app.request(
       "/applications/app-1/validation-datasets/dataset-1/versions/upload-url",
-      jsonRequest({ version: "1.0.0", partition: "test" }),
+      jsonRequest({ version: "1.0.0", partition: "test", sizeBytes: zipBytes.byteLength }),
     );
     expect(uploadStart.status).toBe(200);
     const { uploadId, uploadUrl } = ValidationDatasetUploadUrlResponseSchema.parse(
@@ -222,14 +222,23 @@ describe("private validation dataset delivery integration", () => {
     );
     expect(uploadUrl).toMatch(/^https:\/\/private-r2\.test\/upload\?token=put-/);
     expect(new URL(uploadUrl).searchParams.get("ttl")).toBe("900");
-    const stagingKey = signedUploads.get(uploadUrl);
-    expect(stagingKey).toBeDefined();
-    if (!stagingKey) throw new Error("Expected an upload URL associated with a staging object");
+    expect(new URL(uploadUrl).searchParams.get("size")).toBe(String(zipBytes.byteLength));
+    const signedUpload = signedUploads.get(uploadUrl);
+    expect(signedUpload).toBeDefined();
+    if (!signedUpload) throw new Error("Expected an upload URL associated with a staging object");
+    expect(signedUpload.sizeBytes).toBe(zipBytes.byteLength);
+    const stagingKey = signedUpload.key;
     objects.set(stagingKey, new Uint8Array(zipBytes));
 
     const completion = await app.request(
       "/applications/app-1/validation-datasets/dataset-1/versions/complete",
-      jsonRequest({ uploadId, version: "1.0.0", partition: "test", sha256: expectedZipSha256 }),
+      jsonRequest({
+        uploadId,
+        version: "1.0.0",
+        partition: "test",
+        sizeBytes: zipBytes.byteLength,
+        sha256: expectedZipSha256,
+      }),
     );
     expect(completion.status).toBe(201);
     await expect(completion.json()).resolves.toMatchObject({

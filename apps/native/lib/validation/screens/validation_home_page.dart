@@ -151,6 +151,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     if (uri == null ||
         !uri.isAbsolute ||
         uri.host.isEmpty ||
+        uri.scheme.toLowerCase() != 'https' ||
         uri.userInfo.isNotEmpty ||
         uri.query.isNotEmpty ||
         uri.fragment.isNotEmpty ||
@@ -237,6 +238,12 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
       await _directRunner!.prepare();
       _activeRunner = _directRunner;
     } else if (runnerKind == ValidationRunnerKind.sdk) {
+      final modelRepository = HttpValidationModelRepository(
+        serverUrl: serverUrl,
+        credential: credentials.credential,
+        modelsDirectory: modelsDirectory,
+      );
+      _modelRepository = modelRepository;
       final workflowRepository = HttpWorkflowDefinitionRepository(
         serverUrl: serverUrl,
         credential: credentials.credential,
@@ -247,6 +254,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
         credentials: credentials,
         storageDirectory: sdkStorageDirectory,
         sdk: PublicAyniSdkClient(),
+        modelRepository: modelRepository,
         workflowDefinitions: workflowRepository,
         preferences: _preferences,
       );
@@ -350,40 +358,31 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
 
   @override
   Future<void> setTracePermission(bool allowed) async {
-    if (allowed) {
-      await _preferences.setTraceCaptureAllowed(
-        true,
-        clearPendingTraces: () async {},
-      );
+    await _preferences.setTraceCaptureAllowed(
+      allowed,
+      clearPendingTraces: _purgePendingTraces,
+    );
+  }
+
+  Future<void> _purgePendingTraces() async {
+    if (_sdkRunner != null) {
+      await _sdkRunner!.clearPendingTracesForRevocation();
       return;
     }
-    await _preferences.setTraceCaptureAllowed(
-      false,
-      clearPendingTraces: () async {
-        if (_sdkRunner != null) {
-          await _sdkRunner!.clearPendingTracesForRevocation();
-          return;
-        }
-        final credentials =
-            _credentials ?? await _preferences.readSdkCredentials();
-        if (credentials == null) {
-          if (AyniSdk.isInitialized) {
-            await AyniSdk.instance.clearPendingTraces();
-            return;
-          }
-          throw const ValidationHomeException(
-            'traceQueueUnavailable',
-            'El permiso quedó revocado, pero se necesita configurar el SDK para vaciar trazas pendientes.',
-          );
-        }
-        final plan = _plan ?? await loadPlan();
-        final runner = await _getSdkRunner(
-          credentials,
-          plan.activeResourceProfile,
-        );
-        await runner.clearPendingTracesForRevocation();
-      },
-    );
+    final credentials = _credentials ?? await _preferences.readSdkCredentials();
+    if (credentials == null) {
+      if (AyniSdk.isInitialized) {
+        await AyniSdk.instance.clearPendingTraces();
+        return;
+      }
+      throw const ValidationHomeException(
+        'traceQueueUnavailable',
+        'Se necesita configurar el SDK para vaciar las trazas pendientes.',
+      );
+    }
+    final plan = _plan ?? await loadPlan();
+    final runner = await _getSdkRunner(credentials, plan.activeResourceProfile);
+    await runner.clearPendingTracesForRevocation();
   }
 
   @override
@@ -404,6 +403,14 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
     final validationDirectory = Directory(
       '${documents.path}${Platform.pathSeparator}validation',
     );
+    final modelRepository = HttpValidationModelRepository(
+      serverUrl: Uri.parse(credentials.serverUrl),
+      credential: credentials.credential,
+      modelsDirectory: Directory(
+        '${validationDirectory.path}${Platform.pathSeparator}models',
+      ),
+    );
+    _modelRepository = modelRepository;
     final repository = HttpWorkflowDefinitionRepository(
       serverUrl: Uri.parse(credentials.serverUrl),
       credential: credentials.credential,
@@ -416,6 +423,7 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
         '${validationDirectory.path}${Platform.pathSeparator}sdk',
       ),
       sdk: PublicAyniSdkClient(),
+      modelRepository: modelRepository,
       workflowDefinitions: repository,
       preferences: _preferences,
     );
@@ -603,6 +611,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
       _error = null;
       _activity = 'Preparando dataset y recursos…';
       _downloadProgress = null;
+      _prepared = null;
+      _sdkReady = false;
     });
     try {
       await _runtime.saveCredentials(credentials);
@@ -1141,6 +1151,7 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
   );
 
   Widget _buildErrorCard(String message) => Card(
+    key: const ValueKey('validation-error-card'),
     color: Theme.of(context).colorScheme.errorContainer,
     child: Padding(
       padding: const EdgeInsets.all(16),

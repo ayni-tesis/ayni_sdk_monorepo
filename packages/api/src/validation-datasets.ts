@@ -1,6 +1,8 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
+export const MAX_VALIDATION_DATASET_BYTES = 128 * 1024 * 1024;
+
 export const ValidationDatasetCreateRequestSchema = z
   .object({
     name: z.string().trim().min(1).max(160),
@@ -16,6 +18,7 @@ export const ValidationDatasetVersionUploadRequestSchema = z
       .trim()
       .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/),
     partition: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
+    sizeBytes: z.number().int().positive(),
   })
   .strict();
 
@@ -27,6 +30,7 @@ export const ValidationDatasetUploadRequestSchema =
 
 export const ValidationDatasetCancelRequestSchema = z
   .object({ uploadId: z.string().uuid() })
+  .merge(ValidationDatasetVersionUploadRequestSchema)
   .strict();
 
 export const ValidationDatasetSchema = z
@@ -103,6 +107,13 @@ function errorResponse(description: string) {
 }
 
 export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
+  const userSession = registry.registerComponent("securitySchemes", "userSession", {
+    type: "apiKey",
+    in: "cookie",
+    name: "better-auth.session_token",
+    description: "Cookie de sesión de Better Auth para las rutas del dashboard.",
+  });
+  const sessionSecurity = [{ [userSession.name]: [] }];
   const applicationId = z.object({ applicationId: z.string().openapi({ example: "app-123" }) });
   const datasetParams = z.object({
     applicationId: z.string().openapi({ example: "app-123" }),
@@ -117,6 +128,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     summary: "Listar datasets privados de validación",
     description:
       "Lista los datasets de la aplicación para sus miembros. Las versiones publicadas son inmutables.",
+    security: sessionSecurity,
     request: { params: applicationId },
     responses: {
       "200": {
@@ -125,6 +137,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       },
       "401": errorResponse("La sesión no está autenticada."),
       "404": errorResponse("No encontramos esta aplicación."),
+      "500": errorResponse("No se pudieron listar los datasets de validación."),
     },
   });
 
@@ -137,6 +150,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     description:
       "Solo administradores de una aplicación activa. La persona operadora declara la licencia; " +
       "el sistema no certifica cumplimiento legal.",
+    security: sessionSecurity,
     request: {
       params: applicationId,
       body: {
@@ -154,6 +168,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "403": errorResponse("No tienes permiso para registrar datasets."),
       "404": errorResponse("No encontramos esta aplicación."),
       "409": errorResponse("La aplicación está archivada o el nombre ya existe."),
+      "500": errorResponse("No se pudo registrar el dataset."),
     },
   });
 
@@ -165,6 +180,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     summary: "Iniciar la carga temporal de un ZIP",
     description:
       "Emite una URL de carga temporal al bucket privado para una versión y partición válidas.",
+    security: sessionSecurity,
     request: {
       params: datasetParams,
       body: {
@@ -179,11 +195,12 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
         description: "URL temporal de carga; no se expone una clave R2 independiente.",
         content: { "application/json": { schema: ValidationDatasetUploadUrlResponseSchema } },
       },
-      "400": errorResponse("La versión SemVer o partición no es válida."),
+      "400": errorResponse("La versión, partición o tamaño del ZIP no son válidos."),
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para subir datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),
       "409": errorResponse("La aplicación está archivada o la versión ya existe."),
+      "413": errorResponse("El ZIP supera el límite de 128 MiB."),
       "500": errorResponse("No se pudo iniciar la carga."),
     },
   });
@@ -196,6 +213,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     summary: "Eliminar un ZIP de staging cancelado",
     description:
       "Solo administradores de la aplicación. El borrado del objeto temporal es de mejor esfuerzo.",
+    security: sessionSecurity,
     request: {
       params: datasetParams,
       body: {
@@ -205,7 +223,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     },
     responses: {
       "204": { description: "Carga temporal eliminada o ya ausente." },
-      "400": errorResponse("El identificador de carga no es válido."),
+      "400": errorResponse("La identificación o los metadatos de la carga no son válidos."),
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para cancelar cargas de datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),
@@ -222,6 +240,7 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
     description:
       "Verifica el tamaño y hash SHA-256 del objeto subido, lo mueve a una clave privada e " +
       "inmutable y elimina el objeto de staging.",
+    security: sessionSecurity,
     request: {
       params: datasetParams,
       body: {
@@ -239,7 +258,9 @@ export function registerValidationDatasetRoutes(registry: OpenAPIRegistry) {
       "403": errorResponse("No tienes permiso para subir datasets."),
       "404": errorResponse("No encontramos la aplicación o el dataset."),
       "409": errorResponse("La aplicación está archivada o la versión ya existe."),
-      "413": errorResponse("El ZIP supera el límite de 128 MiB."),
+      "413": errorResponse(
+        "El ZIP supera el límite de 128 MiB o no coincide con su tamaño firmado.",
+      ),
       "500": errorResponse("No se pudo verificar o guardar el ZIP."),
     },
   });

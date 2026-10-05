@@ -69,25 +69,32 @@ export function ValidationDatasetsPanel({
   const [source, setSource] = useState("");
   const [license, setLicense] = useState("");
   const [declaredRedistribution, setDeclaredRedistribution] = useState(false);
+  const listRequestId = useRef(0);
   const canEdit = canManage && applicationStatus === "active";
 
   const loadDatasets = useCallback(async () => {
+    const requestId = ++listRequestId.current;
     setLoading(true);
     setListError("");
     try {
       const { data } = await httpClient.get<{ datasets: Dataset[] }>(
         `/applications/${applicationId}/validation-datasets`,
       );
-      setDatasets(data.datasets);
+      if (requestId === listRequestId.current) setDatasets(data.datasets);
     } catch {
-      setListError("No se pudieron cargar los datasets de validación.");
+      if (requestId === listRequestId.current) {
+        setListError("No se pudieron cargar los datasets de validación.");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === listRequestId.current) setLoading(false);
     }
   }, [applicationId]);
 
   useEffect(() => {
     void loadDatasets();
+    return () => {
+      listRequestId.current++;
+    };
   }, [loadDatasets]);
 
   async function registerDataset(event: React.FormEvent<HTMLFormElement>) {

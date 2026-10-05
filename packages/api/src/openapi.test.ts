@@ -188,6 +188,31 @@ describe("validation dataset routes", () => {
         "/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel"
       ]?.post?.responses,
     ).toHaveProperty("204");
+    expect(
+      document.paths["/applications/{applicationId}/validation-datasets"]?.get?.responses,
+    ).toHaveProperty("500");
+    expect(
+      document.paths["/applications/{applicationId}/validation-datasets"]?.post?.responses,
+    ).toHaveProperty("500");
+  });
+
+  it("marks dashboard dataset routes as requiring the Better Auth session cookie", () => {
+    const operations = [
+      ["/applications/{applicationId}/validation-datasets", "get"],
+      ["/applications/{applicationId}/validation-datasets", "post"],
+      ["/applications/{applicationId}/validation-datasets/{datasetId}/versions/upload-url", "post"],
+      ["/applications/{applicationId}/validation-datasets/{datasetId}/versions/complete", "post"],
+      ["/applications/{applicationId}/validation-datasets/{datasetId}/versions/cancel", "post"],
+    ] as const;
+
+    for (const [path, method] of operations) {
+      expect(operation(path, method).security).toEqual([{ userSession: [] }]);
+    }
+    expect(document.components.securitySchemes.userSession).toMatchObject({
+      type: "apiKey",
+      in: "cookie",
+      name: "better-auth.session_token",
+    });
   });
 });
 

@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
-
 
 import 'dataset_bundle_loader.dart';
 import 'dataset_manifest.dart';
@@ -42,6 +42,7 @@ class HttpDatasetTransport implements DatasetTransport {
     required String credential,
     HttpClient? httpClient,
     this.allowInsecureLoopback = false,
+    this.streamIdleTimeout = const Duration(seconds: 30),
   }) : _serverUrl = serverUrl,
        _credential = credential,
        _httpClient = httpClient ?? HttpClient() {
@@ -63,6 +64,7 @@ class HttpDatasetTransport implements DatasetTransport {
   final String _credential;
   final HttpClient _httpClient;
   final bool allowInsecureLoopback;
+  final Duration streamIdleTimeout;
 
   @override
   Future<DatasetManifest> fetchManifest(String datasetVersionId) async {
@@ -105,7 +107,11 @@ class HttpDatasetTransport implements DatasetTransport {
           : DatasetTransportErrorCode.invalidResponse;
       throw DatasetTransportException(code);
     }
-    final body = await _readLimited(response, 1024 * 1024);
+    final body = await _readLimited(
+      response,
+      1024 * 1024,
+      idleTimeout: streamIdleTimeout,
+    );
     try {
       final decoded = jsonDecode(utf8.decode(body));
       final manifest = DatasetManifest.fromJson(
@@ -172,17 +178,21 @@ class HttpDatasetTransport implements DatasetTransport {
       var received = 0;
       var complete = false;
       try {
-        await for (final chunk in response) {
-          received += chunk.length;
-          if (received > manifest.sizeBytes ||
-              received > DatasetManifest.maximumArchiveBytes) {
-            throw const DatasetTransportException(
-              DatasetTransportErrorCode.archiveTooLarge,
-            );
-          }
-          output.add(chunk);
-          onProgress?.call(received, manifest.sizeBytes);
-        }
+        await _forEachResponseChunk(
+          response,
+          streamIdleTimeout,
+          onChunk: (chunk) {
+            received += chunk.length;
+            if (received > manifest.sizeBytes ||
+                received > DatasetManifest.maximumArchiveBytes) {
+              throw const DatasetTransportException(
+                DatasetTransportErrorCode.archiveTooLarge,
+              );
+            }
+            output.add(chunk);
+            onProgress?.call(received, manifest.sizeBytes);
+          },
+        );
         await output.flush();
         complete = true;
       } finally {
@@ -350,8 +360,9 @@ class DatasetRepository {
 
 Future<List<int>> _readLimited(
   HttpClientResponse response,
-  int maximumBytes,
-) async {
+  int maximumBytes, {
+  required Duration idleTimeout,
+}) async {
   if (response.contentLength > maximumBytes) {
     await response.drain<void>();
     throw const DatasetTransportException(
@@ -359,15 +370,55 @@ Future<List<int>> _readLimited(
     );
   }
   final builder = BytesBuilder(copy: false);
-  await for (final chunk in response) {
-    if (builder.length + chunk.length > maximumBytes) {
-      throw const DatasetTransportException(
-        DatasetTransportErrorCode.invalidResponse,
-      );
-    }
-    builder.add(chunk);
+  try {
+    await _forEachResponseChunk(
+      response,
+      idleTimeout,
+      onChunk: (chunk) {
+        if (builder.length + chunk.length > maximumBytes) {
+          throw const DatasetTransportException(
+            DatasetTransportErrorCode.invalidResponse,
+          );
+        }
+        builder.add(chunk);
+      },
+    );
+  } on DatasetTransportException {
+    rethrow;
+  } on Object {
+    throw const DatasetTransportException(
+      DatasetTransportErrorCode.networkFailure,
+    );
   }
   return builder.takeBytes();
+}
+
+Future<void> _forEachResponseChunk(
+  HttpClientResponse response,
+  Duration idleTimeout, {
+  required void Function(List<int> chunk) onChunk,
+}) async {
+  final iterator = StreamIterator<List<int>>(response);
+  try {
+    while (await iterator.moveNext().timeout(idleTimeout)) {
+      onChunk(iterator.current);
+    }
+  } on TimeoutException {
+    await iterator.cancel();
+    throw const DatasetTransportException(
+      DatasetTransportErrorCode.networkFailure,
+    );
+  } on DatasetTransportException {
+    await iterator.cancel();
+    rethrow;
+  } on Object {
+    await iterator.cancel();
+    throw const DatasetTransportException(
+      DatasetTransportErrorCode.networkFailure,
+    );
+  } finally {
+    await iterator.cancel();
+  }
 }
 
 Map<String, Object?> _object(Object? value) {

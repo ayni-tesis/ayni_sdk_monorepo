@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('DatasetManifest', () {
-    test('parses the SDK response without exposing an object key', () {
+    test('parses and retains the published dataset metadata', () {
       final manifest = DatasetManifest.fromJson(_response());
 
       expect(manifest.datasetVersionId, 'dataset-version-1');
@@ -11,7 +11,6 @@ void main() {
       expect(manifest.partition, 'test');
       expect(manifest.sizeBytes, 12);
       expect(manifest.downloadUrl.scheme, 'https');
-      expect(manifest.toString(), isNot(contains('credential')));
     });
 
     test('rejects missing fields, unknown fields, and malformed hashes', () {

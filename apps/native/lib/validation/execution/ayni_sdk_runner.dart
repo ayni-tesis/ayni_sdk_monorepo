@@ -65,6 +65,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     required this.credentials,
     required Directory storageDirectory,
     required AyniSdkClient sdk,
+    required ValidationModelRepository modelRepository,
     required WorkflowDefinitionRepository workflowDefinitions,
     required ValidationPreferences preferences,
     ValidationOutputNormalizer outputNormalizer =
@@ -75,6 +76,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   }) : _profile = profile,
        _storageDirectory = storageDirectory,
        _sdk = sdk,
+       _modelRepository = modelRepository,
        _workflowDefinitions = workflowDefinitions,
        _preferences = preferences,
        _outputNormalizer = outputNormalizer;
@@ -83,6 +85,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
   final ValidationSdkCredentials credentials;
   final Directory _storageDirectory;
   final AyniSdkClient _sdk;
+  final ValidationModelRepository _modelRepository;
   final WorkflowDefinitionRepository _workflowDefinitions;
   final ValidationPreferences _preferences;
   final ValidationOutputNormalizer _outputNormalizer;
@@ -111,6 +114,15 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       );
     }
     await _ensureInitialized();
+    final manifestSha256 = await _modelRepository.fetchSha256(
+      _profile.treatmentModelVersionId,
+    );
+    if (manifestSha256 != _profile.treatmentModelSha256) {
+      throw const ValidationExecutionException(
+        'modelHashMismatch',
+        'El SHA-256 publicado del modelo no coincide con el perfil.',
+      );
+    }
     final definition = await _workflowDefinitions.fetch(
       _profile.treatmentWorkflowVersionId,
     );
@@ -146,7 +158,10 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       await _operationGate.run(
         () => _preferences.setTraceCaptureAllowed(
           true,
-          clearPendingTraces: () async {},
+          clearPendingTraces: () async {
+            await _ensureInitialized();
+            await _sdk.clearPendingTraces();
+          },
         ),
       );
       return;
@@ -172,6 +187,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     _activeExecutionId = null;
     _cancellationRequested = false;
     WorkflowTraceContext? traceContext;
+    var tracePersistenceFailed = false;
     try {
       validateRequestDataset(request, _profile);
       if (sha256.convert(request.inputBytes).toString() !=
@@ -231,6 +247,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         },
         traceContext: traceContext,
       );
+      tracePersistenceFailed = result.tracePersistenceFailed;
       final output = _normalizeAndVerifyResult(result);
       stopwatch.stop();
       return ConditionRunResult.success(
@@ -275,6 +292,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: error.code,
         errorMessage: error.message,
+        tracePersistenceFailed: tracePersistenceFailed,
       );
     } on Object {
       stopwatch.stop();
@@ -286,6 +304,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         workflowVersion: _profile.treatmentWorkflowVersion,
         errorCode: 'workflowExecutionFailed',
         errorMessage: 'No se pudo ejecutar el workflow local.',
+        tracePersistenceFailed: tracePersistenceFailed,
       );
     } finally {
       _sdkRunActive = false;

@@ -86,6 +86,24 @@ void main() {
     expect(_button(tester, 'run-batch').onPressed, isNotNull);
   });
 
+  testWidgets('disables old resources when re-preparation fails', (
+    tester,
+  ) async {
+    await _pumpHomePage(tester, _app(runtime));
+    await _scrollToKey(tester, 'prepare-resources');
+    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
+    await tester.pumpAndSettle();
+    await _scrollToKey(tester, 'run-batch');
+    expect(_button(tester, 'run-batch').onPressed, isNotNull);
+
+    runtime.failPreparation = true;
+    await _scrollToKey(tester, 'prepare-resources');
+    await tester.tap(find.byKey(const ValueKey('prepare-resources')));
+    await tester.pumpAndSettle();
+    await _scrollToKey(tester, 'run-batch');
+    expect(_button(tester, 'run-batch').onPressed, isNull);
+  });
+
   testWidgets('preparation never performs SDK sync; sync stays explicit', (
     tester,
   ) async {
@@ -207,6 +225,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
   int syncCalls = 0;
   int cancelCalls = 0;
   int exportCalls = 0;
+  bool failPreparation = false;
   bool traceAllowed = false;
   bool jsonlPresent = false;
   final tracePermissionChanges = <bool>[];
@@ -253,6 +272,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
     void Function(int receivedBytes, int totalBytes)? onDownloadProgress,
   }) async {
     prepareCalls++;
+    if (failPreparation) throw StateError('re-preparation failed');
     onDownloadProgress?.call(10, 10);
     return ValidationPreparationState(
       datasetVersion: '1.0.0',

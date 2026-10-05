@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart' as archive;
 import 'package:crypto/crypto.dart';
 
 enum DatasetBundleErrorCode {
@@ -262,30 +261,8 @@ class DatasetBundleLoader {
         maxExpandedBytes: min(maxExpandedBytes, maximumExpandedBytes),
       );
       final zipEntries = {for (final entry in entries) entry.name: entry};
-      final decoded = archive.ZipDecoder().decodeBytes(bytes, verify: true);
-      final archiveFiles = <String, archive.ArchiveFile>{};
-      for (final file in decoded.files) {
-        if (file.isSymbolicLink) {
-          throw const DatasetBundleException(
-            DatasetBundleErrorCode.unsafePath,
-            'El ZIP contiene un enlace no permitido.',
-          );
-        }
-        archiveFiles[file.name] = file;
-      }
-      if (entries.any(
-        (entry) => !entry.isDirectory && !archiveFiles.containsKey(entry.name),
-      )) {
-        throw const DatasetBundleException(
-          DatasetBundleErrorCode.invalidArchive,
-          'El ZIP contiene entradas ilegibles.',
-        );
-      }
-      final manifestEntry = archiveFiles['manifest.json'];
       final manifestInfo = zipEntries['manifest.json'];
-      if (manifestEntry == null ||
-          !manifestEntry.isFile ||
-          manifestInfo == null ||
+      if (manifestInfo == null ||
           manifestInfo.isDirectory ||
           manifestInfo.uncompressedSize > maximumManifestBytes) {
         throw const DatasetBundleException(
@@ -321,6 +298,7 @@ class DatasetBundleLoader {
           <({String scenario, String caseId, String path, String sha256})>[];
       final caseIds = <String>{};
       final casePaths = <String>{};
+      final caseEntries = <String, _ZipEntryInfo>{};
       for (final entry in manifest.cases) {
         final path = _safeRelativePath(entry.path);
         final normalized = path.toLowerCase();
@@ -332,21 +310,15 @@ class DatasetBundleLoader {
             'El manifiesto contiene casos o rutas repetidos.',
           );
         }
-        final archiveEntry = archiveFiles[path];
         final zipEntry = zipEntries[path];
-        if (archiveEntry == null ||
-            !archiveEntry.isFile ||
-            archiveEntry.isSymbolicLink ||
-            zipEntry == null ||
-            zipEntry.isDirectory) {
+        if (zipEntry == null || zipEntry.isDirectory) {
           throw const DatasetBundleException(
             DatasetBundleErrorCode.missingImage,
             'Falta una imagen declarada por el manifiesto.',
           );
         }
-        if (archiveEntry.size <= 0 ||
-            archiveEntry.size > maximumEntryBytes ||
-            zipEntry.uncompressedSize != archiveEntry.size) {
+        if (zipEntry.uncompressedSize <= 0 ||
+            zipEntry.uncompressedSize > maximumEntryBytes) {
           throw const DatasetBundleException(
             DatasetBundleErrorCode.expandedContentTooLarge,
             'Una entrada del ZIP supera el límite permitido.',
@@ -367,12 +339,24 @@ class DatasetBundleLoader {
         final stagedFile = File(_joinSegments(staging.path, path));
         await stagedFile.parent.create(recursive: true);
         await stagedFile.writeAsBytes(imageBytes, flush: true);
+        caseEntries[path] = zipEntry;
         stagedCases.add((
           scenario: entry.scenario,
           caseId: entry.caseId,
           path: path,
           sha256: entry.sha256,
         ));
+      }
+      // Validate every member without retaining unrelated decompressed data.
+      // A bundle may expand close to 1 GiB, which must not all be materialized
+      // in the Android process at once.
+      for (final entry in entries) {
+        if (entry.isDirectory ||
+            entry.name == 'manifest.json' ||
+            caseEntries.containsKey(entry.name)) {
+          continue;
+        }
+        await _extractZipEntry(bytes, entry, maximumEntryBytes, retain: false);
       }
       if (stagedCases.isEmpty) {
         throw const DatasetBundleException(
@@ -542,6 +526,7 @@ class _ZipEntryInfo {
   const _ZipEntryInfo({
     required this.name,
     required this.isDirectory,
+    required this.crc32,
     required this.uncompressedSize,
     required this.compressedSize,
     required this.compressionMethod,
@@ -550,6 +535,7 @@ class _ZipEntryInfo {
 
   final String name;
   final bool isDirectory;
+  final int crc32;
   final int uncompressedSize;
   final int compressedSize;
   final int compressionMethod;
@@ -687,6 +673,7 @@ List<_ZipEntryInfo> _scanZip(Uint8List bytes, {required int maxExpandedBytes}) {
       final versionMadeBy = data.getUint16(cursor + 4, Endian.little);
       final flags = data.getUint16(cursor + 8, Endian.little);
       final compressionMethod = data.getUint16(cursor + 10, Endian.little);
+      final crc32 = data.getUint32(cursor + 16, Endian.little);
       final compressedSize = data.getUint32(cursor + 20, Endian.little);
       final uncompressedSize = data.getUint32(cursor + 24, Endian.little);
       final nameLength = data.getUint16(cursor + 28, Endian.little);
@@ -783,6 +770,7 @@ List<_ZipEntryInfo> _scanZip(Uint8List bytes, {required int maxExpandedBytes}) {
         _ZipEntryInfo(
           name: name,
           isDirectory: isDirectory,
+          crc32: crc32,
           uncompressedSize: uncompressedSize,
           compressedSize: compressedSize,
           compressionMethod: compressionMethod,
@@ -808,8 +796,9 @@ List<_ZipEntryInfo> _scanZip(Uint8List bytes, {required int maxExpandedBytes}) {
 Future<Uint8List> _extractZipEntry(
   Uint8List zipBytes,
   _ZipEntryInfo entry,
-  int maximumBytes,
-) async {
+  int maximumBytes, {
+  bool retain = true,
+}) async {
   if (entry.isDirectory || entry.uncompressedSize > maximumBytes) {
     throw const DatasetBundleException(
       DatasetBundleErrorCode.expandedContentTooLarge,
@@ -828,22 +817,32 @@ Future<Uint8List> _extractZipEntry(
         'Una entrada del ZIP está incompleta.',
       );
     }
-    return Uint8List.fromList(compressed);
+    if (_finishCrc32(_updateCrc32(0xffffffff, compressed)) != entry.crc32) {
+      throw const DatasetBundleException(
+        DatasetBundleErrorCode.invalidArchive,
+        'El checksum de una entrada del ZIP no coincide.',
+      );
+    }
+    return retain ? Uint8List.fromList(compressed) : Uint8List(0);
   }
-  final output = BytesBuilder(copy: false);
+  final output = retain ? BytesBuilder(copy: false) : null;
+  var outputLength = 0;
+  var crc = 0xffffffff;
   try {
     final decoded = ZLibDecoder(
       raw: true,
     ).bind(Stream<List<int>>.fromIterable(_byteSlices(compressed)));
     await for (final chunk in decoded) {
-      if (output.length + chunk.length > maximumBytes ||
-          output.length + chunk.length > entry.uncompressedSize) {
+      outputLength += chunk.length;
+      if (outputLength > maximumBytes ||
+          outputLength > entry.uncompressedSize) {
         throw const DatasetBundleException(
           DatasetBundleErrorCode.expandedContentTooLarge,
           'El ZIP intenta expandir una entrada por encima del límite.',
         );
       }
-      output.add(chunk);
+      crc = _updateCrc32(crc, chunk);
+      output?.add(chunk);
     }
   } on DatasetBundleException {
     rethrow;
@@ -853,15 +852,28 @@ Future<Uint8List> _extractZipEntry(
       'No se pudo expandir una entrada del ZIP.',
     );
   }
-  final bytes = output.takeBytes();
-  if (bytes.length != entry.uncompressedSize) {
+  if (outputLength != entry.uncompressedSize ||
+      _finishCrc32(crc) != entry.crc32) {
     throw const DatasetBundleException(
       DatasetBundleErrorCode.invalidArchive,
-      'El tamaño expandido no coincide con el ZIP.',
+      'El tamaño expandido o checksum no coincide con el ZIP.',
     );
   }
-  return bytes;
+  return output?.takeBytes() ?? Uint8List(0);
 }
+
+int _updateCrc32(int crc, List<int> bytes) {
+  var value = crc;
+  for (final byte in bytes) {
+    value ^= byte;
+    for (var bit = 0; bit < 8; bit++) {
+      value = (value & 1) == 0 ? value >> 1 : (value >> 1) ^ 0xedb88320;
+    }
+  }
+  return value & 0xffffffff;
+}
+
+int _finishCrc32(int value) => (value ^ 0xffffffff) & 0xffffffff;
 
 Iterable<Uint8List> _byteSlices(Uint8List bytes) sync* {
   const chunkBytes = 8192;

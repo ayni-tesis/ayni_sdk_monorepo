@@ -248,13 +248,13 @@ Run: `cd apps/native; flutter test test/validation/screens/validation_home_page_
 RED confirmed: compilation failed because the operator screen and injected runtime contract were absent.
 
 - [x] **Step 3: Implement the small screen** with no image/model/workflow editing features. Keep SDK sync out of measurement phases; show errors and manifest/resource hashes needed to decide whether to start. Mark client-reported profile values as declared metadata, not SDK-verified facts. After `Sincronizar SDK`, show the sync result and remind the operator to confirm trace receipt in the dashboard; the SDK 0.2.0 API has no separate per-trace acknowledgement. The screen explains that the ZIP is a compressed package with `manifest.json` and images, stores SDK credentials securely, keeps capture off by default, and leaves the bundled resource profile as a template until published IDs/hashes replace its sentinels.
-- [ ] **Step 4: Rerun widget tests and analyzer**
+- [x] **Step 4: Rerun widget tests and analyzer**
 
 Run: `cd apps/native && flutter test test/validation/screens/validation_home_page_test.dart && flutter analyze`
 
-The analyzer passes. The widget test was attempted twice but Windows Application Control blocked `dartaotruntime.exe` before compilation; rerun it when that host policy permits the Flutter test compiler.
+The widget suite passes (97 tests total), and `flutter analyze` reports no issues. The earlier Application Control block was cleared for the Dart test runtime.
 
-- [x] **Step 5: Commit** (implementation committed; focused widget verification remains pending because of the Windows execution policy)
+- [x] **Step 5: Commit** (implementation and focused widget verification committed)
 
 ```bash
 git add apps/native/lib/main.dart apps/native/lib/validation/screens/validation_home_page.dart apps/native/test/validation/screens/validation_home_page_test.dart apps/native/test/widget_test.dart
@@ -271,23 +271,23 @@ git commit -m "feat: add validation operator screen"
 
 **Interfaces:**
 - Consumes: Complete app from Tasks 1–6 and the published `ayni_sdk` 0.2.0 package.
-- Produces: reproducible Android release builds for the common selector APK and isolated `control`/`treatment` variants; README lists actual commands, resolved SDK version, hashes, and environment/device prerequisites.
+- Produces: one reproducible Android release APK with a condition selector; optional `control` or `treatment` defines can restrict operation to one condition, but are not separate thesis deliverables and do not claim to remove the other runner's package dependencies. README lists the selector APK's size and SHA-256, resolved SDK version, and environment/device prerequisites.
 
 - [x] **Step 1: Add a build-configuration check** for SDK 0.2.0, `minSdk = 26`, CPU inference, and the selector/control/treatment runner-routing matrix.
-- [ ] **Step 2: Run the focused build-configuration check**
+- [x] **Step 2: Run the focused build-configuration check**
 
 Run: `cd apps/native; flutter test test/validation/build_configuration_test.dart`
 
-The test command was attempted after implementation. Windows Application Control blocked `dartaotruntime.exe` before the test compiler loaded the file, so test assertions did not run.
+The build-configuration test passes as part of the Flutter suite.
 
-- [ ] **Step 3: Implement build-time mode isolation** using one compile-time mode define with separate direct/treatment entry paths, while retaining the runtime selector in the common APK. The selector/control/treatment routing is implemented and rejects a condition that does not belong to an isolated APK. Build with `--dart-define=VALIDATION_CONDITION=control` and `--dart-define=VALIDATION_CONDITION=treatment`; record each APK's actual byte size and SHA-256. Never label the common selector APK as two different sizes.
-- [ ] **Step 4: Run all Flutter, release, and device checks**
+- [ ] **Step 3: Build the approved selector app**. Keep the default `VALIDATION_CONDITION=selector` for the thesis pilot. The existing `control` and `treatment` values may restrict the operator flow for a run, but Flutter still packages the shared app dependencies, so do not describe those artifacts as dependency-isolated variants. Record the selector APK's actual byte size and SHA-256.
+- [x] **Step 4: Run all Flutter, release, and device checks**
 
-Run: `cd apps/native && flutter test && flutter analyze && flutter build apk --release && flutter build apk --release --dart-define=VALIDATION_CONDITION=control && flutter build apk --release --dart-define=VALIDATION_CONDITION=treatment && flutter devices`
+Run: `cd apps/native && flutter test && flutter analyze && flutter build apk --release && flutter devices`
 
-`flutter analyze` passes. The focused Flutter test and selector release build were attempted, but Windows Application Control blocked `dartaotruntime.exe` before Flutter could compile either one. No APK was produced, so APK sizes and SHA-256 values are not available. `flutter devices` lists Windows, Chrome, and Edge only; the physical Android pilot remains pending.
+The Flutter suite passes (97 tests) and `flutter analyze` reports no issues. The selector release build reaches Gradle, but Windows Application Control blocks the trusted Flutter SDK's `gen_snapshot.exe` and `font-subset.exe` during `compileFlutterBuildRelease`; no APK was produced, so its size and SHA-256 are not available. The physical Android pilot remains pending until the administrator permits those binaries and the APK is installed on a device.
 
-- [x] **Step 5: Update environment/setup documentation and commit**. README instructs enabling Android `cmdline-tools`, accepting Android SDK licenses, setting SDK server URL/credential, preparing the private R2 dataset and published model/workflow resources, and keeping device network state changes external to the measured batch. It also explains the Windows Application Control blocker and requires administrator handling.
+- [x] **Step 5: Update environment/setup documentation and commit**. README instructs enabling Android `cmdline-tools`, accepting Android SDK licenses, setting SDK server URL/credential, preparing the private R2 dataset and published model/workflow resources, and keeping device network state changes external to the measured batch. It reports the release-build Application Control block and administrator handling without suggesting a policy bypass.
 
 ```bash
 git add apps/native
@@ -299,4 +299,4 @@ git commit -m "test: verify android validation app release builds"
 - Spec coverage: both conditions, paired IDs, batch phases, cold-start handoff, same inputs/contracts, private dataset download/hash/path checks, offline execution, model/workflow preparation, CPU, local JSONL, explicit trace disclosure and revocation, SDK sync, cancellation, export, Android API floor, and size variants each appear in Tasks 1–7.
 - Type consistency: the `ValidationConditionRunner`, `ValidationRunRequest`, `ConditionRunResult`, `VerifiedDataset`, and `ValidationRunRecord` names introduced in Tasks 2–4 are consumed unchanged by Tasks 5–6.
 - Scope: no training, image/model/workflow editing, result upload, image/tensor transfer, iOS target, `dataset.capture`, or Macrobenchmark replacement is introduced.
-- Environment: the current host has Android Studio, Flutter/Dart, Android SDK 36, and one API 37 AVD (`Medium_Phone_API_37.0`) available; no Android target is currently connected. The build installed the NDK/platform/CMake packages, but `cmdline-tools` are missing and Flutter reports Android license status unknown. Windows Application Control blocks the Flutter AOT runtime, preventing Flutter tests and APK generation on this host until its administrator permits the approved runtime.
+- Environment: the current host has Android Studio, Flutter/Dart, and Android SDK 36. The Flutter suite (97 tests) and analyzer pass. The release build reaches Gradle, but Windows Application Control blocks the official Flutter SDK's `gen_snapshot.exe` and `font-subset.exe`; an administrator must allow these trusted binaries before producing/installing the selector APK. Physical-device validation remains pending.

@@ -30,12 +30,14 @@ vi.mock("./application/validation-datasets-panel", () => ({
   ValidationDatasetsPanel: ({
     applicationId,
     canManage,
+    applicationStatus,
   }: {
     applicationId: string;
     canManage?: boolean;
+    applicationStatus?: string;
   }) => (
     <div data-testid="validation-datasets-panel">
-      {applicationId}:{String(canManage)}
+      {applicationId}:{String(canManage)}:{applicationStatus}
     </div>
   ),
 }));
@@ -146,7 +148,7 @@ describe("ApplicationDetailPanel", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByTestId("validation-datasets-panel").textContent).toBe("app-1:true");
+    expect(screen.getByTestId("validation-datasets-panel").textContent).toBe("app-1:true:active");
   });
 
   it("renames application via dialog", async () => {

@@ -77,10 +77,16 @@ describe("uploadValidationDataset", () => {
       "/applications/app-1/validation-datasets/dataset-1/versions/upload-url",
       "/applications/app-1/validation-datasets/dataset-1/versions/complete",
     ]);
+    expect(httpPostMock.mock.calls[0]?.[1]).toMatchObject({
+      version: "1.0.0",
+      partition: "test",
+      sizeBytes: 3,
+    });
     expect(httpPostMock.mock.calls[1]?.[1]).toMatchObject({
       uploadId: "upload-1",
       version: "1.0.0",
       partition: "test",
+      sizeBytes: 3,
       sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
     });
     expect(onProgress.mock.calls.map(([percent]) => percent)).toEqual([25, 99, 100]);
@@ -103,7 +109,38 @@ describe("uploadValidationDataset", () => {
     expect(result).toEqual({ ok: false, code: "canceled", message: "" });
     expect(httpPostMock).toHaveBeenLastCalledWith(
       "/applications/app-1/validation-datasets/dataset-1/versions/cancel",
-      { uploadId: "upload-1" },
+      { uploadId: "upload-1", version: "1.0.0", partition: "test", sizeBytes: 3 },
+    );
+  });
+
+  it("passes cancellation to verification and removes the staged ZIP when aborted", async () => {
+    const controller = new AbortController();
+    httpPostMock
+      .mockResolvedValueOnce({
+        data: { uploadId: "upload-1", uploadUrl: "https://r2.test/put" },
+      })
+      .mockImplementationOnce(async (_path, _body, config) => {
+        expect((config as { signal: AbortSignal }).signal).toBe(controller.signal);
+        controller.abort();
+        throw Object.assign(new Error("canceled"), { __CANCEL__: true });
+      });
+    putMock.mockResolvedValue({ status: 200 });
+
+    const result = await uploadValidationDataset({
+      ...baseInput,
+      onProgress: vi.fn(),
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual({ ok: false, code: "canceled", message: "" });
+    expect(controller.signal.aborted).toBe(true);
+    expect(httpPostMock.mock.calls[1]?.[2]).toMatchObject({
+      timeout: 0,
+      signal: controller.signal,
+    });
+    expect(httpPostMock).toHaveBeenLastCalledWith(
+      "/applications/app-1/validation-datasets/dataset-1/versions/cancel",
+      { uploadId: "upload-1", version: "1.0.0", partition: "test", sizeBytes: 3 },
     );
   });
 
@@ -122,5 +159,9 @@ describe("uploadValidationDataset", () => {
       code: "datasetVersionExists",
       message: "Esa versión ya existe.",
     });
+    expect(httpPostMock).toHaveBeenLastCalledWith(
+      "/applications/app-1/validation-datasets/dataset-1/versions/cancel",
+      { uploadId: "upload-1", version: "1.0.0", partition: "test", sizeBytes: 3 },
+    );
   });
 });

@@ -9,7 +9,15 @@ Float32List prepareValidationImageTensor(
   Uint8List imageBytes,
   ValidationInputContract contract,
 ) {
-  final decoded = img.decodeImage(imageBytes);
+  img.Image? decoded;
+  try {
+    decoded = img.decodeImage(imageBytes);
+  } on Object {
+    throw const ValidationExecutionException(
+      'invalidImage',
+      'La imagen del conjunto de datos no se pudo decodificar.',
+    );
+  }
   if (decoded == null) {
     throw const ValidationExecutionException(
       'invalidImage',

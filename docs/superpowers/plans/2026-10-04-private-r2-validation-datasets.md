@@ -52,7 +52,7 @@
 **Interfaces:**
 - Consumes: Existing `applications`/workspace membership relations and the existing Drizzle database setup.
 - Produces: `createValidationDatasetStore({ db, storage, now })` with `createDataset(input)`, `list(applicationId)`, `completeUpload(input)`, and `getManifestData(applicationId, datasetVersionId)`. `completeUpload` stores the computed ZIP SHA-256 and byte count and never updates an existing version; `getManifestData` returns only stored metadata and never signs a URL.
-- Store result reasons are `notFound`, `forbidden`, `archived`, `datasetExists`, `invalidVersion`, `invalidPartition`, `versionExists`, `size`, `hash`, `storageFailed`, and `databaseFailed`.
+- Store result reasons are `notFound`, `forbidden`, `archived`, `datasetExists`, `invalidVersion`, `invalidPartition`, `versionExists`, `size`, `hash`, `hashMismatch`, `storageFailed`, and `databaseFailed`.
 
 - [x] **Step 1: Write failing store tests** for dataset creation/listing, successful version completion with SHA-256 and size, duplicate `(datasetId, version, partition)` rejection, and foreign-application manifest lookup returning `notFound`.
 - [x] **Step 2: Run the focused tests**
@@ -88,7 +88,7 @@ git commit -m "feat: persist validation dataset versions"
 
 **Interfaces:**
 - Consumes: Task 1's `createValidationDatasetStore` and the current `getApplicationForMember`, session, and private-R2 helpers.
-- Produces: `GET /applications/:applicationId/validation-datasets` for any application member; `POST /applications/:applicationId/validation-datasets` with `{ name, source, license }`; `POST /applications/:applicationId/validation-datasets/:datasetId/versions/upload-url` with `{ version, partition }`; and `POST /applications/:applicationId/validation-datasets/:datasetId/versions/complete` with `{ uploadId, version, partition, sha256 }` for administrators/owners only. The uploader computes `sha256` from the selected ZIP, and the server recomputes it from the staged bytes before publishing. A dataset name is unique within its application; `partition` is 1–64 characters from `[A-Za-z0-9._-]`.
+- Produces: `GET /applications/:applicationId/validation-datasets` for any application member; `POST /applications/:applicationId/validation-datasets` with `{ name, source, license }`; `POST /applications/:applicationId/validation-datasets/:datasetId/versions/upload-url` with `{ version, partition, sizeBytes }`; `POST /applications/:applicationId/validation-datasets/:datasetId/versions/complete` with `{ uploadId, version, partition, sizeBytes, sha256 }`; and cancellation with the same upload tuple. The presigned PUT signs the exact content length and the staging key is scoped to application, dataset, version, partition, size, and random upload ID. The uploader computes `sha256` from the selected ZIP, and the server recomputes it from the staged bytes before publishing. A dataset name is unique within its application; `partition` is 1–64 characters from `[A-Za-z0-9._-]`.
 - Responses use `{ datasets }`, `{ dataset }`, `{ uploadId, uploadUrl }`, and `{ datasetVersion }`. New upload cap: `MAX_VALIDATION_DATASET_BYTES = 134217728` (128 MiB per partition ZIP), returning 413 `datasetTooLarge`.
 
 - [x] **Step 1: Write failing route/OpenAPI tests** for schema parsing, admin create/upload, member denial, foreign-application 404, archived-application conflict, invalid SemVer/partition, oversize, missing object, duplicate completion, and staging cleanup after hash or database failure.
@@ -98,7 +98,7 @@ Run: `cd apps/server; bun run test -- src/validation-datasets.test.ts`
 
 Expected: FAIL because routes and schemas are absent.
 
-- [x] **Step 3: Implement shared schemas and the upload lifecycle**. Follow `model-versions.ts`: create a random staging key under `staging/<applicationId>/validation-datasets/<uploadId>.zip`, sign a 900-second PUT, then on completion verify application/dataset ownership, active status, object existence, 128 MiB cap, and the uploaded bytes' SHA-256 before copying to an application-scoped final key and inserting the immutable version. Always remove the staging object in `finally`; do not expose its key.
+- [x] **Step 3: Implement shared schemas and the upload lifecycle**. Follow `model-versions.ts`: create a random staging key under `staging/<applicationId>/validation-datasets/<datasetId>/<version>/<partition>/<sizeBytes>/<uploadId>.zip`, sign a 900-second PUT for that exact `Content-Length`, then on completion verify application/dataset ownership, active status, object existence, signed size, the 128 MiB cap, and the uploaded bytes' SHA-256 before copying to an application-scoped final key and inserting the immutable version. Always remove the staging object in `finally`; cancellation identifies the same scoped staging key; do not expose its key.
 - [x] **Step 4: Run API and server focused tests**
 
 Run: `cd packages/api && bun run test -- src/openapi.test.ts`

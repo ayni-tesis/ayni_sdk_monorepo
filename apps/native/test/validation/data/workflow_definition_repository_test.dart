@@ -9,22 +9,27 @@ void main() {
   late HttpServer server;
   late String? authorization;
   late String? requestedPath;
+  late int responseStatus;
 
   setUp(() async {
     authorization = null;
     requestedPath = null;
+    responseStatus = HttpStatus.ok;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
       authorization = request.headers.value(HttpHeaders.authorizationHeader);
       requestedPath = request.uri.path;
-      request.response.headers.contentType = ContentType.json;
-      request.response.write(
-        jsonEncode({
-          'schemaVersion': '1',
-          'nodes': <Object?>[],
-          'connections': <Object?>[],
-        }),
-      );
+      request.response.statusCode = responseStatus;
+      if (responseStatus == HttpStatus.ok) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'schemaVersion': '1',
+            'nodes': <Object?>[],
+            'connections': <Object?>[],
+          }),
+        );
+      }
       await request.response.close();
     });
   });
@@ -67,4 +72,25 @@ void main() {
       expect(requestedPath, isNull);
     },
   );
+
+  test('maps a non-200 download to workflowVersionUnavailable', () async {
+    responseStatus = HttpStatus.notFound;
+    final repository = HttpWorkflowDefinitionRepository(
+      serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      credential: 'private-credential',
+      allowInsecureLoopback: true,
+    );
+    addTearDown(repository.close);
+
+    await expectLater(
+      repository.fetch('workflow-version-1'),
+      throwsA(
+        isA<ValidationExecutionException>().having(
+          (error) => error.code,
+          'code',
+          'workflowVersionUnavailable',
+        ),
+      ),
+    );
+  });
 }

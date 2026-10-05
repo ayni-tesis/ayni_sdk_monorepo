@@ -70,7 +70,7 @@ la aplicación anfitriona puede pedir el manifiesto con la credencial de su SDK
 y el ID de la versión en `GET /sdk/dataset-versions/<datasetVersionId>/manifest`.
 El manifiesto incluye metadatos, SHA-256, tamaño y una URL de descarga firmada
 que vence en 15 minutos; no entrega la clave R2. El consumidor descarga el ZIP
-desde esa URL temporal. El SHA-256 del manifiesto permite comprobar el archivo
+desde esa URL temporal. El SHA-256 del ZIP que declara el manifiesto permite comprobar el archivo
 antes de usarlo. Esta descarga no envía imágenes, tensores ni resultados al
 servidor de Ayni; las trazas usan el permiso y el flujo independiente descrito
 arriba.

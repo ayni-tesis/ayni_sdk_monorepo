@@ -105,6 +105,35 @@ describe("ValidationDatasetsPanel", () => {
     expect(screen.queryByLabelText("Archivo ZIP")).not.toBeInTheDocument();
   });
 
+  it("keeps an older list response from hiding a dataset saved during refresh", async () => {
+    const user = userEvent.setup();
+    let resolveInitial!: (value: { data: { datasets: (typeof dataset)[] } }) => void;
+    const initialResponse = new Promise<{ data: { datasets: (typeof dataset)[] } }>((resolve) => {
+      resolveInitial = resolve;
+    });
+    getMock
+      .mockReset()
+      .mockImplementationOnce(() => initialResponse)
+      .mockResolvedValueOnce({ data: { datasets: [{ ...dataset, name: "Guardado" }] } });
+    postMock.mockResolvedValueOnce({ data: { dataset } });
+    renderPanel();
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+
+    await user.type(screen.getByLabelText("Nombre del dataset"), "Nuevo");
+    await user.type(screen.getByLabelText("Fuente"), "Colección universitaria");
+    await user.type(screen.getByLabelText("Licencia"), "CC BY 4.0");
+    await user.click(screen.getByRole("checkbox", { name: /declaro que puedo redistribuir/i }));
+    await user.click(screen.getByRole("button", { name: "Registrar dataset" }));
+
+    expect(await screen.findByRole("heading", { name: "Guardado" })).toBeInTheDocument();
+    await act(async () => {
+      resolveInitial({ data: { datasets: [dataset] } });
+    });
+
+    expect(screen.getByRole("heading", { name: "Guardado" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Flores" })).not.toBeInTheDocument();
+  });
+
   it("reports transfer progress and the verification phase", async () => {
     const user = userEvent.setup();
     let finishUpload: (() => void) | undefined;

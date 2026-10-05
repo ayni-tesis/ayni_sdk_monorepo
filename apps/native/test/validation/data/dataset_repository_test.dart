@@ -128,6 +128,106 @@ void main() {
     }
   });
 
+  test('times out when a manifest body stalls after its headers', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"manifest":');
+      await request.response.flush();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await request.response.close();
+    });
+    final transport = HttpDatasetTransport(
+      serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      credential: 'test-credential',
+      allowInsecureLoopback: true,
+      streamIdleTimeout: const Duration(milliseconds: 25),
+    );
+    addTearDown(() async {
+      transport.close(force: true);
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    await expectLater(
+      transport.fetchManifest('dataset-version-1'),
+      throwsA(
+        isA<DatasetTransportException>().having(
+          (error) => error.code,
+          'code',
+          DatasetTransportErrorCode.networkFailure,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'times out when a signed archive body stalls after its headers',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        if (request.uri.path.endsWith('/manifest')) {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'manifest': {
+                'datasetVersionId': 'dataset-version-1',
+                'datasetId': 'dataset-1',
+                'version': '1.0.0',
+                'partition': 'test',
+                'source': 'Colección de tesis',
+                'license': 'CC BY 4.0',
+                'sha256': 'a' * 64,
+                'sizeBytes': 2,
+                'downloadUrl':
+                    'http://127.0.0.1:${server.port}/object?signature=temporary',
+                'downloadUrlExpiresAt': '2026-10-04T23:59:59.000Z',
+              },
+            }),
+          );
+          await request.response.close();
+          return;
+        }
+        request.response.headers.contentType = ContentType.binary;
+        request.response.contentLength = 2;
+        request.response.add([0]);
+        await request.response.flush();
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        try {
+          await request.response.close();
+        } on HttpException {
+          // The client intentionally times out and closes the body first.
+        }
+      });
+      final transport = HttpDatasetTransport(
+        serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        credential: 'test-credential',
+        allowInsecureLoopback: true,
+        streamIdleTimeout: const Duration(milliseconds: 25),
+      );
+      addTearDown(() async {
+        transport.close(force: true);
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final manifest = await transport.fetchManifest('dataset-version-1');
+
+      await expectLater(
+        transport.downloadArchive(
+          manifest,
+          temporaryDirectory: temporaryDirectory,
+        ),
+        throwsA(
+          isA<DatasetTransportException>().having(
+            (error) => error.code,
+            'code',
+            DatasetTransportErrorCode.networkFailure,
+          ),
+        ),
+      );
+    },
+  );
+
   test('reopens the verified cache without requiring network access', () async {
     final transport = _FakeTransport(archiveBytes);
     final repository = repository0(transport);

@@ -42,25 +42,20 @@ flutter doctor --android-licenses
 flutter doctor -v
 ```
 
-Conecta el teléfono con opciones de desarrollador y depuración USB activadas; `flutter devices` debe mostrarlo antes de instalar el APK. Si Windows Application Control bloquea `dartaotruntime.exe`, Flutter no puede ejecutar sus tests ni compilar el APK en ese host hasta que el administrador permita el runtime Flutter aprobado. No desactives ni eludas la política.
+Conecta el teléfono con opciones de desarrollador y depuración USB activadas; `flutter devices` debe mostrarlo antes de instalar el APK. En este host, las pruebas y `flutter analyze` pasan, pero Windows Application Control bloquea `gen_snapshot.exe` y `font-subset.exe` al compilar en modo release. Solicita al administrador que permita los binarios oficiales de Flutter desde el SDK de confianza; no desactives ni eludas la política. Hasta entonces no hay APK release local para instalar.
 
-Construye y copia cada artefacto antes del siguiente build, porque Flutter reutiliza la misma ruta de salida:
+Construye el APK selector una vez que el host permita los binarios de Flutter. Flutter reutiliza la misma ruta de salida:
 
 ```powershell
 New-Item -ItemType Directory -Force artifacts | Out-Null
 flutter build apk --release --dart-define=VALIDATION_CONDITION=selector
+New-Item -ItemType Directory -Force artifacts | Out-Null
 Copy-Item build/app/outputs/flutter-apk/app-release.apk artifacts/ayni-validation-selector.apk
-flutter build apk --release --dart-define=VALIDATION_CONDITION=control
-Copy-Item build/app/outputs/flutter-apk/app-release.apk artifacts/ayni-validation-control.apk
-flutter build apk --release --dart-define=VALIDATION_CONDITION=treatment
-Copy-Item build/app/outputs/flutter-apk/app-release.apk artifacts/ayni-validation-treatment.apk
-Get-ChildItem artifacts/*.apk | ForEach-Object {
-  Get-Item $_.FullName | Select-Object Name, Length
-  Get-FileHash $_.FullName -Algorithm SHA256
-}
+Get-Item artifacts/ayni-validation-selector.apk | Select-Object Name, Length
+Get-FileHash artifacts/ayni-validation-selector.apk -Algorithm SHA256
 ```
 
-El APK `selector` incluye ambas condiciones y tiene un solo tamaño común. Reporta por separado los tamaños y hashes reales de las variantes `control` y `treatment`. Los APK actuales se firman con la clave debug para el piloto y no están configurados para Google Play.
+El APK selector incluye ambas condiciones; los valores de tamaño y SHA-256 se registran después de una compilación exitosa. No se entregan APK distintos para `control` y `treatment`: esos modos solo restringen el flujo y comparten las dependencias del selector. El APK se firma con la clave debug para el piloto y no está configurado para Google Play.
 
 ## Evidencia local
 

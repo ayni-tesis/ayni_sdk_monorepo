@@ -63,7 +63,7 @@ function makeApp({
   }),
   artifactSize = async () => 3,
   artifact = async () => new Uint8Array([1, 2, 3]),
-  uploadUrlResult = async (key: string, expiresIn: number) =>
+  uploadUrlResult = async (key: string, expiresIn: number, _contentLength: number) =>
     `https://r2.test/${key}?ttl=${expiresIn}`,
   removeArtifact = async () => undefined,
 }: {
@@ -79,7 +79,7 @@ function makeApp({
   ) => Promise<ValidationDatasetStoreResult<ValidationDatasetVersion>>;
   artifactSize?: (key: string) => Promise<number | null>;
   artifact?: (key: string) => Promise<Uint8Array>;
-  uploadUrlResult?: (key: string, expiresIn: number) => Promise<string>;
+  uploadUrlResult?: (key: string, expiresIn: number, contentLength: number) => Promise<string>;
   removeArtifact?: (key: string) => Promise<void>;
 } = {}) {
   const listMock = vi.fn(async () => ({ datasets }));
@@ -122,11 +122,22 @@ function makeApp({
 }
 
 function jsonRequest(body: unknown) {
+  const sizedBody =
+    typeof body === "object" && body !== null && "version" in body && "partition" in body
+      ? {
+          ...body,
+          sizeBytes: "sizeBytes" in body ? body.sizeBytes : 3,
+        }
+      : body;
   return {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(sizedBody),
   };
+}
+
+function stagingKey(uploadId: string, sizeBytes = 3) {
+  return `staging/app-1/validation-datasets/dataset-1/1.0.0/test/${sizeBytes}/${uploadId}.zip`;
 }
 
 describe("validation dataset access and registration", () => {
@@ -279,8 +290,11 @@ describe("direct-to-R2 validation dataset upload", () => {
     });
     expect(body).not.toHaveProperty("storageKey");
     expect(createUploadUrlMock).toHaveBeenCalledWith(
-      expect.stringMatching(/^staging\/app-1\/validation-datasets\/.+\.zip$/),
+      expect.stringMatching(
+        /^staging\/app-1\/validation-datasets\/dataset-1\/1\.0\.0\/test\/3\/[0-9a-f-]+\.zip$/,
+      ),
       900,
+      3,
     );
   });
 
@@ -322,6 +336,18 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     expect(badVersion.status).toBe(400);
     expect(badPartition.status).toBe(400);
+    expect(createUploadUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized declared length before issuing an upload URL", async () => {
+    const { app, createUploadUrlMock } = makeApp();
+
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/upload-url`,
+      jsonRequest({ version: "1.0.0", partition: "test", sizeBytes: 128 * 1024 * 1024 + 1 }),
+    );
+
+    expect(response.status).toBe(413);
     expect(createUploadUrlMock).not.toHaveBeenCalled();
   });
 
@@ -367,9 +393,7 @@ describe("direct-to-R2 validation dataset upload", () => {
       expectedSha256: testZipSha256,
       bytes,
     });
-    expect(removeArtifactMock).toHaveBeenCalledWith(
-      `staging/app-1/validation-datasets/${uploadId}.zip`,
-    );
+    expect(removeArtifactMock).toHaveBeenCalledWith(stagingKey(uploadId));
   });
 
   it("rejects an absent ZIP and still attempts staging cleanup", async () => {
@@ -386,9 +410,7 @@ describe("direct-to-R2 validation dataset upload", () => {
     expect(response.status).toBe(400);
     expect(getArtifactMock).not.toHaveBeenCalled();
     expect(completeUploadMock).not.toHaveBeenCalled();
-    expect(removeArtifactMock).toHaveBeenCalledWith(
-      `staging/app-1/validation-datasets/${uploadId}.zip`,
-    );
+    expect(removeArtifactMock).toHaveBeenCalledWith(stagingKey(uploadId));
   });
 
   it("rejects bytes whose downloaded length differs from the R2 metadata", async () => {
@@ -406,6 +428,26 @@ describe("direct-to-R2 validation dataset upload", () => {
     expect(response.status).toBe(400);
     expect(completeUploadMock).not.toHaveBeenCalled();
     expect(removeArtifactMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up a staged ZIP when the completion payload is malformed", async () => {
+    const uploadId = "5a50fbab-a999-4c20-b190-2c2fb7e5b98e";
+    const { app, completeUploadMock, removeArtifactMock } = makeApp();
+
+    const response = await app.request(
+      `${uploadUrl}/dataset-1/versions/complete`,
+      jsonRequest({
+        uploadId,
+        version: "1.0.0",
+        partition: "test",
+        sizeBytes: 3,
+        sha256: "not-a-sha256",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(completeUploadMock).not.toHaveBeenCalled();
+    expect(removeArtifactMock).toHaveBeenCalledWith(stagingKey(uploadId));
   });
 
   it("rejects ZIPs over 128 MiB and still deletes staging", async () => {
@@ -479,9 +521,7 @@ describe("direct-to-R2 validation dataset upload", () => {
     );
 
     expect(response.status).toBe(expectedStatus);
-    expect(removeArtifactMock).toHaveBeenCalledWith(
-      `staging/app-1/validation-datasets/${uploadId}.zip`,
-    );
+    expect(removeArtifactMock).toHaveBeenCalledWith(stagingKey(uploadId));
   });
 
   it("lets an application administrator delete a canceled staged ZIP", async () => {
@@ -490,13 +530,16 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/cancel`,
-      jsonRequest({ uploadId }),
+      jsonRequest({
+        uploadId,
+        version: "1.0.0",
+        partition: "test",
+        sizeBytes: 3,
+      }),
     );
 
     expect(response.status).toBe(204);
-    expect(removeArtifactMock).toHaveBeenCalledWith(
-      `staging/app-1/validation-datasets/${uploadId}.zip`,
-    );
+    expect(removeArtifactMock).toHaveBeenCalledWith(stagingKey(uploadId));
   });
 
   it("does not let a member delete a staged ZIP", async () => {
@@ -504,7 +547,12 @@ describe("direct-to-R2 validation dataset upload", () => {
 
     const response = await app.request(
       `${uploadUrl}/dataset-1/versions/cancel`,
-      jsonRequest({ uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e" }),
+      jsonRequest({
+        uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e",
+        version: "1.0.0",
+        partition: "test",
+        sizeBytes: 3,
+      }),
     );
 
     expect(response.status).toBe(403);

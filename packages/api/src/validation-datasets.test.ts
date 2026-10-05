@@ -40,6 +40,7 @@ describe("validation dataset request schemas", () => {
       ValidationDatasetVersionUploadRequestSchema.safeParse({
         version: "1.0.0",
         partition: "test_1-a.b",
+        sizeBytes: 42,
       }).success,
     ).toBe(true);
     expect(
@@ -56,10 +57,13 @@ describe("validation dataset request schemas", () => {
     ).toBe(false);
   });
 
-  it("accepts only a UUID for staging cancellation", () => {
+  it("requires the version tuple and UUID to cancel one staging upload", () => {
     expect(
       ValidationDatasetCancelRequestSchema.safeParse({
         uploadId: "5a50fbab-a999-4c20-b190-2c2fb7e5b98e",
+        version: "1.0.0",
+        partition: "test",
+        sizeBytes: 42,
       }).success,
     ).toBe(true);
     expect(
@@ -79,13 +83,11 @@ it("describes the private SDK download manifest without exposing a storage key",
       license: "CC BY 4.0",
       sha256: "a".repeat(64),
       sizeBytes: 42,
+      storageKey: "private/app-1/dataset.zip",
       downloadUrl: "https://signed.example/private-dataset",
       downloadUrlExpiresAt: "2026-10-04T12:15:00.000Z",
     },
   });
 
-  expect(result.success).toBe(true);
-  if (result.success) {
-    expect(JSON.stringify(result.data)).not.toContain("storageKey");
-  }
+  expect(result.success).toBe(false);
 });

@@ -60,7 +60,6 @@ void main() {
       expect(summary.successes, 300);
       expect(summary.completedBlockSizes, [100, 100, 100]);
       expect(runner.calls, 300);
-      expect(runner.networkCalls, 0);
       expect(persistedBeforeEachRun.take(4), [0, 1, 2, 3]);
       expect(runner.caseIds.take(4), [
         'coffee-1',
@@ -271,7 +270,6 @@ Map<String, Object?> _case(String id, String path, List<int> bytes) => {
 
 class _FakeRunner implements ValidationConditionRunner {
   int calls = 0;
-  int networkCalls = 0;
   Completer<void>? barrier;
   final Completer<void> started = Completer<void>();
   Future<void> Function()? beforeRun;

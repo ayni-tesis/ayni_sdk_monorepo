@@ -84,55 +84,73 @@ class ValidationOutputNormalizer {
     List<ValidationTensor> tensors,
     ValidationOutputContract contract,
   ) {
-    if (tensors.length != 4 || contract.scoreThreshold == null) {
+    final indices = contract.tensorIndices;
+    if (tensors.length != 4 ||
+        contract.scoreThreshold == null ||
+        indices == null ||
+        indices.keys.toSet().difference(const {
+          'boxes',
+          'classes',
+          'scores',
+          'count',
+        }).isNotEmpty ||
+        indices.length != 4 ||
+        indices.values.toSet().length != 4 ||
+        indices.values.any((index) => index < 0 || index >= tensors.length)) {
       throw const ValidationOutputException('detectionTensorsInvalid');
     }
-    final boxIndex = tensors.indexWhere(
-      (tensor) =>
-          tensor.shape.length == 3 &&
-          tensor.shape.first == 1 &&
-          tensor.shape.last == 4,
-    );
-    if (boxIndex < 0) {
+    final boxesTensor = tensors[indices['boxes']!];
+    final classesTensor = tensors[indices['classes']!];
+    final scoresTensor = tensors[indices['scores']!];
+    final countTensor = tensors[indices['count']!];
+    final boxes = boxesTensor.values;
+    if (boxesTensor.shape.length != 3 ||
+        boxesTensor.shape[0] != 1 ||
+        boxesTensor.shape[2] != 4 ||
+        boxes.length != boxesTensor.shape[1] * 4) {
       throw const ValidationOutputException('detectionBoxesMissing');
     }
-    final boxes = tensors[boxIndex].values;
-    final vectors = <List<double>>[];
-    for (var index = 0; index < tensors.length; index++) {
-      final shape = tensors[index].shape;
-      if (index != boxIndex &&
-          shape.length == 2 &&
-          shape.first == 1 &&
-          shape.last == boxes.length ~/ 4) {
-        vectors.add(tensors[index].values);
-      }
+    final candidateCount = boxesTensor.shape[1];
+    if (classesTensor.shape.length != 2 ||
+        classesTensor.shape[0] != 1 ||
+        classesTensor.shape[1] != candidateCount ||
+        classesTensor.values.length != candidateCount) {
+      throw const ValidationOutputException('detectionLabelsInvalid');
     }
-    if (vectors.length < 2) {
-      throw const ValidationOutputException('detectionVectorsMissing');
-    }
-    final scores = vectors.cast<List<double>?>().firstWhere(
-      (vector) =>
-          vector!.every((score) => score.isFinite && score >= 0 && score <= 1),
-      orElse: () => null,
-    );
-    if (scores == null) {
+    if (scoresTensor.shape.length != 2 ||
+        scoresTensor.shape[0] != 1 ||
+        scoresTensor.shape[1] != candidateCount ||
+        scoresTensor.values.length != candidateCount ||
+        scoresTensor.values.any(
+          (score) => !score.isFinite || score < 0 || score > 1,
+        )) {
       throw const ValidationOutputException('detectionScoresInvalid');
     }
-    final classes = vectors.cast<List<double>?>().firstWhere(
-      (vector) =>
-          !identical(vector, scores) &&
-          vector!.every(
-            (label) => label.isFinite && label == label.roundToDouble(),
-          ),
-      orElse: () => null,
-    );
-    if (classes == null) {
+    final classes = classesTensor.values;
+    if (classes.any(
+      (label) => !label.isFinite || label != label.roundToDouble(),
+    )) {
       throw const ValidationOutputException('detectionLabelsInvalid');
+    }
+    final countShapeIsValid =
+        (countTensor.shape.length == 1 && countTensor.shape[0] == 1) ||
+        (countTensor.shape.length == 2 &&
+            countTensor.shape[0] == 1 &&
+            countTensor.shape[1] == 1);
+    if (!countShapeIsValid || countTensor.values.length != 1) {
+      throw const ValidationOutputException('detectionTensorsInvalid');
+    }
+    final count = countTensor.values.single;
+    if (!count.isFinite ||
+        count != count.roundToDouble() ||
+        count < 0 ||
+        count > candidateCount) {
+      throw const ValidationOutputException('detectionTensorsInvalid');
     }
     final detections = <Map<String, Object?>>[];
     var invalidAboveThreshold = false;
-    for (var index = 0; index < scores.length; index++) {
-      final score = scores[index];
+    for (var index = 0; index < count.toInt(); index++) {
+      final score = scoresTensor.values[index];
       final labelIndex = classes[index].toInt();
       final yMin = boxes[index * 4];
       final xMin = boxes[index * 4 + 1];

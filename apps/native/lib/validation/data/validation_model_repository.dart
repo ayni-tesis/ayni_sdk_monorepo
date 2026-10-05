@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../immutable_json.dart';
 import '../execution/validation_condition_runner.dart';
 import '../models/experiment_plan.dart';
 
@@ -15,7 +16,7 @@ class VerifiedModelArtifact {
     required this.sha256,
     required this.version,
     required Map<String, Object?> contract,
-  }) : contract = _freezeMap(contract);
+  }) : contract = freezeObjectMap(contract);
 
   final File file;
   final String modelVersionId;
@@ -26,6 +27,8 @@ class VerifiedModelArtifact {
 
 abstract interface class ValidationModelRepository {
   Future<VerifiedModelArtifact> prepare(ValidationResourceProfile profile);
+
+  Future<String> fetchSha256(String modelVersionId);
 }
 
 class HttpValidationModelRepository implements ValidationModelRepository {
@@ -59,6 +62,18 @@ class HttpValidationModelRepository implements ValidationModelRepository {
   final HttpClient _httpClient;
   final bool allowInsecureLoopback;
   final DateTime Function() _now;
+
+  @override
+  Future<String> fetchSha256(String modelVersionId) async {
+    final manifest = await _fetchManifest(modelVersionId);
+    if (manifest.modelVersionId != modelVersionId) {
+      throw const ValidationExecutionException(
+        'modelManifestMismatch',
+        'El manifiesto no corresponde a la versión del modelo solicitada.',
+      );
+    }
+    return manifest.sha256;
+  }
 
   @override
   Future<VerifiedModelArtifact> prepare(
@@ -99,7 +114,26 @@ class HttpValidationModelRepository implements ValidationModelRepository {
     final stageFile = File('${targetFile.path}.$token.part');
     final backupFile = File('${targetFile.path}.$token.previous');
     try {
-      await _downloadArtifact(manifest, stageFile);
+      try {
+        await _downloadArtifact(manifest, stageFile);
+      } on ValidationExecutionException catch (error) {
+        if (error.code != 'modelDownloadUrlExpired') rethrow;
+        final refreshed = await _fetchManifest(profile.controlModelVersionId);
+        if (refreshed.modelVersionId != manifest.modelVersionId ||
+            refreshed.version != manifest.version ||
+            refreshed.sha256 != manifest.sha256 ||
+            refreshed.sizeBytes != manifest.sizeBytes ||
+            !modelContractMatchesValidationProfile(
+              refreshed.contract,
+              profile,
+            )) {
+          throw const ValidationExecutionException(
+            'modelManifestMismatch',
+            'El manifiesto renovado del modelo no coincide con el perfil.',
+          );
+        }
+        await _downloadArtifact(refreshed, stageFile);
+      }
       if (await _sha256File(stageFile) != manifest.sha256) {
         throw const ValidationExecutionException(
           'modelHashMismatch',
@@ -205,8 +239,13 @@ class HttpValidationModelRepository implements ValidationModelRepository {
       );
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        throw const ValidationExecutionException(
-          'modelDownloadFailed',
+        final signedUrlExpired = const {
+          HttpStatus.unauthorized,
+          HttpStatus.forbidden,
+          HttpStatus.gone,
+        }.contains(response.statusCode);
+        throw ValidationExecutionException(
+          signedUrlExpired ? 'modelDownloadUrlExpired' : 'modelDownloadFailed',
           'No se pudo descargar el modelo de validación.',
         );
       }
@@ -333,22 +372,6 @@ class _ModelManifest {
       contract: _asObject(json['contract'], 'contract'),
     );
   }
-}
-
-Map<String, Object?> _freezeMap(Map<String, Object?> source) =>
-    Map.unmodifiable({
-      for (final entry in source.entries) entry.key: _freezeValue(entry.value),
-    });
-
-Object? _freezeValue(Object? value) {
-  if (value is Map<String, Object?>) return _freezeMap(value);
-  if (value is Map) {
-    return _freezeMap(
-      value.map((key, nested) => MapEntry(key.toString(), nested)),
-    );
-  }
-  if (value is List) return List.unmodifiable(value.map(_freezeValue));
-  return value;
 }
 
 void _validateProfile(ValidationResourceProfile profile) {

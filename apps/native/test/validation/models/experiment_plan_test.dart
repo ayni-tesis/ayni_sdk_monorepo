@@ -31,6 +31,60 @@ void main() {
     });
 
     test(
+      'rejects output contracts the direct control runner cannot execute',
+      () {
+        for (final outputs in [
+          [
+            {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+          ],
+          [
+            {
+              'name': 'classification',
+              'resultType': 'classification',
+              'labels': ['coffee'],
+            },
+            {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+          ],
+        ]) {
+          final json = _validPlan();
+          final profiles = json['resourceProfiles']! as List<Object?>;
+          final profile = Map<String, Object?>.from(profiles.single! as Map)
+            ..['outputContract'] = outputs;
+          profiles[0] = profile;
+
+          expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
+        }
+      },
+    );
+
+    test('requires explicit, distinct tensor roles for detection outputs', () {
+      final contract = ValidationOutputContract.fromJson({
+        'name': 'objects',
+        'resultType': 'detection',
+        'labels': ['coffee'],
+        'scoreThreshold': 0.5,
+        'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+      });
+      expect(contract.tensorIndices, {
+        'boxes': 0,
+        'classes': 1,
+        'scores': 2,
+        'count': 3,
+      });
+
+      expect(
+        () => ValidationOutputContract.fromJson({
+          'name': 'objects',
+          'resultType': 'detection',
+          'labels': ['coffee'],
+          'scoreThreshold': 0.5,
+          'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 1, 'count': 3},
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test(
       'accepts only image preprocessing contracts supported by ayni_sdk',
       () {
         final json = _validPlan();
@@ -261,7 +315,7 @@ void main() {
         final record = ValidationRunRecord(
           pairRunId: 'paired-run-1',
           repetition: 1,
-          condition: ValidationCondition.control,
+          condition: ValidationCondition.treatment,
           phase: ValidationPhase.measured,
           scenarioId: 'PERF-02',
           caseId: 'image-001',
@@ -271,8 +325,8 @@ void main() {
           inputSha256: 'b' * 64,
           modelVersionId: 'model-version-1',
           modelSha256: 'c' * 64,
-          workflowVersionId: null,
-          workflowVersion: null,
+          workflowVersionId: 'workflow-version-1',
+          workflowVersion: '1.0.0',
           backend: 'CPU',
           metadata: const ValidationRunMetadata(
             deviceModel: 'Pixel 8',
@@ -293,7 +347,7 @@ void main() {
 
         expect(restored.pairRunId, 'paired-run-1');
         expect(restored.repetition, 1);
-        expect(restored.condition, ValidationCondition.control);
+        expect(restored.condition, ValidationCondition.treatment);
         expect(restored.metadata.deviceModel, 'Pixel 8');
         expect(restored.metadata.sdkVersion, '0.2.0');
         expect(restored.traceCaptureEnabled, isFalse);
@@ -303,10 +357,19 @@ void main() {
         expect(record.toJson().keys, isNot(contains('inputBytes')));
         expect(record.toJson().keys, isNot(contains('credential')));
         expect(record.toJson().keys, isNot(contains('trace')));
+
+        for (final invalidVersion in ['1.0.0-.', '1.0.0-01']) {
+          final invalidRecord = Map<String, Object?>.from(record.toJson())
+            ..['workflowVersion'] = invalidVersion;
+          expect(
+            () => ValidationRunRecord.fromJson(invalidRecord),
+            throwsFormatException,
+          );
+        }
       },
     );
 
-    test('rejects a zero-based or credential-bearing record', () {
+    test('rejects a zero-based repetition', () {
       expect(
         () => ValidationRunRecord(
           pairRunId: 'paired-run-1',

@@ -77,8 +77,8 @@ void main() {
           VerifiedModelArtifact(
             file: modelFile,
             modelVersionId: 'another-model-version',
-            sha256: 'c' * 64,
-            version: '1.0.1',
+            sha256: 'b' * 64,
+            version: '1.0.0',
             contract: _modelContract(),
           ),
         ),
@@ -146,6 +146,27 @@ void main() {
     expect(rgb[2], 0);
     expect(grayscale.single, closeTo(64 / 127.5 - 1, 0.000001));
   });
+
+  test('maps undecodable image bytes to the invalidImage error', () {
+    expect(
+      () => prepareValidationImageTensor(
+        Uint8List.fromList([0xff, 0xd8, 0xff]),
+        const ValidationInputContract(
+          width: 1,
+          height: 1,
+          channels: 3,
+          normalization: 'zero_to_one',
+        ),
+      ),
+      throwsA(
+        isA<ValidationExecutionException>().having(
+          (error) => error.code,
+          'code',
+          'invalidImage',
+        ),
+      ),
+    );
+  });
 }
 
 class _ModelRepository implements ValidationModelRepository {
@@ -157,6 +178,9 @@ class _ModelRepository implements ValidationModelRepository {
   Future<VerifiedModelArtifact> prepare(
     ValidationResourceProfile profile,
   ) async => artifact;
+
+  @override
+  Future<String> fetchSha256(String modelVersionId) async => artifact.sha256;
 }
 
 class _FakeCpuEngine implements ValidationTfliteEngine {

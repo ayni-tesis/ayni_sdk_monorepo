@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:crypto/crypto.dart';
+import 'package:better_fullstack_app/validation/data/validation_model_repository.dart';
 import 'package:better_fullstack_app/validation/data/workflow_definition_repository.dart';
 import 'package:better_fullstack_app/validation/execution/ayni_sdk_runner.dart';
 import 'package:better_fullstack_app/validation/execution/validation_condition_runner.dart';
@@ -16,6 +17,7 @@ void main() {
   late _MemorySecureStore secureStore;
   late ValidationPreferences preferences;
   late _FakeAyniSdkClient sdk;
+  late _FakeValidationModelRepository modelRepository;
   late _FakeWorkflowDefinitionRepository definitions;
   late Directory temporaryDirectory;
   late AyniSdkValidationRunner runner;
@@ -27,6 +29,7 @@ void main() {
     secureStore = _MemorySecureStore();
     preferences = ValidationPreferences(secureStore: secureStore);
     sdk = _FakeAyniSdkClient();
+    modelRepository = _FakeValidationModelRepository('b' * 64);
     definitions = _FakeWorkflowDefinitionRepository(_workflowDefinition());
     runner = AyniSdkValidationRunner(
       profile: _profile(),
@@ -36,6 +39,7 @@ void main() {
       ),
       storageDirectory: temporaryDirectory,
       sdk: sdk,
+      modelRepository: modelRepository,
       workflowDefinitions: definitions,
       preferences: preferences,
     );
@@ -135,6 +139,24 @@ void main() {
   );
 
   test(
+    'keeps trace persistence failure when output validation fails',
+    () async {
+      await runner.prepare();
+      await runner.setTraceCaptureAllowed(true);
+      sdk.outputs = const {'unexpected': BooleanResult('condition-node', true)};
+      sdk.tracePersistenceFailed = true;
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([4, 5, 6]), captureTrace: true),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.error);
+      expect(result.errorCode, 'workflowOutputMismatch');
+      expect(result.tracePersistenceFailed, isTrue);
+    },
+  );
+
+  test(
     'rejects a pinned workflow whose model node declares another version',
     () async {
       definitions = _FakeWorkflowDefinitionRepository(
@@ -142,6 +164,7 @@ void main() {
       );
       runner = _makeRunner(
         sdk: sdk,
+        modelRepository: modelRepository,
         definitions: definitions,
         preferences: preferences,
         storageDirectory: temporaryDirectory,
@@ -152,6 +175,25 @@ void main() {
         throwsA(isA<ValidationExecutionException>()),
       );
       expect(sdk.syncCalls, 0);
+    },
+  );
+
+  test(
+    'rejects a model manifest whose SHA-256 differs from the profile',
+    () async {
+      modelRepository.sha256 = 'c' * 64;
+
+      await expectLater(
+        runner.prepare(),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'modelHashMismatch',
+          ),
+        ),
+      );
+      expect(definitions.requestedVersionIds, isEmpty);
     },
   );
 
@@ -196,6 +238,15 @@ void main() {
         _request(Uint8List.fromList([2, 3, 4]), captureTrace: true),
       );
       expect(sdk.lastTraceContext, isNull);
+
+      sdk.failTraceClear = false;
+      await runner.setTraceCaptureAllowed(true);
+      expect(sdk.clearTraceCalls, 3);
+      expect(await preferences.traceCaptureAllowed, isTrue);
+      await runner.runCase(
+        _request(Uint8List.fromList([4, 5, 6]), captureTrace: true),
+      );
+      expect(sdk.lastTraceContext?.runId, 'pair-1');
     },
   );
 
@@ -245,6 +296,7 @@ class _FakeAyniSdkClient implements AyniSdkClient {
   int syncCalls = 0;
   int clearTraceCalls = 0;
   bool failTraceClear = false;
+  bool tracePersistenceFailed = false;
   String workflowVersion = '1.0.0';
   Completer<void>? runBarrier;
   Completer<void>? runStarted;
@@ -296,6 +348,7 @@ class _FakeAyniSdkClient implements AyniSdkClient {
       workflowId: 'workflow-1',
       workflowVersion: workflowVersion,
       outputs: outputs,
+      tracePersistenceFailed: tracePersistenceFailed,
     );
   }
 
@@ -325,9 +378,23 @@ class _FakeWorkflowDefinitionRepository
   }
 }
 
+class _FakeValidationModelRepository implements ValidationModelRepository {
+  _FakeValidationModelRepository(this.sha256);
+
+  String sha256;
+
+  @override
+  Future<String> fetchSha256(String modelVersionId) async => sha256;
+
+  @override
+  Future<VerifiedModelArtifact> prepare(ValidationResourceProfile profile) =>
+      throw UnimplementedError();
+}
+
 AyniSdkValidationRunner _makeRunner({
   required Directory storageDirectory,
   required _FakeAyniSdkClient sdk,
+  required _FakeValidationModelRepository modelRepository,
   required _FakeWorkflowDefinitionRepository definitions,
   required ValidationPreferences preferences,
 }) => AyniSdkValidationRunner(
@@ -338,6 +405,7 @@ AyniSdkValidationRunner _makeRunner({
   ),
   storageDirectory: storageDirectory,
   sdk: sdk,
+  modelRepository: modelRepository,
   workflowDefinitions: definitions,
   preferences: preferences,
 );

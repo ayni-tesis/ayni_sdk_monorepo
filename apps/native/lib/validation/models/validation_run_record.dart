@@ -1,4 +1,4 @@
-import 'dart:convert';
+import '../immutable_json.dart';
 
 import 'experiment_plan.dart';
 import 'validation_run_metadata.dart';
@@ -33,7 +33,7 @@ class ValidationRunRecord {
     this.errorCode,
     this.errorMessage,
     DateTime? recordedAtUtc,
-  }) : normalizedOutput = _freezeJsonMap(normalizedOutput),
+  }) : normalizedOutput = freezeJsonMap(normalizedOutput),
        recordedAtUtc = (recordedAtUtc ?? DateTime.now().toUtc()).toUtc() {
     _requiredString(pairRunId, 'pairRunId');
     _requiredString(scenarioId, 'scenarioId');
@@ -220,23 +220,6 @@ class ValidationRunRecord {
   }
 }
 
-Map<String, Object?> _freezeJsonMap(Map<String, Object?> value) {
-  final decoded = jsonDecode(jsonEncode(value));
-  final frozen = _deepFreeze(_asObject(decoded, 'normalizedOutput'));
-  if (frozen is Map<String, Object?>) return frozen;
-  throw const FormatException('normalizedOutput must be a JSON object.');
-}
-
-Object? _deepFreeze(Object? value) {
-  if (value is Map) {
-    return Map<String, Object?>.unmodifiable(
-      value.map((key, item) => MapEntry(key.toString(), _deepFreeze(item))),
-    );
-  }
-  if (value is List) return List<Object?>.unmodifiable(value.map(_deepFreeze));
-  return value;
-}
-
 void _requiredString(String value, String name) {
   if (value.trim().isEmpty) throw FormatException('$name must be non-empty.');
 }
@@ -248,7 +231,7 @@ void _requireDigest(String value, String name) {
 }
 
 bool _validSemver(String value) => RegExp(
-  r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$',
+  r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$',
 ).hasMatch(value);
 
 String _asString(Object? value, String name) {

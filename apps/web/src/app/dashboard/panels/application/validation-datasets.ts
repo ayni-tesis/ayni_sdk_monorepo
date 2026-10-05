@@ -33,7 +33,7 @@ export async function uploadValidationDataset(input: {
 }): Promise<ValidationDatasetUploadResult> {
   const basePath = `/applications/${input.applicationId}/validation-datasets/${input.datasetId}/versions`;
   let uploadId: string | undefined;
-  let phase: "starting" | "uploading" | "verifying" = "starting";
+  let completed = false;
 
   try {
     input.onPhase?.("verifying");
@@ -44,11 +44,10 @@ export async function uploadValidationDataset(input: {
 
     const { data: upload } = await httpClient.post<{ uploadId: string; uploadUrl: string }>(
       `${basePath}/upload-url`,
-      { version: input.version, partition: input.partition },
+      { version: input.version, partition: input.partition, sizeBytes: input.file.size },
       { signal: input.signal },
     );
     uploadId = upload.uploadId;
-    phase = "uploading";
     input.onPhase?.("uploading");
 
     await axios.put(upload.uploadUrl, input.file, {
@@ -61,20 +60,35 @@ export async function uploadValidationDataset(input: {
       },
     });
 
-    phase = "verifying";
     input.onPhase?.("verifying");
     const response = await httpClient.post<{ datasetVersion: ValidationDatasetVersion }>(
       `${basePath}/complete`,
-      { uploadId, version: input.version, partition: input.partition, sha256 },
-      { timeout: 0 },
+      {
+        uploadId,
+        version: input.version,
+        partition: input.partition,
+        sizeBytes: input.file.size,
+        sha256,
+      },
+      { timeout: 0, signal: input.signal },
     );
+    completed = true;
     input.onProgress(100);
     return { ok: true, datasetVersion: response.data.datasetVersion };
   } catch (error) {
-    if (axios.isCancel(error)) {
-      if (uploadId && phase === "uploading") {
-        await httpClient.post(`${basePath}/cancel`, { uploadId }).catch(() => undefined);
+    if (uploadId && !completed) {
+      try {
+        await httpClient.post(`${basePath}/cancel`, {
+          uploadId,
+          version: input.version,
+          partition: input.partition,
+          sizeBytes: input.file.size,
+        });
+      } catch {
+        // Expired staging URLs are also removed by the R2 lifecycle policy.
       }
+    }
+    if (axios.isCancel(error)) {
       return { ok: false, code: "canceled", message: "" };
     }
     if (axios.isAxiosError<{ code?: string; message?: string }>(error) && error.response) {

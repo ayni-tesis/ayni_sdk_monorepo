@@ -46,12 +46,25 @@ describe("r2ValidationDatasetStorage", () => {
 
   it("signs a PUT with the ZIP content type and requested expiry", async () => {
     await expect(
-      r2ValidationDatasetStorage.createUploadUrl("staging/upload.zip", 900),
+      r2ValidationDatasetStorage.createUploadUrl("staging/upload.zip", 900, 3),
     ).resolves.toBe("https://signed.example/upload");
     expect(getUploadUrl).toHaveBeenCalledWith("staging/upload.zip", {
       expiresIn: 900,
       contentType: "application/zip",
+      contentLength: 3,
     });
+  });
+
+  it("treats a missing R2 object as absent while preserving other storage failures", async () => {
+    vi.mocked(downloadFileAsBuffer).mockRejectedValueOnce(
+      Object.assign(new Error("missing"), { name: "NoSuchKey" }),
+    );
+    await expect(r2ValidationDatasetStorage.getArtifact("missing.zip")).resolves.toBeNull();
+
+    vi.mocked(downloadFileAsBuffer).mockRejectedValueOnce(new Error("R2 unavailable"));
+    await expect(r2ValidationDatasetStorage.getArtifact("private/dataset.zip")).rejects.toThrow(
+      "R2 unavailable",
+    );
   });
 
   it("reads, sizes, and removes private objects through the shared R2 adapter", async () => {

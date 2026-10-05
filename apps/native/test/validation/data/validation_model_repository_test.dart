@@ -41,6 +41,20 @@ void main() {
     },
   );
 
+  test('refreshes a signed model URL once after an expired request', () async {
+    server.expireFirstDownload = true;
+    final repository = _repository(server, temporaryDirectory);
+    addTearDown(repository.close);
+
+    final verified = await repository.prepare(
+      _profile(sha256.convert(server.modelBytes).toString()),
+    );
+
+    expect(server.manifestRequests, 2);
+    expect(server.objectRequests, 2);
+    expect(await verified.file.readAsBytes(), server.modelBytes);
+  });
+
   test(
     'rejects a model whose downloaded bytes do not match its manifest digest',
     () async {
@@ -92,7 +106,13 @@ void main() {
         repository.prepare(
           _profile(sha256.convert(server.modelBytes).toString()),
         ),
-        throwsA(isA<ValidationExecutionException>()),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'modelManifestMismatch',
+          ),
+        ),
       );
       expect(server.objectAuthorization, isNull);
     },
@@ -130,34 +150,46 @@ class _ModelServer {
   };
   String? manifestAuthorization;
   String? objectAuthorization;
+  int manifestRequests = 0;
+  int objectRequests = 0;
+  bool expireFirstDownload = false;
 
   Future<void> start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUrl = Uri.parse('http://127.0.0.1:${_server.port}');
     _server.listen((request) async {
       if (request.uri.path == '/sdk/model-versions/model-version-1/manifest') {
+        manifestRequests++;
         manifestAuthorization = request.headers.value(
           HttpHeaders.authorizationHeader,
         );
         final bytes = modelBytes;
+        final signedPath = expireFirstDownload && manifestRequests == 1
+            ? '/signed/expired-model.tflite'
+            : '/signed/model.tflite';
         final manifest = {
           'manifest': {
             'modelVersionId': 'model-version-1',
             'version': '1.0.0',
             'sha256': manifestSha256 ?? sha256.convert(bytes).toString(),
             'sizeBytes': bytes.length,
-            'downloadUrl': baseUrl.resolve('/signed/model.tflite').toString(),
+            'downloadUrl': baseUrl.resolve(signedPath).toString(),
             'downloadUrlExpiresAt': DateTime.utc(2031).toIso8601String(),
             'contract': contract,
           },
         };
         request.response.headers.contentType = ContentType.json;
         request.response.write(jsonEncode(manifest));
-      } else if (request.uri.path == '/signed/model.tflite') {
+      } else if (request.uri.path.startsWith('/signed/')) {
+        objectRequests++;
         objectAuthorization = request.headers.value(
           HttpHeaders.authorizationHeader,
         );
-        request.response.add(modelBytes);
+        if (request.uri.path == '/signed/expired-model.tflite') {
+          request.response.statusCode = HttpStatus.forbidden;
+        } else {
+          request.response.add(modelBytes);
+        }
       } else {
         request.response.statusCode = HttpStatus.notFound;
       }

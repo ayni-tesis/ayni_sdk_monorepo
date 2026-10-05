@@ -1051,7 +1051,10 @@ describe("useSdkCredential", () => {
       }),
     };
     const database = {
-      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(tx),
+      transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => {
+        selectCount = 0;
+        return callback(tx);
+      },
     };
     return { database, lastUses };
   }

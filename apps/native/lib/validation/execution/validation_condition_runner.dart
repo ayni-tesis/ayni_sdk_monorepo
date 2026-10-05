@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../immutable_json.dart';
 import '../models/experiment_plan.dart';
 import '../models/validation_run_record.dart';
 
@@ -55,7 +56,7 @@ class ConditionRunResult {
     required this.errorCode,
     required this.errorMessage,
     required this.tracePersistenceFailed,
-  }) : normalizedOutput = _freezeObjectMap(normalizedOutput);
+  }) : normalizedOutput = freezeObjectMap(normalizedOutput);
 
   factory ConditionRunResult.success({
     required int durationMicros,
@@ -166,20 +167,4 @@ void validateRequestDataset(
       'El lote usa un dataset distinto del perfil verificado.',
     );
   }
-}
-
-Map<String, Object?> _freezeObjectMap(Map<String, Object?> source) =>
-    Map.unmodifiable({
-      for (final entry in source.entries) entry.key: _freezeObject(entry.value),
-    });
-
-Object? _freezeObject(Object? value) {
-  if (value is Map<String, Object?>) return _freezeObjectMap(value);
-  if (value is Map) {
-    return _freezeObjectMap(
-      value.map((key, nested) => MapEntry(key.toString(), nested)),
-    );
-  }
-  if (value is List) return List.unmodifiable(value.map(_freezeObject));
-  return value;
 }

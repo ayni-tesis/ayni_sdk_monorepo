@@ -87,6 +87,7 @@ void main() {
       resultType: ValidationResultType.detection,
       labels: ['coffee'],
       scoreThreshold: 0.5,
+      tensorIndices: const {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
     );
     final direct = normalizer.normalizeDirect(
       tensors: [
@@ -94,8 +95,8 @@ void main() {
           shape: [1, 2, 4],
           values: [0.2, 0.1, 0.8, 0.9, 0, 0, 1, 1],
         ),
-        ValidationTensor(shape: [1, 2], values: [0.9, 0.1]),
         ValidationTensor(shape: [1, 2], values: [0, 0]),
+        ValidationTensor(shape: [1, 2], values: [0.9, 0.1]),
         ValidationTensor(shape: [1, 1], values: [2]),
       ],
       contracts: [detectionContract],

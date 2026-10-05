@@ -24,8 +24,6 @@ const INVALID_VERSION_MESSAGE = "Ingresa una versión SemVer y una partición v�
 const INVALID_UPLOAD_MESSAGE = "La solicitud de carga no es válida.";
 const UPLOAD_FAILED_MESSAGE = "No se pudo verificar o guardar el ZIP del dataset.";
 
-const UploadIdSchema = z.object({ uploadId: z.string().uuid() });
-
 type Store = {
   list(applicationId: string): Promise<{ datasets: ValidationDatasetListItem[] }>;
   createDataset(
@@ -53,8 +51,15 @@ function isApplicationAdministrator(role: string) {
   return role === "admin" || role === "owner";
 }
 
-function stagingKey(applicationId: string, uploadId: string) {
-  return `staging/${applicationId}/validation-datasets/${uploadId}.zip`;
+function stagingKey(
+  applicationId: string,
+  datasetId: string,
+  version: string,
+  partition: string,
+  sizeBytes: number,
+  uploadId: string,
+) {
+  return `staging/${applicationId}/validation-datasets/${datasetId}/${version}/${partition}/${sizeBytes}/${uploadId}.zip`;
 }
 
 function cleanupStaging(storage: Dependencies["storage"], key: string) {
@@ -201,6 +206,15 @@ export function createValidationDatasetsApp({
       if (!parsed.success) {
         return c.json({ message: INVALID_VERSION_MESSAGE, code: "invalidVersionOrPartition" }, 400);
       }
+      if (parsed.data.sizeBytes > MAX_VALIDATION_DATASET_BYTES) {
+        return c.json(
+          {
+            message: "El ZIP supera el tamaño máximo permitido de 128 MiB.",
+            code: "datasetTooLarge",
+          },
+          413,
+        );
+      }
 
       let current: Awaited<ReturnType<Store["list"]>>;
       try {
@@ -228,7 +242,18 @@ export function createValidationDatasetsApp({
 
       const uploadId = crypto.randomUUID();
       try {
-        const url = await storage.createUploadUrl(stagingKey(application.id, uploadId), 900);
+        const url = await storage.createUploadUrl(
+          stagingKey(
+            application.id,
+            dataset.id,
+            parsed.data.version,
+            parsed.data.partition,
+            parsed.data.sizeBytes,
+            uploadId,
+          ),
+          900,
+          parsed.data.sizeBytes,
+        );
         return c.json({ uploadId, uploadUrl: url });
       } catch {
         return c.json(
@@ -266,15 +291,36 @@ export function createValidationDatasetsApp({
       }
       const parsed = ValidationDatasetUploadRequestSchema.safeParse(rawBody);
       if (!parsed.success) {
-        const upload = UploadIdSchema.safeParse(rawBody);
+        const upload = ValidationDatasetVersionUploadRequestSchema.extend({
+          uploadId: z.string().uuid(),
+        })
+          .passthrough()
+          .safeParse(rawBody);
         if (upload.success) {
-          await cleanupStaging(storage, stagingKey(application.id, upload.data.uploadId));
+          await cleanupStaging(
+            storage,
+            stagingKey(
+              application.id,
+              c.req.param("datasetId"),
+              upload.data.version,
+              upload.data.partition,
+              upload.data.sizeBytes,
+              upload.data.uploadId,
+            ),
+          );
         }
         return c.json({ message: INVALID_UPLOAD_MESSAGE, code: "invalidUpload" }, 400);
       }
 
-      const { uploadId, version, partition, sha256 } = parsed.data;
-      const key = stagingKey(application.id, uploadId);
+      const { uploadId, version, partition, sizeBytes, sha256 } = parsed.data;
+      const key = stagingKey(
+        application.id,
+        c.req.param("datasetId"),
+        version,
+        partition,
+        sizeBytes,
+        uploadId,
+      );
       try {
         if (application.status !== "active") {
           return c.json(
@@ -283,6 +329,16 @@ export function createValidationDatasetsApp({
               code: "applicationArchived",
             },
             409,
+          );
+        }
+
+        if (sizeBytes > MAX_VALIDATION_DATASET_BYTES) {
+          return c.json(
+            {
+              message: "El ZIP supera el tamaño máximo permitido de 128 MiB.",
+              code: "datasetTooLarge",
+            },
+            413,
           );
         }
 
@@ -300,6 +356,15 @@ export function createValidationDatasetsApp({
               code: "datasetTooLarge",
             },
             413,
+          );
+        }
+        if (size !== sizeBytes) {
+          return c.json(
+            {
+              message: "El archivo ZIP no coincide con su tamaño firmado.",
+              code: "invalidDatasetArchive",
+            },
+            400,
           );
         }
 
@@ -453,7 +518,17 @@ export function createValidationDatasetsApp({
         );
       }
 
-      await cleanupStaging(storage, stagingKey(application.id, parsed.data.uploadId));
+      await cleanupStaging(
+        storage,
+        stagingKey(
+          application.id,
+          c.req.param("datasetId"),
+          parsed.data.version,
+          parsed.data.partition,
+          parsed.data.sizeBytes,
+          parsed.data.uploadId,
+        ),
+      );
       return c.body(null, 204);
     },
   );

@@ -275,6 +275,12 @@ class ValidationResourceProfile {
     if (outputs.isEmpty) {
       throw const FormatException('At least one output contract is required.');
     }
+    if (outputs.length != 1 ||
+        outputs.single.resultType == ValidationResultType.boolean) {
+      throw const FormatException(
+        'The direct control runner requires exactly one classification or detection output.',
+      );
+    }
     _requireUnique(outputs.map((output) => output.name), 'output name');
     return ValidationResourceProfile(
       id: _string(json['id'], 'profile.id'),
@@ -352,12 +358,17 @@ class ValidationOutputContract {
     required this.resultType,
     required List<String> labels,
     this.scoreThreshold,
-  }) : labels = List.unmodifiable(labels);
+    Map<String, int>? tensorIndices,
+  }) : labels = List.unmodifiable(labels),
+       tensorIndices = tensorIndices == null
+           ? null
+           : Map.unmodifiable(tensorIndices);
 
   final String name;
   final ValidationResultType resultType;
   final List<String> labels;
   final double? scoreThreshold;
+  final Map<String, int>? tensorIndices;
 
   factory ValidationOutputContract.fromJson(Map<String, Object?> json) {
     const requiredKeys = {'name', 'resultType', 'labels'};
@@ -365,6 +376,7 @@ class ValidationOutputContract {
         json.keys.toSet().difference({
           ...requiredKeys,
           'scoreThreshold',
+          'tensorIndices',
         }).isNotEmpty) {
       throw const FormatException(
         'output contract has missing or unknown fields.',
@@ -383,6 +395,7 @@ class ValidationOutputContract {
       throw const FormatException('Classification outputs require labels.');
     }
     final scoreThreshold = json['scoreThreshold'];
+    final rawTensorIndices = json['tensorIndices'];
     if (resultType == ValidationResultType.detection) {
       if (scoreThreshold is! num ||
           !scoreThreshold.isFinite ||
@@ -392,9 +405,23 @@ class ValidationOutputContract {
           'Detection outputs require a scoreThreshold from 0 to 1.',
         );
       }
+      const tensorRoles = {'boxes', 'classes', 'scores', 'count'};
+      if (rawTensorIndices is! Map ||
+          rawTensorIndices.keys.toSet().difference(tensorRoles).isNotEmpty ||
+          tensorRoles.difference(rawTensorIndices.keys.toSet()).isNotEmpty ||
+          rawTensorIndices.values.any((value) => value is! int || value < 0) ||
+          rawTensorIndices.values.toSet().length != tensorRoles.length) {
+        throw const FormatException(
+          'Detection outputs require distinct tensor indices for boxes, classes, scores, and count.',
+        );
+      }
     } else if (json.containsKey('scoreThreshold')) {
       throw const FormatException(
         'Only detection outputs may declare scoreThreshold.',
+      );
+    } else if (json.containsKey('tensorIndices')) {
+      throw const FormatException(
+        'Only detection outputs may declare tensorIndices.',
       );
     }
     return ValidationOutputContract(
@@ -402,6 +429,12 @@ class ValidationOutputContract {
       resultType: resultType,
       labels: labels,
       scoreThreshold: (scoreThreshold as num?)?.toDouble(),
+      tensorIndices: rawTensorIndices == null
+          ? null
+          : {
+              for (final entry in (rawTensorIndices as Map).entries)
+                entry.key as String: entry.value as int,
+            },
     );
   }
 }

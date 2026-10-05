@@ -16,7 +16,7 @@ import {
 
 type FakeState = {
   application?: Record<string, unknown>;
-  membership?: { role: string };
+  membership?: { role: string; userId?: string; organizationId?: string };
   datasets: Record<string, unknown>[];
   versions: Record<string, unknown>[];
   insertedDatasets: Record<string, unknown>[];
@@ -25,25 +25,53 @@ type FakeState = {
 };
 
 function makeFakeDb(state: FakeState) {
+  const rowsFor = (table: unknown) => {
+    if (table === application) return state.application ? [state.application] : [];
+    if (table === member) return state.membership ? [state.membership] : [];
+    if (table === validationDataset) return state.datasets;
+    if (table === validationDatasetVersion) return state.versions;
+    return [];
+  };
+
+  const predicatesFor = (condition: unknown): [string, unknown][] => {
+    if (typeof condition !== "object" || condition === null) return [];
+    const queryChunks = (condition as { queryChunks?: unknown[] }).queryChunks;
+    if (!queryChunks) return [];
+
+    const column = queryChunks.find(
+      (chunk): chunk is { name: string; table: unknown } =>
+        typeof chunk === "object" && chunk !== null && "name" in chunk && "table" in chunk,
+    );
+    const parameter = queryChunks.find(
+      (chunk): chunk is { value: unknown; encoder: unknown } =>
+        typeof chunk === "object" && chunk !== null && "value" in chunk && "encoder" in chunk,
+    );
+    const own = column && parameter ? [[column.name, parameter.value] as [string, unknown]] : [];
+    return [...own, ...queryChunks.flatMap((chunk) => predicatesFor(chunk))];
+  };
+
+  const filterRows = (table: unknown, condition: unknown) => {
+    const predicates = predicatesFor(condition);
+    return rowsFor(table).filter((row) =>
+      predicates.every(([columnName, value]) => {
+        const propertyName = columnName.replace(/_([a-z])/g, (_match, letter: string) =>
+          letter.toUpperCase(),
+        );
+        return row[propertyName] === value;
+      }),
+    );
+  };
+
   const executor = {
     select: () => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: () => ({
-            for: async () => {
-              if (table === application) return state.application ? [state.application] : [];
-              if (table === member) return state.membership ? [state.membership] : [];
-              if (table === validationDataset) return state.datasets;
-              if (table === validationDatasetVersion) return state.versions;
-              return [];
-            },
-          }),
-          orderBy: async () => {
-            if (table === validationDataset) return state.datasets;
-            if (table === validationDatasetVersion) return state.versions;
-            return [];
-          },
-        }),
+        where: (condition: unknown) => {
+          const matches = filterRows(table, condition);
+          return {
+            limit: (count: number) => ({ for: async () => matches.slice(0, count) }),
+            orderBy: async () => matches,
+          };
+        },
       }),
     }),
     insert: (table: unknown) => ({
@@ -65,17 +93,10 @@ function makeFakeDb(state: FakeState) {
     }),
   } as unknown as TransactionExecutor;
 
-  const readRows = (table: unknown) => {
-    if (table === application) return state.application ? [state.application] : [];
-    if (table === validationDataset) return state.datasets;
-    if (table === validationDatasetVersion) return state.versions;
-    return [];
-  };
-
   return {
     select: () => ({
       from: (table: unknown) => ({
-        where: async () => readRows(table),
+        where: async (condition: unknown) => filterRows(table, condition),
       }),
     }),
     transaction: <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(executor),
@@ -110,12 +131,18 @@ function adminState(overrides: Partial<FakeState> = {}): FakeState {
       name: "Tesis",
       status: "active",
     },
-    membership: { role: "admin" },
     datasets: [],
     versions: [],
     insertedDatasets: [],
     insertedVersions: [],
     ...overrides,
+    membership: overrides.membership
+      ? {
+          userId: "user-1",
+          organizationId: "org-1",
+          ...overrides.membership,
+        }
+      : { role: "admin", userId: "user-1", organizationId: "org-1" },
   };
 }
 
@@ -222,6 +249,87 @@ describe("createValidationDatasetStore", () => {
     expect(artifacts.size).toBe(1);
   });
 
+  it("removes an R2 object when the upload reports failure after committing it", async () => {
+    const state = adminState({
+      datasets: [{ id: "dataset-1", applicationId: "app-1" }],
+    });
+    const { storage, artifacts } = makeFakeStorage();
+    vi.mocked(storage.putArtifact).mockImplementationOnce(async (key, bytes) => {
+      artifacts.set(key, bytes.slice());
+      throw new Error("connection dropped after R2 committed");
+    });
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const result = await store.completeUpload({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      userId: "user-1",
+      version: "1.0.0",
+      partition: "validation",
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+      bytes,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "storageFailed" });
+    expect(storage.removeArtifact).toHaveBeenCalledWith(storage.putArtifact.mock.calls[0]?.[0]);
+    expect(artifacts.size).toBe(0);
+    expect(state.insertedVersions).toHaveLength(0);
+  });
+
+  it("does not delete an object when R2 reports that the random key already exists", async () => {
+    const state = adminState({
+      datasets: [{ id: "dataset-1", applicationId: "app-1" }],
+    });
+    const { storage, artifacts } = makeFakeStorage();
+    vi.mocked(storage.putArtifact).mockRejectedValueOnce(
+      Object.assign(new Error("key already exists"), {
+        name: "ValidationDatasetAlreadyStoredError",
+      }),
+    );
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const result = await store.completeUpload({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      userId: "user-1",
+      version: "1.0.0",
+      partition: "validation",
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+      bytes,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "storageFailed" });
+    expect(storage.removeArtifact).not.toHaveBeenCalled();
+    expect(artifacts.size).toBe(0);
+  });
+
+  it("removes the permanent object when the database insert fails", async () => {
+    const state = adminState({
+      datasets: [{ id: "dataset-1", applicationId: "app-1" }],
+      insertError: new Error("database unavailable"),
+    });
+    const { storage, artifacts } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    const result = await store.completeUpload({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      userId: "user-1",
+      version: "1.0.0",
+      partition: "validation",
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+      bytes,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "databaseFailed" });
+    expect(storage.removeArtifact).toHaveBeenCalledWith(storage.putArtifact.mock.calls[0]?.[0]);
+    expect(artifacts.size).toBe(0);
+    expect(state.insertedVersions).toHaveLength(0);
+  });
+
   it("rejects a ZIP whose bytes do not match the upload's expected SHA-256", async () => {
     const state = adminState({
       datasets: [{ id: "dataset-1", applicationId: "app-1" }],
@@ -279,6 +387,36 @@ describe("createValidationDatasetStore", () => {
     expect(state.insertedVersions).toHaveLength(0);
   });
 
+  it("allows another partition for an already published version", async () => {
+    const state = adminState({
+      datasets: [{ id: "dataset-1", applicationId: "app-1" }],
+      versions: [
+        {
+          id: "version-1",
+          datasetId: "dataset-1",
+          version: "1.0.0",
+          partition: "train",
+        },
+      ],
+    });
+    const { storage } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+    const bytes = new Uint8Array([1]);
+
+    const result = await store.completeUpload({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      userId: "user-1",
+      version: "1.0.0",
+      partition: "test",
+      expectedSha256: createHash("sha256").update(bytes).digest("hex"),
+      bytes,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(state.insertedVersions).toHaveLength(1);
+  });
+
   it("does not return manifest metadata for a dataset owned by another application", async () => {
     const state = adminState({
       application: { id: "app-2", organizationId: "org-2", status: "active" },
@@ -304,7 +442,6 @@ describe("createValidationDatasetStore", () => {
     const result = await store.getManifestData("app-1", "version-2");
 
     expect(result).toEqual({ ok: false, reason: "notFound" });
-    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
   });
 
   it("does not return manifest metadata when its application is archived", async () => {
@@ -332,6 +469,49 @@ describe("createValidationDatasetStore", () => {
     const result = await store.getManifestData("app-1", "version-1");
 
     expect(result).toEqual({ ok: false, reason: "notFound" });
-    expect(storage.createDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns the complete stored manifest metadata for an active application's version", async () => {
+    const state = adminState({
+      datasets: [
+        {
+          id: "dataset-1",
+          applicationId: "app-1",
+          source: "Colección de tesis",
+          license: "CC BY 4.0",
+        },
+      ],
+      versions: [
+        {
+          id: "version-1",
+          datasetId: "dataset-1",
+          version: "1.0.0",
+          partition: "test",
+          storageKey: "applications/app-1/datasets/version-1.zip",
+          sha256: "a".repeat(64),
+          sizeBytes: 42,
+        },
+      ],
+    });
+    const { storage } = makeFakeStorage();
+    const store = createValidationDatasetStore({ db: makeFakeDb(state), storage });
+
+    const result = await store.getManifestData("app-1", "version-1");
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        datasetVersionId: "version-1",
+        datasetId: "dataset-1",
+        applicationId: "app-1",
+        version: "1.0.0",
+        partition: "test",
+        source: "Colección de tesis",
+        license: "CC BY 4.0",
+        sha256: "a".repeat(64),
+        sizeBytes: 42,
+        storageKey: "applications/app-1/datasets/version-1.zip",
+      },
+    });
   });
 });

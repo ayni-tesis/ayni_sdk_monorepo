@@ -1,10 +1,11 @@
+import { MAX_VALIDATION_DATASET_BYTES } from "@ayni/api";
 import { application, validationDataset, validationDatasetVersion } from "@ayni/db/schema/index";
 import { and, eq } from "drizzle-orm";
 import type { TransactionExecutor } from "./application-actions";
 import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
 import { computeSha256Hex } from "./tflite-validator";
 
-export const MAX_VALIDATION_DATASET_BYTES = 128 * 1024 * 1024;
+export { MAX_VALIDATION_DATASET_BYTES };
 
 const STRICT_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const PARTITION = /^[A-Za-z0-9._-]{1,64}$/;
@@ -13,7 +14,7 @@ export type ValidationDatasetStorage = {
   putArtifact(key: string, bytes: Uint8Array): Promise<void>;
   getArtifact(key: string): Promise<Uint8Array | null>;
   getArtifactSize(key: string): Promise<number | null>;
-  createUploadUrl(key: string, expiresIn: number): Promise<string>;
+  createUploadUrl(key: string, expiresIn: number, contentLength: number): Promise<string>;
   removeArtifact(key: string): Promise<void>;
   createDownloadUrl(key: string, expiresIn: number): Promise<string>;
 };
@@ -308,7 +309,16 @@ export function createValidationDatasetStore({
       });
       try {
         await storage.putArtifact(storageKey, input.bytes);
-      } catch {
+      } catch (error) {
+        const keyAlreadyExisted =
+          error instanceof Error && error.name === "ValidationDatasetAlreadyStoredError";
+        if (!keyAlreadyExisted) {
+          try {
+            await storage.removeArtifact(storageKey);
+          } catch {
+            // Best-effort cleanup for a write that failed after R2 committed the object.
+          }
+        }
         return { ok: false, reason: "storageFailed" };
       }
 

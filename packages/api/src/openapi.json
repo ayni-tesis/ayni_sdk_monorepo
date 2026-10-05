@@ -18,6 +18,12 @@
         "scheme": "bearer",
         "bearerFormat": "ayni_sk_…",
         "description": "Secreto de una credencial del SDK: una cadena opaca que empieza por `ayni_sk_`, no un JWT. El servidor no lee nada dentro del secreto; lo compara con el hash de las credenciales activas de la aplicación."
+      },
+      "userSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "better-auth.session_token",
+        "description": "Cookie de sesión de Better Auth para las rutas del dashboard."
       }
     },
     "schemas": {
@@ -2938,6 +2944,11 @@
         "operationId": "listar-datasets-de-validacion",
         "summary": "Listar datasets privados de validación",
         "description": "Lista los datasets de la aplicación para sus miembros. Las versiones publicadas son inmutables.",
+        "security": [
+          {
+            "userSession": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3090,6 +3101,26 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "No se pudieron listar los datasets de validación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       },
@@ -3098,6 +3129,11 @@
         "operationId": "registrar-dataset-de-validacion",
         "summary": "Registrar fuente y licencia de un dataset",
         "description": "Solo administradores de una aplicación activa. La persona operadora declara la licencia; el sistema no certifica cumplimiento legal.",
+        "security": [
+          {
+            "userSession": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3289,6 +3325,26 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "No se pudo registrar el dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -3299,6 +3355,11 @@
         "operationId": "iniciar-carga-de-dataset-de-validacion",
         "summary": "Iniciar la carga temporal de un ZIP",
         "description": "Emite una URL de carga temporal al bucket privado para una versión y partición válidas.",
+        "security": [
+          {
+            "userSession": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3333,9 +3394,13 @@
                   "partition": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9._-]{1,64}$"
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
                   }
                 },
-                "required": ["version", "partition"],
+                "required": ["version", "partition", "sizeBytes"],
                 "additionalProperties": false
               }
             }
@@ -3365,7 +3430,7 @@
             }
           },
           "400": {
-            "description": "La versión SemVer o partición no es válida.",
+            "description": "La versión, partición o tamaño del ZIP no son válidos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3464,6 +3529,26 @@
               }
             }
           },
+          "413": {
+            "description": "El ZIP supera el límite de 128 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "500": {
             "description": "No se pudo iniciar la carga.",
             "content": {
@@ -3493,6 +3578,11 @@
         "operationId": "cancelar-carga-de-dataset-de-validacion",
         "summary": "Eliminar un ZIP de staging cancelado",
         "description": "Solo administradores de la aplicación. El borrado del objeto temporal es de mejor esfuerzo.",
+        "security": [
+          {
+            "userSession": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3523,9 +3613,21 @@
                   "uploadId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                  },
+                  "partition": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,64}$"
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
                   }
                 },
-                "required": ["uploadId"],
+                "required": ["uploadId", "version", "partition", "sizeBytes"],
                 "additionalProperties": false
               }
             }
@@ -3536,7 +3638,7 @@
             "description": "Carga temporal eliminada o ya ausente."
           },
           "400": {
-            "description": "El identificador de carga no es válido.",
+            "description": "La identificación o los metadatos de la carga no son válidos.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3644,6 +3746,11 @@
         "operationId": "completar-carga-de-dataset-de-validacion",
         "summary": "Verificar y publicar una versión de ZIP",
         "description": "Verifica el tamaño y hash SHA-256 del objeto subido, lo mueve a una clave privada e inmutable y elimina el objeto de staging.",
+        "security": [
+          {
+            "userSession": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -3679,6 +3786,10 @@
                     "type": "string",
                     "pattern": "^[A-Za-z0-9._-]{1,64}$"
                   },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
                   "uploadId": {
                     "type": "string",
                     "format": "uuid"
@@ -3688,7 +3799,7 @@
                     "pattern": "^[a-f0-9]{64}$"
                   }
                 },
-                "required": ["version", "partition", "uploadId", "sha256"],
+                "required": ["version", "partition", "sizeBytes", "uploadId", "sha256"],
                 "additionalProperties": false
               }
             }
@@ -3853,7 +3964,7 @@
             }
           },
           "413": {
-            "description": "El ZIP supera el límite de 128 MiB.",
+            "description": "El ZIP supera el límite de 128 MiB o no coincide con su tamaño firmado.",
             "content": {
               "application/json": {
                 "schema": {

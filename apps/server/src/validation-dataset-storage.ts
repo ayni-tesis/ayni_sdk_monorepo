@@ -40,13 +40,22 @@ export const r2ValidationDatasetStorage: ValidationDatasetStorage = {
     }
   },
   async getArtifact(key) {
-    return new Uint8Array(await downloadFileAsBuffer(key));
+    try {
+      return new Uint8Array(await downloadFileAsBuffer(key));
+    } catch (error) {
+      if (isMissingObject(error)) return null;
+      throw error;
+    }
   },
   async getArtifactSize(key) {
     return (await getFileMetadata(key))?.contentLength ?? null;
   },
-  async createUploadUrl(key, expiresIn) {
-    return getUploadUrl(key, { expiresIn, contentType: "application/zip" });
+  async createUploadUrl(key, expiresIn, contentLength) {
+    return getUploadUrl(key, {
+      expiresIn,
+      contentType: "application/zip",
+      contentLength,
+    });
   },
   async removeArtifact(key) {
     await deleteFile(key);
@@ -55,3 +64,20 @@ export const r2ValidationDatasetStorage: ValidationDatasetStorage = {
     return getDownloadUrl(key, { expiresIn });
   },
 };
+
+function isMissingObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as {
+    name?: unknown;
+    Code?: unknown;
+    code?: unknown;
+    $metadata?: { httpStatusCode?: unknown };
+  };
+  return (
+    candidate.$metadata?.httpStatusCode === 404 ||
+    candidate.name === "NoSuchKey" ||
+    candidate.name === "NotFound" ||
+    candidate.Code === "NoSuchKey" ||
+    candidate.code === "NoSuchKey"
+  );
+}

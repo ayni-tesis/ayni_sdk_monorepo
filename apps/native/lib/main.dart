@@ -5,7 +5,9 @@ import 'validation/screens/validation_home_page.dart';
 void main() => runApp(const BetterFullstackApp());
 
 class BetterFullstackApp extends StatelessWidget {
-  const BetterFullstackApp({super.key});
+  const BetterFullstackApp({super.key, this.runtime});
+
+  final ValidationHomeRuntime? runtime;
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +17,7 @@ class BetterFullstackApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF175C4B)),
       ),
-      home: const ValidationHomePage(),
+      home: ValidationHomePage(runtime: runtime),
     );
   }
 }
