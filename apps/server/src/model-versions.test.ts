@@ -556,6 +556,7 @@ describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVers
     { boxes: 0, classes: 1, scores: 2 },
     { boxes: 0, classes: 1, scores: 2, count: 3, metadata: 4 },
     { boxes: 0.5, classes: 1, scores: 2, count: 3 },
+    { boxes: -1, classes: 1, scores: 2, count: 3 },
     { boxes: 0, classes: 0, scores: 2, count: 3 },
     { boxes: 0, classes: 1, scores: 2, count: 4 },
   ])("rejects invalid tensor role maps: %o", async (tensorIndices) => {

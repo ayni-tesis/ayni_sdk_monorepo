@@ -1759,6 +1759,11 @@ void main() {
         'mancha',
         'roya',
       ]);
+      expect(detections.first.confidence, closeTo(0.95, 1e-6));
+      expect(detections.first.xMin, closeTo(0.2, 1e-6));
+      expect(detections.first.yMin, closeTo(0.1, 1e-6));
+      expect(detections.first.xMax, closeTo(0.5, 1e-6));
+      expect(detections.first.yMax, closeTo(0.4, 1e-6));
     },
   );
 
@@ -1798,6 +1803,11 @@ void main() {
         'mancha',
         'roya',
       ]);
+      expect(detections.first.confidence, closeTo(0.95, 1e-6));
+      expect(detections.first.xMin, closeTo(0.2, 1e-6));
+      expect(detections.first.yMin, closeTo(0.1, 1e-6));
+      expect(detections.first.xMax, closeTo(0.5, 1e-6));
+      expect(detections.first.yMax, closeTo(0.4, 1e-6));
     },
   );
 
@@ -1857,6 +1867,44 @@ void main() {
       (result.outputs['Resultado']! as DetectionResult).detections,
       isEmpty,
     );
+  });
+
+  test('rejects invalid mapped detection counts', () async {
+    for (final count in [-1.0, 1.5, 3.0]) {
+      await expectLater(
+        runDetectionWithTensors(
+          tensorIndices: const {
+            'boxes': 2,
+            'classes': 0,
+            'scores': 3,
+            'count': 1,
+          },
+          outputs: [
+            (shape: [1, 2], values: Float32List.fromList([0, 1])),
+            (shape: [1], values: Float32List.fromList([count])),
+            (
+              shape: [1, 2, 4],
+              values: Float32List.fromList([
+                0.1,
+                0.2,
+                0.4,
+                0.5,
+                0.2,
+                0.3,
+                0.6,
+                0.7,
+              ]),
+            ),
+            (shape: [1, 2], values: Float32List.fromList([0.95, 0.9])),
+          ],
+        ),
+        throwsWorkflowError(
+          category: WorkflowErrorCategory.modelOutputInvalid,
+          nodeId: 'model-1',
+          modelVersionId: 'model-version-1',
+        ),
+      );
+    }
   });
 
   test('rejects malformed mapped box, vector, and count shapes', () async {
