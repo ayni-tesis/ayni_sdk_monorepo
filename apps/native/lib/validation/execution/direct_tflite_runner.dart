@@ -154,8 +154,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
           modelVersionId: primaryArtifact.modelVersionId,
           modelSha256: primaryArtifact.sha256,
           modelArtifacts: _modelArtifacts,
-          workflowVersionId: _profile.workflowVersionId,
-          workflowVersion: _profile.workflowVersion,
         );
       }
       return ConditionRunResult.success(
@@ -163,8 +161,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
         modelArtifacts: _modelArtifacts,
-        workflowVersionId: _profile.workflowVersionId,
-        workflowVersion: _profile.workflowVersion,
         normalizedOutput: output,
       );
     } on ValidationExecutionException catch (error) {
@@ -175,8 +171,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
           modelVersionId: primaryArtifact.modelVersionId,
           modelSha256: primaryArtifact.sha256,
           modelArtifacts: _modelArtifacts,
-          workflowVersionId: _profile.workflowVersionId,
-          workflowVersion: _profile.workflowVersion,
         );
       }
       return ConditionRunResult.failure(
@@ -184,8 +178,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
         modelArtifacts: _modelArtifacts,
-        workflowVersionId: _profile.workflowVersionId,
-        workflowVersion: _profile.workflowVersion,
         errorCode: error.code,
         errorMessage: error.message,
       );
@@ -196,8 +188,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
         modelArtifacts: _modelArtifacts,
-        workflowVersionId: _profile.workflowVersionId,
-        workflowVersion: _profile.workflowVersion,
         errorCode: error.code,
         errorMessage:
             'La salida del modelo no coincide con el contrato publicado.',
@@ -209,8 +199,6 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
         modelArtifacts: _modelArtifacts,
-        workflowVersionId: _profile.workflowVersionId,
-        workflowVersion: _profile.workflowVersion,
         errorCode: 'inferenceFailed',
         errorMessage: 'No se pudo ejecutar el modelo local.',
       );

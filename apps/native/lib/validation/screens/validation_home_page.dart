@@ -979,7 +979,9 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
           '$outcome · $_completedRuns de $_totalRuns intentos guardados$pendingStatus.';
       setState(() => _status = status);
       _addEvent(status);
-    } on Object catch (error) {
+    } on Object catch (error, stackTrace) {
+      debugPrint('Validation run failed (${error.runtimeType}).');
+      debugPrintStack(label: 'Validation run failure', stackTrace: stackTrace);
       _addEvent(
         '${quickRun ? 'Prueba rápida' : 'Validación'} detenida antes de medir · $_completedRuns de $_totalRuns intentos guardados.',
       );
