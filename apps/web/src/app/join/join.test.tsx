@@ -2,21 +2,34 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { client, setActiveMock, toastMock, pushMock } = vi.hoisted(() => ({
-  client: { get: vi.fn(), post: vi.fn() },
-  setActiveMock: vi.fn(),
-  toastMock: { success: vi.fn(), error: vi.fn() },
-  pushMock: vi.fn(),
-}));
+const { client, setActiveMock, toastMock, pushMock, replaceMock, sessionState, getSessionMock } =
+  vi.hoisted(() => ({
+    client: { get: vi.fn(), post: vi.fn() },
+    setActiveMock: vi.fn(),
+    toastMock: { success: vi.fn(), error: vi.fn() },
+    pushMock: vi.fn(),
+    replaceMock: vi.fn(),
+    sessionState: {
+      current: {} as {
+        data: { user: { name: string; termsAcceptedVersion?: string } } | null;
+        isPending: boolean;
+      },
+    },
+    getSessionMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/http-client", () => ({ httpClient: client }));
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     organization: { setActive: setActiveMock },
+    useSession: () => sessionState.current,
+    getSession: getSessionMock,
   },
 }));
 vi.mock("sonner", () => ({ toast: toastMock }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+}));
 
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -34,15 +47,21 @@ beforeAll(() => {
   });
 });
 
+import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
 import JoinInvitation from "./join";
 
 function renderJoin() {
-  return render(<JoinInvitation token="tok-1" userName="Diego" />);
+  return render(<JoinInvitation token="tok-1" />);
 }
 
 describe("JoinInvitation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionState.current = {
+      data: { user: { name: "Diego", termsAcceptedVersion: CURRENT_TERMS_VERSION } },
+      isPending: false,
+    };
+    getSessionMock.mockResolvedValue({ data: null, error: null });
   });
 
   afterEach(() => {
@@ -55,8 +74,56 @@ describe("JoinInvitation", () => {
     expect(await screen.findByText("Cargando invitación…")).toBeTruthy();
   });
 
+  it("waits for the browser session before loading the invitation", async () => {
+    sessionState.current = { data: null, isPending: true };
+    renderJoin();
+    expect(await screen.findByText("Cargando invitación…")).toBeTruthy();
+    expect(client.get).not.toHaveBeenCalled();
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("sends a visitor without a session to sign in and back to the invitation", async () => {
+    sessionState.current = { data: null, isPending: false };
+    renderJoin();
+    await waitFor(() =>
+      expect(replaceMock).toHaveBeenCalledWith(
+        `/sign-in?next=${encodeURIComponent("/join?token=tok-1")}`,
+      ),
+    );
+    expect(client.get).not.toHaveBeenCalled();
+  });
+
+  it("sends a user without the current terms to sign in and back to the invitation", async () => {
+    sessionState.current = {
+      data: { user: { name: "Diego", termsAcceptedVersion: "0.9.0" } },
+      isPending: false,
+    };
+    getSessionMock.mockResolvedValue({ data: sessionState.current.data, error: null });
+    renderJoin();
+    await waitFor(() =>
+      expect(replaceMock).toHaveBeenCalledWith(
+        `/sign-in?next=${encodeURIComponent("/join?token=tok-1")}`,
+      ),
+    );
+    expect(client.get).not.toHaveBeenCalled();
+  });
+
+  it("stays on the invitation while the session store lags behind a fresh sign-in", async () => {
+    sessionState.current = { data: null, isPending: false };
+    getSessionMock.mockResolvedValue({
+      data: { user: { name: "Diego", termsAcceptedVersion: CURRENT_TERMS_VERSION } },
+      error: null,
+    });
+    renderJoin();
+
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Cargando invitación…")).toBeTruthy();
+  });
+
   it("shows the invalid message without any request when the URL has no token", async () => {
-    render(<JoinInvitation token="" userName="Diego" />);
+    render(<JoinInvitation token="" />);
     expect(await screen.findByText("Este enlace de invitación no es válido.")).toBeTruthy();
     expect(client.get).not.toHaveBeenCalled();
   });

@@ -31,7 +31,7 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
     defaultValues: {
       email: "",
       password: "",
-      acceptUpdatedTerms: false,
+      acceptTerms: false,
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null);
@@ -39,16 +39,12 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
         {
           email: value.email,
           password: value.password,
-          termsAcceptedVersion: value.acceptUpdatedTerms ? CURRENT_TERMS_VERSION : "",
+          termsAcceptedVersion: value.acceptTerms ? CURRENT_TERMS_VERSION : "",
         } as Parameters<typeof authClient.signIn.email>[0] & { termsAcceptedVersion: string },
         {
           onSuccess: () => {
             router.push(getBrowserPostAuthRedirect());
-            toast.success(
-              value.acceptUpdatedTerms
-                ? "Términos aceptados. Sesión iniciada correctamente."
-                : "Sesión iniciada correctamente",
-            );
+            toast.success("Términos aceptados. Sesión iniciada correctamente.");
           },
           onError: () => {
             const message =
@@ -63,7 +59,9 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
       onSubmit: z.object({
         email: z.email("Ingresa un correo electrónico válido."),
         password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres."),
-        acceptUpdatedTerms: z.boolean(),
+        acceptTerms: z.literal(true, {
+          error: "Debes aceptar los Términos y condiciones para iniciar sesión.",
+        }),
       }),
     },
   });
@@ -273,30 +271,37 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                 )}
               </signInForm.Field>
 
-              <signInForm.Field name="acceptUpdatedTerms">
+              <signInForm.Field name="acceptTerms">
                 {(field) => (
-                  <label className={styles.checkboxContainer}>
-                    <input
-                      type="checkbox"
-                      name={field.name}
-                      checked={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.checked)}
-                      className={styles.checkboxControl}
-                    />
-                    <span>
-                      Si los términos cambiaron, acepto la versión vigente tras revisarla en{" "}
-                      <a
-                        href={`/terms/${CURRENT_TERMS_VERSION}`}
-                        className={styles.linkButton}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Términos y condiciones
-                      </a>
-                      .
-                    </span>
-                  </label>
+                  <div className={styles.fieldGroup}>
+                    <label className={styles.checkboxContainer}>
+                      <input
+                        type="checkbox"
+                        name={field.name}
+                        checked={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.checked)}
+                        className={styles.checkboxControl}
+                      />
+                      <span>
+                        Acepto los{" "}
+                        <a
+                          href={`/terms/${CURRENT_TERMS_VERSION}`}
+                          className={styles.linkButton}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Términos y condiciones ({CURRENT_TERMS_VERSION})
+                        </a>
+                        .
+                      </span>
+                    </label>
+                    {field.state.meta.errors.map((error) => (
+                      <p key={error?.message} className={styles.fieldError} role="alert">
+                        {error?.message}
+                      </p>
+                    ))}
+                  </div>
                 )}
               </signInForm.Field>
 

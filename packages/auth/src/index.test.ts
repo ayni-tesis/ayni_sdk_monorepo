@@ -36,4 +36,27 @@ describe("account terms acceptance", () => {
       message: "Debes aceptar los Términos y condiciones para crear tu cuenta.",
     });
   });
+
+  it.each([
+    ["without", undefined],
+    ["with an outdated", "1.0.0"],
+    ["with an empty", ""],
+  ])("rejects a sign-in %s terms version before checking the credentials", async (_, version) => {
+    const signIn = await auth.handler(
+      new Request("http://localhost/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "test@example.test",
+          password: "password123",
+          termsAcceptedVersion: version,
+        }),
+      }),
+    );
+
+    expect(signIn.status).toBe(400);
+    expect(await signIn.json()).toMatchObject({
+      message: "Debes aceptar los Términos y condiciones para iniciar sesión.",
+    });
+  });
 });
