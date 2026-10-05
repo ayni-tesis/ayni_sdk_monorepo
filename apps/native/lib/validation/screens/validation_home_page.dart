@@ -23,6 +23,9 @@ import '../storage/validation_preferences.dart';
 import '../validation_build_mode.dart';
 import '../validation_run_metadata_reader.dart';
 
+const _defaultValidationServerUrl =
+    'https://ayni-sdk-monorepo-server.vercel.app/';
+
 abstract interface class ValidationHomeRuntime {
   Future<ExperimentPlan> loadPlan();
 
@@ -532,7 +535,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
         _traceAllowed = results[2]! as bool;
         _hasJsonl = results[3]! as bool;
         _credentialsSaved = credentials != null;
-        _serverUrlController.text = credentials?.serverUrl ?? '';
+        _serverUrlController.text =
+            credentials?.serverUrl ?? _defaultValidationServerUrl;
         _credentialController.text = credentials?.credential ?? '';
         _bootstrapping = false;
       });
