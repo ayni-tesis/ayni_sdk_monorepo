@@ -131,6 +131,8 @@ export const SdkModelVersionContractSchema = z
   })
   .openapi("SdkModelVersionContract");
 
+export type SdkModelVersionContract = z.infer<typeof SdkModelVersionContractSchema>;
+
 export const SdkModelVersionManifestSchema = z
   .object({
     manifest: z.object({

@@ -1,5 +1,6 @@
 "use client";
 
+import type { SdkModelVersionContract } from "@ayni/api/sdk-openapi";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,18 +14,11 @@ import {
 import { errorMessage } from "@/lib/api-error";
 import { httpClient } from "@/lib/http-client";
 
-export type ModelVersionContract = {
-  input: {
-    type: "image";
-    width: number;
-    height: number;
-    channels: 1 | 3 | 4;
-    normalization: "none" | "zero_to_one" | "minus_one_to_one";
-  };
-  output:
-    | { type: "classification"; labels: string[] }
-    | { type: "detection"; labels: string[]; scoreThreshold: number };
-};
+export type ModelVersionContract = SdkModelVersionContract;
+
+type DetectionTensorIndices = NonNullable<
+  Extract<ModelVersionContract["output"], { type: "detection" }>["tensorIndices"]
+>;
 
 type Props = {
   open: boolean;
@@ -55,6 +49,10 @@ export function ModelVersionContractDialog({
     useState<ModelVersionContract["input"]["normalization"]>("zero_to_one");
   const [labels, setLabels] = useState("");
   const [scoreThreshold, setScoreThreshold] = useState("0.5");
+  const [boxesIndex, setBoxesIndex] = useState("");
+  const [classesIndex, setClassesIndex] = useState("");
+  const [scoresIndex, setScoresIndex] = useState("");
+  const [countIndex, setCountIndex] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -69,6 +67,12 @@ export function ModelVersionContractDialog({
     setScoreThreshold(
       String(contract?.output.type === "detection" ? contract.output.scoreThreshold : 0.5),
     );
+    const tensorIndices =
+      contract?.output.type === "detection" ? contract.output.tensorIndices : undefined;
+    setBoxesIndex(tensorIndices ? String(tensorIndices.boxes) : "");
+    setClassesIndex(tensorIndices ? String(tensorIndices.classes) : "");
+    setScoresIndex(tensorIndices ? String(tensorIndices.scores) : "");
+    setCountIndex(tensorIndices ? String(tensorIndices.count) : "");
     setError("");
   }, [contract, open]);
 
@@ -84,10 +88,34 @@ export function ModelVersionContractDialog({
       channels: Number(channels) as 1 | 3 | 4,
       normalization,
     };
+    const rawIndices = [boxesIndex, classesIndex, scoresIndex, countIndex];
+    let tensorIndices: DetectionTensorIndices | undefined;
+    if (task === "detection" && rawIndices.some((value) => value !== "")) {
+      if (rawIndices.some((value) => !/^[0-3]$/.test(value))) {
+        setError("Cada índice debe ser un entero entre 0 y 3.");
+        return;
+      }
+      const values = rawIndices.map(Number);
+      if (new Set(values).size !== 4) {
+        setError("Los índices de los tensores deben ser distintos.");
+        return;
+      }
+      tensorIndices = {
+        boxes: values[0]!,
+        classes: values[1]!,
+        scores: values[2]!,
+        count: values[3]!,
+      };
+    }
     const output: ModelVersionContract["output"] =
       task === "classification"
         ? { type: task, labels: parsedLabels }
-        : { type: task, labels: parsedLabels, scoreThreshold: Number(scoreThreshold) };
+        : {
+            type: task,
+            labels: parsedLabels,
+            scoreThreshold: Number(scoreThreshold),
+            ...(tensorIndices ? { tensorIndices } : {}),
+          };
     const nextContract = { input, output };
 
     setSaving(true);
@@ -188,19 +216,76 @@ export function ModelVersionContractDialog({
             />
           </label>
           {task === "detection" && (
-            <label className="grid gap-1 text-sm">
-              Umbral de confianza
-              <input
-                className="h-9 rounded-md border bg-background px-3"
-                type="number"
-                min="0"
-                max="1"
-                step="0.01"
-                required
-                value={scoreThreshold}
-                onChange={(event) => setScoreThreshold(event.target.value)}
-              />
-            </label>
+            <>
+              <label className="grid gap-1 text-sm">
+                Umbral de confianza
+                <input
+                  className="h-9 rounded-md border bg-background px-3"
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  required
+                  value={scoreThreshold}
+                  onChange={(event) => setScoreThreshold(event.target.value)}
+                />
+              </label>
+              <fieldset className="grid grid-cols-2 gap-3">
+                <legend className="mb-2 font-medium text-sm">Índices de salida TFLite</legend>
+                <p className="col-span-2 text-muted-foreground text-xs">
+                  Completa los cuatro índices para declarar los roles explícitos; déjalos vacíos
+                  para conservar un contrato de detección heredado.
+                </p>
+                <label className="grid gap-1 text-sm">
+                  Índice de cajas
+                  <input
+                    className="h-9 rounded-md border bg-background px-3"
+                    type="number"
+                    min="0"
+                    max="3"
+                    step="1"
+                    value={boxesIndex}
+                    onChange={(event) => setBoxesIndex(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  Índice de clases
+                  <input
+                    className="h-9 rounded-md border bg-background px-3"
+                    type="number"
+                    min="0"
+                    max="3"
+                    step="1"
+                    value={classesIndex}
+                    onChange={(event) => setClassesIndex(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  Índice de puntajes
+                  <input
+                    className="h-9 rounded-md border bg-background px-3"
+                    type="number"
+                    min="0"
+                    max="3"
+                    step="1"
+                    value={scoresIndex}
+                    onChange={(event) => setScoresIndex(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  Índice de detecciones
+                  <input
+                    className="h-9 rounded-md border bg-background px-3"
+                    type="number"
+                    min="0"
+                    max="3"
+                    step="1"
+                    value={countIndex}
+                    onChange={(event) => setCountIndex(event.target.value)}
+                  />
+                </label>
+              </fieldset>
+            </>
           )}
         </div>
         {error && (

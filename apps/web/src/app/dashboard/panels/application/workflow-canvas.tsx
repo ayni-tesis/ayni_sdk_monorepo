@@ -3,6 +3,7 @@
 import "@xyflow/react/dist/style.css";
 
 import { workflowEdges, workflowPortCompatibility } from "@ayni/api/workflow-graph";
+import type { SdkModelVersionContract } from "@ayni/api/sdk-openapi";
 import {
   IconAlertTriangle,
   IconBan,
@@ -125,9 +126,7 @@ export type WorkflowCanvasNode =
         };
       };
       outputs: {
-        result:
-          | { type: "classification"; labels: string[] }
-          | { type: "detection"; labels: string[]; scoreThreshold: number };
+        result: SdkModelVersionContract["output"];
       };
     }
   | {

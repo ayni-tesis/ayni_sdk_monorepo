@@ -1,3 +1,4 @@
+import type { SdkModelVersionContract } from "@ayni/api/sdk-openapi";
 import { COLLECTION_DISABLED_MESSAGE } from "@ayni/api/collection-policy";
 import { workflowOutputPortType } from "@ayni/api/workflow-graph";
 import type {
@@ -8,12 +9,7 @@ import type {
 
 export const IMAGE_INPUT_EXISTS_MESSAGE = "Este workflow ya tiene una entrada de imagen.";
 
-export type WorkflowModelVersionContract = {
-  input: { type: "image"; width: number; height: number; channels: number; normalization: string };
-  output:
-    | { type: "classification"; labels: string[] }
-    | { type: "detection"; labels: string[]; scoreThreshold: number };
-};
+export type WorkflowModelVersionContract = SdkModelVersionContract;
 
 /** A model of the workflow's application with its versions. */
 export type WorkflowModelOption = {
