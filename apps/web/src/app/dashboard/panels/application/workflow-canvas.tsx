@@ -2,8 +2,8 @@
 
 import "@xyflow/react/dist/style.css";
 
-import { workflowEdges, workflowPortCompatibility } from "@ayni/api/workflow-graph";
 import type { SdkModelVersionContract } from "@ayni/api/sdk-openapi";
+import { workflowEdges, workflowPortCompatibility } from "@ayni/api/workflow-graph";
 import {
   IconAlertTriangle,
   IconBan,

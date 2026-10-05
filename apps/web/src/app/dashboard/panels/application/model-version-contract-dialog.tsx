@@ -95,16 +95,21 @@ export function ModelVersionContractDialog({
         setError("Cada índice debe ser un entero entre 0 y 3.");
         return;
       }
-      const values = rawIndices.map(Number);
+      const values = [
+        Number(boxesIndex),
+        Number(classesIndex),
+        Number(scoresIndex),
+        Number(countIndex),
+      ] as const;
       if (new Set(values).size !== 4) {
         setError("Los índices de los tensores deben ser distintos.");
         return;
       }
       tensorIndices = {
-        boxes: values[0]!,
-        classes: values[1]!,
-        scores: values[2]!,
-        count: values[3]!,
+        boxes: values[0],
+        classes: values[1],
+        scores: values[2],
+        count: values[3],
       };
     }
     const output: ModelVersionContract["output"] =
