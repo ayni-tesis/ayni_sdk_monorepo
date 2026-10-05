@@ -25,13 +25,7 @@
           },
           "modelOutputContract": {
             "type": "classification",
-            "labels": [
-              "cercospora",
-              "minador",
-              "phoma",
-              "roya",
-              "sana"
-            ]
+            "labels": ["cercospora", "minador", "phoma", "roya", "sana"]
           }
         }
       ],
@@ -39,13 +33,7 @@
         {
           "name": "classification",
           "resultType": "classification",
-          "labels": [
-            "cercospora",
-            "minador",
-            "phoma",
-            "roya",
-            "sana"
-          ]
+          "labels": ["cercospora", "minador", "phoma", "roya", "sana"]
         }
       ]
     },
@@ -67,9 +55,7 @@
       "id": "PERF-01",
       "phase": "coldStart",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [
         "PERF-01-001",
@@ -109,9 +95,7 @@
       "id": "PERF-02-WARMUP",
       "phase": "warmup",
       "repetitions": 20,
-      "blockSizes": [
-        20
-      ],
+      "blockSizes": [20],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -121,11 +105,7 @@
       "id": "PERF-02",
       "phase": "measured",
       "repetitions": 300,
-      "blockSizes": [
-        100,
-        100,
-        100
-      ],
+      "blockSizes": [100, 100, 100],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -135,9 +115,7 @@
       "id": "PERF-04",
       "phase": "stress",
       "repetitions": 1024,
-      "blockSizes": [
-        1024
-      ],
+      "blockSizes": [1024],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -147,9 +125,7 @@
       "id": "S1-PERF-02-WARMUP",
       "phase": "warmup",
       "repetitions": 20,
-      "blockSizes": [
-        20
-      ],
+      "blockSizes": [20],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -159,11 +135,7 @@
       "id": "S1-PERF-02",
       "phase": "measured",
       "repetitions": 300,
-      "blockSizes": [
-        100,
-        100,
-        100
-      ],
+      "blockSizes": [100, 100, 100],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -173,9 +145,7 @@
       "id": "S1-PERF-04",
       "phase": "stress",
       "repetitions": 1024,
-      "blockSizes": [
-        1024
-      ],
+      "blockSizes": [1024],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -185,9 +155,7 @@
       "id": "REU-01-PERF-02-WARMUP",
       "phase": "warmup",
       "repetitions": 20,
-      "blockSizes": [
-        20
-      ],
+      "blockSizes": [20],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -197,11 +165,7 @@
       "id": "REU-01-PERF-02",
       "phase": "measured",
       "repetitions": 300,
-      "blockSizes": [
-        100,
-        100,
-        100
-      ],
+      "blockSizes": [100, 100, 100],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -211,9 +175,7 @@
       "id": "REU-01-PERF-04",
       "phase": "stress",
       "repetitions": 1024,
-      "blockSizes": [
-        1024
-      ],
+      "blockSizes": [1024],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -223,9 +185,7 @@
       "id": "S2-PERF-02-WARMUP",
       "phase": "warmup",
       "repetitions": 20,
-      "blockSizes": [
-        20
-      ],
+      "blockSizes": [20],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -235,11 +195,7 @@
       "id": "S2-PERF-02",
       "phase": "measured",
       "repetitions": 300,
-      "blockSizes": [
-        100,
-        100,
-        100
-      ],
+      "blockSizes": [100, 100, 100],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -249,9 +205,7 @@
       "id": "S2-PERF-04",
       "phase": "stress",
       "repetitions": 1024,
-      "blockSizes": [
-        1024
-      ],
+      "blockSizes": [1024],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false,
@@ -261,9 +215,7 @@
       "id": "F1",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -272,9 +224,7 @@
       "id": "F2",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -283,9 +233,7 @@
       "id": "F3",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -294,9 +242,7 @@
       "id": "F4",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -305,9 +251,7 @@
       "id": "F5",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -316,9 +260,7 @@
       "id": "F6",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [
-        30
-      ],
+      "blockSizes": [30],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
