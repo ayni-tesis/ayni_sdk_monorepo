@@ -2,6 +2,10 @@
 
 ### Novedades
 
+- Los contratos de detección pueden declarar los índices de `boxes`, `classes`,
+  `scores` y `count` mediante `tensorIndices`. El SDK usa el mapa explícito,
+  limita el resultado por `count` y conserva el decodificador anterior para
+  workflows publicados sin ese mapa.
 - Nodo `dataset.capture`: al ejecutar un workflow que lo alcanza, `run()`
   guarda en el dispositivo una evidencia con la imagen, el resultado de
   inferencia que recibe el nodo, la versión del workflow y el modelo, para
