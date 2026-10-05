@@ -6,6 +6,8 @@ import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:better_fullstack_app/validation/screens/validation_home_page.dart';
 import 'package:better_fullstack_app/validation/storage/validation_preferences.dart';
+import 'package:better_fullstack_app/validation/validation_lab_launch.dart';
+import 'package:better_fullstack_app/validation/validation_performance_trace.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -73,6 +75,62 @@ void main() {
     expect(find.byKey(const ValueKey('sync-sdk')), findsNothing);
     expect(_button(tester, 'run-validation').onPressed, isNull);
     expect(find.byKey(const ValueKey('validation-events')), findsOneWidget);
+  });
+
+  testWidgets('PERF-01 lab launch runs one direct cold-start attempt', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValidationHomePage(
+          runtime: runtime,
+          performanceTrace: const ValidationPerformanceTrace(enabled: false),
+          labLaunch: const ValidationLabLaunch(
+            condition: ValidationCondition.control,
+            runLabel: 'PERF-01-007',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(runtime.preparedConditions, [ValidationCondition.control]);
+    expect(runtime.runCalls, ['control:PERF-01:false']);
+    expect(runtime.coldStartRunLabels, ['PERF-01-007']);
+    expect(runtime.syncVerificationCalls, isEmpty);
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-events')),
+    );
+    expect(find.textContaining('PERF-01-007'), findsOneWidget);
+  });
+
+  testWidgets('PERF-01 lab launch prepares only the SDK condition', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValidationHomePage(
+          runtime: runtime,
+          performanceTrace: const ValidationPerformanceTrace(enabled: false),
+          labLaunch: const ValidationLabLaunch(
+            condition: ValidationCondition.treatment,
+            runLabel: 'PERF-01-030',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(runtime.preparedConditions, [ValidationCondition.treatment]);
+    expect(runtime.runCalls, ['treatment:PERF-01:false']);
+    expect(runtime.coldStartRunLabels, ['PERF-01-030']);
+    expect(runtime.syncVerificationCalls, [true]);
+    await _scrollToFinder(
+      tester,
+      find.byKey(const ValueKey('validation-events')),
+    );
+    expect(find.textContaining('PERF-01-030'), findsOneWidget);
   });
 
   testWidgets(
@@ -274,6 +332,7 @@ class _FakeRuntime implements ValidationHomeRuntime {
   int savedCredentials = 0;
   int cancelCalls = 0;
   final preparedConditions = <ValidationCondition>[];
+  final coldStartRunLabels = <String?>[];
   final syncVerificationCalls = <bool>[];
   final runCalls = <String>[];
   final tracePermissionChanges = <bool>[];
@@ -356,11 +415,13 @@ class _FakeRuntime implements ValidationHomeRuntime {
     required ValidationCondition condition,
     required String scenarioId,
     required ValidationPhase phase,
+    String? coldStartRunLabel,
     required bool captureTrace,
     required Future<bool> Function() isCancelled,
     required void Function(ValidationRunRecord record) onRecord,
   }) {
     runCalls.add('${condition.name}:$scenarioId:$captureTrace');
+    coldStartRunLabels.add(coldStartRunLabel);
     if (!runStarted.isCompleted) runStarted.complete();
     final scenario = plan.scenarios.singleWhere(
       (item) => item.id == scenarioId,
@@ -369,13 +430,16 @@ class _FakeRuntime implements ValidationHomeRuntime {
       activeRun = Completer<BatchRunSummary>();
       return activeRun!.future;
     }
+    final repetitions = coldStartRunLabel == null ? scenario.repetitions : 1;
     return Future.value(
       BatchRunSummary(
-        attempted: scenario.repetitions,
-        successes: scenario.repetitions,
+        attempted: repetitions,
+        successes: repetitions,
         errors: 0,
         cancelled: 0,
-        completedBlockSizes: scenario.blockSizes,
+        completedBlockSizes: coldStartRunLabel == null
+            ? scenario.blockSizes
+            : const [],
         stoppedByCancellation: false,
       ),
     );

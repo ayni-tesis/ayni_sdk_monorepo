@@ -103,6 +103,42 @@ void main() {
   );
 
   test(
+    'records one labeled PERF-01 attempt for an external cold start',
+    () async {
+      final runner = _FakeRunner();
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}perf-01.jsonl'),
+      );
+      final controller = ValidationBatchController(
+        store: store,
+        metadata: _metadata,
+      );
+      final records = <ValidationRunRecord>[];
+
+      final summary = await controller.runPhase(
+        plan: plan,
+        pairRunId: 'perf01-control-20261005',
+        runner: runner,
+        dataset: dataset,
+        scenarioId: 'PERF-01',
+        phase: ValidationPhase.coldStart,
+        coldStartRunLabel: 'PERF-01-007',
+        isCancelled: () async => false,
+        onRecord: records.add,
+      );
+
+      expect(summary.attempted, 1);
+      expect(summary.stoppedByCancellation, isFalse);
+      expect(runner.calls, 1);
+      expect(records.single.scenarioId, 'PERF-01');
+      expect(records.single.phase, ValidationPhase.coldStart);
+      expect(records.single.repetition, 7);
+      expect(records.single.caseId, 'coffee-1');
+      expect((await store.readAll()).single.toJson(), records.single.toJson());
+    },
+  );
+
+  test(
     'records an in-flight cancellation and schedules no later case',
     () async {
       final runner = _FakeRunner()..barrier = Completer<void>();

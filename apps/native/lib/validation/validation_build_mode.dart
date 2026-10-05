@@ -10,6 +10,11 @@ const validationBuildModeIsValid =
     validationBuildMode == 'control' ||
     validationBuildMode == 'treatment';
 
+bool isValidationBuildModeValid(String buildMode) =>
+    buildMode == 'selector' ||
+    buildMode == 'control' ||
+    buildMode == 'treatment';
+
 enum ValidationRunnerKind { unavailable, direct, sdk }
 
 ValidationRunnerKind validationRunnerKindFor({
