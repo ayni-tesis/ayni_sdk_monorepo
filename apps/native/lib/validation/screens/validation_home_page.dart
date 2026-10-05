@@ -245,9 +245,15 @@ class DefaultValidationHomeRuntime implements ValidationHomeRuntime {
         modelsDirectory: modelsDirectory,
       );
       _modelRepository = modelRepository;
+      final workflowRepository = HttpWorkflowDefinitionRepository(
+        serverUrl: serverUrl,
+        credential: credentials.credential,
+      );
+      _workflowRepository = workflowRepository;
       _directRunner = DirectTfliteRunner(
         profile: profile,
         modelRepository: modelRepository,
+        workflowDefinitions: workflowRepository,
       );
       await _directRunner!.prepare();
       _activeRunner = _directRunner;

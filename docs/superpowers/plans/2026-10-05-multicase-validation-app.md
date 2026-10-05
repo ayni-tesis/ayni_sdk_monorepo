@@ -83,7 +83,7 @@ Run: cd apps/native; flutter test test/validation/data/validation_model_reposito
 
 Expected: all model artifacts in one ready profile are verified and a failed download leaves previous valid artifacts intact.
 
-- [ ] **Step 5: Commit** the model repository and tests as feat(native): prepare all profile models.
+- [x] **Step 5: Commit** the model repository and tests as feat(native): prepare all profile models.
 
 ### Task 3: Execute the full workflow in the independent direct control
 
@@ -96,21 +96,21 @@ Expected: all model artifacts in one ready profile are verified and a failed dow
 - Consumes: Task 2's verified model artifacts and immutable workflow definition.
 - Produces: DirectTfliteRunner that executes only input.image, model.tflite, condition, and output nodes; returns the same named classification/detection/boolean output map as the SDK condition. It uses its own TFLite interpreter and graph evaluation and imports no ayni_sdk implementation.
 
-- [ ] **Step 1: Write failing graph execution tests** for the single-model classifier, S2 classifier plus detector with different input contracts, one invocation per model node in dependency order, condition sana >= 0.8, every declared output, cancellation after the in-flight node, and invalid graph/model-reference rejection.
-- [ ] **Step 2: Run the direct-runner tests**
+- [x] **Step 1: Write failing graph execution tests** for the single-model classifier, S2 classifier plus detector with different input contracts, one invocation per model node in dependency order, condition sana >= 0.8, every declared output, cancellation after the in-flight node, and invalid graph/model-reference rejection.
+- [x] **Step 2: Run the direct-runner tests**
 
 Run: cd apps/native; flutter test test/validation/execution/direct_tflite_runner_test.dart test/validation/execution/validation_output_normalizer_test.dart
 
 Expected: current runner fails because it accepts one artifact and one non-boolean direct output.
 
-- [ ] **Step 3: Implement direct graph execution** using the fetched immutable DAG and one verified artifact per model node. Apply that node's input and output contracts, route model/condition values through graph dependencies, and produce all outputs without calling the SDK.
-- [ ] **Step 4: Rerun direct-runner tests**
+- [x] **Step 3: Implement direct graph execution** using the fetched immutable DAG and one verified artifact per model node. Apply that node's input and output contracts, route model/condition values through graph dependencies, and produce all outputs without calling the SDK.
+- [x] **Step 4: Rerun direct-runner tests**
 
 Run: cd apps/native; flutter test test/validation/execution/direct_tflite_runner_test.dart test/validation/execution/validation_output_normalizer_test.dart
 
 Expected: S2's complete normalized output matches the expected fixture and invalid output shapes fail closed.
 
-- [ ] **Step 5: Commit** the direct interpreter and tests as feat(native): execute multi-model workflows directly.
+- [x] **Step 5: Commit** the direct interpreter and tests as feat(native): execute multi-model workflows directly.
 
 ### Task 4: Verify SDK treatment and preserve multi-model result records
 
