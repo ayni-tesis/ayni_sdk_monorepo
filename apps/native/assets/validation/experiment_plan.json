@@ -1,33 +1,65 @@
 {
-  "schemaVersion": "1",
-  "activeResourceProfileId": "coffee-classification",
+  "schemaVersion": "2",
   "caseIds": [],
   "resourceProfiles": [
     {
-      "id": "coffee-classification",
+      "id": "INT-01",
+      "status": "ready",
+      "datasetId": "40292a42-2955-4da4-a03a-0af49950926a",
       "datasetVersionId": "fc7729f8-5b8a-433e-b811-f0220b4474d8",
       "datasetPartition": "test",
       "datasetSha256": "6039f52b4c64b35f14b3ca3b992c74bb900300d200c58bf516e5d756306a1161",
-      "controlModelVersionId": "5d980cc6-447f-4e53-afb9-8596b59faa69",
-      "controlModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
-      "treatmentWorkflowId": "452ccaf5-d39a-4ce6-a5a6-bcf9b2b0be83",
-      "treatmentWorkflowVersionId": "c663e668-1a3b-498f-9cd1-858433de21ce",
-      "treatmentWorkflowVersion": "1.0.0",
-      "treatmentModelVersionId": "5d980cc6-447f-4e53-afb9-8596b59faa69",
-      "treatmentModelSha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
-      "inputContract": {
-        "width": 224,
-        "height": 224,
-        "channels": 3,
-        "normalization": "none"
-      },
+      "workflowId": "452ccaf5-d39a-4ce6-a5a6-bcf9b2b0be83",
+      "workflowVersionId": "c663e668-1a3b-498f-9cd1-858433de21ce",
+      "workflowVersion": "1.0.0",
+      "modelRequirements": [
+        {
+          "nodeId": "1e60fc07-08e7-4b24-b7c3-6a903ce71eb3",
+          "modelVersionId": "5d980cc6-447f-4e53-afb9-8596b59faa69",
+          "sha256": "c4b298c65d5d47b3d74b9dc19882d64ed5b99d0a4638f4873b0f69663212358b",
+          "inputContract": {
+            "width": 224,
+            "height": 224,
+            "channels": 3,
+            "normalization": "none"
+          },
+          "modelOutputContract": {
+            "type": "classification",
+            "labels": [
+              "cercospora",
+              "minador",
+              "phoma",
+              "roya",
+              "sana"
+            ]
+          }
+        }
+      ],
       "outputContract": [
         {
           "name": "classification",
           "resultType": "classification",
-          "labels": ["cercospora", "minador", "phoma", "roya", "sana"]
+          "labels": [
+            "cercospora",
+            "minador",
+            "phoma",
+            "roya",
+            "sana"
+          ]
         }
       ]
+    },
+    {
+      "id": "S1",
+      "status": "pending"
+    },
+    {
+      "id": "REU-01",
+      "status": "pending"
+    },
+    {
+      "id": "S2",
+      "status": "pending"
     }
   ],
   "scenarios": [
@@ -35,7 +67,9 @@
       "id": "PERF-01",
       "phase": "coldStart",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [
         "PERF-01-001",
@@ -75,34 +109,161 @@
       "id": "PERF-02-WARMUP",
       "phase": "warmup",
       "repetitions": 20,
-      "blockSizes": [20],
+      "blockSizes": [
+        20
+      ],
       "caseIds": [],
       "runLabels": [],
-      "requiresExternalMeasurement": false
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "INT-01"
     },
     {
       "id": "PERF-02",
       "phase": "measured",
       "repetitions": 300,
-      "blockSizes": [100, 100, 100],
+      "blockSizes": [
+        100,
+        100,
+        100
+      ],
       "caseIds": [],
       "runLabels": [],
-      "requiresExternalMeasurement": false
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "INT-01"
     },
     {
       "id": "PERF-04",
       "phase": "stress",
       "repetitions": 1024,
-      "blockSizes": [1024],
+      "blockSizes": [
+        1024
+      ],
       "caseIds": [],
       "runLabels": [],
-      "requiresExternalMeasurement": false
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "INT-01"
+    },
+    {
+      "id": "S1-PERF-02-WARMUP",
+      "phase": "warmup",
+      "repetitions": 20,
+      "blockSizes": [
+        20
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S1"
+    },
+    {
+      "id": "S1-PERF-02",
+      "phase": "measured",
+      "repetitions": 300,
+      "blockSizes": [
+        100,
+        100,
+        100
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S1"
+    },
+    {
+      "id": "S1-PERF-04",
+      "phase": "stress",
+      "repetitions": 1024,
+      "blockSizes": [
+        1024
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S1"
+    },
+    {
+      "id": "REU-01-PERF-02-WARMUP",
+      "phase": "warmup",
+      "repetitions": 20,
+      "blockSizes": [
+        20
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "REU-01"
+    },
+    {
+      "id": "REU-01-PERF-02",
+      "phase": "measured",
+      "repetitions": 300,
+      "blockSizes": [
+        100,
+        100,
+        100
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "REU-01"
+    },
+    {
+      "id": "REU-01-PERF-04",
+      "phase": "stress",
+      "repetitions": 1024,
+      "blockSizes": [
+        1024
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "REU-01"
+    },
+    {
+      "id": "S2-PERF-02-WARMUP",
+      "phase": "warmup",
+      "repetitions": 20,
+      "blockSizes": [
+        20
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S2"
+    },
+    {
+      "id": "S2-PERF-02",
+      "phase": "measured",
+      "repetitions": 300,
+      "blockSizes": [
+        100,
+        100,
+        100
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S2"
+    },
+    {
+      "id": "S2-PERF-04",
+      "phase": "stress",
+      "repetitions": 1024,
+      "blockSizes": [
+        1024
+      ],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "S2"
     },
     {
       "id": "F1",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -111,7 +272,9 @@
       "id": "F2",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -120,7 +283,9 @@
       "id": "F3",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -129,7 +294,9 @@
       "id": "F4",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -138,7 +305,9 @@
       "id": "F5",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false
@@ -147,7 +316,9 @@
       "id": "F6",
       "phase": "fault",
       "repetitions": 30,
-      "blockSizes": [30],
+      "blockSizes": [
+        30
+      ],
       "caseIds": [],
       "runLabels": [],
       "requiresExternalMeasurement": false

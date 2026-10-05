@@ -10,11 +10,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ExperimentPlan', () {
-    test('parses the versioned plan and selects its resource profile', () {
+    test('parses a schema 2 plan with ready and pending resource profiles', () {
       final plan = ExperimentPlan.fromJson(_validPlan());
 
-      expect(plan.schemaVersion, '1');
-      expect(plan.activeResourceProfile.id, 'coffee-classification');
+      expect(plan.schemaVersion, '2');
+      expect(plan.activeResourceProfile.id, 'INT-01');
+      final active = plan.activeResourceProfile as dynamic;
+      expect(active.status.toString(), contains('ready'));
+      expect(active.modelRequirements, hasLength(1));
       expect(
         plan.activeResourceProfile.controlModelVersionId,
         'model-version-1',
@@ -31,31 +34,133 @@ void main() {
     });
 
     test(
-      'rejects output contracts the direct control runner cannot execute',
+      'accepts a profile with multiple models and detection tensor roles',
       () {
-        for (final outputs in [
-          [
-            {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
-          ],
-          [
-            {
-              'name': 'classification',
-              'resultType': 'classification',
-              'labels': ['coffee'],
+        final json = _validPlan();
+        final profiles = json['resourceProfiles']! as List<Object?>;
+        final profile = Map<String, Object?>.from(profiles.single! as Map);
+        final models = profile['modelRequirements']! as List<Object?>;
+        models.add({
+          'nodeId': 'detector-node',
+          'modelVersionId': 'model-version-2',
+          'sha256': 'd' * 64,
+          'inputContract': {
+            'width': 320,
+            'height': 320,
+            'channels': 3,
+            'normalization': 'zero_to_one',
+          },
+          'modelOutputContract': {
+            'type': 'detection',
+            'labels': ['leaf'],
+            'scoreThreshold': 0.5,
+            'tensorIndices': {
+              'boxes': 2,
+              'classes': 0,
+              'scores': 3,
+              'count': 1,
             },
-            {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
-          ],
-        ]) {
-          final json = _validPlan();
-          final profiles = json['resourceProfiles']! as List<Object?>;
-          final profile = Map<String, Object?>.from(profiles.single! as Map)
-            ..['outputContract'] = outputs;
-          profiles[0] = profile;
+          },
+        });
+        profiles[0] = profile;
 
-          expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
-        }
+        final parsed = ExperimentPlan.fromJson(json);
+        final parsedProfile = parsed.activeResourceProfile as dynamic;
+        expect(parsedProfile.modelRequirements, hasLength(2));
+        expect(
+          parsedProfile
+              .modelRequirements
+              .last
+              .modelOutputContract
+              .tensorIndices,
+          {'boxes': 2, 'classes': 0, 'scores': 3, 'count': 1},
+        );
       },
     );
+
+    test('rejects duplicate model node IDs and unknown profile references', () {
+      final duplicateNode = _validPlan();
+      final profiles = duplicateNode['resourceProfiles']! as List<Object?>;
+      final profile = Map<String, Object?>.from(profiles.single! as Map);
+      final models = profile['modelRequirements']! as List<Object?>;
+      models.add(Map<String, Object?>.from(models.single! as Map));
+      profiles[0] = profile;
+      expect(
+        () => ExperimentPlan.fromJson(duplicateNode),
+        throwsFormatException,
+      );
+
+      final unknownProfile = _validPlan();
+      final scenarios = unknownProfile['scenarios']! as List<Object?>;
+      final measured = Map<String, Object?>.from(scenarios[2]! as Map)
+        ..['resourceProfileId'] = 'missing-profile';
+      scenarios[2] = measured;
+      expect(
+        () => ExperimentPlan.fromJson(unknownProfile),
+        throwsFormatException,
+      );
+    });
+
+    test('pending profiles accept only an ID and status', () {
+      final json = _validPlan();
+      final profiles = json['resourceProfiles']! as List<Object?>
+        ..add({'id': 'S2', 'status': 'pending'});
+      for (final phase in ['warmup', 'measured', 'stress']) {
+        json['scenarios'] = [
+          ...(json['scenarios']! as List<Object?>),
+          _scenario(
+            id: 'S2-$phase',
+            phase: phase,
+            repetitions: switch (phase) {
+              'warmup' => 20,
+              'measured' => 300,
+              _ => 1024,
+            },
+            blockSizes: switch (phase) {
+              'warmup' => [20],
+              'measured' => [100, 100, 100],
+              _ => [1024],
+            },
+            resourceProfileId: 'S2',
+          ),
+        ];
+      }
+      expect(ExperimentPlan.fromJson(json).resourceProfiles, hasLength(2));
+
+      profiles[1] = {
+        'id': 'S2',
+        'status': 'pending',
+        'datasetVersionId': 'must-not-be-set',
+      };
+      expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
+    });
+
+    test('accepts every typed final output, including composed workflows', () {
+      for (final outputs in [
+        [
+          {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+        ],
+        [
+          {
+            'name': 'classification',
+            'resultType': 'classification',
+            'labels': ['coffee'],
+          },
+          {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+        ],
+      ]) {
+        final json = _validPlan();
+        final profiles = json['resourceProfiles']! as List<Object?>;
+        final profile = Map<String, Object?>.from(profiles.single! as Map)
+          ..['outputContract'] = outputs;
+        profiles[0] = profile;
+
+        expect(
+          ExperimentPlan.fromJson(json).activeResourceProfile.outputContract,
+          hasLength(outputs.length),
+        );
+      }
+    });
 
     test('requires explicit, distinct tensor roles for detection outputs', () {
       final contract = ValidationOutputContract.fromJson({
@@ -101,12 +206,15 @@ void main() {
         final json = _validPlan();
         final profiles = json['resourceProfiles']! as List<Object?>;
         final profile = Map<String, Object?>.from(profiles.single! as Map);
-        profile['inputContract'] = {
-          'width': 224,
-          'height': 224,
-          'channels': 4,
-          'normalization': 'minus_one_to_one',
-        };
+        final models = profile['modelRequirements']! as List<Object?>;
+        final model = Map<String, Object?>.from(models.single! as Map)
+          ..['inputContract'] = {
+            'width': 224,
+            'height': 224,
+            'channels': 4,
+            'normalization': 'minus_one_to_one',
+          };
+        models[0] = model;
         profiles[0] = profile;
 
         final parsed = ExperimentPlan.fromJson(json);
@@ -122,12 +230,17 @@ void main() {
         final incompatibleProfile = Map<String, Object?>.from(
           incompatibleProfiles.single! as Map,
         );
-        incompatibleProfile['inputContract'] = {
-          'width': 224,
-          'height': 224,
-          'channels': 3,
-          'normalization': 'bgr_mean',
-        };
+        final incompatibleModels =
+            incompatibleProfile['modelRequirements']! as List<Object?>;
+        final incompatibleModel =
+            Map<String, Object?>.from(incompatibleModels.single! as Map)
+              ..['inputContract'] = {
+                'width': 224,
+                'height': 224,
+                'channels': 3,
+                'normalization': 'bgr_mean',
+              };
+        incompatibleModels[0] = incompatibleModel;
         incompatibleProfiles[0] = incompatibleProfile;
         expect(
           () => ExperimentPlan.fromJson(incompatible),
@@ -140,12 +253,17 @@ void main() {
         final oversizedProfile = Map<String, Object?>.from(
           oversizedProfiles.single! as Map,
         );
-        oversizedProfile['inputContract'] = {
-          'width': 8193,
-          'height': 224,
-          'channels': 3,
-          'normalization': 'zero_to_one',
-        };
+        final oversizedModels =
+            oversizedProfile['modelRequirements']! as List<Object?>;
+        final oversizedModel =
+            Map<String, Object?>.from(oversizedModels.single! as Map)
+              ..['inputContract'] = {
+                'width': 8193,
+                'height': 224,
+                'channels': 3,
+                'normalization': 'zero_to_one',
+              };
+        oversizedModels[0] = oversizedModel;
         oversizedProfiles[0] = oversizedProfile;
         expect(() => ExperimentPlan.fromJson(oversized), throwsFormatException);
       },
@@ -155,17 +273,18 @@ void main() {
       final json = jsonEncode(_validPlan());
       final plan = await ExperimentPlan.load(_JsonAssetBundle(json));
 
-      expect(plan.activeResourceProfile.id, 'coffee-classification');
+      expect(plan.activeResourceProfile.id, 'INT-01');
       expect(plan.scenarios, isNotEmpty);
     });
 
     test(
-      'loads the bundled Plan with its production resource versions configured',
+      'loads the multi-case asset and maps each positive case to a profile',
       () async {
         final plan = await ExperimentPlan.load(rootBundle);
         final profile = plan.activeResourceProfile;
 
-        expect(plan.schemaVersion, '1');
+        expect(plan.schemaVersion, '2');
+        expect(profile.id, 'INT-01');
         expect(profile.isConfigured, isTrue);
         expect(
           profile.datasetVersionId,
@@ -187,17 +306,45 @@ void main() {
           profile.treatmentWorkflowVersionId,
           'c663e668-1a3b-498f-9cd1-858433de21ce',
         );
-        expect(plan.scenarios, hasLength(10));
+        expect(plan.resourceProfiles, hasLength(4));
+        expect(
+          plan.resourceProfiles
+              .where((profile) => !profile.isConfigured)
+              .map((profile) => profile.id),
+          containsAll(['S1', 'REU-01', 'S2']),
+        );
+        final runnable = plan.scenarios
+            .where(
+              (scenario) => (scenario as dynamic).resourceProfileId != null,
+            )
+            .toList();
+        expect(runnable, hasLength(12));
+        expect(
+          runnable
+              .map((scenario) => (scenario as dynamic).resourceProfileId)
+              .toSet(),
+          {'INT-01', 'S1', 'REU-01', 'S2'},
+        );
+        for (final scenario in runnable) {
+          final expected = switch (scenario.phase) {
+            ValidationPhase.warmup => (20, [20]),
+            ValidationPhase.measured => (300, [100, 100, 100]),
+            ValidationPhase.stress => (1024, [1024]),
+            _ => fail('Unexpected runnable phase ${scenario.phase}.'),
+          };
+          expect(scenario.repetitions, expected.$1, reason: scenario.id);
+          expect(scenario.blockSizes, expected.$2, reason: scenario.id);
+        }
       },
     );
 
     test('rejects an unsupported schema version', () {
-      final json = _validPlan()..['schemaVersion'] = '2';
+      final json = _validPlan()..['schemaVersion'] = '3';
 
       expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
     });
 
-    test('rejects a plan without its selected resource profile', () {
+    test('rejects a plan without resource profiles', () {
       final json = _validPlan()..['resourceProfiles'] = <Object?>[];
 
       expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
@@ -301,30 +448,20 @@ void main() {
       expect(faults.map((scenario) => scenario.repetitions), everyElement(30));
     });
 
-    test(
-      'rejects profiles whose direct and workflow models are not the same version',
-      () {
-        final json = _validPlan();
-        final profiles = json['resourceProfiles']! as List<Object?>;
-        final profile = Map<String, Object?>.from(profiles.single! as Map);
-        profile['treatmentModelVersionId'] = 'different-model-version';
-        profiles[0] = profile;
-
-        expect(() => ExperimentPlan.fromJson(json), throwsFormatException);
-      },
-    );
-
-    test('rejects unknown root keys and mismatched model hashes', () {
+    test('rejects unknown root keys and malformed model hashes', () {
       final unknown = _validPlan()..['secret'] = 'must-not-be-accepted';
       expect(() => ExperimentPlan.fromJson(unknown), throwsFormatException);
 
-      final differentHash = _validPlan();
-      final profiles = differentHash['resourceProfiles']! as List<Object?>;
+      final malformedHash = _validPlan();
+      final profiles = malformedHash['resourceProfiles']! as List<Object?>;
       final profile = Map<String, Object?>.from(profiles.single! as Map);
-      profile['treatmentModelSha256'] = 'c' * 64;
+      final models = profile['modelRequirements']! as List<Object?>;
+      final model = Map<String, Object?>.from(models.single! as Map)
+        ..['sha256'] = 'c' * 63;
+      models[0] = model;
       profiles[0] = profile;
       expect(
-        () => ExperimentPlan.fromJson(differentHash),
+        () => ExperimentPlan.fromJson(malformedHash),
         throwsFormatException,
       );
     });
@@ -453,61 +590,66 @@ Map<String, Object?> _validPlan() {
       requiresExternalMeasurement: true,
     ),
     _scenario(
-      id: 'PERF-02-WARMUP',
+      id: 'INT-01-PERF-02-WARMUP',
       phase: 'warmup',
       repetitions: 20,
       blockSizes: [20],
+      resourceProfileId: 'INT-01',
     ),
     _scenario(
-      id: 'PERF-02',
+      id: 'INT-01-PERF-02',
       phase: 'measured',
       repetitions: 300,
       blockSizes: [100, 100, 100],
+      resourceProfileId: 'INT-01',
     ),
     _scenario(
-      id: 'PERF-04',
+      id: 'INT-01-PERF-04',
       phase: 'stress',
       repetitions: 1024,
       blockSizes: [1024],
+      resourceProfileId: 'INT-01',
     ),
     for (final id in ['F1', 'F2', 'F3', 'F4', 'F5', 'F6'])
       _scenario(id: id, phase: 'fault', repetitions: 30, blockSizes: [30]),
   ];
 
   return {
-    'schemaVersion': '1',
-    'activeResourceProfileId': 'coffee-classification',
+    'schemaVersion': '2',
     'caseIds': <String>[],
     'resourceProfiles': <Object?>[
       {
-        'id': 'coffee-classification',
+        'id': 'INT-01',
+        'status': 'ready',
+        'datasetId': 'dataset-1',
         'datasetVersionId': 'dataset-version-to-configure',
         'datasetPartition': 'test',
         'datasetSha256': 'a' * 64,
-        'controlModelVersionId': 'model-version-1',
-        'controlModelSha256': 'b' * 64,
-        'treatmentWorkflowId': 'workflow-to-configure',
-        'treatmentWorkflowVersionId': 'workflow-version-to-configure',
-        'treatmentWorkflowVersion': '1.0.0',
-        'treatmentModelVersionId': 'model-version-1',
-        'treatmentModelSha256': 'b' * 64,
-        'inputContract': {
-          'width': 224,
-          'height': 224,
-          'channels': 3,
-          'normalization': 'zero_to_one',
-        },
+        'workflowId': 'workflow-1',
+        'workflowVersionId': 'workflow-version-1',
+        'workflowVersion': '1.0.0',
+        'modelRequirements': <Object?>[
+          {
+            'nodeId': 'model-1',
+            'modelVersionId': 'model-version-1',
+            'sha256': 'b' * 64,
+            'inputContract': {
+              'width': 224,
+              'height': 224,
+              'channels': 3,
+              'normalization': 'zero_to_one',
+            },
+            'modelOutputContract': {
+              'type': 'classification',
+              'labels': ['sana', 'roya'],
+            },
+          },
+        ],
         'outputContract': [
           {
             'name': 'classification',
             'resultType': 'classification',
-            'labels': [
-              'sana',
-              'roya',
-              'minador',
-              'mancha-de-hierro',
-              'araniata-roja',
-            ],
+            'labels': ['sana', 'roya'],
           },
         ],
       },
@@ -523,15 +665,22 @@ Map<String, Object?> _scenario({
   required List<int> blockSizes,
   List<String> runLabels = const [],
   bool requiresExternalMeasurement = false,
-}) => {
-  'id': id,
-  'phase': phase,
-  'repetitions': repetitions,
-  'blockSizes': blockSizes,
-  'caseIds': <String>[],
-  'runLabels': runLabels,
-  'requiresExternalMeasurement': requiresExternalMeasurement,
-};
+  String? resourceProfileId,
+}) {
+  final scenario = <String, Object?>{
+    'id': id,
+    'phase': phase,
+    'repetitions': repetitions,
+    'blockSizes': blockSizes,
+    'caseIds': <String>[],
+    'runLabels': runLabels,
+    'requiresExternalMeasurement': requiresExternalMeasurement,
+  };
+  if (resourceProfileId != null) {
+    scenario['resourceProfileId'] = resourceProfileId;
+  }
+  return scenario;
+}
 
 class _JsonAssetBundle extends CachingAssetBundle {
   _JsonAssetBundle(this.contents);
