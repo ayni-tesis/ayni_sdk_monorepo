@@ -3,3 +3,4 @@
 pubspec.lock
 doc/api/
 !example/app/pubspec.lock
+.gradle/
