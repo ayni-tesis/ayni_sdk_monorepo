@@ -101,6 +101,10 @@
     {
       "id": "S2",
       "status": "pending"
+    },
+    {
+      "id": "SEG-01",
+      "status": "pending"
     }
   ],
   "scenarios": [
@@ -263,6 +267,36 @@
       "runLabels": [],
       "requiresExternalMeasurement": false,
       "resourceProfileId": "S2"
+    },
+    {
+      "id": "SEG-01-PERF-02-WARMUP",
+      "phase": "warmup",
+      "repetitions": 20,
+      "blockSizes": [20],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "SEG-01"
+    },
+    {
+      "id": "SEG-01-PERF-02",
+      "phase": "measured",
+      "repetitions": 300,
+      "blockSizes": [100, 100, 100],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "SEG-01"
+    },
+    {
+      "id": "SEG-01-PERF-04",
+      "phase": "stress",
+      "repetitions": 1024,
+      "blockSizes": [1024],
+      "caseIds": [],
+      "runLabels": [],
+      "requiresExternalMeasurement": false,
+      "resourceProfileId": "SEG-01"
     },
     {
       "id": "F1",

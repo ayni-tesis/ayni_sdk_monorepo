@@ -10,6 +10,7 @@ import '../data/validation_model_repository.dart';
 import '../models/experiment_plan.dart';
 import '../models/validation_run_record.dart';
 import '../storage/validation_preferences.dart';
+import '../validation_run_metadata_reader.dart';
 import 'validation_condition_runner.dart';
 import 'validation_output_normalizer.dart';
 
@@ -73,7 +74,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         const ValidationOutputNormalizer(),
     this.allowInsecureLoopback = false,
     this.appVersion = '1.0.0',
-    this.sdkVersion = '0.3.1',
+    this.sdkVersion = validationSdkVersion,
   }) : _profile = profile,
        _storageDirectory = storageDirectory,
        _sdk = sdk,
@@ -127,10 +128,20 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         'Configura las versiones publicadas del perfil antes de preparar.',
       );
     }
-    if (sdkVersion != '0.3.1' &&
-        _profile.outputContract.any(
-          (output) => output.resultType == ValidationResultType.detection,
-        )) {
+    bool declares(ValidationResultType type) =>
+        _profile.outputContract.any((output) => output.resultType == type) ||
+        _profile.modelRequirements.any(
+          (model) => model.modelOutputContract.resultType == type,
+        );
+    if (declares(ValidationResultType.segmentation) &&
+        !validationSdkVersionAtLeast(sdkVersion, '0.4.0')) {
+      throw const ValidationExecutionException(
+        'sdkSegmentationUnsupported',
+        'La segmentación requiere ayni_sdk 0.4.0 o posterior.',
+      );
+    }
+    if (declares(ValidationResultType.detection) &&
+        !validationSdkVersionAtLeast(sdkVersion, '0.3.1')) {
       throw const ValidationExecutionException(
         'sdkDetectionTensorRolesUnsupported',
         'La versión fijada del SDK no interpreta los índices de tensores de detección del perfil.',
@@ -280,7 +291,10 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         traceContext: traceContext,
       );
       tracePersistenceFailed = result.tracePersistenceFailed;
-      final output = _normalizeAndVerifyResult(result);
+      final output = _normalizeAndVerifyResult(
+        result,
+        deferSegmentationEncoding: true,
+      );
       stopwatch.stop();
       return ConditionRunResult.success(
         durationMicros: stopwatch.elapsedMicroseconds,
@@ -289,7 +303,8 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         modelArtifacts: _modelArtifacts,
         workflowVersionId: _profile.treatmentWorkflowVersionId,
         workflowVersion: result.workflowVersion,
-        normalizedOutput: output,
+        // The mask's RLE and SHA-256 are built after the stopwatch stopped.
+        normalizedOutput: ValidationOutputNormalizer.encodeDeferred(output),
         tracePersistenceFailed: result.tracePersistenceFailed,
       );
     } on WorkflowError catch (error) {
@@ -404,7 +419,10 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     }
   }
 
-  Map<String, Object?> _normalizeAndVerifyResult(WorkflowResult result) {
+  Map<String, Object?> _normalizeAndVerifyResult(
+    WorkflowResult result, {
+    bool deferSegmentationEncoding = false,
+  }) {
     if (result.workflowId != _profile.workflowId ||
         result.workflowVersion != _profile.treatmentWorkflowVersion ||
         !result.usingOfflineCache) {
@@ -417,6 +435,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
       return _outputNormalizer.normalizeSdk(
         outputs: result.outputs,
         contracts: _profile.outputContract,
+        deferSegmentationEncoding: deferSegmentationEncoding,
       );
     } on ValidationOutputException {
       throw const ValidationExecutionException(
@@ -430,7 +449,7 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     const requiredFields = {'schemaVersion', 'nodes', 'connections'};
     if (definition.keys.toSet().length != requiredFields.length ||
         !definition.keys.toSet().containsAll(requiredFields) ||
-        !{'1', '2'}.contains(definition['schemaVersion']) ||
+        !{'1', '2', '4'}.contains(definition['schemaVersion']) ||
         definition['nodes'] is! List ||
         definition['connections'] is! List) {
       throw const ValidationExecutionException(
@@ -526,12 +545,18 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
     if (contract.resultType == ValidationResultType.detection) {
       keys.addAll({'scoreThreshold', 'tensorIndices'});
     }
+    if (contract.resultType == ValidationResultType.segmentation) {
+      keys.add('scoreType');
+    }
     if (raw.keys.toSet().length != keys.length ||
         !raw.keys.toSet().containsAll(keys) ||
         raw['type'] != contract.resultType.name ||
         raw['labels'] is! List ||
         !_sameList(raw['labels'] as List, contract.labels)) {
       return false;
+    }
+    if (contract.resultType == ValidationResultType.segmentation) {
+      return raw['scoreType'] == contract.scoreType;
     }
     if (contract.resultType != ValidationResultType.detection) return true;
     final indices = raw['tensorIndices'];
@@ -562,6 +587,80 @@ class AyniSdkValidationRunner implements ValidationConditionRunner {
         actual.length,
         (index) => actual[index] == expected[index],
       ).every((matches) => matches);
+}
+
+/// Whether the semantic version [version] is at least [minimum].
+///
+/// A pre-release (`0.4.0-dev.1`) ranks below its stable release, as in
+/// SemVer 2.0.0; build metadata is ignored. A [version] that is not a semantic
+/// version is never at least [minimum].
+bool validationSdkVersionAtLeast(String version, String minimum) {
+  final left = _SemanticVersion.tryParse(version);
+  final right = _SemanticVersion.tryParse(minimum);
+  return left != null && right != null && left.compareTo(right) >= 0;
+}
+
+class _SemanticVersion implements Comparable<_SemanticVersion> {
+  _SemanticVersion(this.numbers, this.preRelease);
+
+  static final _pattern = RegExp(
+    r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)'
+    r'(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)'
+    r'(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?'
+    r'(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$',
+  );
+
+  static final _digits = RegExp(r'^[0-9]+$');
+
+  final List<int> numbers;
+  final List<String> preRelease;
+
+  static _SemanticVersion? tryParse(String value) {
+    final match = _pattern.firstMatch(value);
+    if (match == null) return null;
+    // A component too large for an int is not a version this app can rank.
+    final numbers = <int>[];
+    for (var group = 1; group <= 3; group++) {
+      final number = int.tryParse(match[group]!);
+      if (number == null) return null;
+      numbers.add(number);
+    }
+    return _SemanticVersion(numbers, match[4]?.split('.') ?? const []);
+  }
+
+  @override
+  int compareTo(_SemanticVersion other) {
+    for (var index = 0; index < 3; index++) {
+      final difference = numbers[index].compareTo(other.numbers[index]);
+      if (difference != 0) return difference;
+    }
+    if (preRelease.isEmpty || other.preRelease.isEmpty) {
+      // A version without a pre-release is the higher one.
+      return (preRelease.isEmpty ? 1 : 0) - (other.preRelease.isEmpty ? 1 : 0);
+    }
+    for (
+      var index = 0;
+      index < preRelease.length && index < other.preRelease.length;
+      index++
+    ) {
+      final a = preRelease[index], b = other.preRelease[index];
+      // An identifier is numeric only when it is all digits ("0x1" is not).
+      // Digits without a leading zero compare by length and then by text, so
+      // no size is too large.
+      final aNumeric = _digits.hasMatch(a), bNumeric = _digits.hasMatch(b);
+      final difference = aNumeric && bNumeric
+          ? (a.length != b.length
+                ? a.length.compareTo(b.length)
+                : a.compareTo(b))
+          : aNumeric
+          ? -1
+          : bNumeric
+          ? 1
+          : a.compareTo(b);
+      if (difference != 0) return difference;
+    }
+    return preRelease.length.compareTo(other.preRelease.length);
+  }
 }
 
 class _AsyncGate {

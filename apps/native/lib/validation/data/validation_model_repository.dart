@@ -417,6 +417,7 @@ bool modelContractMatchesRequirement(
     final type = switch (expected.resultType) {
       ValidationResultType.classification => 'classification',
       ValidationResultType.detection => 'detection',
+      ValidationResultType.segmentation => 'segmentation',
       ValidationResultType.boolean => null,
     };
     if (type == null || output['type'] != type) return false;
@@ -446,9 +447,20 @@ bool modelContractMatchesRequirement(
         return false;
       }
     }
-    final outputKeys = type == 'detection'
-        ? const {'type', 'labels', 'scoreThreshold', 'tensorIndices'}
-        : const {'type', 'labels'};
+    if (expected.resultType == ValidationResultType.segmentation &&
+        output['scoreType'] != expected.scoreType) {
+      return false;
+    }
+    final outputKeys = switch (type) {
+      'detection' => const {
+        'type',
+        'labels',
+        'scoreThreshold',
+        'tensorIndices',
+      },
+      'segmentation' => const {'type', 'labels', 'scoreType'},
+      _ => const {'type', 'labels'},
+    };
     _requireKeys(output, outputKeys, 'contract.output');
     return true;
   } on Object {
@@ -484,6 +496,7 @@ bool modelContractMatchesValidationProfile(
     final type = switch (expectedOutput.resultType) {
       ValidationResultType.classification => 'classification',
       ValidationResultType.detection => 'detection',
+      ValidationResultType.segmentation => 'segmentation',
       ValidationResultType.boolean => null,
     };
     if (type == null || output['type'] != type) return false;
@@ -500,9 +513,15 @@ bool modelContractMatchesValidationProfile(
         output['scoreThreshold'] != expectedOutput.scoreThreshold) {
       return false;
     }
-    final expectedOutputKeys = type == 'detection'
-        ? const {'type', 'labels', 'scoreThreshold'}
-        : const {'type', 'labels'};
+    if (expectedOutput.resultType == ValidationResultType.segmentation &&
+        output['scoreType'] != expectedOutput.scoreType) {
+      return false;
+    }
+    final expectedOutputKeys = switch (type) {
+      'detection' => const {'type', 'labels', 'scoreThreshold'},
+      'segmentation' => const {'type', 'labels', 'scoreType'},
+      _ => const {'type', 'labels'},
+    };
     _requireKeys(output, expectedOutputKeys, 'contract.output');
     return true;
   } on Object {
