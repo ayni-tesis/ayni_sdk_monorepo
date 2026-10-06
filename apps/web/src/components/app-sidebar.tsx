@@ -287,7 +287,7 @@ export function AppSidebar({
       </SidebarContent>
       <SidebarFooter className="p-3 text-sidebar-accent-foreground text-xs">
         <Link
-          className="inline-flex min-h-11 items-center underline underline-offset-4 transition-colors motion-reduce:duration-0 hover:decoration-sidebar-primary md:min-h-0"
+          className="inline-flex min-h-11 items-center underline underline-offset-4 transition-colors hover:decoration-sidebar-primary motion-reduce:duration-0 md:min-h-0"
           href={`/privacy/ayni/${AYNI_PRIVACY_NOTICE.version}` as Route}
         >
           Aviso de privacidad de Ayni

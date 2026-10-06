@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { IconBook, IconChevronDown, IconHelpCircle } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { DocsLink } from "@/components/docs-link";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,6 +13,13 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -184,32 +184,32 @@ export function WorkspaceHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="sm" className="max-w-48 truncate text-muted-foreground">
-                  {userName}
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setProfileOpen(true)}>Mi perfil</DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  authClient.signOut({
-                    fetchOptions: {
-                      onSuccess: () => router.push("/"),
-                    },
-                  });
-                }}
-              >
-                Cerrar sesión
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {profileOpen && (
-            <WorkspaceProfileDialog fallbackName={userName} onOpenChange={setProfileOpen} />
-          )}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="sm" className="max-w-48 truncate text-muted-foreground">
+                {userName}
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setProfileOpen(true)}>Mi perfil</DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                authClient.signOut({
+                  fetchOptions: {
+                    onSuccess: () => router.push("/"),
+                  },
+                });
+              }}
+            >
+              Cerrar sesión
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {profileOpen && (
+          <WorkspaceProfileDialog fallbackName={userName} onOpenChange={setProfileOpen} />
+        )}
       </div>
     </header>
   );

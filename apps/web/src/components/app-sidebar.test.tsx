@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Application } from "@/app/dashboard/types";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { Application } from "@/app/dashboard/types";
 import { AppSidebar } from "./app-sidebar";
 
 const { mockUseReducedMotion } = vi.hoisted(() => ({
@@ -74,12 +74,12 @@ describe("AppSidebar", () => {
 
     const navigation = screen.getByRole("navigation", { name: "Navegación principal" });
 
-    expect(within(navigation).getByRole("button", { name: "Resumen" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
-    expect(within(navigation).getByRole("button", { name: "Workflows" }).getAttribute("aria-current")).toBe(
-      null,
-    );
+    expect(
+      within(navigation).getByRole("button", { name: "Resumen" }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      within(navigation).getByRole("button", { name: "Workflows" }).getAttribute("aria-current"),
+    ).toBe(null);
   });
 
   it("gives every navigation destination a 44px mobile touch target while retaining compact desktop sizing", () => {

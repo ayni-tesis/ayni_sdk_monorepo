@@ -67,35 +67,38 @@ export function DatasetDetailView({
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
 
-  const loadDetail = useCallback(async (showLoading = true) => {
-    abortRef.current?.abort();
-    itemsAbortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    if (showLoading) {
-      setLoading(true);
-    }
-    setNotFound(false);
-    setError("");
-    setItemsError("");
-    try {
-      const { data } = await httpClient.get<DatasetDetailResponse>(
-        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
-        { signal: controller.signal },
-      );
-      if (!controller.signal.aborted) setDetail(data);
-    } catch (loadError) {
-      if (controller.signal.aborted) return;
-      setDetail(null);
-      if (axios.isAxiosError(loadError) && loadError.response?.status === 404) {
-        setNotFound(true);
-      } else {
-        setError(errorMessage(loadError, LOAD_ERROR));
+  const loadDetail = useCallback(
+    async (showLoading = true) => {
+      abortRef.current?.abort();
+      itemsAbortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      if (showLoading) {
+        setLoading(true);
       }
-    } finally {
-      if (!controller.signal.aborted && showLoading) setLoading(false);
-    }
-  }, [application.id, datasetId]);
+      setNotFound(false);
+      setError("");
+      setItemsError("");
+      try {
+        const { data } = await httpClient.get<DatasetDetailResponse>(
+          `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
+          { signal: controller.signal },
+        );
+        if (!controller.signal.aborted) setDetail(data);
+      } catch (loadError) {
+        if (controller.signal.aborted) return;
+        setDetail(null);
+        if (axios.isAxiosError(loadError) && loadError.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(errorMessage(loadError, LOAD_ERROR));
+        }
+      } finally {
+        if (!controller.signal.aborted && showLoading) setLoading(false);
+      }
+    },
+    [application.id, datasetId],
+  );
 
   const loadMoreDatasetItems = useCallback(async () => {
     const offset = detail?.nextItemOffset;
