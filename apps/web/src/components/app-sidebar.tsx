@@ -32,6 +32,8 @@ import { WorkspaceSwitcher, type WorkspaceSwitcherProps } from "@/components/wor
 
 export type { DashboardView } from "@/app/dashboard/types";
 
+const mobileNavigationTargetClass = "min-h-11 md:min-h-0";
+
 export type AppSidebarProps = {
   workspaceName?: string;
   activeView?: DashboardView;
@@ -98,120 +100,176 @@ export function AppSidebar({
         <WorkspaceSwitcher {...effectiveSwitcherProps} />
       </SidebarHeader>
       <SidebarContent>
-        {selectedApplication ? (
-          <>
-            <SidebarGroup>
-              <SidebarGroupLabel>Aplicación</SidebarGroupLabel>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "overview"}
-                    tooltip="Resumen"
-                    onClick={() => onViewChange?.("overview")}
-                  >
-                    <IconLayoutDashboard />
-                    <span>Resumen</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "workflows"}
-                    tooltip="Workflows"
-                    onClick={() => onViewChange?.("workflows")}
-                  >
-                    <IconGitBranch />
-                    <span>Workflows</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "models"}
-                    tooltip="Modelos"
-                    onClick={() => onViewChange?.("models")}
-                  >
-                    <IconCpu />
-                    <span>Modelos</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "datasets"}
-                    tooltip="Datasets de validación"
-                    onClick={() => onViewChange?.("datasets")}
-                  >
-                    <IconDatabase />
-                    <span>Datasets de validación</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "credentials"}
-                    tooltip="Credenciales SDK"
-                    onClick={() => onViewChange?.("credentials")}
-                  >
-                    <IconKey />
-                    <span>Credenciales SDK</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "privacy"}
-                    tooltip="Privacidad y datos"
-                    onClick={() => onViewChange?.("privacy")}
-                  >
-                    <IconShieldLock />
-                    <span>Privacidad y datos</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "collection"}
-                    tooltip="Recolección de evidencia"
-                    onClick={() => onViewChange?.("collection")}
-                  >
-                    <IconPhotoShield />
-                    <span>Recolección de evidencia</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "traces"}
-                    tooltip="Trazas"
-                    onClick={() => onViewChange?.("traces")}
-                  >
-                    <IconActivity />
-                    <span>Trazas</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={activeView === "settings"}
-                    tooltip="Configuración"
-                    onClick={() => onViewChange?.("settings")}
-                  >
-                    <IconSettings />
-                    <span>Configuración</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroup>
+        <nav aria-label="Navegación principal">
+          {selectedApplication ? (
+            <>
+              <SidebarGroup>
+                <SidebarGroupLabel>Aplicación</SidebarGroupLabel>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "overview"}
+                      aria-current={activeView === "overview" ? "page" : undefined}
+                      tooltip="Resumen"
+                      onClick={() => onViewChange?.("overview")}
+                    >
+                      <IconLayoutDashboard />
+                      <span>Resumen</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "workflows"}
+                      aria-current={activeView === "workflows" ? "page" : undefined}
+                      tooltip="Workflows"
+                      onClick={() => onViewChange?.("workflows")}
+                    >
+                      <IconGitBranch />
+                      <span>Workflows</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "models"}
+                      aria-current={activeView === "models" ? "page" : undefined}
+                      tooltip="Modelos"
+                      onClick={() => onViewChange?.("models")}
+                    >
+                      <IconCpu />
+                      <span>Modelos</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "datasets"}
+                      aria-current={activeView === "datasets" ? "page" : undefined}
+                      tooltip="Datasets de validación"
+                      onClick={() => onViewChange?.("datasets")}
+                    >
+                      <IconDatabase />
+                      <span>Datasets de validación</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "credentials"}
+                      aria-current={activeView === "credentials" ? "page" : undefined}
+                      tooltip="Credenciales SDK"
+                      onClick={() => onViewChange?.("credentials")}
+                    >
+                      <IconKey />
+                      <span>Credenciales SDK</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "privacy"}
+                      aria-current={activeView === "privacy" ? "page" : undefined}
+                      tooltip="Privacidad y datos"
+                      onClick={() => onViewChange?.("privacy")}
+                    >
+                      <IconShieldLock />
+                      <span>Privacidad y datos</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "collection"}
+                      aria-current={activeView === "collection" ? "page" : undefined}
+                      tooltip="Recolección de evidencia"
+                      onClick={() => onViewChange?.("collection")}
+                    >
+                      <IconPhotoShield />
+                      <span>Recolección de evidencia</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "traces"}
+                      aria-current={activeView === "traces" ? "page" : undefined}
+                      tooltip="Trazas"
+                      onClick={() => onViewChange?.("traces")}
+                    >
+                      <IconActivity />
+                      <span>Trazas</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "settings"}
+                      aria-current={activeView === "settings" ? "page" : undefined}
+                      tooltip="Configuración"
+                      onClick={() => onViewChange?.("settings")}
+                    >
+                      <IconSettings />
+                      <span>Configuración</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroup>
 
+              <SidebarGroup>
+                <SidebarGroupLabel>Espacio de trabajo</SidebarGroupLabel>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={false}
+                      tooltip="Todas las aplicaciones"
+                      onClick={() => onSelectApplication?.(null)}
+                    >
+                      <IconApps />
+                      <span>Todas las aplicaciones</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={mobileNavigationTargetClass}
+                      isActive={activeView === "members"}
+                      aria-current={activeView === "members" ? "page" : undefined}
+                      tooltip="Miembros"
+                      disabled={membersDisabled}
+                      onClick={() => {
+                        if (!membersDisabled) onViewChange?.("members");
+                      }}
+                    >
+                      <IconUsers />
+                      <span>Miembros</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroup>
+            </>
+          ) : (
             <SidebarGroup>
               <SidebarGroupLabel>Espacio de trabajo</SidebarGroupLabel>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={false}
-                    tooltip="Todas las aplicaciones"
-                    onClick={() => onSelectApplication?.(null)}
+                    className={mobileNavigationTargetClass}
+                    isActive={activeView === "applications"}
+                    aria-current={activeView === "applications" ? "page" : undefined}
+                    tooltip="Aplicaciones"
+                    onClick={() => onViewChange?.("applications")}
                   >
                     <IconApps />
-                    <span>Todas las aplicaciones</span>
+                    <span>Aplicaciones</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
+                    className={mobileNavigationTargetClass}
                     isActive={activeView === "members"}
+                    aria-current={activeView === "members" ? "page" : undefined}
                     tooltip="Miembros"
                     disabled={membersDisabled}
                     onClick={() => {
@@ -224,41 +282,12 @@ export function AppSidebar({
                 </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroup>
-          </>
-        ) : (
-          <SidebarGroup>
-            <SidebarGroupLabel>Espacio de trabajo</SidebarGroupLabel>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeView === "applications"}
-                  tooltip="Aplicaciones"
-                  onClick={() => onViewChange?.("applications")}
-                >
-                  <IconApps />
-                  <span>Aplicaciones</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeView === "members"}
-                  tooltip="Miembros"
-                  disabled={membersDisabled}
-                  onClick={() => {
-                    if (!membersDisabled) onViewChange?.("members");
-                  }}
-                >
-                  <IconUsers />
-                  <span>Miembros</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
+          )}
+        </nav>
       </SidebarContent>
-      <SidebarFooter className="p-3 text-muted-foreground text-xs">
+      <SidebarFooter className="p-3 text-sidebar-accent-foreground text-xs">
         <Link
-          className="underline underline-offset-4"
+          className="inline-flex min-h-11 items-center underline underline-offset-4 transition-colors motion-reduce:duration-0 hover:decoration-sidebar-primary md:min-h-0"
           href={`/privacy/ayni/${AYNI_PRIVACY_NOTICE.version}` as Route}
         >
           Aviso de privacidad de Ayni
