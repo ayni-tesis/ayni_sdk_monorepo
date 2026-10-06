@@ -459,19 +459,19 @@ export function DatasetDetailView({
 
 function EvidenceItem({
   item,
-  canRemove = false,
+  canRemove,
   onRemove,
 }: {
   item: DatasetDetailResponse["items"][number];
-  canRemove?: boolean;
-  onRemove?: (itemId: string) => Promise<void>;
+  canRemove: boolean;
+  onRemove: (itemId: string) => Promise<void>;
 }) {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
 
   async function confirmRemove() {
-    if (!onRemove || removing) return;
+    if (removing) return;
     setRemoving(true);
     setRemoveError("");
     try {
@@ -496,7 +496,7 @@ function EvidenceItem({
       <p className="mt-1 text-muted-foreground text-xs">
         Modelo {item.modelId} · versión {item.modelVersion}
       </p>
-      {canRemove && onRemove && (
+      {canRemove && (
         <div className="mt-3 flex justify-end">
           <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
             <Button
