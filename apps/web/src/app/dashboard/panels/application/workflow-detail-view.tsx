@@ -492,6 +492,7 @@ export function WorkflowDetailView({
 
   useEffect(() => {
     let active = true;
+    void modelOptionsReload;
     if (!canManage || application.status !== "active") {
       setModelOptions([]);
       setModelOptionsLoading(false);

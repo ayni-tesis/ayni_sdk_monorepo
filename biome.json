@@ -12,6 +12,7 @@
       "!**/.next",
       "!**/.astro",
       "!**/dist",
+      "!**/build",
       "!**/.turbo",
       "!**/dev-dist",
       "!**/.zed",
@@ -43,7 +44,13 @@
     "rules": {
       "preset": "recommended",
       "correctness": {
-        "useExhaustiveDependencies": "info"
+        "useExhaustiveDependencies": "info",
+        "noUnknownPseudoClass": {
+          "level": "error",
+          "options": {
+            "ignore": ["global"]
+          }
+        }
       },
       "nursery": {
         "useSortedClasses": {

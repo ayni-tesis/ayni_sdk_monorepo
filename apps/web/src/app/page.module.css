@@ -39,10 +39,6 @@
   --color-dialog-backdrop: oklch(7% 0.02 258 / 0.72);
 }
 
-:global(.dark) .page .workflowVisual {
-  color: var(--color-ink);
-}
-
 .nav {
   border-bottom: var(--rule-hair) solid var(--color-rule);
   background: var(--color-paper);
@@ -207,7 +203,7 @@
   letter-spacing: -0.065em;
   line-height: 1.02;
 }
-.hero h1 span {
+.heroAccent {
   color: var(--color-accent);
 }
 .lede {
@@ -296,6 +292,9 @@
   background: var(--color-graphite);
   color: var(--color-paper);
   box-shadow: 0 1.5rem 3.5rem var(--color-shadow);
+}
+:global(.dark) .page .workflowVisual {
+  color: var(--color-ink);
 }
 .visualTopline,
 .visualFoot {
@@ -775,9 +774,9 @@
   .page *,
   .page *::before,
   .page *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
   }
 }

@@ -119,7 +119,8 @@ export default function Home() {
             dispositivo
           </p>
           <h1 id="hero-title">
-            Workflows que siguen funcionando <span>sin conexión.</span>
+            Workflows que siguen funcionando{" "}
+            <span className={styles.heroAccent}>sin conexión.</span>
           </h1>
           <p className={styles.lede}>
             Diseña workflows con versiones de modelo en Ayni y ejecútalos desde tu app Flutter,
