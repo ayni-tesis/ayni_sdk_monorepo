@@ -19,6 +19,12 @@
         "bearerFormat": "ayni_sk_…",
         "description": "Secreto de una credencial del SDK: una cadena opaca que empieza por `ayni_sk_`, no un JWT. El servidor no lee nada dentro del secreto; lo compara con el hash de las credenciales activas de la aplicación."
       },
+      "datasetUserSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "better-auth.session_token",
+        "description": "Cookie de sesión de Better Auth para las rutas del dashboard."
+      },
       "userSession": {
         "type": "apiKey",
         "in": "cookie",
@@ -2958,6 +2964,213 @@
                       "code": "datasetManifestUnavailable"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{applicationId}/datasets": {
+      "post": {
+        "tags": ["Datasets"],
+        "operationId": "crear-dataset",
+        "summary": "Crear un dataset de aplicación",
+        "description": "Solo administradores de una aplicación activa pueden crear datasets vacíos.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "taskType": {
+                    "type": "string",
+                    "enum": ["classification", "detection"]
+                  }
+                },
+                "required": ["name", "taskType"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dataset vacío creado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dataset": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "applicationId": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "taskType": {
+                          "type": "string",
+                          "enum": ["classification", "detection"]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": ["id", "applicationId", "name", "taskType", "createdAt"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["dataset"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ingresa un nombre y selecciona el tipo de tarea.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para crear datasets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos esta aplicación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No puedes modificar datasets de una aplicación archivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No se pudo crear el dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
                 }
               }
             }

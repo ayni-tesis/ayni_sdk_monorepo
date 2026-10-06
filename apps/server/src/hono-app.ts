@@ -25,6 +25,8 @@ import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
+import { createDataset } from "./dataset-store";
+import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
 import {
   type AcceptResult,
@@ -244,6 +246,12 @@ const validationDatasets = createValidationDatasetStore({
   db,
   storage: r2ValidationDatasetStorage,
 });
+
+const datasets = {
+  create(input: Parameters<typeof createDataset>[1]) {
+    return createDataset(db, input);
+  },
+};
 
 const workflows = {
   create(input: { applicationId: string; userId: string; name: string }) {
@@ -847,6 +855,14 @@ app.route(
     applications,
     validationDatasets,
     storage: r2ValidationDatasetStorage,
+  }),
+);
+app.route(
+  "/",
+  createDatasetsApp({
+    getSession: getCurrentTermsSession,
+    applications,
+    datasets,
   }),
 );
 app.route(
