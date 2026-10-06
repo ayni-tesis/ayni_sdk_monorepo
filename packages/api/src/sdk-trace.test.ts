@@ -71,6 +71,14 @@ describe("sdkTraceSchema segmentation outputs (US-160)", () => {
     }
   });
 
+  it.each(["width", "height"])("rejects a %s that is not a positive integer", (field) => {
+    for (const value of [0, -1, 2.5]) {
+      expect(sdkTraceSchema.safeParse(withOutput({ ...summary, [field]: value })).success).toBe(
+        false,
+      );
+    }
+  });
+
   it("rejects a segmentation summary that lacks a field", () => {
     const { confidence: _confidence, ...incomplete } = summary;
 

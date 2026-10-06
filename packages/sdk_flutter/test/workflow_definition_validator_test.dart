@@ -1353,6 +1353,8 @@ void main() {
           labels: [for (var i = 0; i < 257; i++) 'l$i'],
         ),
         'duplicate labels': segmenter(labels: const ['fondo', 'hoja', 'fondo']),
+        'empty label': segmenter(labels: const ['fondo', '']),
+        'blank label': segmenter(labels: const ['fondo', '   ']),
         'score threshold': model(
           resultType: 'segmentation',
           scoreThreshold: 0.5,

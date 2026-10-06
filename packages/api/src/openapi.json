@@ -420,10 +420,12 @@
                           "maxLength": 128
                         },
                         "width": {
-                          "type": "number"
+                          "type": "integer",
+                          "exclusiveMinimum": 0
                         },
                         "height": {
-                          "type": "number"
+                          "type": "integer",
+                          "exclusiveMinimum": 0
                         },
                         "confidence": {
                           "type": "number"
@@ -574,10 +576,12 @@
                                 "maxLength": 128
                               },
                               "width": {
-                                "type": "number"
+                                "type": "integer",
+                                "exclusiveMinimum": 0
                               },
                               "height": {
-                                "type": "number"
+                                "type": "integer",
+                                "exclusiveMinimum": 0
                               },
                               "confidence": {
                                 "type": "number"

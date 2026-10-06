@@ -342,7 +342,8 @@ class WorkflowDefinitionValidator {
   /// `packages/db/src/schema/model-version.ts`): classification results hold
   /// exactly their type and labels, while detection results may add a numeric
   /// `scoreThreshold` and an explicit map for the four output tensors, and
-  /// segmentation results hold exactly their type, one to 256 labels and the
+  /// segmentation results hold exactly their type, one to 256 distinct labels
+  /// that are not blank and the
   /// `scoreType` of the mask tensor. Anything else is a damaged contract.
   bool _isModelResult(String resultType, Map result) {
     if (resultType == 'segmentation') {
@@ -352,6 +353,8 @@ class WorkflowDefinitionValidator {
           labels is List &&
           labels.length >= 1 &&
           labels.length <= 256 &&
+          // The server trims each label and rejects an empty one.
+          labels.every((label) => label is String && label.trim().isNotEmpty) &&
           labels.toSet().length == labels.length;
     }
     return _isClassificationOrDetectionResult(resultType, result);

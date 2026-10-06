@@ -283,7 +283,8 @@ class SegmentationResult extends WorkflowValue {
     required Map<String, double> areaFractions,
     required this.confidence,
   }) : labels = List.unmodifiable(labels),
-       mask = mask.asUnmodifiableView(),
+       // Copy first: a view alone would follow later writes to the caller's buffer.
+       mask = Uint8List.fromList(mask).asUnmodifiableView(),
        areaFractions = Map.unmodifiable(areaFractions);
 
   /// The mask's width in pixels: the model's output width.

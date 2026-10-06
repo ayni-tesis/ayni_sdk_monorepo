@@ -83,7 +83,8 @@ creates these results; apps only read them.</p>
   required Map&lt;String, double&gt; areaFractions,
   required this.confidence,
 }) : labels = List.unmodifiable(labels),
-     mask = mask.asUnmodifiableView(),
+     &#47;&#47; Copy first: a view alone would follow later writes to the caller&#39;s buffer.
+     mask = Uint8List.fromList(mask).asUnmodifiableView(),
      areaFractions = Map.unmodifiable(areaFractions);</code></pre>
 </section>
 

@@ -2213,6 +2213,24 @@ void main() {
       expect(() => result.labels.add('otra'), throwsUnsupportedError);
     });
 
+    test('keeps its mask when the caller changes the buffer it passed', () {
+      final buffer = Uint8List.fromList([0, 1]);
+      final result = SegmentationResult(
+        'model-1',
+        width: 2,
+        height: 1,
+        labels: ['fondo', 'hoja'],
+        mask: buffer,
+        areaFractions: {'fondo': 0.5, 'hoja': 0.5},
+        confidence: 0.9,
+      );
+
+      buffer[0] = 1;
+
+      expect(result.labelAt(0, 0), 'fondo');
+      expect(result.mask, [0, 1]);
+    });
+
     test('decodes probabilities with the winner as confidence', () async {
       final result = await decode([
         tensor(
