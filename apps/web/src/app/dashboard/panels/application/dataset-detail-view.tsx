@@ -67,12 +67,14 @@ export function DatasetDetailView({
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async (showLoading = true) => {
     abortRef.current?.abort();
     itemsAbortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
     setNotFound(false);
     setError("");
     setItemsError("");
@@ -91,7 +93,7 @@ export function DatasetDetailView({
         setError(errorMessage(loadError, LOAD_ERROR));
       }
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted && showLoading) setLoading(false);
     }
   }, [application.id, datasetId]);
 
@@ -180,10 +182,10 @@ export function DatasetDetailView({
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence`,
         { evidenceIds: selectedIds },
       );
-      await loadDetail();
-      setNotice("Evidencia agregada al dataset.");
       setAddOpen(false);
       setSelectedIds([]);
+      await loadDetail(false);
+      setNotice("Evidencia agregada al dataset.");
     } catch (saveError) {
       setAddError(errorMessage(saveError, "No pudimos agregar la evidencia al dataset."));
     } finally {

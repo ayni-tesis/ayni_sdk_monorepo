@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -176,6 +176,7 @@ describe("DatasetDetailView", () => {
 
     expect(await screen.findByText("Evidencia agregada al dataset.")).toBeInTheDocument();
     expect(screen.queryByText("Predicción original: nueva (90%)")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await userEvent
       .setup()
       .click(await screen.findByRole("button", { name: "Cargar más evidencias del dataset" }));

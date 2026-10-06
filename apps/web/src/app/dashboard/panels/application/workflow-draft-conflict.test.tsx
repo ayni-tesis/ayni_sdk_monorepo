@@ -188,13 +188,13 @@ describe("US-130: editing a draft someone else changed", () => {
 
     moveEveryNodeRight();
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(conflictNotice()?.textContent).toContain(
         "Otra persona modificó este borrador. Recarga para ver los cambios.",
-      ),
-    );
-    expect(nodePosition("image-node")).toBe("translate(48px,48px)");
-    expect(nodePosition("model-node")).toBe("translate(400px,48px)");
+      );
+      expect(nodePosition("image-node")).toBe("translate(48px,48px)");
+      expect(nodePosition("model-node")).toBe("translate(400px,48px)");
+    });
     expect(
       within(conflictNotice() as HTMLElement).getByRole("button", { name: "Recargar borrador" }),
     ).toBeTruthy();
