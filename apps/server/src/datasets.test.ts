@@ -1,4 +1,4 @@
-import type { Dataset } from "@ayni/api/datasets";
+import type { Dataset, DatasetListItem, DatasetListResponse } from "@ayni/api/datasets";
 import { describe, expect, it, vi } from "vitest";
 import type { CreateDatasetInput, DatasetStoreResult } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
@@ -18,6 +18,12 @@ const dataset: Dataset = {
   createdAt: "2026-10-01T00:00:00.000Z",
 };
 
+const datasetListItem: DatasetListItem = {
+  ...dataset,
+  evidenceCount: 0,
+  approvedCount: 0,
+};
+
 function makeApp({
   session = { user: { id: "admin" } },
   application = activeApplication,
@@ -25,6 +31,9 @@ function makeApp({
   create = async (_input: CreateDatasetInput): Promise<DatasetStoreResult> => ({
     ok: true,
     value: dataset,
+  }),
+  list = async (_applicationId: string): Promise<DatasetListResponse> => ({
+    datasets: [datasetListItem],
   }),
 }: {
   session?: { user: { id: string } } | null;
@@ -34,17 +43,19 @@ function makeApp({
     | null;
   membershipRole?: string | null;
   create?: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
+  list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
+  const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
     applications: {
       get: async () => application ?? undefined,
       getMembership: async () => membershipRole ?? undefined,
     },
-    datasets: { create: createMock },
+    datasets: { create: createMock, list: listMock },
   });
-  return { app, createMock };
+  return { app, createMock, listMock };
 }
 
 function jsonRequest(body: unknown) {
@@ -56,6 +67,30 @@ function jsonRequest(body: unknown) {
 }
 
 describe("application datasets", () => {
+  it("lists datasets for any member, including archived applications", async () => {
+    const { app, listMock } = makeApp({
+      application: { ...activeApplication, status: "archived" },
+      membershipRole: "member",
+    });
+    const response = await app.request("/applications/app-1/datasets");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ datasets: [datasetListItem] });
+    expect(listMock).toHaveBeenCalledWith("app-1");
+  });
+
+  it("hides foreign application datasets and reports listing failures", async () => {
+    const foreign = makeApp({ application: null });
+    const hidden = await foreign.app.request("/applications/app-1/datasets");
+    expect(hidden.status).toBe(404);
+    expect(foreign.listMock).not.toHaveBeenCalled();
+
+    const failed = makeApp({ list: async () => Promise.reject(new Error("offline")) });
+    const unavailable = await failed.app.request("/applications/app-1/datasets");
+    expect(unavailable.status).toBe(500);
+    expect(await unavailable.json()).toMatchObject({ message: "No pudimos cargar los datasets." });
+  });
+
   it("creates an empty application dataset for an administrator", async () => {
     const { app, createMock } = makeApp();
     const response = await app.request(

@@ -1,7 +1,7 @@
 "use client";
 
-import type { DatasetTaskType } from "@ayni/api/datasets";
-import { useState } from "react";
+import type { DatasetListItem, DatasetTaskType } from "@ayni/api/datasets";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,14 +26,49 @@ const TASK_TYPES: { value: DatasetTaskType; label: string }[] = [
   { value: "detection", label: "Detección" },
 ];
 
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(date);
+}
+
 export function DatasetsPanel({ applicationId, canManage, applicationStatus }: DatasetsPanelProps) {
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState("");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [taskType, setTaskType] = useState<DatasetTaskType | "">("");
   const [createError, setCreateError] = useState("");
   const [notice, setNotice] = useState("");
   const [creating, setCreating] = useState(false);
+  const listRequestId = useRef(0);
   const canEdit = canManage && applicationStatus === "active";
+
+  const loadDatasets = useCallback(async () => {
+    const requestId = ++listRequestId.current;
+    setLoading(true);
+    setListError("");
+    try {
+      const { data } = await httpClient.get<{ datasets: DatasetListItem[] }>(
+        `/applications/${applicationId}/datasets`,
+      );
+      if (requestId === listRequestId.current) setDatasets(data.datasets);
+    } catch {
+      if (requestId === listRequestId.current) {
+        setListError("No pudimos cargar los datasets.");
+      }
+    } finally {
+      if (requestId === listRequestId.current) setLoading(false);
+    }
+  }, [applicationId]);
+
+  useEffect(() => {
+    void loadDatasets();
+    return () => {
+      listRequestId.current++;
+    };
+  }, [loadDatasets]);
 
   function changeOpen(nextOpen: boolean) {
     if (creating) return;
@@ -71,6 +106,7 @@ export function DatasetsPanel({ applicationId, canManage, applicationStatus }: D
       setOpen(false);
       setName("");
       setTaskType("");
+      await loadDatasets();
     } catch (error) {
       setCreateError(errorMessage(error, "No se pudo crear el dataset."));
     } finally {
@@ -164,6 +200,54 @@ export function DatasetsPanel({ applicationId, canManage, applicationStatus }: D
         <p role="status" className="text-sm">
           {notice}
         </p>
+      )}
+      {loading && <p role="status">Cargando datasets…</p>}
+      {!loading && listError && (
+        <div className="space-y-2" role="alert">
+          <p>{listError}</p>
+          <Button type="button" variant="outline" onClick={() => void loadDatasets()}>
+            Reintentar
+          </Button>
+        </div>
+      )}
+      {!loading && !listError && datasets.length === 0 && (
+        <p className="rounded-lg border p-4 text-muted-foreground text-sm">
+          Aún no hay datasets en esta aplicación.
+        </p>
+      )}
+      {!loading && !listError && datasets.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="p-3">Nombre</th>
+                <th className="p-3">Tipo</th>
+                <th className="p-3">Evidencias</th>
+                <th className="p-3">Aprobadas</th>
+                <th className="p-3">Actualizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {datasets.map((dataset) => (
+                <tr key={dataset.id} className="border-b last:border-0">
+                  <td className="p-3">
+                    <p className="font-medium">{dataset.name}</p>
+                    <p className="font-mono text-muted-foreground text-xs">{dataset.id}</p>
+                  </td>
+                  <td className="p-3">
+                    {TASK_TYPES.find((type) => type.value === dataset.taskType)?.label ??
+                      dataset.taskType}
+                  </td>
+                  <td className="p-3">{dataset.evidenceCount}</td>
+                  <td className="p-3">{dataset.approvedCount}</td>
+                  <td className="p-3">
+                    <time dateTime={dataset.createdAt}>{formatDate(dataset.createdAt)}</time>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

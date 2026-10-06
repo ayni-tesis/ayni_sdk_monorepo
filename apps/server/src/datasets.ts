@@ -1,4 +1,8 @@
-import { DatasetCreateRequestSchema, DatasetTaskTypeSchema } from "@ayni/api/datasets";
+import {
+  DatasetCreateRequestSchema,
+  type DatasetListResponse,
+  DatasetTaskTypeSchema,
+} from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
 import type { CreateDatasetInput, DatasetStoreResult } from "./dataset-store";
@@ -11,11 +15,32 @@ const APPLICATION_ARCHIVED_MESSAGE = "No puedes modificar datasets de una aplica
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   applications: Parameters<typeof getApplicationForMember>[0];
-  datasets: { create: (input: CreateDatasetInput) => Promise<DatasetStoreResult> };
+  datasets: {
+    create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
+    list: (applicationId: string) => Promise<DatasetListResponse>;
+  };
 };
 
 export function createDatasetsApp({ getSession, applications, datasets }: Dependencies) {
   const app = new Hono();
+
+  app.get("/applications/:applicationId/datasets", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: APPLICATION_NOT_FOUND_MESSAGE }, 404);
+
+    try {
+      return c.json(await datasets.list(application.id));
+    } catch {
+      return c.json({ message: "No pudimos cargar los datasets.", code: "datasetListFailed" }, 500);
+    }
+  });
 
   app.post("/applications/:applicationId/datasets", async (c) => {
     const session = await getSession(c.req.raw.headers);
