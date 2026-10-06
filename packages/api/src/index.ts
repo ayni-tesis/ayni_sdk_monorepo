@@ -4,7 +4,7 @@ import {
   OpenApiGeneratorV31,
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
-
+import { registerDatasetRoutes } from "./datasets";
 import { registerSdkRoutes, sdkApiDescription } from "./sdk-openapi";
 import { registerValidationDatasetRoutes } from "./validation-datasets";
 
@@ -31,6 +31,7 @@ export function createOpenApiDocument() {
     },
   });
   registerSdkRoutes(registry);
+  registerDatasetRoutes(registry);
   registerValidationDatasetRoutes(registry);
 
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({
@@ -51,4 +52,5 @@ export function createOpenApiDocument() {
 
 export const openApiDocument = createOpenApiDocument();
 
+export * from "./datasets";
 export * from "./validation-datasets";

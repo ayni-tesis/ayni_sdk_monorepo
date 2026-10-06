@@ -1,0 +1,170 @@
+"use client";
+
+import type { DatasetTaskType } from "@ayni/api/datasets";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { errorMessage } from "@/lib/api-error";
+import { httpClient } from "@/lib/http-client";
+
+type DatasetsPanelProps = {
+  applicationId: string;
+  canManage: boolean;
+  applicationStatus: "active" | "archived";
+};
+
+const TASK_TYPES: { value: DatasetTaskType; label: string }[] = [
+  { value: "classification", label: "Clasificación" },
+  { value: "detection", label: "Detección" },
+];
+
+export function DatasetsPanel({ applicationId, canManage, applicationStatus }: DatasetsPanelProps) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [taskType, setTaskType] = useState<DatasetTaskType | "">("");
+  const [createError, setCreateError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [creating, setCreating] = useState(false);
+  const canEdit = canManage && applicationStatus === "active";
+
+  function changeOpen(nextOpen: boolean) {
+    if (creating) return;
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setName("");
+      setTaskType("");
+      setCreateError("");
+    } else {
+      setNotice("");
+    }
+  }
+
+  async function createDataset(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canEdit || creating) return;
+    if (!name.trim()) {
+      setCreateError("Ingresa un nombre para el dataset.");
+      return;
+    }
+    if (!taskType) {
+      setCreateError("Selecciona el tipo de tarea.");
+      return;
+    }
+
+    setCreating(true);
+    setCreateError("");
+    setNotice("");
+    try {
+      await httpClient.post(`/applications/${applicationId}/datasets`, {
+        name: name.trim(),
+        taskType,
+      });
+      setNotice("Dataset creado.");
+      setOpen(false);
+      setName("");
+      setTaskType("");
+    } catch (error) {
+      setCreateError(errorMessage(error, "No se pudo crear el dataset."));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <section className="space-y-4" aria-labelledby="datasets-heading">
+      <header className="flex items-center justify-between gap-4">
+        <h2 id="datasets-heading" className="font-semibold text-xl">
+          Datasets
+        </h2>
+        {canEdit && (
+          <Dialog open={open} onOpenChange={changeOpen}>
+            <Button type="button" onClick={() => changeOpen(true)}>
+              Crear dataset
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Crear dataset</DialogTitle>
+                <DialogDescription>
+                  Organiza evidencias de una aplicación según su tipo de tarea.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={createDataset} noValidate className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="dataset-name" className="font-semibold text-sm">
+                    Nombre del dataset
+                  </label>
+                  <Input
+                    id="dataset-name"
+                    autoFocus
+                    required
+                    aria-required="true"
+                    maxLength={160}
+                    value={name}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      if (createError) setCreateError("");
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="dataset-task-type" className="font-semibold text-sm">
+                    Tipo de tarea
+                  </label>
+                  <select
+                    id="dataset-task-type"
+                    required
+                    aria-required="true"
+                    value={taskType}
+                    onChange={(event) => {
+                      setTaskType(event.target.value as DatasetTaskType | "");
+                      if (createError) setCreateError("");
+                    }}
+                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">Selecciona una opción</option>
+                    {TASK_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {createError && (
+                  <p className="text-destructive text-sm" role="alert">
+                    {createError}
+                  </p>
+                )}
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={creating}
+                    onClick={() => changeOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" data-testid="create-dataset-submit" disabled={creating}>
+                    {creating ? "Creando dataset…" : "Crear dataset"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </header>
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
+    </section>
+  );
+}

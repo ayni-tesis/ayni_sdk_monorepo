@@ -4,6 +4,7 @@ import type { Application, ApplicationSection } from "../types";
 import { ApplicationTracesView } from "./application/application-traces-view";
 import { CollectionPolicyView } from "./application/collection-policy-view";
 import { CredentialsView } from "./application/credentials-view";
+import { DatasetsPanel } from "./application/datasets-panel";
 import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
 import { OverviewView } from "./application/overview-view";
@@ -148,12 +149,19 @@ export function ApplicationDetailPanel({
       )}
 
       {activeSection === "datasets" && (
-        <ValidationDatasetsPanel
-          key={application.id}
-          applicationId={application.id}
-          canManage={canManage}
-          applicationStatus={application.status}
-        />
+        <div className="space-y-8">
+          <DatasetsPanel
+            applicationId={application.id}
+            canManage={canManage}
+            applicationStatus={application.status}
+          />
+          <ValidationDatasetsPanel
+            key={application.id}
+            applicationId={application.id}
+            canManage={canManage}
+            applicationStatus={application.status}
+          />
+        </div>
       )}
 
       {activeSection === "privacy" && (
