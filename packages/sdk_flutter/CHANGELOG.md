@@ -1,3 +1,30 @@
+## 0.4.0 - 2026-10-06
+
+### Novedades
+
+- Contrato de modelo `segmentation`, con `labels` y `scoreType` (`logits` o
+  `probabilities`). El SDK ejecuta un único tensor float32 `[1, H, W, C]` y
+  rechaza con `modelOutputInvalid` una salida que no cumpla el contrato.
+- `SegmentationResult`, con la máscara (`mask`, un `Uint8List` no modificable),
+  `areaFractions`, `confidence` y `labelAt(x, y)`. Puede ser una salida simple
+  o parte de una salida combinada.
+- Esquema de workflow 4, el que usan los workflows con un modelo de
+  segmentación. Las versiones anteriores del SDK lo rechazan con
+  `unsupportedWorkflowVersion`.
+- La traza solo resume una segmentación (dimensiones, fracciones de área y
+  confianza) y nunca lleva la máscara.
+- Requiere la API HTTP 0.4.0.
+
+### Cambios incompatibles
+
+- `WorkflowValue`, que es `sealed`, suma `SegmentationResult`: los `switch`
+  exhaustivos sobre `WorkflowValue` dejan de compilar.
+
+### Cómo migrar
+
+- Agrega el caso `SegmentationResult(...) =>` a cada `switch` exhaustivo sobre
+  `WorkflowValue`, o un caso `_ =>` que cubra los resultados que no manejas.
+
 ## 0.3.1 - 2026-10-05
 
 ### Correcciones

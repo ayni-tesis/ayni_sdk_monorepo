@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ayni_sdk/ayni_sdk.dart';
@@ -425,7 +426,7 @@ void main() {
     });
 
     test('carries classification, detection and boolean values', () {
-      const result = WorkflowResult(
+      final result = WorkflowResult(
         executionId: 'execution-1',
         workflowId: 'workflow-1',
         workflowVersion: '1.0.0',
@@ -437,6 +438,15 @@ void main() {
           'Detección': DetectionResult('model-2', [
             Detection('mancha', 0.87, 0.1, 0.2, 0.5, 0.6),
           ]),
+          'Segmentación': SegmentationResult(
+            'model-3',
+            width: 2,
+            height: 1,
+            labels: ['fondo', 'hoja'],
+            mask: Uint8List.fromList([0, 1]),
+            areaFractions: {'fondo': 0.5, 'hoja': 0.5},
+            confidence: 0.9,
+          ),
           'Apto': BooleanResult('condition-1', true),
         },
       );
@@ -455,6 +465,8 @@ void main() {
                 '${detections.single.confidence}|${detections.single.xMin}|'
                 '${detections.single.yMin}|${detections.single.xMax}|'
                 '${detections.single.yMax}',
+          SegmentationResult(:final nodeId, :final width, :final height) =>
+            '$nodeId|${width}x$height',
           CombinedWorkflowResult(:final nodeId, :final values) =>
             '$nodeId|${values.map((value) => value.nodeId).join(',')}',
           BooleanResult(:final nodeId, :final value) => '$nodeId|$value',
@@ -464,6 +476,7 @@ void main() {
       expect(consumed, {
         'Clasificación': 'model-1|perro|0.92|0.08',
         'Detección': 'model-2|mancha|0.87|0.1|0.2|0.5|0.6',
+        'Segmentación': 'model-3|2x1',
         'Apto': 'condition-1|true',
       });
     });
@@ -1031,7 +1044,7 @@ void main() {
       'rejects an installed workflow with unsupported schemaVersion before checking models',
       () async {
         final unsupportedDef = jsonEncode({
-          'schemaVersion': '4',
+          'schemaVersion': '5',
           'nodes': [
             {
               'id': 'input-1',
@@ -2079,7 +2092,443 @@ void main() {
       ),
     );
   });
+
+  group('segmentation output (US-160)', () {
+    const labels = ['fondo', 'hoja', 'tallo'];
+
+    Map<String, dynamic> segmentationDefinition({
+      String scoreType = 'logits',
+      List<String> modelLabels = labels,
+      String schemaVersion = '4',
+    }) {
+      final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+      definition['schemaVersion'] = schemaVersion;
+      final nodes = (definition['nodes'] as List).cast<Map>();
+      final model = nodes.firstWhere((node) => node['type'] == 'model.tflite');
+      (model['outputs'] as Map)['result'] = {
+        'type': 'segmentation',
+        'labels': modelLabels,
+        'scoreType': scoreType,
+      };
+      nodes.firstWhere((node) => node['type'] == 'output')['resultType'] =
+          'segmentation';
+      return definition;
+    }
+
+    Future<WorkflowResult> runSegmentation(
+      List<_Tensor> tensors, {
+      String scoreType = 'logits',
+      List<String> modelLabels = labels,
+    }) =>
+        WorkflowExecutor(
+          storageDirectory,
+          inferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async => (error: null, outputs: tensors),
+        ).execute(
+          executionId: 'execution-1',
+          workflowId: 'workflow-1',
+          workflowVersion: '1.0.0',
+          definition: segmentationDefinition(
+            scoreType: scoreType,
+            modelLabels: modelLabels,
+          ),
+          imageBytes: pngBytes(),
+        );
+
+    _Tensor tensor(List<int> shape, List<double> values) =>
+        (shape: shape, values: Float32List.fromList(values));
+
+    Future<SegmentationResult> decode(
+      List<_Tensor> tensors, {
+      String scoreType = 'logits',
+    }) async {
+      final result = await runSegmentation(tensors, scoreType: scoreType);
+      return result.outputs['Resultado']! as SegmentationResult;
+    }
+
+    double softmaxWinner(List<double> logits) {
+      final top = logits.reduce(math.max);
+      return 1 / logits.fold<double>(0, (sum, l) => sum + math.exp(l - top));
+    }
+
+    // 2x2 logits: a three-way tie, a clear leaf, a stem and a tie between the
+    // two highest logits.
+    const logitPixels = [
+      [0.0, 0.0, 0.0],
+      [0.0, 5.0, 1.0],
+      [-1.0, -1.0, 3.0],
+      [2.0, 2.0, 0.0],
+    ];
+    _Tensor logitTensor() =>
+        tensor([1, 2, 2, 3], [for (final pixel in logitPixels) ...pixel]);
+
+    test(
+      'decodes the argmax, area fractions and confidence of logits',
+      () async {
+        final result = await decode([logitTensor()]);
+
+        expect(result.nodeId, 'model-1');
+        expect(result.width, 2);
+        expect(result.height, 2);
+        expect(result.labels, labels);
+        // The tie of three goes to index 0, the tie of two to the lower one.
+        expect(result.mask, [0, 1, 2, 0]);
+        expect(result.areaFractions, {
+          'fondo': 0.5,
+          'hoja': 0.25,
+          'tallo': 0.25,
+        });
+        expect(
+          result.areaFractions.values.reduce((a, b) => a + b),
+          closeTo(1, 1e-12),
+        );
+        final expected =
+            logitPixels.map(softmaxWinner).reduce((a, b) => a + b) / 4;
+        expect(result.confidence, closeTo(expected, 1e-6));
+        expect(result.confidence, inInclusiveRange(0, 1));
+      },
+    );
+
+    test('reads the label of a pixel by column and row', () async {
+      final result = await decode([logitTensor()]);
+
+      expect(result.labelAt(0, 0), 'fondo');
+      expect(result.labelAt(1, 0), 'hoja');
+      expect(result.labelAt(0, 1), 'tallo');
+      expect(result.labelAt(1, 1), 'fondo');
+      expect(() => result.labelAt(2, 0), throwsRangeError);
+      expect(() => result.labelAt(0, 2), throwsRangeError);
+      expect(() => result.labelAt(-1, 0), throwsRangeError);
+    });
+
+    test('exposes a mask that cannot be modified', () async {
+      final result = await decode([logitTensor()]);
+
+      expect(() => result.mask[0] = 2, throwsUnsupportedError);
+      expect(() => result.areaFractions['fondo'] = 1, throwsUnsupportedError);
+      expect(() => result.labels.add('otra'), throwsUnsupportedError);
+    });
+
+    test('decodes probabilities with the winner as confidence', () async {
+      final result = await decode([
+        tensor(
+          [1, 1, 3, 3],
+          [0.25, 0.5, 0.25, 0.5, 0.5, 0, 0.125, 0.25, 0.625],
+        ),
+      ], scoreType: 'probabilities');
+
+      expect(result.mask, [1, 0, 2]);
+      expect(result.width, 3);
+      expect(result.height, 1);
+      expect(result.areaFractions['fondo'], closeTo(1 / 3, 1e-12));
+      expect(result.areaFractions['hoja'], closeTo(1 / 3, 1e-12));
+      expect(result.areaFractions['tallo'], closeTo(1 / 3, 1e-12));
+      expect(result.confidence, closeTo((0.5 + 0.5 + 0.625) / 3, 1e-9));
+    });
+
+    test('reports a label that wins no pixel with fraction zero', () async {
+      final result = await decode([
+        tensor([1, 1, 2, 3], [1, 0, 0, 1, 0, 0]),
+      ], scoreType: 'probabilities');
+
+      expect(result.areaFractions, {'fondo': 1.0, 'hoja': 0.0, 'tallo': 0.0});
+    });
+
+    test(
+      'combines a segmentation with a classification in one output',
+      () async {
+        final definition = segmentationDefinition();
+        final nodes = (definition['nodes'] as List).cast<Map>();
+        final segmenter = nodes.firstWhere((n) => n['type'] == 'model.tflite');
+        final classifier = {
+          ...segmenter,
+          'id': 'model-2',
+          'modelVersionId': 'model-version-2',
+          'outputs': {
+            'result': {
+              'type': 'classification',
+              'labels': ['perro', 'gato'],
+            },
+          },
+        };
+        final output = nodes.firstWhere((n) => n['type'] == 'output');
+        nodes
+          ..remove(output)
+          ..add(classifier)
+          ..add({
+            'id': 'output-1',
+            'type': 'output',
+            'name': 'Resultado',
+            'sources': [
+              {
+                'sourceNodeId': 'model-1',
+                'sourcePort': 'result',
+                'resultType': 'segmentation',
+              },
+              {
+                'sourceNodeId': 'model-2',
+                'sourcePort': 'result',
+                'resultType': 'classification',
+              },
+            ],
+          });
+        (definition['connections'] as List).add({
+          'sourceNodeId': 'input-1',
+          'sourcePort': 'imagen',
+          'targetNodeId': 'model-2',
+          'targetPort': 'image',
+        });
+        final executor = WorkflowExecutor(
+          storageDirectory,
+          inferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async => (
+                error: null,
+                outputs: [
+                  modelPath.contains('model-version-2')
+                      ? tensor([1, 2], [0.1, 0.9])
+                      : tensor([1, 1, 1, 3], [0, 4, 0]),
+                ],
+              ),
+        );
+
+        final result = await executor.execute(
+          executionId: 'execution-1',
+          workflowId: 'workflow-1',
+          workflowVersion: '1.0.0',
+          definition: definition,
+          imageBytes: pngBytes(),
+        );
+
+        final combined = result.outputs['Resultado']! as CombinedWorkflowResult;
+        expect(combined.values, hasLength(2));
+        final segmentation = combined.values[0] as SegmentationResult;
+        expect(segmentation.labelAt(0, 0), 'hoja');
+        expect(combined.values[1], isA<ClassificationResult>());
+      },
+    );
+
+    AyniSdk segmentationClient() => createAyniSdkForTesting(
+      serverUrl: Uri.parse('https://sdk.example.test'),
+      credential: 'ayni_sk_test',
+      storageDirectory: storageDirectory,
+      workflowInferenceRunner:
+          ({
+            required modelPath,
+            required inputBytes,
+            required acceptedInputShapes,
+          }) async => (
+            error: null,
+            outputs: [
+              tensor([1, 1, 1, 3], [0, 4, 0]),
+            ],
+          ),
+    );
+
+    test('runs an installed schema 4 workflow through AyniSdk.run', () async {
+      await installWorkflowFiles(
+        storageDirectory: storageDirectory,
+        inventoryJson: _inventory(),
+        workflowVersionId: 'workflow-version-1.0.0',
+        definitionJson: jsonEncode(segmentationDefinition()),
+      );
+      await installTraceModelArtifact();
+
+      final result = await segmentationClient().run('workflow-1', pngBytes());
+
+      expect((result.outputs['Resultado']! as SegmentationResult).mask, [1]);
+    });
+
+    test(
+      'rejects an installed workflow with a segmentation in schema 3',
+      () async {
+        await installWorkflowFiles(
+          storageDirectory: storageDirectory,
+          inventoryJson: _inventory(),
+          workflowVersionId: 'workflow-version-1.0.0',
+          definitionJson: jsonEncode(
+            segmentationDefinition(schemaVersion: '3'),
+          ),
+        );
+        await installTraceModelArtifact();
+
+        await expectLater(
+          segmentationClient().run('workflow-1', pngBytes()),
+          throwsWorkflowError(category: WorkflowErrorCategory.invalidWorkflow),
+        );
+      },
+    );
+
+    test('keeps the confidence finite with very large logits', () async {
+      final result = await decode([
+        tensor([1, 1, 1, 3], [1000, 999, -1000]),
+      ]);
+
+      expect(result.mask, [0]);
+      expect(result.confidence.isFinite, isTrue);
+      expect(result.confidence, inExclusiveRange(0, 1.0000001));
+      expect(result.confidence, closeTo(1 / (1 + math.exp(-1)), 1e-6));
+    });
+
+    test('decodes a 257 x 257 x 21 tensor with 21 labels', () async {
+      const side = 257, classes = 21;
+      final names = [for (var i = 0; i < classes; i++) 'clase-$i'];
+      // Pixel p scores class p % 21 highest, so every label wins pixels.
+      final values = Float32List(side * side * classes);
+      for (var p = 0; p < side * side; p++) {
+        values[p * classes + p % classes] = 5;
+      }
+      final result = await runSegmentation([
+        (shape: [1, side, side, classes], values: values),
+      ], modelLabels: names);
+
+      final segmentation = result.outputs['Resultado']! as SegmentationResult;
+      expect(segmentation.width, side);
+      expect(segmentation.height, side);
+      expect(segmentation.areaFractions.keys, names);
+      expect(
+        segmentation.areaFractions.values.reduce((a, b) => a + b),
+        closeTo(1, 1e-9),
+      );
+      expect(segmentation.mask.length, side * side);
+      expect(segmentation.labelAt(1, 0), 'clase-1');
+    });
+
+    group('rejects an invalid output with modelOutputInvalid', () {
+      Matcher invalid() => throwsWorkflowError(
+        category: WorkflowErrorCategory.modelOutputInvalid,
+        nodeId: 'model-1',
+        modelVersionId: 'model-version-1',
+      );
+
+      final valid = tensor([1, 1, 1, 3], [0, 1, 0]);
+
+      test('with more than one tensor', () {
+        expect(runSegmentation([valid, valid]), invalid());
+      });
+
+      test('without tensors', () {
+        expect(runSegmentation([]), invalid());
+      });
+
+      test('with a shape that is not [1, H, W, C]', () {
+        expect(
+          runSegmentation([
+            tensor([1, 1, 3], [0, 1, 0]),
+          ]),
+          invalid(),
+        );
+        expect(
+          runSegmentation([
+            tensor([2, 1, 1, 3], List.filled(6, 0)),
+          ]),
+          invalid(),
+        );
+        expect(
+          runSegmentation([
+            tensor([1, 0, 1, 3], []),
+          ]),
+          invalid(),
+        );
+      });
+
+      test('with a class count that differs from the labels', () {
+        expect(
+          runSegmentation([
+            tensor([1, 1, 1, 2], [0, 1]),
+          ]),
+          invalid(),
+        );
+      });
+
+      test('with a number of values that differs from the shape', () {
+        expect(
+          runSegmentation([
+            tensor([1, 1, 2, 3], [0, 1, 0]),
+          ]),
+          invalid(),
+        );
+      });
+
+      test('with values that are not finite', () {
+        for (final bad in [
+          double.nan,
+          double.infinity,
+          double.negativeInfinity,
+        ]) {
+          expect(
+            runSegmentation([
+              tensor([1, 1, 1, 3], [0, bad, 0]),
+            ]),
+            invalid(),
+          );
+        }
+      });
+
+      test('with probabilities outside 0 to 1', () {
+        for (final bad in [1.5, -0.25]) {
+          expect(
+            runSegmentation([
+              tensor([1, 1, 1, 3], [0, bad, 0]),
+            ], scoreType: 'probabilities'),
+            invalid(),
+          );
+        }
+      });
+
+      test('with more pixels than the server accepts', () {
+        // 1025 x 1025 = 1050625 > 1048576 (MAX_SEGMENTATION_PIXELS).
+        expect(
+          runSegmentation(
+            [
+              (shape: [1, 1025, 1025, 1], values: Float32List(1025 * 1025)),
+            ],
+            modelLabels: ['fondo'],
+          ),
+          invalid(),
+        );
+      });
+
+      test('with more values than the value limit', () {
+        // 1024 x 1024 x 17 = 17825792 > 16777216 (MAX_SEGMENTATION_VALUES).
+        expect(
+          runSegmentation(
+            [
+              (
+                shape: [1, 1024, 1024, 17],
+                values: Float32List(1024 * 1024 * 17),
+              ),
+            ],
+            modelLabels: [for (var i = 0; i < 17; i++) 'l$i'],
+          ),
+          invalid(),
+        );
+      });
+
+      test('accepts exactly the pixel limit', () async {
+        final result = await runSegmentation(
+          [
+            (shape: [1, 1024, 1024, 1], values: Float32List(1024 * 1024)),
+          ],
+          modelLabels: ['fondo'],
+        );
+
+        final segmentation = result.outputs['Resultado']! as SegmentationResult;
+        expect(segmentation.areaFractions, {'fondo': 1.0});
+      });
+    });
+  });
 }
+
+/// A tensor the synthetic runner returns: its shape and flattened values.
+typedef _Tensor = ({List<int> shape, Float32List values});
 
 /// The single matcher for a [WorkflowError] thrown by `AyniSdk.run`: it checks
 /// the category plus the node and model context the error must report.

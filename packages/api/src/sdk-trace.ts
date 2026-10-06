@@ -158,6 +158,14 @@ const traceScalarOutputSchema = z.discriminatedUnion("type", [
       }),
     ),
   }),
+  z.strictObject({
+    type: z.literal("segmentation"),
+    nodeId: boundedId,
+    width: finite,
+    height: finite,
+    confidence: finite,
+    areaFractions: confidencesSchema,
+  }),
   z.strictObject({ type: z.literal("boolean"), nodeId: boundedId, value: z.boolean() }),
 ]);
 

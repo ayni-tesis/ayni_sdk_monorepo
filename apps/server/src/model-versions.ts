@@ -63,7 +63,12 @@ const contractSchema = z
         .object({
           type: z.literal("segmentation"),
           // A segmentation mask stores each pixel's label index in one byte (US-158).
-          labels: z.array(z.string().trim().min(1)).min(1).max(256),
+          labels: z
+            .array(z.string().trim().min(1))
+            .min(1)
+            .max(256)
+            // Area fractions are keyed by label, so a repeated label would merge two classes.
+            .refine((labels) => new Set(labels).size === labels.length),
           scoreType: z.enum(["logits", "probabilities"]),
         })
         .strict(),

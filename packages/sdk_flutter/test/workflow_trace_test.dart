@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:ayni_sdk/ayni_sdk.dart';
 import 'package:test/test.dart';
 
@@ -54,6 +56,15 @@ void main() {
       'detection': const DetectionResult('m2', [
         Detection('spot', 0.8, 0.1, 0.2, 0.5, 0.6),
       ]),
+      'segmentation': SegmentationResult(
+        'm3',
+        width: 2,
+        height: 1,
+        labels: const ['fondo', 'hoja'],
+        mask: Uint8List.fromList([0, 1]),
+        areaFractions: const {'fondo': 0.5, 'hoja': 0.5},
+        confidence: 0.75,
+      ),
       'condition': const BooleanResult('c1', true),
       'combined': const CombinedWorkflowResult('out-1', [
         ClassificationResult('m1', 'leaf', 0.9, {'leaf': 0.9}),
@@ -75,6 +86,22 @@ void main() {
         'box': {'xMin': 0.1, 'yMin': 0.2, 'xMax': 0.5, 'yMax': 0.6},
       },
     ]);
+    expect(values['segmentation'], {
+      'type': 'segmentation',
+      'nodeId': 'm3',
+      'width': 2,
+      'height': 1,
+      'confidence': 0.75,
+      'areaFractions': {'fondo': 0.5, 'hoja': 0.5},
+    });
+    expect((values['segmentation']! as Map).keys.toSet(), const {
+      'type',
+      'nodeId',
+      'width',
+      'height',
+      'confidence',
+      'areaFractions',
+    });
     expect(values['condition'], {
       'type': 'boolean',
       'nodeId': 'c1',

@@ -39,3 +39,41 @@ describe("sdkTraceSchema nodes", () => {
     expect(sdkTraceSchema.safeParse({ ...trace, nodes: [transform] }).success).toBe(false);
   });
 });
+
+describe("sdkTraceSchema segmentation outputs (US-160)", () => {
+  const summary = {
+    type: "segmentation",
+    nodeId: "model-1",
+    width: 256,
+    height: 128,
+    confidence: 0.91,
+    areaFractions: { fondo: 0.75, hoja: 0.25 },
+  };
+  const withOutput = (output: unknown) => ({ ...trace, outputs: { Segmentacion: output } });
+
+  it("accepts the summary of a segmentation, alone or inside a combined output", () => {
+    expect(sdkTraceSchema.safeParse(withOutput(summary)).success).toBe(true);
+    expect(
+      sdkTraceSchema.safeParse(
+        withOutput({ type: "combined", nodeId: "output-1", values: [summary] }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("rejects a mask, labels or any other field of a segmentation", () => {
+    for (const extra of [
+      { mask: [0, 1, 0, 1] },
+      { mask: "AAEA" },
+      { labels: ["fondo"] },
+      { x: 1 },
+    ]) {
+      expect(sdkTraceSchema.safeParse(withOutput({ ...summary, ...extra })).success).toBe(false);
+    }
+  });
+
+  it("rejects a segmentation summary that lacks a field", () => {
+    const { confidence: _confidence, ...incomplete } = summary;
+
+    expect(sdkTraceSchema.safeParse(withOutput(incomplete)).success).toBe(false);
+  });
+});

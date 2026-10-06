@@ -39,7 +39,7 @@ finalidades.
 
 ## Datos que el SDK envía
 
-Válido para `ayni_sdk` 0.3.1.
+Válido para `ayni_sdk` 0.4.0.
 
 El SDK usa la red dentro de `sync()` y cuando la app registra una decisión con
 `recordConsent()`. `initialize()` y `run()` no envían nada. `sync()` puede enviar
@@ -181,7 +181,9 @@ tamaño en `Content-Length`.
   están disponibles; si el error no tiene un nodo asociado, incluye una fase
   fija. La traza se
   relaciona con el ID de traza, corrida, workflow, versión e instalación. Omite
-  mensajes arbitrarios del runtime, imágenes, tensores y bytes de entrada. Los
+  mensajes arbitrarios del runtime, imágenes, tensores y bytes de entrada. La
+  traza de una segmentación solo lleva sus dimensiones, las fracciones de área y la
+  confianza, nunca la máscara. Los
   valores declarados por la app se conservan; la app debe usar valores no
   sensibles y quitar secretos y rutas locales antes de pasarlos, tanto en
   `traceContext` de `run()` como en `context` de
@@ -644,7 +646,7 @@ outbox.
 
 ## Datos que el SDK guarda en el dispositivo
 
-Válido para `ayni_sdk` 0.3.1.
+Válido para `ayni_sdk` 0.4.0.
 
 Todo lo que guarda el SDK está dentro del `storageDirectory` que le pasa tu
 app. Ahí conserva los recursos que tu aplicación publicó en Ayni, las trazas

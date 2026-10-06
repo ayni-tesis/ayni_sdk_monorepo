@@ -44,11 +44,15 @@ export function isDetectionTensorRolesCompatible(
 /** Largest segmentation mask (height × width) the SDK decodes on a phone (US-158). */
 export const MAX_SEGMENTATION_PIXELS = 1_048_576;
 
+/** Largest segmentation tensor (height × width × labels): 16,777,216 float32 values, about 64 MB. */
+export const MAX_SEGMENTATION_VALUES = 16_777_216;
+
 const FLOAT32 = 0;
 
 /**
  * A segmentation model must have one float32 output shaped [1, H, W, C], with
- * one channel per label and at most [MAX_SEGMENTATION_PIXELS] pixels.
+ * one channel per label, at most [MAX_SEGMENTATION_PIXELS] pixels and at most
+ * [MAX_SEGMENTATION_VALUES] values.
  */
 export function isSegmentationOutputCompatible(
   outputs: readonly Tensor[],
@@ -69,7 +73,8 @@ export function isSegmentationOutputCompatible(
     height > 0 &&
     width > 0 &&
     height * width <= MAX_SEGMENTATION_PIXELS &&
-    channels === labelCount
+    channels === labelCount &&
+    height * width * channels <= MAX_SEGMENTATION_VALUES
   );
 }
 

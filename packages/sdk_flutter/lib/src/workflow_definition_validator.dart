@@ -38,7 +38,8 @@ enum WorkflowValidationStatus {
 /// unknown or missing fields on the definition, its nodes, or its connections),
 /// only the supported node types, edges that join compatible ports (a model
 /// image input taking a single connection, a capture taking one image, one
-/// result and, optionally, one branch of a condition on that result), an
+/// result and, optionally, one branch of a condition on that result; a segmentation feeds neither
+/// a capture nor a condition), an
 /// acyclic graph counting each
 /// condition's and output's stored source as an edge, and model versions
 /// declared in the manifest.
@@ -59,8 +60,10 @@ class WorkflowDefinitionValidator {
   ///
   /// Schema 2 adds outputs with several `sources`; schema 3 adds
   /// `dataset.capture` (US-066), so an SDK that cannot run a capture rejects
-  /// it as a newer schema instead of an unknown node.
-  static const supportedSchemaVersions = {'1', '2', '3'};
+  /// it as a newer schema instead of an unknown node. Schema 4 includes
+  /// everything in schema 3 and adds `segmentation` model outputs, so an SDK
+  /// that cannot decode a mask rejects them as a newer schema.
+  static const supportedSchemaVersions = {'1', '2', '3', '4'};
 
   static const _nodeTypes = {
     'input.image',
@@ -115,8 +118,18 @@ class WorkflowDefinitionValidator {
     'targetPort',
   };
   static const _conditionOperators = {'gte', 'gt', 'lte', 'lt'};
-  static const _modelOutputTypes = {'classification', 'detection'};
-  static const _resultTypes = {'classification', 'detection', 'boolean'};
+  static const _modelOutputTypes = {
+    'classification',
+    'detection',
+    'segmentation',
+  };
+  static const _resultTypes = {
+    'classification',
+    'detection',
+    'segmentation',
+    'boolean',
+  };
+  static const _segmentationScoreTypes = {'logits', 'probabilities'};
 
   /// Checks [definition], the decoded JSON of a published workflow version,
   /// whose model nodes may only use [declaredModelVersionIds].
@@ -226,10 +239,16 @@ class WorkflowDefinitionValidator {
       }
       if (node.outputSources.length > 1 &&
           schemaVersion != '2' &&
-          schemaVersion != '3') {
+          schemaVersion != '3' &&
+          schemaVersion != '4') {
         return _ParsedNodes.invalid();
       }
-      if (node.type == 'dataset.capture' && schemaVersion != '3') {
+      if (node.type == 'dataset.capture' &&
+          schemaVersion != '3' &&
+          schemaVersion != '4') {
+        return _ParsedNodes.invalid();
+      }
+      if (node.modelResultType == 'segmentation' && schemaVersion != '4') {
         return _ParsedNodes.invalid();
       }
       nodes[node.id] = node;
@@ -322,9 +341,23 @@ class WorkflowDefinitionValidator {
   /// The model contract's output (mirrored by `addModelNode` from
   /// `packages/db/src/schema/model-version.ts`): classification results hold
   /// exactly their type and labels, while detection results may add a numeric
-  /// `scoreThreshold` and an explicit map for the four output tensors.
-  /// Anything else is a damaged contract.
-  bool _isModelResult(String resultType, Map result) =>
+  /// `scoreThreshold` and an explicit map for the four output tensors, and
+  /// segmentation results hold exactly their type, one to 256 labels and the
+  /// `scoreType` of the mask tensor. Anything else is a damaged contract.
+  bool _isModelResult(String resultType, Map result) {
+    if (resultType == 'segmentation') {
+      final labels = result['labels'];
+      return _hasExactFields(result, const {'type', 'labels', 'scoreType'}) &&
+          _segmentationScoreTypes.contains(result['scoreType']) &&
+          labels is List &&
+          labels.length >= 1 &&
+          labels.length <= 256 &&
+          labels.toSet().length == labels.length;
+    }
+    return _isClassificationOrDetectionResult(resultType, result);
+  }
+
+  bool _isClassificationOrDetectionResult(String resultType, Map result) =>
       resultType == 'detection'
       ? _hasExactFields(result, const {'type', 'labels'}) ||
             (_hasExactFields(result, const {
@@ -466,7 +499,7 @@ class WorkflowDefinitionValidator {
   /// Port rules mirroring `workflowInputPortTypes`,
   /// `areWorkflowPortsCompatible` and `isCaptureConditionCompatible`: every
   /// connection takes the image output of the input to a model's `image` or a
-  /// capture's `imagen`, a model's result to a capture's `resultado`, or a
+  /// capture's `imagen`, a model's result to a capture's `resultado` (never a segmentation), or a
   /// condition branch to a capture's optional `condicion` (US-074), each input
   /// holding one connection and a capture both `imagen` and `resultado`; the
   /// condition of a capture evaluates the model whose result it captures;
@@ -486,7 +519,9 @@ class WorkflowDefinitionValidator {
         ('model.tflite', 'image') ||
         ('dataset.capture', 'imagen') => takesImage,
         ('dataset.capture', 'resultado') =>
-          source.type == 'model.tflite' && connection.sourcePort == 'result',
+          source.type == 'model.tflite' &&
+              connection.sourcePort == 'result' &&
+              source.modelResultType != 'segmentation',
         ('dataset.capture', 'condicion') =>
           source.type == 'condition' &&
               (connection.sourcePort == 'true' ||

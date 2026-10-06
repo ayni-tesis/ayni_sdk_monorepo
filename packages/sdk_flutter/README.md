@@ -13,7 +13,7 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.3.0
+  ayni_sdk: ^0.4.0
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -29,7 +29,7 @@ el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 [README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
 y usa una dependencia local `path: ../..` para verificar este checkout antes
-de publicar. Una aplicación consumidora debe resolver `^0.3.0` desde pub.dev.
+de publicar. Una aplicación consumidora debe resolver `^0.4.0` desde pub.dev.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
@@ -269,7 +269,9 @@ try {
 
 El ejemplo completo, que `dart analyze` comprueba, está en `example/reference/run_workflow.dart`.
 
-`WorkflowResult` expone `executionId`, `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
+`WorkflowResult` expone `executionId`, `workflowId`, `workflowVersion`, `outputs` y `usingOfflineCache`. Cada valor de `outputs` es un `WorkflowValue` (`ClassificationResult`, `DetectionResult`, `SegmentationResult`, `BooleanResult` o `CombinedWorkflowResult`) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, `run()` lanza `WorkflowError` con su `category`, `nodeId` y `modelVersionId`; no devuelve el error como valor.
+
+Un modelo de segmentación declara el contrato `segmentation`, con sus `labels` (de 1 a 256, todas distintas) y `scoreType` (`logits` o `probabilities`), y produce un único tensor float32 `[1, H, W, C]` con `C` igual al número de etiquetas y `H × W` de hasta 1.048.576 píxeles y `H × W × C` de hasta 16.777.216 valores. `SegmentationResult` expone `width`, `height`, `labels`, la `mask` (`Uint8List` no modificable, fila por fila, con el índice de la etiqueta de cada píxel), `areaFractions` (todas las etiquetas, que suman 1 salvo redondeo), `confidence` (media de la confianza del ganador por píxel) y `labelAt(x, y)`. La máscara cubre la imagen redimensionada por el SDK, que no conserva la proporción, y nunca sale del dispositivo: la traza solo resume dimensiones, fracciones y confianza. Los workflows con segmentación usan el esquema 4, que las versiones anteriores del SDK rechazan con `unsupportedWorkflowVersion`; requieren la API HTTP 0.4.0. Una salida inválida lanza `WorkflowError` con la categoría `modelOutputInvalid`.
 
 Los contratos de modelo para detección pueden declarar `tensorIndices`, un mapa con los roles `boxes`, `classes`, `scores` y `count`. Cada valor indica el índice del tensor de salida correspondiente; los cuatro índices deben ser distintos y estar entre 0 y 3. Los tensores deben tener formas `[1, N, 4]` para `boxes`, `[1, N]` para `classes` y `scores`, y `[1]` o `[1, 1]` para `count`. El SDK decodifica los primeros `count` resultados y entrega el mismo `DetectionResult` de la API pública. Los workflows publicados sin `tensorIndices` siguen usando el decodificador anterior.
 
@@ -422,7 +424,7 @@ if (failed > 0) {
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.3.0: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.4.0: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.

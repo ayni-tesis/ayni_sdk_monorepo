@@ -29,6 +29,7 @@ export 'src/workflow_execution.dart'
         ClassificationResult,
         Detection,
         DetectionResult,
+        SegmentationResult,
         WorkflowError,
         WorkflowErrorCategory,
         WorkflowResult,

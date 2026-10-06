@@ -18,11 +18,11 @@ Decisiones del usuario (5/10/2026):
 { "type": "segmentation", "labels": ["background", "..."], "scoreType": "logits" }
 ```
 
-- **`labels`:** 1 a 256 etiquetas, en el orden de los canales del tensor.
+- **`labels`:** 1 a 256 etiquetas distintas (el servidor rechaza las repetidas con `incompatibleContract` y el SDK con `invalidSchema`), en el orden de los canales del tensor.
 - **`scoreType`:** `"logits"` o `"probabilities"`. Es obligatorio porque la confianza depende de él:
   - con `logits`, la confianza es el máximo de la softmax del píxel;
   - con `probabilities`, es el valor máximo, que debe estar en [0, 1].
-- **Tensor aceptado:** una sola salida float32 `[1, H, W, C]`, con `C = labels.length`, `H ≥ 1`, `W ≥ 1` y `H × W ≤ 1.048.576`.
+- **Tensor aceptado:** una sola salida float32 `[1, H, W, C]`, con `C = labels.length`, `H ≥ 1`, `W ≥ 1`, `H × W ≤ 1.048.576` y `H × W × C ≤ 16.777.216` valores (unos 64 MB de float32).
   - El servidor lo comprueba al guardar el contrato (`tflite-contract-validator.ts`).
   - El SDK lo comprueba otra vez al ejecutar.
 - **Fuera de alcance:** salidas `[1, H, W]` con índices, tensores que no sean float32, `tensorLayout` y `backgroundLabel`.
@@ -35,7 +35,7 @@ class SegmentationResult extends WorkflowValue {
   final int height;                       // H del tensor
   final List<String> labels;              // índice → etiqueta
   final Uint8List mask;                   // fila por fila, width × height, índice en labels; no modificable
-  final Map<String, double> areaFractions; // todas las etiquetas, suman 1
+  final Map<String, double> areaFractions; // todas las etiquetas, suman 1 salvo redondeo
   final double confidence;                // media de la confianza del ganador por píxel
   String labelAt(int x, int y);
 }

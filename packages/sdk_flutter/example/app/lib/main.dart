@@ -194,6 +194,8 @@ class _AyniIntegrationPageState extends State<AyniIntegrationPage> {
           '$name: $label (${confidence.toStringAsFixed(2)})',
         DetectionResult(:final detections) =>
           '$name: ${detections.length} objetos',
+        SegmentationResult(:final areaFractions) =>
+          '$name: ${areaFractions.entries.reduce((a, b) => a.value >= b.value ? a : b).key}',
         CombinedWorkflowResult(:final values) =>
           '$name: ${values.length} resultados',
         BooleanResult(value: final passed) => '$name: $passed',

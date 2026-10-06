@@ -24,7 +24,7 @@
 <header id="title">
   <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
   <ol class="breadcrumbs gt-separated dark hidden-xs">
-    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.3.1</li>
+    <li><a href="/">Ayni Docs</a></li><li class="self-crumb">ayni_sdk 0.4.0</li>
   </ol>
   <div class="self-name">ayni_sdk</div>
   <form class="search navbar-right" role="search">
@@ -51,7 +51,7 @@
 configura <code>minSdkVersion 26</code> en la app Flutter.</p>
 <p>Agrega <code>ayni_sdk</code> a las dependencias de tu proyecto Flutter en <code>pubspec.yaml</code>:</p>
 <pre class="language-yaml"><code class="language-yaml">dependencies:
-  ayni_sdk: ^0.3.0
+  ayni_sdk: ^0.4.0
 </code></pre>
 <p>Resuelve las dependencias desde la carpeta de tu aplicación:</p>
 <pre class="language-sh"><code class="language-sh">flutter pub get
@@ -63,7 +63,7 @@ el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md">README del ejemplo</a>
 y usa una dependencia local <code>path: ../..</code> para verificar este checkout antes
-de publicar. Una aplicación consumidora debe resolver <code>^0.3.0</code> desde pub.dev.</p>
+de publicar. Una aplicación consumidora debe resolver <code>^0.4.0</code> desde pub.dev.</p>
 <p>Consulta las notas de cada versión en el
 <a href="https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md">changelog del repositorio</a>.</p>
 <h2 id="api-pblica">API Pública</h2>
@@ -260,7 +260,8 @@ try {
 }
 </code></pre>
 <p>El ejemplo completo, que <code>dart analyze</code> comprueba, está en <code>example/reference/run_workflow.dart</code>.</p>
-<p><code>WorkflowResult</code> expone <code>executionId</code>, <code>workflowId</code>, <code>workflowVersion</code>, <code>outputs</code> y <code>usingOfflineCache</code>. Cada valor de <code>outputs</code> es un <code>WorkflowValue</code> (<code>ClassificationResult</code>, <code>DetectionResult</code>, <code>BooleanResult</code> o <code>CombinedWorkflowResult</code>) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, <code>run()</code> lanza <code>WorkflowError</code> con su <code>category</code>, <code>nodeId</code> y <code>modelVersionId</code>; no devuelve el error como valor.</p>
+<p><code>WorkflowResult</code> expone <code>executionId</code>, <code>workflowId</code>, <code>workflowVersion</code>, <code>outputs</code> y <code>usingOfflineCache</code>. Cada valor de <code>outputs</code> es un <code>WorkflowValue</code> (<code>ClassificationResult</code>, <code>DetectionResult</code>, <code>SegmentationResult</code>, <code>BooleanResult</code> o <code>CombinedWorkflowResult</code>) bajo el nombre de salida publicado. Una salida con varias fuentes expone los valores disponibles en el orden declarado; los valores conservan sus IDs de nodo. Si la ejecución falla, <code>run()</code> lanza <code>WorkflowError</code> con su <code>category</code>, <code>nodeId</code> y <code>modelVersionId</code>; no devuelve el error como valor.</p>
+<p>Un modelo de segmentación declara el contrato <code>segmentation</code>, con sus <code>labels</code> (de 1 a 256, todas distintas) y <code>scoreType</code> (<code>logits</code> o <code>probabilities</code>), y produce un único tensor float32 <code>[1, H, W, C]</code> con <code>C</code> igual al número de etiquetas y <code>H × W</code> de hasta 1.048.576 píxeles y <code>H × W × C</code> de hasta 16.777.216 valores. <code>SegmentationResult</code> expone <code>width</code>, <code>height</code>, <code>labels</code>, la <code>mask</code> (<code>Uint8List</code> no modificable, fila por fila, con el índice de la etiqueta de cada píxel), <code>areaFractions</code> (todas las etiquetas, que suman 1 salvo redondeo), <code>confidence</code> (media de la confianza del ganador por píxel) y <code>labelAt(x, y)</code>. La máscara cubre la imagen redimensionada por el SDK, que no conserva la proporción, y nunca sale del dispositivo: la traza solo resume dimensiones, fracciones y confianza. Los workflows con segmentación usan el esquema 4, que las versiones anteriores del SDK rechazan con <code>unsupportedWorkflowVersion</code>; requieren la API HTTP 0.4.0. Una salida inválida lanza <code>WorkflowError</code> con la categoría <code>modelOutputInvalid</code>.</p>
 <p>Los contratos de modelo para detección pueden declarar <code>tensorIndices</code>, un mapa con los roles <code>boxes</code>, <code>classes</code>, <code>scores</code> y <code>count</code>. Cada valor indica el índice del tensor de salida correspondiente; los cuatro índices deben ser distintos y estar entre 0 y 3. Los tensores deben tener formas <code>[1, N, 4]</code> para <code>boxes</code>, <code>[1, N]</code> para <code>classes</code> y <code>scores</code>, y <code>[1]</code> o <code>[1, 1]</code> para <code>count</code>. El SDK decodifica los primeros <code>count</code> resultados y entrega el mismo <code>DetectionResult</code> de la API pública. Los workflows publicados sin <code>tensorIndices</code> siguen usando el decodificador anterior.</p>
 <p><code>run()</code> llama a <code>onExecutionStarted</code> con un ID antes de comenzar. Guárdalo para cancelar el análisis en curso:</p>
 <pre class="language-dart"><code class="language-dart">late String executionId;
@@ -382,7 +383,7 @@ if (failed &gt; 0) {
 <li><code>bin/package.dart</code>: Herramienta de empaquetado y verificación de reglas de distribución.</li>
 </ul>
 <h2 id="plataformas-compatibles">Plataformas compatibles</h2>
-<p>Plataformas compatibles con ayni_sdk 0.3.0: Android e iOS.</p>
+<p>Plataformas compatibles con ayni_sdk 0.4.0: Android e iOS.</p>
 <ul>
 <li>Android 8.0 (API 26) o posterior.</li>
 <li>iOS 11.0 o posterior.</li>
@@ -472,7 +473,7 @@ if (failed &gt; 0) {
 <footer>
   <span class="no-break">
     ayni_sdk
-      0.3.1
+      0.4.0
   </span>
   
 </footer>

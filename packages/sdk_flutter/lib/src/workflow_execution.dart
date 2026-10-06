@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -180,7 +181,8 @@ class WorkflowResult {
 }
 
 /// A value a workflow node produced: a [ClassificationResult], a
-/// [DetectionResult], or a [BooleanResult].
+/// [DetectionResult], a [SegmentationResult], a [BooleanResult], or a
+/// [CombinedWorkflowResult].
 ///
 /// The class is sealed, so a `switch` over its subtypes is exhaustive.
 sealed class WorkflowValue {
@@ -250,6 +252,71 @@ class DetectionResult extends WorkflowValue {
   /// The objects whose score reached the node's score threshold; it can be
   /// empty.
   final List<Detection> detections;
+}
+
+/// The most pixels (`height * width`) a segmentation mask may have. It is the
+/// same limit the server applies when a model is registered.
+const _maxSegmentationPixels = 1048576;
+
+/// The most score values (`height * width * labels`, about 64 MB of float32)
+/// a segmentation tensor may have. It is the same limit the server applies
+/// when a model is registered.
+const _maxSegmentationValues = 16777216;
+
+/// The output of a segmentation model node: one label for every pixel.
+///
+/// The mask covers the image the SDK resized to the model's input size, which
+/// stretches the photo without keeping its aspect ratio. A mask pixel
+/// therefore does not map one to one to a pixel of the original image unless
+/// both share the same proportions.
+class SegmentationResult extends WorkflowValue {
+  /// Creates the segmentation of node [nodeId].
+  ///
+  /// [mask] holds [width] times [height] label indexes, row by row. The SDK
+  /// creates these results; apps only read them.
+  SegmentationResult(
+    super.nodeId, {
+    required this.width,
+    required this.height,
+    required List<String> labels,
+    required Uint8List mask,
+    required Map<String, double> areaFractions,
+    required this.confidence,
+  }) : labels = List.unmodifiable(labels),
+       mask = mask.asUnmodifiableView(),
+       areaFractions = Map.unmodifiable(areaFractions);
+
+  /// The mask's width in pixels: the model's output width.
+  final int width;
+
+  /// The mask's height in pixels: the model's output height.
+  final int height;
+
+  /// The labels the model declares; a mask value is an index into this list.
+  final List<String> labels;
+
+  /// The index into [labels] of every pixel, row by row (`width * height`
+  /// values). It cannot be modified.
+  final Uint8List mask;
+
+  /// The fraction of the mask each label covers, from `0` to `1`, for every
+  /// label the model declares. The fractions add up to `1`, except for
+  /// rounding.
+  final Map<String, double> areaFractions;
+
+  /// The mean, over every pixel, of the score of the label that won it, from
+  /// `0` to `1`.
+  final double confidence;
+
+  /// The label of the pixel at column [x] and row [y], counted from the top
+  /// left corner of the mask.
+  ///
+  /// Throws a [RangeError] when the pixel is outside the mask.
+  String labelAt(int x, int y) {
+    RangeError.checkValidIndex(x, mask, 'x', width);
+    RangeError.checkValidIndex(y, mask, 'y', height);
+    return labels[mask[y * width + x]];
+  }
 }
 
 /// The output of a condition node.
@@ -338,7 +405,8 @@ class WorkflowCapture {
   /// The model version whose result the capture received on `resultado`.
   final String modelVersionId;
 
-  /// The classification or detection the capture received.
+  /// The classification or detection the capture received. It is never a
+  /// segmentation.
   final WorkflowValue result;
 }
 
@@ -873,6 +941,58 @@ class WorkflowExecutor {
           },
         );
       }
+      if (result['type'] == 'segmentation') {
+        if (tensors.length != 1 || labels.isEmpty || labels.length > 256) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        final tensor = tensors.single;
+        final shape = tensor.shape;
+        if (shape.length != 4 ||
+            shape[0] != 1 ||
+            shape[1] < 1 ||
+            shape[2] < 1 ||
+            shape[1] * shape[2] > _maxSegmentationPixels ||
+            shape[3] != labels.length ||
+            shape[1] * shape[2] * shape[3] > _maxSegmentationValues ||
+            tensor.values.length != shape[1] * shape[2] * shape[3]) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        final maskHeight = shape[1], maskWidth = shape[2];
+        final values = tensor.values;
+        final isLogits = result['scoreType'] == 'logits';
+        final decoded = await _decodeSegmentationInIsolate(
+          values,
+          maskHeight,
+          maskWidth,
+          labels.length,
+          isLogits,
+        );
+        if (decoded == null) {
+          throw WorkflowError(
+            WorkflowErrorCategory.modelOutputInvalid,
+            nodeId: nodeId,
+          );
+        }
+        final pixels = maskHeight * maskWidth;
+        return SegmentationResult(
+          nodeId,
+          width: maskWidth,
+          height: maskHeight,
+          labels: labels,
+          mask: decoded.mask,
+          areaFractions: {
+            for (var i = 0; i < labels.length; i++)
+              labels[i]: decoded.counts[i] / pixels,
+          },
+          confidence: decoded.confidence,
+        );
+      }
       if (labels.isEmpty) {
         throw WorkflowError(
           WorkflowErrorCategory.modelOutputInvalid,
@@ -1071,6 +1191,65 @@ class WorkflowExecutor {
         'lt' => value < threshold,
         _ => false,
       };
+}
+
+/// Runs [_decodeSegmentation] in a separate isolate.
+///
+/// It is a plain function, not a closure inside `_infer`, so the isolate's
+/// closure captures only these arguments and not the image or other state.
+Future<({Uint8List mask, List<int> counts, double confidence})?>
+_decodeSegmentationInIsolate(
+  Float32List values,
+  int height,
+  int width,
+  int classes,
+  bool isLogits,
+) => Isolate.run(
+  () => _decodeSegmentation(values, height, width, classes, isLogits),
+);
+
+/// Decodes a `[1, height, width, classes]` score tensor into a label mask,
+/// the pixel count of each label and the mean confidence of the winners.
+///
+/// The winner of a pixel is its first highest score, so a tie goes to the
+/// lowest index. A logit's confidence is its softmax probability; a
+/// probability's is itself. Returns `null` when a value is not finite or, for
+/// probabilities, outside `0`–`1`.
+({Uint8List mask, List<int> counts, double confidence})? _decodeSegmentation(
+  Float32List values,
+  int height,
+  int width,
+  int classes,
+  bool isLogits,
+) {
+  final pixels = height * width;
+  final mask = Uint8List(pixels);
+  final counts = List<int>.filled(classes, 0);
+  var confidenceSum = 0.0;
+  for (var pixel = 0; pixel < pixels; pixel++) {
+    final offset = pixel * classes;
+    var best = 0;
+    for (var c = 0; c < classes; c++) {
+      final value = values[offset + c];
+      if (!value.isFinite || (!isLogits && (value < 0 || value > 1))) {
+        return null;
+      }
+      if (value > values[offset + best]) best = c;
+    }
+    mask[pixel] = best;
+    counts[best]++;
+    if (isLogits) {
+      final top = values[offset + best];
+      var sum = 0.0;
+      for (var c = 0; c < classes; c++) {
+        sum += math.exp(values[offset + c] - top);
+      }
+      confidenceSum += 1 / sum;
+    } else {
+      confidenceSum += values[offset + best];
+    }
+  }
+  return (mask: mask, counts: counts, confidence: confidenceSum / pixels);
 }
 
 Float32List _prepareImageTensor(

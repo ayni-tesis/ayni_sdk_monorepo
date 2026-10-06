@@ -356,6 +356,44 @@ describe("POST /sdk/traces", () => {
     expect(storeMock).not.toHaveBeenCalled();
   });
 
+  describe("segmentation outputs", () => {
+    const segmentation = {
+      type: "segmentation",
+      nodeId: "node-1",
+      width: 257,
+      height: 257,
+      confidence: 0.8,
+      areaFractions: { background: 0.75, leaf: 0.25 },
+    };
+    const post = (app: ReturnType<typeof makeApp>["app"], result: unknown) =>
+      app.request("/sdk/traces", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...trace, outputs: { result } }),
+      });
+
+    it("accepts the summary without the mask", async () => {
+      const { app, storeMock } = makeApp();
+      const response = await post(app, segmentation);
+
+      expect(response.status).toBe(201);
+      expect(storeMock).toHaveBeenCalledWith(
+        "app-1",
+        { ...trace, outputs: { result: segmentation } },
+        90,
+      );
+    });
+
+    it("rejects the mask without storing it", async () => {
+      const { app, storeMock } = makeApp();
+      const response = await post(app, { ...segmentation, mask: [0, 1, 1, 0] });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({ code: "invalidTrace" });
+      expect(storeMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("rejects request bodies over 2 MiB", async () => {
     const { app, storeMock } = makeApp();
     const response = await app.request("/sdk/traces", {

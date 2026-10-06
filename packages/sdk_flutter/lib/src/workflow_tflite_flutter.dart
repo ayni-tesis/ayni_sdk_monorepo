@@ -85,10 +85,7 @@ WorkflowInferenceResult _runModelInIsolate(
       error: null,
       outputs: [
         for (var i = 0; i < tensors.length; i++)
-          (
-            shape: List<int>.of(tensors[i].shape),
-            values: Float32List.fromList(floatViews[i]!),
-          ),
+          (shape: List<int>.of(tensors[i].shape), values: floatViews[i]!),
       ],
     );
   } finally {

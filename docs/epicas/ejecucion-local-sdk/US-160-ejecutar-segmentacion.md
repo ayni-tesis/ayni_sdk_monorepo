@@ -12,7 +12,7 @@ Como usuario de una app móvil, quiero que el SDK ejecute un modelo de segmentac
   - `width` y `height` del tensor;
   - `labels`;
   - `mask` (`Uint8List` no modificable, fila por fila, con el índice de la etiqueta de cada píxel);
-  - `areaFractions`, con todas las etiquetas, en [0, 1], que suman 1;
+  - `areaFractions`, con todas las etiquetas, en [0, 1], que suman 1 salvo redondeo;
   - `confidence`, la media de la confianza del ganador por píxel;
   - `labelAt(x, y)`.
 - **App anfitriona:** puede pintar la máscara y mostrar una lista `Áreas por clase`.
@@ -26,7 +26,7 @@ Scenario: Segmentar una imagen sin red
   Given un workflow con esquema "4", un modelo de segmentación instalado con 21 etiquetas y salida [1, 257, 257, 21]
   When la app llama a run() con una imagen
   Then el resultado es un SegmentationResult de 257 × 257 píxeles
-  And areaFractions incluye las 21 etiquetas y suma 1
+  And areaFractions incluye las 21 etiquetas y suma 1 salvo redondeo
   And la ejecución no hace llamadas de red
 ```
 
@@ -44,7 +44,7 @@ Scenario: Salida del modelo distinta del contrato
 - **Decodificación:** argmax por píxel; en un empate gana el índice más bajo.
   - Con `logits`, la confianza del píxel es la probabilidad softmax del ganador.
   - Con `probabilities`, es el valor máximo, que debe estar en [0, 1].
-- **Validación de la salida:** exactamente un tensor float32 `[1, H, W, C]`, con `C = labels.length`, valores finitos y `H × W ≤ 1.048.576`. Si no se cumple, `modelOutputInvalid`.
+- **Validación de la salida:** exactamente un tensor float32 `[1, H, W, C]`, con `C = labels.length`, valores finitos, `H × W ≤ 1.048.576` y `H × W × C ≤ 16.777.216` (unos 64 MB). Si no se cumple, `modelOutputInvalid`.
 - **Rendimiento:** la decodificación corre fuera del isolate principal.
 - **Privacidad:** la traza de ejecución resume la segmentación (`width`, `height`, `confidence` y `areaFractions`) y **nunca** incluye la máscara. Actualiza `Recursos` → `Datos y privacidad`.
 - **Versión:** el SDK pasa a 0.4.0. El CHANGELOG lleva `Novedades`, `Cambios incompatibles` (`WorkflowValue` suma `SegmentationResult`) y `Cómo migrar`. La documentación se actualiza: esquema de workflow, compatibilidad, referencia Dart, instalación y ejemplos.

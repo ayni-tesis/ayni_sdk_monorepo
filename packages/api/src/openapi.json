@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ayni API",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Endpoints HTTP que usa el SDK de Ayni para sincronizar workflows y modelos.\n\n## Autenticación\n\nCada solicitud lleva el secreto de una credencial del SDK en el encabezado:\n\n```http\nAuthorization: Bearer ayni_sk_…\n```\n\n- Un administrador genera la credencial en el dashboard, en Credenciales SDK de la aplicación. El secreto se muestra una sola vez.\n- La credencial solo da acceso a los recursos de su aplicación.\n- Cuando un administrador revoca o regenera la credencial, estos endpoints responden `401` con `credentialRevoked`. Revocarla no borra workflows, modelos ni versiones, ni lo que ya está instalado en los dispositivos."
   },
   "servers": [
@@ -412,6 +412,44 @@
                       "properties": {
                         "type": {
                           "type": "string",
+                          "enum": ["segmentation"]
+                        },
+                        "nodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "width": {
+                          "type": "number"
+                        },
+                        "height": {
+                          "type": "number"
+                        },
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "areaFractions": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "nodeId",
+                        "width",
+                        "height",
+                        "confidence",
+                        "areaFractions"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
                           "enum": ["boolean"]
                         },
                         "nodeId": {
@@ -521,6 +559,44 @@
                               }
                             },
                             "required": ["type", "nodeId", "detections"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["segmentation"]
+                              },
+                              "nodeId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "width": {
+                                "type": "number"
+                              },
+                              "height": {
+                                "type": "number"
+                              },
+                              "confidence": {
+                                "type": "number"
+                              },
+                              "areaFractions": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "nodeId",
+                              "width",
+                              "height",
+                              "confidence",
+                              "areaFractions"
+                            ],
                             "additionalProperties": false
                           },
                           {
