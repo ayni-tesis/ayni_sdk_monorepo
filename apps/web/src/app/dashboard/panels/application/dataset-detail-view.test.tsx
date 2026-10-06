@@ -88,6 +88,20 @@ describe("DatasetDetailView", () => {
   });
 
   it("lets an administrator add selected evidence and shows its original prediction", async () => {
+    let added = false;
+    getMock.mockImplementation(async (url: string) =>
+      url.endsWith("/available-evidence")
+        ? { data: { evidence: [evidence], nextOffset: null } }
+        : {
+            data: added
+              ? { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null }
+              : { dataset, items: [], nextItemOffset: null },
+          },
+    );
+    postMock.mockImplementation(async () => {
+      added = true;
+      return { data: { items: [item] } };
+    });
     renderManagedDetail();
     await screen.findByRole("heading", { name: "Flores" });
     await userEvent.setup().click(screen.getByRole("button", { name: "Agregar evidencia" }));
@@ -100,6 +114,70 @@ describe("DatasetDetailView", () => {
     expect(postMock).toHaveBeenCalledWith("/applications/app-1/datasets/dataset-1/evidence", {
       evidenceIds: ["evidence-1"],
     });
+  });
+
+  it("does not duplicate newly added evidence when loading later dataset pages", async () => {
+    const existingItems = Array.from({ length: 55 }, (_, index) => ({
+      ...item,
+      id: `item-${index}`,
+      evidenceId: `evidence-${index}`,
+      originalResult: {
+        type: "classification" as const,
+        label: `existente-${index}`,
+        confidence: 0.9,
+      },
+    }));
+    const addedItem = {
+      ...item,
+      id: "item-new",
+      evidenceId: "evidence-new",
+      originalResult: { type: "classification" as const, label: "nueva", confidence: 0.9 },
+    };
+    const updatedDataset = { ...dataset, evidenceCount: 56 };
+    let added = false;
+    getMock.mockImplementation(async (url: string, options?: { params?: { offset?: number } }) => {
+      if (url.endsWith("/available-evidence")) {
+        return { data: { evidence: [evidence], nextOffset: null } };
+      }
+      if (options?.params?.offset === 50) {
+        return {
+          data: {
+            dataset: updatedDataset,
+            items: [...existingItems.slice(50), addedItem],
+            nextItemOffset: null,
+          },
+        };
+      }
+      return {
+        data: {
+          dataset: added ? updatedDataset : { ...dataset, evidenceCount: 55 },
+          items: existingItems.slice(0, 50),
+          nextItemOffset: 50,
+        },
+      };
+    });
+    postMock.mockImplementation(async () => {
+      added = true;
+      return { data: { items: [addedItem] } };
+    });
+    renderManagedDetail();
+    await screen.findByRole("heading", { name: "Flores" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar evidencia" }));
+    await screen.findByText("Predicción: pino (90%)");
+    await userEvent.setup().click(screen.getByRole("checkbox"));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+
+    expect(await screen.findByText("Evidencia agregada al dataset.")).toBeInTheDocument();
+    expect(screen.queryByText("Predicción original: nueva (90%)")).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+    expect(screen.getAllByText("Predicción original: nueva (90%)")).toHaveLength(1);
+    expect(getMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1",
+      expect.objectContaining({ params: { offset: 50 } }),
+    );
   });
 
   it("loads additional compatible evidence pages on demand", async () => {

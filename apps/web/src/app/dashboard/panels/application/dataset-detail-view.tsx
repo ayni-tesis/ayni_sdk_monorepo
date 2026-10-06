@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  DatasetAddEvidenceResponse,
   DatasetAvailableEvidenceResponse,
   DatasetDetailResponse,
   DatasetEvidence,
@@ -177,22 +176,11 @@ export function DatasetDetailView({
     setAdding(true);
     setAddError("");
     try {
-      const { data } = await httpClient.post<DatasetAddEvidenceResponse>(
+      await httpClient.post(
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence`,
         { evidenceIds: selectedIds },
       );
-      setDetail((current) =>
-        current
-          ? {
-              ...current,
-              dataset: {
-                ...current.dataset,
-                evidenceCount: current.dataset.evidenceCount + data.items.length,
-              },
-              items: [...current.items, ...data.items],
-            }
-          : current,
-      );
+      await loadDetail();
       setNotice("Evidencia agregada al dataset.");
       setAddOpen(false);
       setSelectedIds([]);
