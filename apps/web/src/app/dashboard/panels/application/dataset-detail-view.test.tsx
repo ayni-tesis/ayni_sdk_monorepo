@@ -4,8 +4,8 @@ import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
-vi.mock("@/lib/http-client", () => ({ httpClient: { get: getMock } }));
+const { getMock, postMock } = vi.hoisted(() => ({ getMock: vi.fn(), postMock: vi.fn() }));
+vi.mock("@/lib/http-client", () => ({ httpClient: { get: getMock, post: postMock } }));
 
 const { DatasetDetailView } = await import("./dataset-detail-view");
 
@@ -28,6 +28,22 @@ const dataset = {
   approvedCount: 0,
 };
 
+const evidence = {
+  evidenceId: "evidence-1",
+  modelId: "model-1",
+  modelVersion: "1.0.0",
+  taskType: "classification" as const,
+  result: { type: "classification", label: "pino", confidence: 0.9 },
+  capturedAt: "2026-10-01T00:00:00.000Z",
+};
+
+const item = {
+  id: "item-1",
+  ...evidence,
+  originalResult: evidence.result,
+  addedAt: "2026-10-02T00:00:00.000Z",
+};
+
 function renderDetail(onBackToDatasets?: () => void) {
   return render(
     <DatasetDetailView
@@ -38,9 +54,20 @@ function renderDetail(onBackToDatasets?: () => void) {
   );
 }
 
+function renderManagedDetail() {
+  return render(<DatasetDetailView application={application} datasetId="dataset-1" canManage />);
+}
+
 describe("DatasetDetailView", () => {
   beforeEach(() => {
-    getMock.mockReset().mockResolvedValue({ data: { dataset } });
+    getMock
+      .mockReset()
+      .mockImplementation(async (url: string) =>
+        url.endsWith("/available-evidence")
+          ? { data: { evidence: [evidence] } }
+          : { data: { dataset, items: [] } },
+      );
+    postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
   });
 
   afterEach(() => cleanup());
@@ -60,6 +87,21 @@ describe("DatasetDetailView", () => {
     );
   });
 
+  it("lets an administrator add selected evidence and shows its original prediction", async () => {
+    renderManagedDetail();
+    await screen.findByRole("heading", { name: "Flores" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar evidencia" }));
+    await screen.findByText("Predicción: pino (90%)");
+    await userEvent.setup().click(screen.getByRole("checkbox"));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    expect(screen.getByText("Evidencia agregada al dataset.")).toBeInTheDocument();
+    expect(postMock).toHaveBeenCalledWith("/applications/app-1/datasets/dataset-1/evidence", {
+      evidenceIds: ["evidence-1"],
+    });
+  });
+
   it("shows loading, not-found, and retryable error states", async () => {
     getMock.mockReturnValueOnce(new Promise(() => {}));
     renderDetail();
@@ -74,7 +116,7 @@ describe("DatasetDetailView", () => {
     getMock.mockRejectedValueOnce(new Error("offline"));
     renderDetail();
     expect(await screen.findByText("No pudimos cargar el dataset.")).toBeInTheDocument();
-    getMock.mockResolvedValueOnce({ data: { dataset } });
+    getMock.mockResolvedValueOnce({ data: { dataset, items: [] } });
     await userEvent.setup().click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByRole("heading", { name: "Flores" })).toBeInTheDocument();
   });

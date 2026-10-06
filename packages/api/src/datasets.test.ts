@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  DatasetAddEvidenceRequestSchema,
+  DatasetAvailableEvidenceResponseSchema,
   DatasetCreateRequestSchema,
   DatasetDetailResponseSchema,
   DatasetListResponseSchema,
@@ -69,7 +71,7 @@ describe("dataset creation contract", () => {
       evidenceCount: 0,
       approvedCount: 0,
     };
-    expect(DatasetDetailResponseSchema.safeParse({ dataset }).success).toBe(true);
+    expect(DatasetDetailResponseSchema.safeParse({ dataset, items: [] }).success).toBe(true);
     expect(DatasetDetailResponseSchema.safeParse({ dataset: { id: "dataset-1" } }).success).toBe(
       false,
     );
@@ -77,5 +79,23 @@ describe("dataset creation contract", () => {
       createOpenApiDocument().paths?.["/applications/{applicationId}/datasets/{datasetId}"]?.get;
     expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
+  });
+
+  it("validates evidence selection and documents available and add routes", () => {
+    expect(DatasetAddEvidenceRequestSchema.safeParse({ evidenceIds: ["evidence-1"] }).success).toBe(
+      true,
+    );
+    expect(DatasetAddEvidenceRequestSchema.safeParse({ evidenceIds: [] }).success).toBe(false);
+    expect(DatasetAvailableEvidenceResponseSchema.safeParse({ evidence: [] }).success).toBe(true);
+
+    const document = createOpenApiDocument();
+    expect(
+      document.paths?.["/applications/{applicationId}/datasets/{datasetId}/available-evidence"]?.get
+        ?.responses?.["200"],
+    ).toBeDefined();
+    expect(
+      document.paths?.["/applications/{applicationId}/datasets/{datasetId}/evidence"]?.post
+        ?.responses?.["201"],
+    ).toBeDefined();
   });
 });

@@ -1,11 +1,15 @@
 import type {
   Dataset,
+  DatasetAvailableEvidenceResponse,
+  DatasetDetailResponse,
+  DatasetEvidence,
+  DatasetItem,
   DatasetListItem,
   DatasetListResponse,
   DatasetTaskType,
 } from "@ayni/api/datasets";
-import { dataset } from "@ayni/db/schema/index";
-import { and, asc, eq } from "drizzle-orm";
+import { dataset, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -32,13 +36,42 @@ type DatasetRow = {
   createdAt: Date | string;
 };
 
+type DatasetItemRow = {
+  id: string;
+  evidenceId: string;
+  modelId: string;
+  modelVersion: string;
+  taskType: DatasetTaskType;
+  originalResult: Record<string, unknown>;
+  capturedAt: Date | string;
+  addedAt: Date | string;
+};
+
+type DatasetEvidenceRow = {
+  evidenceId: string;
+  modelId: string;
+  modelVersion: string;
+  taskType: DatasetTaskType;
+  result: Record<string, unknown>;
+  capturedAt: Date | string;
+};
+
+type DatasetQuery = Promise<Record<string, unknown>[]> & {
+  innerJoin: (table: unknown, condition: unknown) => DatasetQuery;
+  where: (condition: unknown) => DatasetQuery;
+  orderBy: (...columns: unknown[]) => Promise<Record<string, unknown>[]>;
+  limit: (count: number) => DatasetQuery;
+  for: (lock: "update") => Promise<Record<string, unknown>[]>;
+};
+
 type DatasetReadExecutor = {
-  select: (fields: Record<string, unknown>) => {
-    from: (table: unknown) => {
-      where: (condition: unknown) => {
-        orderBy: (...columns: unknown[]) => Promise<Record<string, unknown>[]>;
-        limit: (count: number) => Promise<Record<string, unknown>[]>;
-      };
+  select: (fields: Record<string, unknown>) => { from: (table: unknown) => DatasetQuery };
+};
+
+type DatasetWriteExecutor = DatasetReadExecutor & {
+  insert: (table: unknown) => {
+    values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
+      returning: (fields?: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
     };
   };
 };
@@ -51,14 +84,26 @@ const datasetFields = {
   createdAt: dataset.createdAt,
 };
 
-function toDatasetListItem(row: DatasetRow): DatasetListItem {
+function toDatasetListItem(row: DatasetRow, evidenceCount = 0): DatasetListItem {
   return {
     ...row,
     createdAt: toIsoString(row.createdAt),
-    // ponytail: counts stay zero until the evidence flow links records to datasets; aggregate then.
-    evidenceCount: 0,
+    evidenceCount,
+    // ponytail: review totals remain zero until the review workflow adds item states.
     approvedCount: 0,
   };
+}
+
+function toDatasetItem(row: DatasetItemRow): DatasetItem {
+  return {
+    ...row,
+    capturedAt: toIsoString(row.capturedAt),
+    addedAt: toIsoString(row.addedAt),
+  };
+}
+
+function toDatasetEvidence(row: DatasetEvidenceRow): DatasetEvidence {
+  return { ...row, capturedAt: toIsoString(row.capturedAt) };
 }
 
 export async function listDatasets(
@@ -72,8 +117,14 @@ export async function listDatasets(
       .from(dataset)
       .where(eq(dataset.applicationId, applicationId))
       .orderBy(asc(dataset.createdAt), asc(dataset.id))) as DatasetRow[];
+    const items = (await tx
+      .select({ datasetId: datasetItem.datasetId })
+      .from(datasetItem)
+      .where(eq(datasetItem.applicationId, applicationId))) as { datasetId: string }[];
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.datasetId, (counts.get(item.datasetId) ?? 0) + 1);
 
-    return { datasets: rows.map(toDatasetListItem) };
+    return { datasets: rows.map((row) => toDatasetListItem(row, counts.get(row.id) ?? 0)) };
   });
 }
 
@@ -81,7 +132,7 @@ export async function getDataset(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
-): Promise<DatasetListItem | null> {
+): Promise<DatasetDetailResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetReadExecutor;
     const rows = (await tx
@@ -89,8 +140,215 @@ export async function getDataset(
       .from(dataset)
       .where(and(eq(dataset.applicationId, applicationId), eq(dataset.id, datasetId)))
       .limit(1)) as DatasetRow[];
-    return rows[0] ? toDatasetListItem(rows[0]) : null;
+    const row = rows[0];
+    if (!row) return null;
+    const items = (await tx
+      .select({
+        id: datasetItem.id,
+        evidenceId: datasetItem.evidenceId,
+        modelId: sdkEvidence.modelId,
+        modelVersion: sdkEvidence.modelVersion,
+        taskType: sdkEvidence.taskType,
+        originalResult: datasetItem.originalResult,
+        capturedAt: sdkEvidence.capturedAt,
+        addedAt: datasetItem.addedAt,
+      })
+      .from(datasetItem)
+      .innerJoin(
+        sdkEvidence,
+        and(
+          eq(sdkEvidence.applicationId, datasetItem.applicationId),
+          eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+        ),
+      )
+      .where(
+        and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
+      )
+      .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as DatasetItemRow[];
+    return {
+      dataset: toDatasetListItem(row, items.length),
+      items: items.map(toDatasetItem),
+    };
   });
+}
+
+export async function listAvailableDatasetEvidence(
+  database: ApplicationDatabase,
+  applicationId: string,
+  datasetId: string,
+): Promise<DatasetAvailableEvidenceResponse | null> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as DatasetReadExecutor;
+    const datasets = (await tx
+      .select({ taskType: dataset.taskType })
+      .from(dataset)
+      .where(and(eq(dataset.applicationId, applicationId), eq(dataset.id, datasetId)))
+      .limit(1)) as { taskType: DatasetTaskType }[];
+    const found = datasets[0];
+    if (!found) return null;
+
+    const attached = (await tx
+      .select({ evidenceId: datasetItem.evidenceId })
+      .from(datasetItem)
+      .where(
+        and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
+      )) as {
+      evidenceId: string;
+    }[];
+    const attachedIds = new Set(attached.map((item) => item.evidenceId));
+    const rows = (await tx
+      .select({
+        evidenceId: sdkEvidence.evidenceId,
+        modelId: sdkEvidence.modelId,
+        modelVersion: sdkEvidence.modelVersion,
+        taskType: sdkEvidence.taskType,
+        result: sdkEvidence.result,
+        capturedAt: sdkEvidence.capturedAt,
+      })
+      .from(sdkEvidence)
+      .where(
+        and(
+          eq(sdkEvidence.applicationId, applicationId),
+          eq(sdkEvidence.taskType, found.taskType),
+          eq(sdkEvidence.status, "received"),
+        ),
+      )
+      .orderBy(desc(sdkEvidence.capturedAt), desc(sdkEvidence.evidenceId))) as DatasetEvidenceRow[];
+    return {
+      evidence: rows.filter((row) => !attachedIds.has(row.evidenceId)).map(toDatasetEvidence),
+    };
+  });
+}
+
+export type AddDatasetEvidenceInput = {
+  applicationId: string;
+  datasetId: string;
+  evidenceIds: string[];
+  userId: string;
+};
+
+export type AddDatasetEvidenceResult =
+  | { ok: true; value: DatasetItem[] }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "notFound"
+        | "archived"
+        | "incompatible"
+        | "alreadyAdded"
+        | "databaseFailed";
+    };
+
+type AddOutcome =
+  | { kind: "notFound" }
+  | { kind: "incompatible" }
+  | { kind: "alreadyAdded" }
+  | { kind: "added"; items: DatasetItem[] };
+
+export async function addDatasetEvidence(
+  database: ApplicationDatabase,
+  input: AddDatasetEvidenceInput,
+): Promise<AddDatasetEvidenceResult> {
+  try {
+    const result = await executeApplicationAction<AddOutcome>(
+      database,
+      { applicationId: input.applicationId, userId: input.userId },
+      async (transaction) => {
+        const tx = transaction as unknown as DatasetWriteExecutor;
+        const datasets = (await tx
+          .select({ id: dataset.id, taskType: dataset.taskType })
+          .from(dataset)
+          .where(
+            and(eq(dataset.applicationId, input.applicationId), eq(dataset.id, input.datasetId)),
+          )
+          .limit(1)
+          .for("update")) as { id: string; taskType: DatasetTaskType }[];
+        const found = datasets[0];
+        if (!found) return { kind: "notFound" };
+
+        const uniqueIds = [...new Set(input.evidenceIds)];
+        if (uniqueIds.length !== input.evidenceIds.length) return { kind: "alreadyAdded" };
+        const rows = (await tx
+          .select({
+            evidenceId: sdkEvidence.evidenceId,
+            modelId: sdkEvidence.modelId,
+            modelVersion: sdkEvidence.modelVersion,
+            taskType: sdkEvidence.taskType,
+            result: sdkEvidence.result,
+            capturedAt: sdkEvidence.capturedAt,
+            status: sdkEvidence.status,
+          })
+          .from(sdkEvidence)
+          .where(
+            and(
+              eq(sdkEvidence.applicationId, input.applicationId),
+              inArray(sdkEvidence.evidenceId, uniqueIds),
+            ),
+          )) as (DatasetEvidenceRow & { status: string })[];
+        if (rows.length !== uniqueIds.length || rows.some((row) => row.status !== "received")) {
+          return { kind: "notFound" };
+        }
+        if (rows.some((row) => row.taskType !== found.taskType)) return { kind: "incompatible" };
+
+        const attached = (await tx
+          .select({ evidenceId: datasetItem.evidenceId })
+          .from(datasetItem)
+          .where(
+            and(
+              eq(datasetItem.applicationId, input.applicationId),
+              eq(datasetItem.datasetId, input.datasetId),
+              inArray(datasetItem.evidenceId, uniqueIds),
+            ),
+          )) as { evidenceId: string }[];
+        if (attached.length) return { kind: "alreadyAdded" };
+
+        const addedAt = new Date();
+        const inserted = (await tx
+          .insert(datasetItem)
+          .values(
+            rows.map((row) => ({
+              id: crypto.randomUUID(),
+              applicationId: input.applicationId,
+              datasetId: input.datasetId,
+              evidenceId: row.evidenceId,
+              originalResult: row.result,
+              addedAt,
+            })),
+          )
+          .returning({
+            id: datasetItem.id,
+            evidenceId: datasetItem.evidenceId,
+            originalResult: datasetItem.originalResult,
+            addedAt: datasetItem.addedAt,
+          })) as Omit<DatasetItemRow, "modelId" | "modelVersion" | "taskType" | "capturedAt">[];
+        if (inserted.length !== rows.length)
+          throw new Error("Dataset evidence insert returned no record");
+
+        const evidenceById = new Map(rows.map((row) => [row.evidenceId, row]));
+        return {
+          kind: "added",
+          items: inserted.map((item) => {
+            const evidence = evidenceById.get(item.evidenceId);
+            if (!evidence) throw new Error("Dataset evidence metadata was not found");
+            return {
+              ...item,
+              modelId: evidence.modelId,
+              modelVersion: evidence.modelVersion,
+              taskType: evidence.taskType,
+              capturedAt: toIsoString(evidence.capturedAt),
+              addedAt: toIsoString(item.addedAt),
+            };
+          }),
+        };
+      },
+    );
+    if (!result.ok) return { ok: false, reason: result.reason };
+    if (result.value.kind === "added") return { ok: true, value: result.value.items };
+    return { ok: false, reason: result.value.kind };
+  } catch {
+    return { ok: false, reason: "databaseFailed" };
+  }
 }
 
 export async function createDataset(
