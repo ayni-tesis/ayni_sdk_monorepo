@@ -9,12 +9,17 @@ vi.mock("@/lib/http-client", () => ({ httpClient: { get: getMock, post: postMock
 
 const { DatasetsPanel } = await import("./datasets-panel");
 
-function renderPanel(canManage = true, applicationStatus: "active" | "archived" = "active") {
+function renderPanel(
+  canManage = true,
+  applicationStatus: "active" | "archived" = "active",
+  onOpenDataset?: (datasetId: string) => void,
+) {
   return render(
     <DatasetsPanel
       applicationId="app-1"
       canManage={canManage}
       applicationStatus={applicationStatus}
+      onOpenDataset={onOpenDataset}
     />,
   );
 }
@@ -64,6 +69,29 @@ describe("DatasetsPanel", () => {
     expect(screen.getByRole("columnheader", { name: "Actualizado" })).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("opens a selected dataset", async () => {
+    getMock.mockResolvedValueOnce({
+      data: {
+        datasets: [
+          {
+            id: "dataset-1",
+            applicationId: "app-1",
+            name: "Flores",
+            taskType: "classification",
+            createdAt: "2026-10-01T00:00:00.000Z",
+            evidenceCount: 0,
+            approvedCount: 0,
+          },
+        ],
+      },
+    });
+    const onOpenDataset = vi.fn();
+    renderPanel(false, "active", onOpenDataset);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Flores" }));
+    expect(onOpenDataset).toHaveBeenCalledWith("dataset-1");
   });
 
   it("shows empty and retryable list-error states", async () => {

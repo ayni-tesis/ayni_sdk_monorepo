@@ -25,7 +25,7 @@ import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
-import { createDataset, listDatasets } from "./dataset-store";
+import { createDataset, getDataset, listDatasets } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
 import {
@@ -253,6 +253,9 @@ const datasets = {
   },
   list(applicationId: string) {
     return listDatasets(db, applicationId);
+  },
+  get(applicationId: string, datasetId: string) {
+    return getDataset(db, applicationId, datasetId);
   },
 };
 

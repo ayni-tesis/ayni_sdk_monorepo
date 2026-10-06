@@ -4,6 +4,7 @@ import type { Application, ApplicationSection } from "../types";
 import { ApplicationTracesView } from "./application/application-traces-view";
 import { CollectionPolicyView } from "./application/collection-policy-view";
 import { CredentialsView } from "./application/credentials-view";
+import { DatasetDetailView } from "./application/dataset-detail-view";
 import { DatasetsPanel } from "./application/datasets-panel";
 import { ModelDetailView } from "./application/model-detail-view";
 import { ModelsView } from "./application/models-view";
@@ -65,11 +66,14 @@ export type ApplicationDetailPanelProps = {
   activeSection?: ApplicationSection;
   workflowId?: string;
   modelId?: string;
+  datasetId?: string;
   onBack?: () => void;
   onOpenWorkflow?: (workflowId: string) => void;
   onBackToWorkflows?: () => void;
   onOpenModel?: (modelId: string) => void;
   onBackToModels?: () => void;
+  onOpenDataset?: (datasetId: string) => void;
+  onBackToDatasets?: () => void;
   onApplicationUpdated: (updated: Application) => void;
   onApplicationArchived: (archived: Application) => void;
   onMutationStart?: () => void;
@@ -84,10 +88,13 @@ export function ApplicationDetailPanel({
   activeSection = "overview",
   workflowId,
   modelId,
+  datasetId,
   onOpenWorkflow,
   onBackToWorkflows,
   onOpenModel,
   onBackToModels,
+  onOpenDataset,
+  onBackToDatasets,
   onApplicationUpdated,
   onApplicationArchived,
   onMutationStart,
@@ -148,21 +155,30 @@ export function ApplicationDetailPanel({
         <CredentialsView application={application} canManage={canManage} />
       )}
 
-      {activeSection === "datasets" && (
-        <div className="space-y-8">
-          <DatasetsPanel
-            applicationId={application.id}
-            canManage={canManage}
-            applicationStatus={application.status}
+      {activeSection === "datasets" &&
+        (datasetId ? (
+          <DatasetDetailView
+            key={`${application.id}:${datasetId}`}
+            application={application}
+            datasetId={datasetId}
+            onBackToDatasets={onBackToDatasets}
           />
-          <ValidationDatasetsPanel
-            key={application.id}
-            applicationId={application.id}
-            canManage={canManage}
-            applicationStatus={application.status}
-          />
-        </div>
-      )}
+        ) : (
+          <div className="space-y-8">
+            <DatasetsPanel
+              applicationId={application.id}
+              canManage={canManage}
+              applicationStatus={application.status}
+              onOpenDataset={onOpenDataset}
+            />
+            <ValidationDatasetsPanel
+              key={application.id}
+              applicationId={application.id}
+              canManage={canManage}
+              applicationStatus={application.status}
+            />
+          </div>
+        ))}
 
       {activeSection === "privacy" && (
         <div className="space-y-8">

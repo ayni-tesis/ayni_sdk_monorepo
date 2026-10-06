@@ -5,7 +5,7 @@ import type {
   DatasetTaskType,
 } from "@ayni/api/datasets";
 import { dataset } from "@ayni/db/schema/index";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -37,10 +37,29 @@ type DatasetReadExecutor = {
     from: (table: unknown) => {
       where: (condition: unknown) => {
         orderBy: (...columns: unknown[]) => Promise<Record<string, unknown>[]>;
+        limit: (count: number) => Promise<Record<string, unknown>[]>;
       };
     };
   };
 };
+
+const datasetFields = {
+  id: dataset.id,
+  applicationId: dataset.applicationId,
+  name: dataset.name,
+  taskType: dataset.taskType,
+  createdAt: dataset.createdAt,
+};
+
+function toDatasetListItem(row: DatasetRow): DatasetListItem {
+  return {
+    ...row,
+    createdAt: toIsoString(row.createdAt),
+    // ponytail: counts stay zero until the evidence flow links records to datasets; aggregate then.
+    evidenceCount: 0,
+    approvedCount: 0,
+  };
+}
 
 export async function listDatasets(
   database: ApplicationDatabase,
@@ -49,28 +68,28 @@ export async function listDatasets(
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetReadExecutor;
     const rows = (await tx
-      .select({
-        id: dataset.id,
-        applicationId: dataset.applicationId,
-        name: dataset.name,
-        taskType: dataset.taskType,
-        createdAt: dataset.createdAt,
-      })
+      .select(datasetFields)
       .from(dataset)
       .where(eq(dataset.applicationId, applicationId))
       .orderBy(asc(dataset.createdAt), asc(dataset.id))) as DatasetRow[];
 
-    return {
-      datasets: rows.map(
-        (row): DatasetListItem => ({
-          ...row,
-          createdAt: toIsoString(row.createdAt),
-          // ponytail: counts stay zero until the evidence flow links records to datasets; aggregate then.
-          evidenceCount: 0,
-          approvedCount: 0,
-        }),
-      ),
-    };
+    return { datasets: rows.map(toDatasetListItem) };
+  });
+}
+
+export async function getDataset(
+  database: ApplicationDatabase,
+  applicationId: string,
+  datasetId: string,
+): Promise<DatasetListItem | null> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as DatasetReadExecutor;
+    const rows = (await tx
+      .select(datasetFields)
+      .from(dataset)
+      .where(and(eq(dataset.applicationId, applicationId), eq(dataset.id, datasetId)))
+      .limit(1)) as DatasetRow[];
+    return rows[0] ? toDatasetListItem(rows[0]) : null;
   });
 }
 

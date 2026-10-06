@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DatasetCreateRequestSchema, DatasetListResponseSchema } from "./datasets";
+import {
+  DatasetCreateRequestSchema,
+  DatasetDetailResponseSchema,
+  DatasetListResponseSchema,
+} from "./datasets";
 import { createOpenApiDocument } from "./index";
 
 describe("dataset creation contract", () => {
@@ -51,6 +55,26 @@ describe("dataset creation contract", () => {
   it("documents the member-readable list endpoint", () => {
     const operation =
       createOpenApiDocument().paths?.["/applications/{applicationId}/datasets"]?.get;
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
+  });
+
+  it("validates and documents the member-readable dataset detail", () => {
+    const dataset = {
+      id: "dataset-1",
+      applicationId: "app-1",
+      name: "Flores",
+      taskType: "classification",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      evidenceCount: 0,
+      approvedCount: 0,
+    };
+    expect(DatasetDetailResponseSchema.safeParse({ dataset }).success).toBe(true);
+    expect(DatasetDetailResponseSchema.safeParse({ dataset: { id: "dataset-1" } }).success).toBe(
+      false,
+    );
+    const operation =
+      createOpenApiDocument().paths?.["/applications/{applicationId}/datasets/{datasetId}"]?.get;
     expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
   });

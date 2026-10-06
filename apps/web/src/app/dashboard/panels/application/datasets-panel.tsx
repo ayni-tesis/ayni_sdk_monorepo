@@ -19,6 +19,7 @@ type DatasetsPanelProps = {
   applicationId: string;
   canManage: boolean;
   applicationStatus: "active" | "archived";
+  onOpenDataset?: (datasetId: string) => void;
 };
 
 const TASK_TYPES: { value: DatasetTaskType; label: string }[] = [
@@ -32,7 +33,12 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(date);
 }
 
-export function DatasetsPanel({ applicationId, canManage, applicationStatus }: DatasetsPanelProps) {
+export function DatasetsPanel({
+  applicationId,
+  canManage,
+  applicationStatus,
+  onOpenDataset,
+}: DatasetsPanelProps) {
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
@@ -231,7 +237,13 @@ export function DatasetsPanel({ applicationId, canManage, applicationStatus }: D
               {datasets.map((dataset) => (
                 <tr key={dataset.id} className="border-b last:border-0">
                   <td className="p-3">
-                    <p className="font-medium">{dataset.name}</p>
+                    <button
+                      type="button"
+                      className="text-left font-medium hover:underline"
+                      onClick={() => onOpenDataset?.(dataset.id)}
+                    >
+                      {dataset.name}
+                    </button>
                     <p className="font-mono text-muted-foreground text-xs">{dataset.id}</p>
                   </td>
                   <td className="p-3">

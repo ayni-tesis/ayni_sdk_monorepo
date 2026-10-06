@@ -28,6 +28,7 @@ export const DatasetListItemSchema = DatasetSchema.extend({
 export const DatasetListResponseSchema = z
   .object({ datasets: z.array(DatasetListItemSchema) })
   .strict();
+export const DatasetDetailResponseSchema = z.object({ dataset: DatasetListItemSchema }).strict();
 export const DatasetApiErrorSchema = z
   .object({ message: z.string(), code: z.string().optional() })
   .strict();
@@ -36,6 +37,7 @@ export type DatasetTaskType = z.infer<typeof DatasetTaskTypeSchema>;
 export type Dataset = z.infer<typeof DatasetSchema>;
 export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;
 export type DatasetListResponse = z.infer<typeof DatasetListResponseSchema>;
+export type DatasetDetailResponse = z.infer<typeof DatasetDetailResponseSchema>;
 
 function errorResponse(description: string) {
   return {
@@ -50,6 +52,31 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     in: "cookie",
     name: "better-auth.session_token",
     description: "Cookie de sesión de Better Auth para las rutas del dashboard.",
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}",
+    tags: ["Datasets"],
+    operationId: "obtener-detalle-dataset",
+    summary: "Consultar el detalle de un dataset",
+    description: "Cualquier miembro del workspace puede consultar un dataset de la aplicación.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Detalle del dataset.",
+        content: { "application/json": { schema: DatasetDetailResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos este dataset."),
+      "500": errorResponse("No pudimos cargar el dataset."),
+    },
   });
 
   registry.registerPath({

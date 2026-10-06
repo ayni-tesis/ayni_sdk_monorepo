@@ -27,7 +27,14 @@ export type DashboardProps = {
 export type DashboardRoute =
   | { kind: "list" }
   | { kind: "members" }
-  | { kind: "app"; id: string; section: ApplicationSection; workflowId?: string; modelId?: string };
+  | {
+      kind: "app";
+      id: string;
+      section: ApplicationSection;
+      workflowId?: string;
+      modelId?: string;
+      datasetId?: string;
+    };
 
 const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
   overview: null,
@@ -44,7 +51,7 @@ const SECTION_SEGMENT: Record<ApplicationSection, string | null> = {
 export function parseDashboardRoute(pathname: string | null): DashboardRoute {
   if (pathname === "/dashboard/members") return { kind: "members" };
   const match = pathname?.match(
-    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|validation-datasets|credentials|privacy|collection|traces|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
+    /^\/dashboard\/applications\/([^/]+)(?:\/(overview|models|validation-datasets|datasets|credentials|privacy|collection|traces|settings)(?:\/([^/]+))?|\/(workflows)(?:\/([^/]+))?)?\/?$/,
   );
   if (match) {
     const parsedSection = (match[2] ?? match[4] ?? "overview") as
@@ -52,8 +59,9 @@ export function parseDashboardRoute(pathname: string | null): DashboardRoute {
       | "validation-datasets";
     const section: ApplicationSection =
       parsedSection === "validation-datasets" ? "datasets" : parsedSection;
-    if (match[3] && section !== "models") return { kind: "list" };
+    if (match[3] && section !== "models" && match[2] !== "datasets") return { kind: "list" };
     const modelId = section === "models" ? match[3] : undefined;
+    const datasetId = match[2] === "datasets" ? match[3] : undefined;
     const workflowId = match[5];
     try {
       return {
@@ -61,6 +69,7 @@ export function parseDashboardRoute(pathname: string | null): DashboardRoute {
         id: decodeURIComponent(match[1]),
         section,
         ...(section === "models" && modelId ? { modelId: decodeURIComponent(modelId) } : {}),
+        ...(datasetId ? { datasetId: decodeURIComponent(datasetId) } : {}),
         ...(workflowId ? { workflowId: decodeURIComponent(workflowId) } : {}),
       };
     } catch {
@@ -77,6 +86,9 @@ function pathForView(view: DashboardView, appId?: string | null, resourceId?: st
   if (view === "applications" || !appId) return "/dashboard" as Route;
   const segment = SECTION_SEGMENT[view as ApplicationSection];
   const base = `/dashboard/applications/${appId}`;
+  if (view === "datasets" && resourceId) {
+    return `${base}/datasets/${encodeURIComponent(resourceId)}` as Route;
+  }
   if (segment === "workflows" && resourceId) {
     return `${base}/workflows/${encodeURIComponent(resourceId)}` as Route;
   }
@@ -454,11 +466,14 @@ export default function Dashboard({ userName, children: _children }: DashboardPr
             activeSection={route.kind === "app" ? route.section : "overview"}
             workflowId={route.kind === "app" ? route.workflowId : undefined}
             modelId={route.kind === "app" ? route.modelId : undefined}
+            datasetId={route.kind === "app" ? route.datasetId : undefined}
             onBack={() => go("applications")}
             onOpenWorkflow={(workflowId) => go("workflows", selected.id, workflowId)}
             onBackToWorkflows={() => go("workflows", selected.id)}
             onOpenModel={(modelId) => go("models", selected.id, modelId)}
             onBackToModels={() => go("models", selected.id)}
+            onOpenDataset={(datasetId) => go("datasets", selected.id, datasetId)}
+            onBackToDatasets={() => go("datasets", selected.id)}
             onApplicationUpdated={updateApplication}
             onApplicationArchived={(archived) => {
               removeApplication(archived.id);
