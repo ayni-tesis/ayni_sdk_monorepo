@@ -75,17 +75,19 @@ objetos en ella o segmenta sus píxeles.
 
 ### `condition`
 
-Compara la confianza de una etiqueta de clasificación con un umbral y sigue la
-rama verdadera o la falsa.
+Compara un valor de una etiqueta con un umbral y sigue la rama verdadera o la
+falsa. Con un origen de clasificación compara la confianza de la etiqueta; con
+un origen de segmentación compara su fracción de área (`areaFractions`), la
+parte de la máscara que cubre, de `0` a `1`.
 
 | Campo | Valor | Descripción |
 | --- | --- | --- |
 | `id` | Texto | Identificador del nodo. |
 | `type` | `"condition"` | Tipo del nodo. |
-| `sourceNodeId` | Texto | El nodo `model.tflite` de clasificación cuyo resultado evalúa. |
-| `label` | Texto | La etiqueta de ese modelo cuya confianza compara. Debe estar en sus `labels`. |
+| `sourceNodeId` | Texto | El nodo `model.tflite` de clasificación o de segmentación cuyo resultado evalúa. |
+| `label` | Texto | La etiqueta de ese modelo cuya confianza o fracción de área compara. Debe estar en sus `labels`. |
 | `operator` | `"gte"`, `"gt"`, `"lte"` o `"lt"` | Mayor o igual, mayor, menor o igual, o menor que el umbral. |
-| `threshold` | Número entre `0` y `1` | El umbral de confianza. |
+| `threshold` | Número entre `0` y `1` | El umbral de confianza o de fracción de área. |
 | `branches` | `{ "true": "Verdadero", "false": "Falso" }` | Sus puertos de salida, `true` y `false`. |
 
 ### `output`
@@ -159,7 +161,7 @@ Una condición y una salida guardan su origen en sus propios campos
 | `input.image`, puerto `imagen` | `dataset.capture`, puerto `imagen` | En `connections`. Cada captura recibe exactamente una. |
 | `model.tflite`, puerto `result` | `dataset.capture`, puerto `resultado` | En `connections`. Cada captura recibe exactamente una. |
 | `condition`, puerto `true` o `false` | `dataset.capture`, puerto `condicion` | En `connections`. Cada captura recibe como mucho una, de una condición cuyo `sourceNodeId` es el modelo conectado a su `resultado`. |
-| `model.tflite` de clasificación, puerto `result` | `condition` cuyo `label` está en las etiquetas del modelo | En el `sourceNodeId` de la condición. |
+| `model.tflite` de clasificación o de segmentación, puerto `result` | `condition` cuyo `label` está en las etiquetas del modelo | En el `sourceNodeId` de la condición. |
 | `model.tflite`, puerto `result` | `output` cuyo `resultType` es el tipo de salida del modelo | En el `sourceNodeId` de la salida, con `sourcePort` igual a `result`. |
 | `condition`, puerto `true` o `false` | `output` con `resultType` igual a `boolean` | En el `sourceNodeId` de la salida, con `sourcePort` igual a `true` o `false`. |
 

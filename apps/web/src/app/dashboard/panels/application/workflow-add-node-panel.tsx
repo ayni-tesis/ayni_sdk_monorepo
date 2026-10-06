@@ -417,7 +417,7 @@ function ConditionForm({ draft, busy, origin, onAdd, onBack }: FormProps) {
           setLabel("");
         }}
       >
-        <option value="">Selecciona una clasificación</option>
+        <option value="">Selecciona un modelo</option>
         {sources.map((node) => (
           <option key={node.id} value={node.id}>
             {node.modelName} · {node.version}

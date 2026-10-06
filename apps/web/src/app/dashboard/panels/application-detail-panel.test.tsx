@@ -3472,7 +3472,7 @@ describe("ApplicationDetailPanel", () => {
 
       expect(
         within(within(panel).getByRole("button", { name: "Condición" })).getByText(
-          "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
+          "Agrega primero al lienzo una versión contratada de un modelo de clasificación o de segmentación.",
         ),
       ).toBeTruthy();
       expect(

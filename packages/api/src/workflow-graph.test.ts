@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findWorkflowCycle,
   isCaptureConditionCompatible,
+  isConditionSourceCompatible,
   isOutputSourceCompatible,
   type WorkflowGraphDraft,
   type WorkflowPortDraft,
@@ -278,15 +279,46 @@ describe("a segmentation model (US-159)", () => {
     );
   });
 
-  it("rejects an output of another result type, a capture and, until US-161, a condition", () => {
+  it("rejects an output of another result type and a capture", () => {
     expect(
       workflowPortCompatibility(draft, connect("segmenter", "result", "diagnosis", "source")),
     ).toBe("incompatible");
     expect(
       workflowPortCompatibility(draft, connect("segmenter", "result", "capture", "resultado")),
     ).toBe("incompatible");
+  });
+
+  // US-161: a condition compares the area fraction of one of the model's labels.
+  it("feeds a condition on one of its labels", () => {
+    const segmenter = draft.nodes.find((node) => node.id === "segmenter");
+    expect(isConditionSourceCompatible(segmenter, "roya")).toBe(true);
+    expect(isConditionSourceCompatible(segmenter, "fondo")).toBe(true);
+    expect(isConditionSourceCompatible(segmenter, "mildiu")).toBe(false);
+    // The condition hangs from the classifier; connecting the segmenter to its
+    // source input reassigns it (US-131).
+    const reassigned: WorkflowPortDraft = {
+      nodes: [
+        ...draft.nodes.filter((node) => node.id !== "condition"),
+        { id: "condition", type: "condition", sourceNodeId: "classifier", label: "roya" },
+      ],
+    };
     expect(
-      workflowPortCompatibility(draft, connect("segmenter", "result", "condition", "source")),
+      workflowPortCompatibility(reassigned, connect("segmenter", "result", "condition", "source")),
+    ).toBe("compatible");
+  });
+
+  it("does not feed a condition on a label it lacks", () => {
+    const missingLabel: WorkflowPortDraft = {
+      nodes: [
+        ...draft.nodes.filter((node) => node.id !== "condition"),
+        { id: "condition", type: "condition", sourceNodeId: "classifier", label: "mildiu" },
+      ],
+    };
+    expect(
+      workflowPortCompatibility(
+        missingLabel,
+        connect("segmenter", "result", "condition", "source"),
+      ),
     ).toBe("incompatible");
   });
 

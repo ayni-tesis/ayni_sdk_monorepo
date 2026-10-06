@@ -85,6 +85,24 @@ describe("WorkflowNodeDetailsPanel", () => {
     });
   });
 
+  it("offers the labels of a segmentation source for a condition (US-161)", () => {
+    const segmenter: typeof modelNode = {
+      ...modelNode,
+      outputs: {
+        result: { type: "segmentation", labels: ["fondo", "roya"], scoreType: "logits" },
+      },
+    };
+    const { panel } = renderPanel({
+      panelDraft: { nodes: [segmenter, conditionNode, outputNode] },
+    });
+
+    expect(
+      within(within(panel).getByLabelText("Etiqueta"))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["fondo", "roya"]);
+  });
+
   it("offers no save for a threshold outside 0 to 1 and reports an undone edit as clean", () => {
     const { panel, onDirtyChange } = renderPanel();
     const threshold = within(panel).getByLabelText("Umbral");

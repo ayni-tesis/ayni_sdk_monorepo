@@ -46,8 +46,8 @@ enum WorkflowErrorCategory {
   /// declares, such as a score outside `0`–`1` or a wrong number of labels.
   modelOutputInvalid,
 
-  /// A condition node did not receive a classification with the label it
-  /// compares.
+  /// A condition node did not receive a classification or segmentation with
+  /// the label it compares.
   conditionInputMissing,
 
   /// An output node did not receive a value from its source node.
@@ -325,7 +325,8 @@ class BooleanResult extends WorkflowValue {
   /// Creates the result of condition node [nodeId].
   const BooleanResult(super.nodeId, this.value);
 
-  /// Whether the condition held for the classification it evaluated.
+  /// Whether the condition held for the classification or segmentation it
+  /// evaluated.
   final bool value;
 }
 
@@ -623,8 +624,14 @@ class WorkflowExecutor {
               values[id] = await _infer(node, imageBytes, id);
             case 'condition':
               final source = values[node['sourceNodeId']];
-              if (source is! ClassificationResult ||
-                  !source.confidences.containsKey(node['label'])) {
+              // A classification compares the label's score; a segmentation
+              // compares the fraction of the mask the label covers (US-161).
+              final Map<String, double>? scores = switch (source) {
+                ClassificationResult() => source.confidences,
+                SegmentationResult() => source.areaFractions,
+                _ => null,
+              };
+              if (scores == null || !scores.containsKey(node['label'])) {
                 // A condition only captures read never fails the run: it
                 // stays unevaluated, so its captures are skipped.
                 if (!requiredConditionIds.contains(id)) {
@@ -637,7 +644,7 @@ class WorkflowExecutor {
                 );
               }
               final truth = _compare(
-                source.confidences[node['label']]!,
+                scores[node['label']]!,
                 node['operator'],
                 (node['threshold'] as num).toDouble(),
               );
@@ -755,7 +762,8 @@ class WorkflowExecutor {
             final n = byId[to]!;
             if (n['sourceNodeId'] == id &&
                 n['type'] == 'condition' &&
-                values[id] is ClassificationResult &&
+                (values[id] is ClassificationResult ||
+                    values[id] is SegmentationResult) &&
                 (requiredConditionIds.contains(to) ||
                     captureConditionIds.contains(to)))
               active.add(to);

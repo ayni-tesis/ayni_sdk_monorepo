@@ -317,6 +317,56 @@ describe("publishWorkflowVersion", () => {
     });
   });
 
+  // US-161: a condition on a segmentation compares the area fraction of a label.
+  const areaCondition = (label: string) => ({
+    id: "area",
+    type: "condition" as const,
+    sourceNodeId: "segmenter",
+    label,
+    operator: "gte" as const,
+    threshold: 0.1,
+    branches: { true: "Verdadero" as const, false: "Falso" as const },
+  });
+  const areaBranch = {
+    id: "review",
+    type: "output" as const,
+    name: "Revisar hoja",
+    sourceNodeId: "area",
+    sourcePort: "true",
+    resultType: "boolean" as const,
+  };
+
+  it("publishes a condition on a segmentation label as schema 4 (US-161)", async () => {
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, segmenter, mask, areaCondition("roya"), areaBranch],
+      connections: [...(publishableDraft.connections ?? []), imageToSegmenter],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result.ok).toBe(true);
+    expect(store.inserted[0]?.definition).toMatchObject({ schemaVersion: "4" });
+  });
+
+  it("refuses a condition on a label the segmentation model lacks (US-161)", async () => {
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, segmenter, mask, areaCondition("mildiu"), areaBranch],
+      connections: [...(publishableDraft.connections ?? []), imageToSegmenter],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result).toMatchObject({ ok: false, reason: "invalidDraft" });
+    expect(result.ok === false && result.reason === "invalidDraft" && result.errors).toContainEqual(
+      expect.objectContaining({ code: "incompatibleType", nodeId: "area", port: "source" }),
+    );
+    expect(store.inserted).toHaveLength(0);
+  });
+
   it("publishes segmentation together with a dataset capture as schema 4, not 3", async () => {
     const draft: WorkflowDraft = {
       ...publishableDraft,

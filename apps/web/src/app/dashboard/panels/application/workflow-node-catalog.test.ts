@@ -102,7 +102,7 @@ describe("workflowNodeCatalog", () => {
         name: "Condición",
         configure: "condition",
         disabledReason:
-          "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
+          "Agrega primero al lienzo una versión contratada de un modelo de clasificación o de segmentación.",
       },
       {
         name: "Salida",
@@ -114,11 +114,15 @@ describe("workflowNodeCatalog", () => {
     expect(
       configured({ nodes: [modelNode("detector", detection)] }).map((item) => item.disabledReason),
     ).toEqual([
-      "Agrega primero al lienzo una versión contratada de un modelo de clasificación.",
+      "Agrega primero al lienzo una versión contratada de un modelo de clasificación o de segmentación.",
       undefined,
     ]);
     expect(
       configured({ nodes: [modelNode("leaf", classification)] }).map((item) => item.disabledReason),
+    ).toEqual([undefined, undefined]);
+    // A segmentation result feeds a condition on its labels (US-161).
+    expect(
+      configured({ nodes: [modelNode("rust", segmentation)] }).map((item) => item.disabledReason),
     ).toEqual([undefined, undefined]);
   });
 });
@@ -211,8 +215,11 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
     ]);
   });
 
-  it("offers only outputs after a segmentation result (US-159)", () => {
-    expect(after("rust", "result")).toEqual([{ key: "output", disabledReason: undefined }]);
+  it("offers conditions and outputs, never the capture, after a segmentation result (US-161)", () => {
+    expect(after("rust", "result")).toEqual([
+      { key: "condition", disabledReason: undefined },
+      { key: "output", disabledReason: undefined },
+    ]);
   });
 
   it.each([
@@ -224,6 +231,20 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
       { key: "dataset.capture", disabledReason: undefined },
     ]);
   });
+
+  it.each(["true", "false"])(
+    "offers only outputs after the %s branch of a condition on a segmentation (US-161)",
+    (sourcePort) => {
+      const onSegmentation: WorkflowCanvasDraft = {
+        nodes: [...draft.nodes, { ...condition, id: "area", sourceNodeId: "rust", label: "roya" }],
+      };
+      expect(
+        workflowNodeCatalog(onSegmentation, models, { sourceNodeId: "area", sourcePort }, true).map(
+          (item) => item.key,
+        ),
+      ).toEqual(["output"]);
+    },
+  );
 
   it("keeps the capture disabled after a condition branch while collection is not enabled", () => {
     expect(after("condition", "true", false)).toEqual([

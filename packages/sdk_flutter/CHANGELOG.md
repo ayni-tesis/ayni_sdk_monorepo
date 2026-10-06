@@ -11,6 +11,10 @@
 - Esquema de workflow 4, el que usan los workflows con un modelo de
   segmentación. Las versiones anteriores del SDK lo rechazan con
   `unsupportedWorkflowVersion`.
+- Un nodo `condition` puede leer un modelo de segmentación: compara
+  `areaFractions[label]` con `threshold` y entrega un `BooleanResult`, igual
+  que con una clasificación. Un workflow con una condición sobre una
+  segmentación sigue publicándose con el esquema 4.
 - La traza solo resume una segmentación (dimensiones, fracciones de área y
   confianza) y nunca lleva la máscara.
 - Requiere la API HTTP 0.4.0.

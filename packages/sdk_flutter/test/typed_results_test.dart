@@ -2256,6 +2256,223 @@ void main() {
       expect(result.areaFractions, {'fondo': 1.0, 'hoja': 0.0, 'tallo': 0.0});
     });
 
+    group('area condition (US-161)', () {
+      const areaLabels = ['fondo', 'roya'];
+
+      // A probability mask of `rows * columns` pixels in which the first
+      // `rustPixels` are "roya" and the rest "fondo".
+      _Tensor rustMask(int rows, int columns, int rustPixels) => tensor(
+        [1, rows, columns, 2],
+        [
+          for (var i = 0; i < rows * columns; i++)
+            ...(i < rustPixels ? [0.0, 1.0] : [1.0, 0.0]),
+        ],
+      );
+
+      Future<WorkflowResult> runArea(
+        _Tensor mask, {
+        String operator = 'gte',
+        double threshold = 0.1,
+        String label = 'roya',
+      }) {
+        final definition = segmentationDefinition(
+          scoreType: 'probabilities',
+          modelLabels: areaLabels,
+        );
+        final nodes = (definition['nodes'] as List).cast<Map>();
+        nodes
+          ..removeWhere((node) => node['type'] == 'output')
+          ..addAll([
+            {
+              'id': 'condition-1',
+              'type': 'condition',
+              'sourceNodeId': 'model-1',
+              'label': label,
+              'operator': operator,
+              'threshold': threshold,
+              'branches': {'true': 'Verdadero', 'false': 'Falso'},
+            },
+            {
+              'id': 'output-true',
+              'type': 'output',
+              'name': 'Revisar hoja',
+              'sourceNodeId': 'condition-1',
+              'sourcePort': 'true',
+              'resultType': 'boolean',
+            },
+            {
+              'id': 'output-false',
+              'type': 'output',
+              'name': 'Sin revisión',
+              'sourceNodeId': 'condition-1',
+              'sourcePort': 'false',
+              'resultType': 'boolean',
+            },
+          ]);
+        return WorkflowExecutor(
+          storageDirectory,
+          inferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async => (error: null, outputs: [mask]),
+        ).execute(
+          executionId: 'execution-1',
+          workflowId: 'workflow-1',
+          workflowVersion: '1.0.0',
+          definition: definition,
+          imageBytes: pngBytes(),
+        );
+      }
+
+      test('takes the true branch when the label covers enough area', () async {
+        // 3 of 20 pixels (15 %) are "roya".
+        final result = await runArea(rustMask(4, 5, 3));
+
+        expect((result.outputs['Revisar hoja']! as BooleanResult).value, true);
+        expect(result.outputs.containsKey('Sin revisión'), isFalse);
+      });
+
+      test('takes the false branch when the label covers too little', () async {
+        // 1 of 20 pixels (5 %) is "roya".
+        final result = await runArea(rustMask(4, 5, 1));
+
+        expect((result.outputs['Sin revisión']! as BooleanResult).value, false);
+        expect(result.outputs.containsKey('Revisar hoja'), isFalse);
+      });
+
+      test('compares gt and gte exactly at the threshold', () async {
+        // 1 of 4 pixels is exactly 0.25.
+        final mask = rustMask(2, 2, 1);
+
+        for (final (operator, expected) in [
+          ('gte', true),
+          ('gt', false),
+          ('lte', true),
+          ('lt', false),
+        ]) {
+          final result = await runArea(
+            mask,
+            operator: operator,
+            threshold: 0.25,
+          );
+          final branch = expected ? 'Revisar hoja' : 'Sin revisión';
+          expect(
+            (result.outputs[branch]! as BooleanResult).value,
+            expected,
+            reason: operator,
+          );
+        }
+      });
+
+      test('reads the area of a label that wins no pixel as zero', () async {
+        final result = await runArea(rustMask(2, 2, 0), operator: 'lte');
+
+        expect((result.outputs['Revisar hoja']! as BooleanResult).value, true);
+      });
+
+      test(
+        'evaluates a condition on each of a segmentation and a classification',
+        () async {
+          final definition = segmentationDefinition(
+            scoreType: 'probabilities',
+            modelLabels: areaLabels,
+          );
+          final nodes = (definition['nodes'] as List).cast<Map>();
+          final segmenter = nodes.firstWhere(
+            (node) => node['type'] == 'model.tflite',
+          );
+          nodes
+            ..removeWhere((node) => node['type'] == 'output')
+            ..addAll([
+              {
+                ...segmenter,
+                'id': 'model-2',
+                'modelVersionId': 'model-version-2',
+                'outputs': {
+                  'result': {
+                    'type': 'classification',
+                    'labels': ['perro', 'gato'],
+                  },
+                },
+              },
+              {
+                'id': 'condition-1',
+                'type': 'condition',
+                'sourceNodeId': 'model-1',
+                'label': 'roya',
+                'operator': 'gte',
+                'threshold': 0.1,
+                'branches': {'true': 'Verdadero', 'false': 'Falso'},
+              },
+              {
+                'id': 'condition-2',
+                'type': 'condition',
+                'sourceNodeId': 'model-2',
+                'label': 'gato',
+                'operator': 'gte',
+                'threshold': 0.5,
+                'branches': {'true': 'Verdadero', 'false': 'Falso'},
+              },
+              {
+                'id': 'output-area',
+                'type': 'output',
+                'name': 'Revisar hoja',
+                'sourceNodeId': 'condition-1',
+                'sourcePort': 'true',
+                'resultType': 'boolean',
+              },
+              {
+                'id': 'output-class',
+                'type': 'output',
+                'name': 'Es gato',
+                'sourceNodeId': 'condition-2',
+                'sourcePort': 'true',
+                'resultType': 'boolean',
+              },
+            ]);
+          (definition['connections'] as List).add({
+            'sourceNodeId': 'input-1',
+            'sourcePort': 'imagen',
+            'targetNodeId': 'model-2',
+            'targetPort': 'image',
+          });
+
+          final result =
+              await WorkflowExecutor(
+                storageDirectory,
+                inferenceRunner:
+                    ({
+                      required modelPath,
+                      required inputBytes,
+                      required acceptedInputShapes,
+                    }) async => (
+                      error: null,
+                      outputs: [
+                        modelPath.contains('model-version-2')
+                            ? tensor([1, 2], [0.1, 0.9])
+                            // 3 of 20 pixels (15 %) are "roya".
+                            : rustMask(4, 5, 3),
+                      ],
+                    ),
+              ).execute(
+                executionId: 'execution-1',
+                workflowId: 'workflow-1',
+                workflowVersion: '1.0.0',
+                definition: definition,
+                imageBytes: pngBytes(),
+              );
+
+          expect(
+            (result.outputs['Revisar hoja']! as BooleanResult).value,
+            isTrue,
+          );
+          expect((result.outputs['Es gato']! as BooleanResult).value, isTrue);
+        },
+      );
+    });
+
     test(
       'combines a segmentation with a classification in one output',
       () async {
