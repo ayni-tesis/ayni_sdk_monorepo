@@ -229,6 +229,78 @@ describe("DatasetDetailView", () => {
     expect(await screen.findByText("Predicción: pino (90%)")).toBeInTheDocument();
   });
 
+  it("retires an item from a later page without discarding loaded items or reloading the detail", async () => {
+    const olderItem = {
+      ...item,
+      id: "item-2",
+      evidenceId: "evidence-2",
+      originalResult: { type: "classification", label: "cedro", confidence: 0.7 },
+    };
+    const laterItem = {
+      ...item,
+      id: "item-3",
+      evidenceId: "evidence-3",
+      originalResult: { type: "classification", label: "roble", confidence: 0.6 },
+    };
+    let removed = false;
+    getMock.mockImplementation(async (url: string, options?: { params?: { offset?: number } }) => {
+      if (url.endsWith("/available-evidence")) {
+        return { data: { evidence: [evidence], nextOffset: null } };
+      }
+      if (options?.params?.offset === 1 && removed) {
+        return {
+          data: {
+            dataset: { ...dataset, evidenceCount: 2 },
+            items: [laterItem],
+            nextItemOffset: null,
+          },
+        };
+      }
+      if (options?.params?.offset === 1) {
+        return {
+          data: {
+            dataset: { ...dataset, evidenceCount: 3 },
+            items: [olderItem],
+            nextItemOffset: 2,
+          },
+        };
+      }
+      return {
+        data: { dataset: { ...dataset, evidenceCount: 3 }, items: [item], nextItemOffset: 1 },
+      };
+    });
+    deleteMock.mockImplementation(async () => {
+      removed = true;
+      return { data: undefined };
+    });
+    renderManagedDetail();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+    expect(await screen.findByText("Predicción original: cedro (70%)")).toBeInTheDocument();
+    const removeButtons = screen.getAllByRole("button", { name: "Retirar del dataset" });
+    expect(removeButtons).toHaveLength(2);
+    const laterItemRemoveButton = removeButtons[1];
+    if (!laterItemRemoveButton) throw new Error("Expected a remove button for the later page");
+    await user.click(laterItemRemoveButton);
+    await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+
+    expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+    expect(screen.getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    expect(screen.queryByText("Predicción original: cedro (70%)")).not.toBeInTheDocument();
+    expect(screen.getByText("Evidencias", { selector: "dt" }).nextElementSibling).toHaveTextContent(
+      "2",
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Cargando dataset…")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+    expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+    expect(getMock).toHaveBeenLastCalledWith(
+      "/applications/app-1/datasets/dataset-1",
+      expect.objectContaining({ params: { offset: 1 } }),
+    );
+  });
+
   it("keeps the dataset item and shows a missing-item error when retirement fails", async () => {
     getMock.mockResolvedValue({ data: { dataset, items: [item], nextItemOffset: null } });
     deleteMock.mockRejectedValue({

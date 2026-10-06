@@ -197,7 +197,21 @@ export function DatasetDetailView({
     await httpClient.delete(
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
     );
-    await loadDetail();
+    setDetail((current) => {
+      if (!current) return current;
+      const items = current.items.filter((item) => item.id !== itemId);
+      if (items.length === current.items.length) return current;
+      return {
+        ...current,
+        dataset: {
+          ...current.dataset,
+          evidenceCount: Math.max(0, current.dataset.evidenceCount - 1),
+        },
+        items,
+        nextItemOffset:
+          current.nextItemOffset === null ? null : Math.max(0, current.nextItemOffset - 1),
+      };
+    });
     setNotice("Evidencia retirada del dataset.");
   }
 

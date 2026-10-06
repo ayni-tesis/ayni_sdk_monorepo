@@ -1,6 +1,6 @@
 import type { DatasetTaskType } from "@ayni/api/datasets";
 import { application, dataset, datasetItem, member, sdkEvidence } from "@ayni/db/schema/index";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
 import {
   addDatasetEvidence,
@@ -9,6 +9,9 @@ import {
   listDatasets,
   removeDatasetEvidence,
 } from "./dataset-store";
+import { logger } from "./lib/logger";
+
+afterEach(() => vi.restoreAllMocks());
 
 const input = {
   applicationId: "app-1",
@@ -202,6 +205,30 @@ describe("removeDatasetEvidence", () => {
       reason: "notFound",
     });
     expect(deletedTables).toEqual([datasetItem]);
+  });
+
+  it("logs transaction failures with the error and dataset operation identifiers", async () => {
+    const failure = new Error("database unavailable");
+    const database = {
+      transaction: async () => {
+        throw failure;
+      },
+    } as unknown as ApplicationDatabase;
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    expect(await removeDatasetEvidence(database, { ...input, itemId: "item-1" })).toEqual({
+      ok: false,
+      reason: "databaseFailed",
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      {
+        err: failure,
+        applicationId: input.applicationId,
+        datasetId: input.datasetId,
+        itemId: "item-1",
+      },
+      "Failed to remove dataset evidence",
+    );
   });
 });
 

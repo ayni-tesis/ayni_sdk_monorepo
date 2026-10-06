@@ -15,6 +15,7 @@ import {
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
+import { logger } from "./lib/logger";
 import { toIsoString } from "./model-store";
 
 export type CreateDatasetInput = {
@@ -403,7 +404,16 @@ export async function removeDatasetEvidence(
     );
     if (!result.ok) return { ok: false, reason: result.reason };
     return result.value === "removed" ? { ok: true } : { ok: false, reason: "notFound" };
-  } catch {
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        applicationId: input.applicationId,
+        datasetId: input.datasetId,
+        itemId: input.itemId,
+      },
+      "Failed to remove dataset evidence",
+    );
     return { ok: false, reason: "databaseFailed" };
   }
 }
