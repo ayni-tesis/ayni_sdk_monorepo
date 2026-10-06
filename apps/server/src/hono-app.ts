@@ -25,7 +25,7 @@ import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
-import { createDataset } from "./dataset-store";
+import { createDataset, listDatasets } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
 import {
@@ -250,6 +250,9 @@ const validationDatasets = createValidationDatasetStore({
 const datasets = {
   create(input: Parameters<typeof createDataset>[1]) {
     return createDataset(db, input);
+  },
+  list(applicationId: string) {
+    return listDatasets(db, applicationId);
   },
 };
 

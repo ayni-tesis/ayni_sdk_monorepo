@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DatasetCreateRequestSchema } from "./datasets";
+import { DatasetCreateRequestSchema, DatasetListResponseSchema } from "./datasets";
 import { createOpenApiDocument } from "./index";
 
 describe("dataset creation contract", () => {
@@ -24,6 +24,34 @@ describe("dataset creation contract", () => {
       createOpenApiDocument().paths?.["/applications/{applicationId}/datasets"]?.post;
     expect(operation?.responses?.["201"]).toBeDefined();
     expect(operation?.responses?.["403"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
+  });
+
+  it("requires list responses to expose scoped dataset counts", () => {
+    expect(
+      DatasetListResponseSchema.safeParse({
+        datasets: [
+          {
+            id: "dataset-1",
+            applicationId: "app-1",
+            name: "Flores",
+            taskType: "classification",
+            createdAt: "2026-10-01T00:00:00.000Z",
+            evidenceCount: 4,
+            approvedCount: 2,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(DatasetListResponseSchema.safeParse({ datasets: [{ id: "dataset-1" }] }).success).toBe(
+      false,
+    );
+  });
+
+  it("documents the member-readable list endpoint", () => {
+    const operation =
+      createOpenApiDocument().paths?.["/applications/{applicationId}/datasets"]?.get;
+    expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
   });
 });

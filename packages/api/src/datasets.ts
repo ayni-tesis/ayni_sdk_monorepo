@@ -21,12 +21,21 @@ export const DatasetSchema = z
   .strict();
 
 export const DatasetCreateResponseSchema = z.object({ dataset: DatasetSchema }).strict();
+export const DatasetListItemSchema = DatasetSchema.extend({
+  evidenceCount: z.number().int().nonnegative(),
+  approvedCount: z.number().int().nonnegative(),
+}).strict();
+export const DatasetListResponseSchema = z
+  .object({ datasets: z.array(DatasetListItemSchema) })
+  .strict();
 export const DatasetApiErrorSchema = z
   .object({ message: z.string(), code: z.string().optional() })
   .strict();
 
 export type DatasetTaskType = z.infer<typeof DatasetTaskTypeSchema>;
 export type Dataset = z.infer<typeof DatasetSchema>;
+export type DatasetListItem = z.infer<typeof DatasetListItemSchema>;
+export type DatasetListResponse = z.infer<typeof DatasetListResponseSchema>;
 
 function errorResponse(description: string) {
   return {
@@ -41,6 +50,28 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     in: "cookie",
     name: "better-auth.session_token",
     description: "Cookie de sesión de Better Auth para las rutas del dashboard.",
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets",
+    tags: ["Datasets"],
+    operationId: "listar-datasets",
+    summary: "Listar datasets de una aplicación",
+    description: "Cualquier miembro del workspace puede listar los datasets de la aplicación.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({ applicationId: z.string().openapi({ example: "app-123" }) }),
+    },
+    responses: {
+      "200": {
+        description: "Datasets de la aplicación.",
+        content: { "application/json": { schema: DatasetListResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos esta aplicación."),
+      "500": errorResponse("No pudimos cargar los datasets."),
+    },
   });
 
   registry.registerPath({
