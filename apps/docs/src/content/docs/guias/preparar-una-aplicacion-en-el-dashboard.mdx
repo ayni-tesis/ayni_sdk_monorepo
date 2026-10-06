@@ -150,8 +150,9 @@ inmutable: para cambiar el archivo, sube una versión nueva.
 También puedes conectar dos nodos arrastrando desde un puerto de salida hasta
 una entrada compatible, o pulsando la salida y después la entrada. Si tu
 modelo es de clasificación, puedes dividir el flujo según el puntaje de una
-etiqueta con una «Condición» entre el modelo y la salida. El resultado de un
-modelo de detección solo se conecta a una salida.
+etiqueta con una «Condición» entre el modelo y la salida; si es de
+segmentación, la condición compara la fracción de la máscara que cubre la
+etiqueta. El resultado de un modelo de detección solo se conecta a una salida.
 
 **Resultado esperado:** el lienzo muestra la imagen, el modelo y la salida
 conectados de izquierda a derecha.
@@ -165,7 +166,7 @@ conectados de izquierda a derecha.
 | «No puedes crear workflows en una aplicación archivada.» | Crea una aplicación nueva (paso 1): una aplicación archivada no se puede reactivar. |
 | «No hay versiones con contrato» | Define el contrato de la versión del modelo (paso 3). |
 | «Esta conexión crearía un ciclo. Los workflows deben ser acíclicos.» | Conecta los nodos solo hacia adelante, desde la imagen hacia la salida. |
-| «Estos puertos no son compatibles.» | Conecta la imagen con un modelo, y el resultado de un modelo con una salida o, si es de clasificación, con una condición. |
+| «Estos puertos no son compatibles.» | Conecta la imagen con un modelo, y el resultado de un modelo con una salida o, si es de clasificación o de segmentación, con una condición. |
 | «Otra persona modificó este borrador. Recarga para ver los cambios.» | Pulsa «Recargar borrador» y repite tu cambio. |
 
 ## 5. Valida el workflow y publica una versión

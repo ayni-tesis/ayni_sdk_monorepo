@@ -2573,6 +2573,49 @@ describe("addConditionNode source validation", () => {
     expect(reloadedCondition).toEqual(savedCondition);
     expect(store.writes).toBe(1);
   });
+
+  // US-161: a condition may read a segmentation model's label.
+  const segmentationNode = {
+    ...modelNode,
+    id: "segmentation-1",
+    outputs: {
+      result: {
+        type: "segmentation" as const,
+        labels: ["fondo", "roya"],
+        scoreType: "logits" as const,
+      },
+    },
+  };
+
+  it("persists a condition on a label of a segmentation source", async () => {
+    const store = makeWorkflowPositionStoreDb({ nodes: [segmentationNode] });
+    const result = await addConditionNode(store.db, {
+      ...input,
+      sourceNodeId: segmentationNode.id,
+    });
+    expect(result.ok).toBe(true);
+    expect(store.reload().nodes[1]).toMatchObject({
+      type: "condition",
+      sourceNodeId: segmentationNode.id,
+      label: "roya",
+      operator: "gte",
+      threshold: 0.7,
+    });
+    expect(store.writes).toBe(1);
+  });
+
+  it("rejects a label the segmentation source does not declare without persisting", async () => {
+    const store = makeWorkflowPositionStoreDb({ nodes: [segmentationNode] });
+    const originalDraft = store.reload();
+    const result = await addConditionNode(store.db, {
+      ...input,
+      label: "mildiu",
+      sourceNodeId: segmentationNode.id,
+    });
+    expect(result).toEqual({ ok: false, reason: "incompatibleSource" });
+    expect(store.reload()).toEqual(originalDraft);
+    expect(store.writes).toBe(0);
+  });
 });
 
 describe("addImageInputNode", () => {

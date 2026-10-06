@@ -195,11 +195,15 @@ export function isCaptureConditionCompatible(draft: WorkflowPortDraft, captureId
   return condition?.type === "condition" && condition.sourceNodeId === result.sourceNodeId;
 }
 
-/** A condition needs the result of a classification model that produces its label. */
+/**
+ * A condition needs the result of a classification or segmentation model that
+ * produces its label (US-161: a segmentation compares the label's area fraction).
+ */
 export function isConditionSourceCompatible(source: WorkflowPortNode | undefined, label: string) {
   return (
     source?.type === "model.tflite" &&
-    source.outputs.result.type === "classification" &&
+    (source.outputs.result.type === "classification" ||
+      source.outputs.result.type === "segmentation") &&
     source.outputs.result.labels.includes(label)
   );
 }

@@ -110,7 +110,7 @@ Va en el mismo PR. Las pruebas lo exigen; verificar con `bun run verify`.
   - Web: `accepted` del catálogo, `segmentation → ["logic","output"]`.
   - SDK: validador (~:517-523).
 - **Evaluación en el SDK:** con un origen de segmentación, la condición compara `areaFractions[label]`.
-- **Control directo de la app:** `apps/native/lib/validation/execution/direct_tflite_runner.dart` (~:324-348).
+- **Control directo de la app:** movido a PR-4 (US-162): el runner directo aún no decodifica segmentación.
 - **Sin cambios de forma:** el nodo `condition` no agrega campos y el esquema sigue siendo "4".
 
 ## PR-4 — US-162: perfil SEG-01 en `apps/native`
@@ -121,4 +121,5 @@ Va en el mismo PR. Las pruebas lo exigen; verificar con `bun run verify`.
   - `validation_model_repository.dart`: claves del contrato;
   - `ayni_sdk_runner.dart`: `_matchesModelOutput` (~:519-544).
 - **Normalización:** en `validation_output_normalizer.dart`, `_segmentationFromTensors` con implementación propia del control, y `SegmentationResult` en `_normalizeSdkValue`.
+- **Condición del control directo:** `apps/native/lib/validation/execution/direct_tflite_runner.dart` (~:324-348), con `areaFractions[label]` (movido desde PR-3).
 - **Registro JSONL:** `maskSha256`, `width`, `height`, `areaFractions`, `confidence` y la máscara en RLE. Nunca se envía al servidor.

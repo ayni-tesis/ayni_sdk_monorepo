@@ -38,5 +38,5 @@ Scenario: Etiqueta que el modelo no tiene
 
 - **Validación igual en todos lados:** el servidor, el API (`workflow-graph`) y el validador del SDK aceptan una condición con origen de segmentación y la validan igual que con una clasificación: etiqueta del modelo, operador `gte`, `gt`, `lte` o `lt`, umbral en [0, 1].
 - **Esquema:** el workflow sigue publicándose con el esquema `"4"`, porque contiene segmentación. No se agregan campos al nodo `condition`.
-- **App de validación:** la integración directa evalúa la condición de la misma forma, para comparar con el SDK.
+- **App de validación:** la integración directa de la app de validación evalúa la condición en US-162, porque el runner directo aún no decodifica segmentación. Esta historia no cambia `apps/native`.
 - **Versión:** entra en la misma versión 0.4.0 del SDK.

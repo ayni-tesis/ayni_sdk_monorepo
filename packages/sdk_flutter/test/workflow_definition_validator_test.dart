@@ -1501,24 +1501,31 @@ void main() {
       );
     });
 
-    test('rejects a condition on a segmentation until US-161', () {
-      expect(
-        validate(
-          definition(
-            schemaVersion: '4',
-            nodes: [
-              imageInput(),
-              segmenter(),
-              condition(label: 'hoja'),
-              output(
-                sourceNodeId: 'condition-1',
-                sourcePort: 'true',
-                resultType: 'boolean',
-              ),
-            ],
-            connections: [imageConnection()],
+    WorkflowValidationStatus validateAreaCondition(String label) => validate(
+      definition(
+        schemaVersion: '4',
+        nodes: [
+          imageInput(),
+          segmenter(),
+          condition(label: label),
+          output(
+            sourceNodeId: 'condition-1',
+            sourcePort: 'true',
+            resultType: 'boolean',
           ),
-        ),
+        ],
+        connections: [imageConnection()],
+      ),
+    );
+
+    test('accepts a condition on a label of a segmentation (US-161)', () {
+      expect(validateAreaCondition('hoja'), WorkflowValidationStatus.valid);
+      expect(validateAreaCondition('fondo'), WorkflowValidationStatus.valid);
+    });
+
+    test('rejects a condition on a label the segmentation lacks (US-161)', () {
+      expect(
+        validateAreaCondition('roya'),
         WorkflowValidationStatus.incompatiblePort,
       );
     });

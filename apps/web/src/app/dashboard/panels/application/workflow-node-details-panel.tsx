@@ -140,7 +140,10 @@ export function WorkflowNodeDetailsPanel({
         )
       : undefined;
   const sourceLabels =
-    source?.outputs.result.type === "classification" ? source.outputs.result.labels : [];
+    source?.outputs.result.type === "classification" ||
+    source?.outputs.result.type === "segmentation"
+      ? source.outputs.result.labels
+      : [];
   // The condition branch a capture hangs from (US-074).
   const captureCondition =
     node.type === "dataset.capture" ? workflowCaptureCondition(draft, node.id) : undefined;

@@ -38,8 +38,8 @@ enum WorkflowValidationStatus {
 /// unknown or missing fields on the definition, its nodes, or its connections),
 /// only the supported node types, edges that join compatible ports (a model
 /// image input taking a single connection, a capture taking one image, one
-/// result and, optionally, one branch of a condition on that result; a segmentation feeds neither
-/// a capture nor a condition), an
+/// result and, optionally, one branch of a condition on that result; a segmentation feeds no
+/// capture but does feed a condition), an
 /// acyclic graph counting each
 /// condition's and output's stored source as an edge, and model versions
 /// declared in the manifest.
@@ -506,7 +506,8 @@ class WorkflowDefinitionValidator {
   /// condition branch to a capture's optional `condicion` (US-074), each input
   /// holding one connection and a capture both `imagen` and `resultado`; the
   /// condition of a capture evaluates the model whose result it captures;
-  /// every condition reads a classification label off its source model; every
+  /// every condition reads a classification or segmentation label off its
+  /// source model; every
   /// output reads a compatible result or boolean branch off its source.
   WorkflowValidationStatus? _checkPorts(
     Map<String, _Node> nodes,
@@ -556,7 +557,8 @@ class WorkflowDefinitionValidator {
       if (node.type == 'condition') {
         final source = nodes[node.sourceNodeId!]!;
         if (source.type != 'model.tflite' ||
-            source.modelResultType != 'classification' ||
+            (source.modelResultType != 'classification' &&
+                source.modelResultType != 'segmentation') ||
             !source.modelLabels!.contains(node.label)) {
           return WorkflowValidationStatus.incompatiblePort;
         }
@@ -651,7 +653,7 @@ class _Node {
   /// condition/output: the node its source edge starts from.
   String? sourceNodeId;
 
-  /// condition: the classification label it tests.
+  /// condition: the classification or segmentation label it tests.
   String? label;
 
   /// output: the source port it reads and the declared result type.

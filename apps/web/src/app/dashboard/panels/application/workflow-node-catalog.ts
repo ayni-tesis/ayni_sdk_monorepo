@@ -68,14 +68,16 @@ const MODEL_DESCRIPTIONS = {
   segmentation: "Asigna una clase a cada píxel de la imagen con un modelo TensorFlow Lite.",
 } as const;
 export const CONDITION_SOURCE_MISSING_MESSAGE =
-  "Agrega primero al lienzo una versión contratada de un modelo de clasificación.";
+  "Agrega primero al lienzo una versión contratada de un modelo de clasificación o de segmentación.";
 const OUTPUT_SOURCE_MISSING_MESSAGE = "Agrega primero al lienzo un modelo o una condición.";
 
-/** The classification models on the canvas, which a condition can read. */
+/** The classification and segmentation models on the canvas, which a condition can read (US-161). */
 export function workflowConditionSources(draft: WorkflowCanvasDraft): ModelNode[] {
   return draft.nodes.filter(
     (node): node is ModelNode =>
-      node.type === "model.tflite" && node.outputs.result.type === "classification",
+      node.type === "model.tflite" &&
+      (node.outputs.result.type === "classification" ||
+        node.outputs.result.type === "segmentation"),
   );
 }
 
@@ -107,7 +109,8 @@ export function workflowOutputSources(draft: WorkflowCanvasDraft): WorkflowOutpu
 /**
  * The types Agregar nodo offers. After an output port (`origin`), only the types
  * that port can feed, with the DAG's rules: models after the image, conditions
- * and outputs after a classification result, outputs after a detection result
+ * and outputs after a classification result, conditions and outputs after a
+ * segmentation result, outputs after a detection result
  * or a condition branch, and the dataset capture after a model's result or,
  * to capture only when the condition takes it, a condition branch (US-074).
  * The capture is offered only if the application enabled collection (US-064).
@@ -129,17 +132,32 @@ export function workflowNodeCatalog(
         ? ["logic", "output", "dataset"]
         : type === "detection"
           ? ["output", "dataset"]
-          : // A capture stores classifications and detections only (US-159).
+          : // A capture stores classifications and detections only (US-159); a
+            // condition compares a segmentation's area fraction (US-161).
             type === "segmentation"
-            ? ["output"]
+            ? ["logic", "output"]
             : type === "boolean"
-              ? ["output", "dataset"]
+              ? // A capture behind a condition on a segmentation can never
+                // connect: it needs the model's result (US-161).
+                conditionReadsSegmentation(draft, source)
+                ? ["output"]
+                : ["output", "dataset"]
               : [];
   // The port itself is the source, so nothing is missing from the canvas; only
   // the collection policy can still keep the capture out.
   return catalog
     .filter((item) => accepted.includes(item.category))
     .map((item) => (item.category === "dataset" ? item : { ...item, disabledReason: undefined }));
+}
+
+/** Whether `node` is a condition whose source is a segmentation model. */
+function conditionReadsSegmentation(
+  draft: WorkflowCanvasDraft,
+  node: WorkflowCanvasNode | undefined,
+) {
+  if (node?.type !== "condition") return false;
+  const model = draft.nodes.find((item) => item.id === node.sourceNodeId);
+  return model?.type === "model.tflite" && model.outputs.result.type === "segmentation";
 }
 
 function fullWorkflowNodeCatalog(
@@ -182,7 +200,7 @@ function fullWorkflowNodeCatalog(
       category: "logic",
       typeName: "Condición",
       name: "Condición",
-      description: "Divide el flujo según el puntaje de una etiqueta.",
+      description: "Divide el flujo según el puntaje o el área de una etiqueta.",
       disabledReason:
         workflowConditionSources(draft).length === 0 ? CONDITION_SOURCE_MISSING_MESSAGE : undefined,
       configure: "condition",

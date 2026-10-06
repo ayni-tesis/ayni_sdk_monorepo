@@ -21,6 +21,14 @@ Scenario: Medir SEG-01 con ambas condiciones
   And el JSONL permite calcular el acuerdo por píxel y el mIoU entre las dos máscaras
 ```
 
+```gherkin
+Scenario: Evaluar una condición sobre el área con la integración directa
+  Given un workflow con una condición "roya gte 0.1" sobre el modelo de segmentación
+  When la máscara asigna "roya" al 15 % de los píxeles
+  Then la integración directa evalúa la condición como true
+  And el JSONL guarda el valor booleano para compararlo con el del SDK
+```
+
 ## Bad path
 
 ```gherkin
@@ -34,5 +42,6 @@ Scenario: SDK anterior a 0.4.0
 
 - **Versión del SDK:** la app compara la versión con SemVer en lugar de una igualdad fija: al menos 0.3.1 para detección y al menos 0.4.0 para segmentación.
 - **Integración directa:** decodifica la segmentación con su propio código, sin usar el del SDK.
+- **Condición sobre el área:** La integración directa evalúa una condición sobre `areaFractions[label]` (operadores `gte`, `gt`, `lte`, `lt`, umbral en [0, 1]) igual que el SDK, y el JSONL guarda su valor booleano para compararlo con el del SDK.
 - **Sin datos fuera del teléfono:** ninguna máscara se envía al servidor; solo queda en el JSONL local. La página `Recursos` → `Datos y privacidad` del sitio del SDK no cambia por esta historia, porque el JSONL es de la app de validación y no del SDK. Si eso cambiara, se actualiza en el mismo cambio.
 - **Dataset:** SEG-01 no se activa hasta tener un dataset publicado con licencia que permita guardarlo en el almacenamiento privado.
