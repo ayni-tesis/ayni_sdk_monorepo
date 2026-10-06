@@ -1,5 +1,7 @@
 import {
   DatasetCreateRequestSchema,
+  type DatasetDetailResponse,
+  type DatasetListItem,
   type DatasetListResponse,
   DatasetTaskTypeSchema,
 } from "@ayni/api/datasets";
@@ -17,12 +19,34 @@ type Dependencies = {
   applications: Parameters<typeof getApplicationForMember>[0];
   datasets: {
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
+    get: (applicationId: string, datasetId: string) => Promise<DatasetListItem | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
   };
 };
 
 export function createDatasetsApp({ getSession, applications, datasets }: Dependencies) {
   const app = new Hono();
+
+  app.get("/applications/:applicationId/datasets/:datasetId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+
+    try {
+      const dataset = await datasets.get(application.id, c.req.param("datasetId"));
+      if (!dataset) return c.json({ message: "No encontramos este dataset." }, 404);
+      const response: DatasetDetailResponse = { dataset };
+      return c.json(response);
+    } catch {
+      return c.json({ message: "No pudimos cargar el dataset.", code: "datasetLoadFailed" }, 500);
+    }
+  });
 
   app.get("/applications/:applicationId/datasets", async (c) => {
     const session = await getSession(c.req.raw.headers);

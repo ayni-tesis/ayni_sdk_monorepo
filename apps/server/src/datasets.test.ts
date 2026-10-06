@@ -32,6 +32,8 @@ function makeApp({
     ok: true,
     value: dataset,
   }),
+  get = async (_applicationId: string, _datasetId: string): Promise<DatasetListItem | null> =>
+    datasetListItem,
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
@@ -43,9 +45,11 @@ function makeApp({
     | null;
   membershipRole?: string | null;
   create?: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
+  get?: (applicationId: string, datasetId: string) => Promise<DatasetListItem | null>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
+  const getMock = vi.fn(get);
   const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
@@ -53,9 +57,9 @@ function makeApp({
       get: async () => application ?? undefined,
       getMembership: async () => membershipRole ?? undefined,
     },
-    datasets: { create: createMock, list: listMock },
+    datasets: { create: createMock, get: getMock, list: listMock },
   });
-  return { app, createMock, listMock };
+  return { app, createMock, getMock, listMock };
 }
 
 function jsonRequest(body: unknown) {
@@ -67,6 +71,36 @@ function jsonRequest(body: unknown) {
 }
 
 describe("application datasets", () => {
+  it("returns a dataset detail only to members of its owning application", async () => {
+    const { app, getMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request("/applications/app-1/datasets/dataset-1");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ dataset: datasetListItem });
+    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1");
+
+    const foreign = makeApp({ application: null });
+    const hiddenApplication = await foreign.app.request("/applications/app-1/datasets/dataset-1");
+    expect(hiddenApplication.status).toBe(404);
+    expect(await hiddenApplication.json()).toMatchObject({
+      message: "No encontramos este dataset.",
+    });
+    expect(foreign.getMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({ get: async () => null });
+    const hiddenDataset = await missing.app.request("/applications/app-1/datasets/foreign-id");
+    expect(hiddenDataset.status).toBe(404);
+    expect(await hiddenDataset.json()).toMatchObject({ message: "No encontramos este dataset." });
+  });
+
+  it("reports dataset detail read failures", async () => {
+    const { app } = makeApp({ get: async () => Promise.reject(new Error("offline")) });
+    const response = await app.request("/applications/app-1/datasets/dataset-1");
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ message: "No pudimos cargar el dataset." });
+  });
+
   it("lists datasets for any member, including archived applications", async () => {
     const { app, listMock } = makeApp({
       application: { ...activeApplication, status: "archived" },
