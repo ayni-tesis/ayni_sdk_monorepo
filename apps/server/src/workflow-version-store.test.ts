@@ -261,6 +261,81 @@ describe("publishWorkflowVersion", () => {
     expect(store.inserted).toHaveLength(0);
   });
 
+  const segmenter = {
+    id: "segmenter",
+    type: "model.tflite" as const,
+    modelVersionId: "version-2",
+    modelName: "Segmentador",
+    version: "1.0.0",
+    inputs: {
+      image: {
+        type: "image" as const,
+        width: 257,
+        height: 257,
+        channels: 3 as const,
+        normalization: "minus_one_to_one" as const,
+      },
+    },
+    outputs: {
+      result: {
+        type: "segmentation" as const,
+        labels: ["fondo", "roya"],
+        scoreType: "logits" as const,
+      },
+    },
+  };
+  const mask = {
+    id: "mask",
+    type: "output" as const,
+    name: "Máscara",
+    sourceNodeId: "segmenter",
+    sourcePort: "result",
+    resultType: "segmentation" as const,
+  };
+  const imageToSegmenter = {
+    sourceNodeId: "input",
+    sourcePort: "imagen",
+    targetNodeId: "segmenter",
+    targetPort: "image",
+  };
+
+  it("publishes a workflow with a segmentation model as schema 4 (US-159)", async () => {
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, segmenter, mask],
+      connections: [...(publishableDraft.connections ?? []), imageToSegmenter],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result.ok).toBe(true);
+    expect(store.inserted[0]?.definition).toEqual({
+      schemaVersion: "4",
+      nodes: draft.nodes,
+      connections: draft.connections,
+    });
+  });
+
+  it("publishes segmentation together with a dataset capture as schema 4, not 3", async () => {
+    const draft: WorkflowDraft = {
+      ...publishableDraft,
+      nodes: [...publishableDraft.nodes, segmenter, mask, capture],
+      connections: [
+        ...(publishableDraft.connections ?? []),
+        imageToSegmenter,
+        imageToCapture,
+        resultToCapture,
+      ],
+    };
+    const store = makePublishDb({ draft });
+
+    const result = await publishWorkflowVersion(store.db, input);
+
+    expect(result.ok).toBe(true);
+    expect(store.inserted[0]?.definition).toMatchObject({ schemaVersion: "4" });
+  });
+
   it("publishes a dataset capture with its image and result as schema 3", async () => {
     const draft: WorkflowDraft = {
       ...publishableDraft,

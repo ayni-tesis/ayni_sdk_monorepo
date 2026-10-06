@@ -33,6 +33,10 @@ const detection: WorkflowModelVersionContract = {
     tensorIndices: { boxes: 2, classes: 0, scores: 3, count: 1 },
   },
 };
+const segmentation: WorkflowModelVersionContract = {
+  input: imageContract,
+  output: { type: "segmentation", labels: ["fondo", "roya"], scoreType: "logits" },
+};
 const modelNode = (id: string, contract: WorkflowModelVersionContract): WorkflowCanvasNode => ({
   id,
   type: "model.tflite",
@@ -162,7 +166,13 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
     branches: { true: "Verdadero", false: "Falso" },
   };
   const draft: WorkflowCanvasDraft = {
-    nodes: [image, modelNode("leaf", classification), modelNode("pests", detection), condition],
+    nodes: [
+      image,
+      modelNode("leaf", classification),
+      modelNode("pests", detection),
+      modelNode("rust", segmentation),
+      condition,
+    ],
   };
   const models = [
     {
@@ -199,6 +209,10 @@ describe("workflowNodeCatalog after an output port (US-128)", () => {
       { key: "output", disabledReason: undefined },
       { key: "dataset.capture", disabledReason: undefined },
     ]);
+  });
+
+  it("offers only outputs after a segmentation result (US-159)", () => {
+    expect(after("rust", "result")).toEqual([{ key: "output", disabledReason: undefined }]);
   });
 
   it.each([

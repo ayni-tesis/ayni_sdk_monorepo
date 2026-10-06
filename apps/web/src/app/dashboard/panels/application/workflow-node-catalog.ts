@@ -58,13 +58,14 @@ export type WorkflowNewNode =
 export type WorkflowOutputSource = {
   id: string;
   port: "result" | "true" | "false";
-  type: "classification" | "detection" | "boolean";
+  type: "classification" | "detection" | "segmentation" | "boolean";
   label: string;
 };
 
 const MODEL_DESCRIPTIONS = {
   classification: "Clasifica la imagen con un modelo TensorFlow Lite.",
   detection: "Detecta objetos en la imagen con un modelo TensorFlow Lite.",
+  segmentation: "Asigna una clase a cada píxel de la imagen con un modelo TensorFlow Lite.",
 } as const;
 export const CONDITION_SOURCE_MISSING_MESSAGE =
   "Agrega primero al lienzo una versión contratada de un modelo de clasificación.";
@@ -128,9 +129,12 @@ export function workflowNodeCatalog(
         ? ["logic", "output", "dataset"]
         : type === "detection"
           ? ["output", "dataset"]
-          : type === "boolean"
-            ? ["output", "dataset"]
-            : [];
+          : // A capture stores classifications and detections only (US-159).
+            type === "segmentation"
+            ? ["output"]
+            : type === "boolean"
+              ? ["output", "dataset"]
+              : [];
   // The port itself is the source, so nothing is missing from the canvas; only
   // the collection policy can still keep the capture out.
   return catalog

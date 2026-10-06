@@ -59,6 +59,14 @@ const contractSchema = z
           tensorIndices: tensorIndicesSchema.optional(),
         })
         .strict(),
+      z
+        .object({
+          type: z.literal("segmentation"),
+          // A segmentation mask stores each pixel's label index in one byte (US-158).
+          labels: z.array(z.string().trim().min(1)).min(1).max(256),
+          scoreType: z.enum(["logits", "probabilities"]),
+        })
+        .strict(),
     ]),
   })
   .strict();

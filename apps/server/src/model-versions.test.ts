@@ -585,6 +585,72 @@ describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVers
     await expect(response.json()).resolves.toMatchObject({ code: "incompatibleContract" });
   });
 
+  it("accepts a segmentation contract with its score type", async () => {
+    const { app } = makeApp();
+    const contract = {
+      input: {
+        type: "image",
+        width: 257,
+        height: 257,
+        channels: 3,
+        normalization: "minus_one_to_one",
+      },
+      output: {
+        type: "segmentation",
+        labels: ["background", "leaf", "rust"],
+        scoreType: "logits",
+      },
+    };
+
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(contract),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ contract });
+  });
+
+  it.each([
+    { name: "without a score type", output: { type: "segmentation", labels: ["leaf"] } },
+    {
+      name: "with an unknown score type",
+      output: { type: "segmentation", labels: ["leaf"], scoreType: "softmax" },
+    },
+    {
+      name: "with more than 256 labels",
+      output: {
+        type: "segmentation",
+        labels: Array.from({ length: 257 }, (_, index) => `label-${index}`),
+        scoreType: "logits",
+      },
+    },
+    {
+      name: "with a detection threshold",
+      output: { type: "segmentation", labels: ["leaf"], scoreType: "logits", scoreThreshold: 0.5 },
+    },
+  ])("rejects a segmentation contract $name", async ({ output }) => {
+    const { app } = makeApp();
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        input: {
+          type: "image",
+          width: 257,
+          height: 257,
+          channels: 3,
+          normalization: "minus_one_to_one",
+        },
+        output,
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "incompatibleContract" });
+  });
+
   it("accepts ImageNet classification contracts with 1001 labels", async () => {
     const { app } = makeApp();
     const contract = {

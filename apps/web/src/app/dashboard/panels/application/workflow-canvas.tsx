@@ -144,11 +144,11 @@ export type WorkflowCanvasNode =
       name: string;
       sourceNodeId: string;
       sourcePort: string;
-      resultType: "classification" | "detection" | "boolean";
+      resultType: "classification" | "detection" | "segmentation" | "boolean";
       sources?: {
         sourceNodeId: string;
         sourcePort: string;
-        resultType: "classification" | "detection" | "boolean";
+        resultType: "classification" | "detection" | "segmentation" | "boolean";
       }[];
     };
 export type WorkflowCanvasDraft = {
@@ -331,6 +331,7 @@ export const CONDITION_OPERATOR_SYMBOLS = { gte: "≥", gt: ">", lte: "≤", lt:
 export const WORKFLOW_RESULT_TYPE_LABELS = {
   classification: "Clasificación",
   detection: "Detección",
+  segmentation: "Segmentación",
   boolean: "Booleano",
 } as const;
 // Every decimal of the threshold, with a decimal comma: 0.8 reads 0,8.

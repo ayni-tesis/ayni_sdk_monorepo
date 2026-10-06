@@ -106,11 +106,11 @@ export type WorkflowNode =
       name: string;
       sourceNodeId: string;
       sourcePort: string;
-      resultType: "classification" | "detection" | "boolean";
+      resultType: "classification" | "detection" | "segmentation" | "boolean";
       sources?: {
         sourceNodeId: string;
         sourcePort: string;
-        resultType: "classification" | "detection" | "boolean";
+        resultType: "classification" | "detection" | "segmentation" | "boolean";
       }[];
     }
   | {
@@ -751,11 +751,11 @@ export type AddOutputNodeInput = WorkflowDraftChangeInput & {
   name: string;
   sourceNodeId: string;
   sourcePort: string;
-  resultType: "classification" | "detection" | "boolean";
+  resultType: "classification" | "detection" | "segmentation" | "boolean";
   sources?: {
     sourceNodeId: string;
     sourcePort: string;
-    resultType: "classification" | "detection" | "boolean";
+    resultType: "classification" | "detection" | "segmentation" | "boolean";
   }[];
   position?: WorkflowNodePosition;
 };

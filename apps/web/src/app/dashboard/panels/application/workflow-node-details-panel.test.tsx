@@ -134,6 +134,35 @@ describe("WorkflowNodeDetailsPanel", () => {
     expect(within(panel).queryByRole("button", { name: "Guardar cambios del nodo" })).toBeNull();
   });
 
+  it("shows a segmentation model's labels and score type (US-159)", () => {
+    const segmenter: WorkflowCanvasNode = {
+      ...modelNode,
+      id: "segmenter",
+      outputs: {
+        result: { type: "segmentation", labels: ["fondo", "roya"], scoreType: "logits" },
+      },
+    };
+    const { panel } = renderPanel({ node: segmenter, panelDraft: { nodes: [segmenter] } });
+
+    expect(within(panel).getByText("Segmentación: fondo, roya · logits")).toBeTruthy();
+  });
+
+  it("shows the result type Segmentación of an output on a segmentation result (US-159)", () => {
+    const mask: WorkflowCanvasNode = {
+      id: "mask",
+      type: "output",
+      name: "Máscara",
+      sourceNodeId: "segmenter",
+      sourcePort: "result",
+      resultType: "segmentation",
+    };
+    const { panel } = renderPanel({ node: mask, panelDraft: { nodes: [mask] } });
+
+    expect(within(panel).getByText("Tipo de resultado").nextSibling?.textContent).toBe(
+      "Segmentación",
+    );
+  });
+
   it("shows when a capture behind a condition branch captures (US-074)", () => {
     const capture: WorkflowCanvasNode = {
       id: "capture",

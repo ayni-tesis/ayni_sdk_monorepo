@@ -72,6 +72,12 @@ export async function publishWorkflowVersion(
       // it may hang from (US-074): an SDK older than 0.3.0 reports that the
       // workflow needs a newer SDK instead of an unknown node.
       const hasCapture = draft.nodes.some((node) => node.type === "dataset.capture");
+      // Schema 4 adds segmentation models (US-159) on top of schema 3: an SDK
+      // older than 0.4.0 reports unsupportedWorkflowVersion instead of an
+      // invalid workflow, and keeps its last compatible version.
+      const hasSegmentation = draft.nodes.some(
+        (node) => node.type === "model.tflite" && node.outputs.result.type === "segmentation",
+      );
       const nodes = draft.nodes.map((node) =>
         node.type === "output" && (node.sources?.length ?? 0) > 0
           ? {
@@ -97,7 +103,7 @@ export async function publishWorkflowVersion(
           version,
           // The layout only positions nodes on the dashboard canvas; the SDK gets the DAG.
           definition: {
-            schemaVersion: hasCapture ? "3" : hasCombinedOutput ? "2" : "1",
+            schemaVersion: hasSegmentation ? "4" : hasCapture ? "3" : hasCombinedOutput ? "2" : "1",
             nodes,
             connections: draft.connections ?? [],
           },

@@ -30,6 +30,12 @@ export type ModelVersionListItem = {
   contract: ModelVersionContract | null;
 };
 
+const CONTRACT_TASK_LABELS: Record<ModelVersionContract["output"]["type"], string> = {
+  classification: "Clasificación",
+  detection: "Detección",
+  segmentation: "Segmentación",
+};
+
 const VERSIONS_LOAD_ERROR = "No pudimos cargar las versiones. Inténtalo nuevamente.";
 const VERSIONS_EMPTY_MESSAGE = "Este modelo aún no tiene versiones.";
 
@@ -235,9 +241,7 @@ export function ModelVersionsDialog({
                   </td>
                   <td className="py-2.5 text-muted-foreground">
                     {version.contract
-                      ? version.contract.output.type === "classification"
-                        ? "Clasificación"
-                        : "Detección"
+                      ? (CONTRACT_TASK_LABELS[version.contract.output.type] ?? "Sin definir")
                       : "Sin definir"}
                   </td>
                   {canManage && (

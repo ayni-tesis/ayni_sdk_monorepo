@@ -170,7 +170,12 @@ export type PublishWorkflowVersionDialogProps = {
   setVersionError: (error: string) => void;
   publishing: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  /** The draft has a segmentation model, which only ayni_sdk 0.4.0 or later runs (US-159). */
+  hasSegmentation?: boolean;
 };
+
+export const SEGMENTATION_SDK_NOTICE =
+  "Esta versión usa segmentación y requiere ayni_sdk 0.4.0 o posterior. Las apps con una versión anterior del SDK conservan la versión del workflow que ya tienen.";
 
 export function PublishWorkflowVersionDialog({
   open,
@@ -181,6 +186,7 @@ export function PublishWorkflowVersionDialog({
   setVersionError,
   publishing,
   onSubmit,
+  hasSegmentation = false,
 }: PublishWorkflowVersionDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -189,6 +195,11 @@ export function PublishWorkflowVersionDialog({
           <DialogTitle>Publicar versión</DialogTitle>
           <DialogDescription>Se publicará una versión inmutable del workflow.</DialogDescription>
         </DialogHeader>
+        {hasSegmentation && (
+          <p className="text-muted-foreground text-sm" role="note">
+            {SEGMENTATION_SDK_NOTICE}
+          </p>
+        )}
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <label htmlFor="publish-workflow-version" className="font-semibold text-sm">
@@ -1590,6 +1601,11 @@ export function WorkflowDetailView({
         setVersionError={setPublishError}
         publishing={publishing}
         onSubmit={handlePublishWorkflowVersion}
+        hasSegmentation={
+          detail?.draft.nodes.some(
+            (node) => node.type === "model.tflite" && node.outputs.result.type === "segmentation",
+          ) ?? false
+        }
       />
 
       <RenameWorkflowDialog
