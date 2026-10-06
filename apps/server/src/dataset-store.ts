@@ -72,6 +72,11 @@ type DatasetReadExecutor = {
 };
 
 type DatasetWriteExecutor = DatasetReadExecutor & {
+  delete: (table: unknown) => {
+    where: (condition: unknown) => {
+      returning: (fields?: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
+    };
+  };
   insert: (table: unknown) => {
     values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
       returning: (fields?: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
@@ -357,6 +362,47 @@ export async function addDatasetEvidence(
     if (!result.ok) return { ok: false, reason: result.reason };
     if (result.value.kind === "added") return { ok: true, value: result.value.items };
     return { ok: false, reason: result.value.kind };
+  } catch {
+    return { ok: false, reason: "databaseFailed" };
+  }
+}
+
+export type RemoveDatasetEvidenceInput = {
+  applicationId: string;
+  datasetId: string;
+  itemId: string;
+  userId: string;
+};
+
+export type RemoveDatasetEvidenceResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "notFound" | "archived" | "databaseFailed" };
+
+export async function removeDatasetEvidence(
+  database: ApplicationDatabase,
+  input: RemoveDatasetEvidenceInput,
+): Promise<RemoveDatasetEvidenceResult> {
+  try {
+    const result = await executeApplicationAction(
+      database,
+      { applicationId: input.applicationId, userId: input.userId },
+      async (transaction) => {
+        const tx = transaction as unknown as DatasetWriteExecutor;
+        const deleted = await tx
+          .delete(datasetItem)
+          .where(
+            and(
+              eq(datasetItem.applicationId, input.applicationId),
+              eq(datasetItem.datasetId, input.datasetId),
+              eq(datasetItem.id, input.itemId),
+            ),
+          )
+          .returning({ id: datasetItem.id });
+        return deleted.length ? "removed" : "notFound";
+      },
+    );
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return result.value === "removed" ? { ok: true } : { ok: false, reason: "notFound" };
   } catch {
     return { ok: false, reason: "databaseFailed" };
   }

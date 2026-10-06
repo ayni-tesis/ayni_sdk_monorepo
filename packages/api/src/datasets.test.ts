@@ -120,5 +120,11 @@ describe("dataset creation contract", () => {
       document.paths?.["/applications/{applicationId}/datasets/{datasetId}/evidence"]?.post
         ?.responses?.["201"],
     ).toBeDefined();
+    const removalOperation =
+      document.paths?.["/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}"]
+        ?.delete;
+    expect(removalOperation?.responses?.["204"]).toBeDefined();
+    expect(removalOperation?.responses?.["403"]).toBeDefined();
+    expect(removalOperation?.responses?.["404"]).toBeDefined();
   });
 });

@@ -191,6 +191,16 @@ export function DatasetDetailView({
     }
   }
 
+  async function removeEvidence(itemId: string) {
+    if (!canManage || application.status !== "active") return;
+    setNotice("");
+    await httpClient.delete(
+      `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
+    );
+    await loadDetail();
+    setNotice("Evidencia retirada del dataset.");
+  }
+
   useEffect(() => {
     void loadDetail();
     return () => {
@@ -397,7 +407,12 @@ export function DatasetDetailView({
           ) : (
             <ul className="space-y-3">
               {items.map((item) => (
-                <EvidenceItem key={item.id} item={item} />
+                <EvidenceItem
+                  key={item.id}
+                  item={item}
+                  canRemove={canManage && application.status === "active"}
+                  onRemove={removeEvidence}
+                />
               ))}
             </ul>
           )}
@@ -428,7 +443,33 @@ export function DatasetDetailView({
   );
 }
 
-function EvidenceItem({ item }: { item: DatasetDetailResponse["items"][number] }) {
+function EvidenceItem({
+  item,
+  canRemove = false,
+  onRemove,
+}: {
+  item: DatasetDetailResponse["items"][number];
+  canRemove?: boolean;
+  onRemove?: (itemId: string) => Promise<void>;
+}) {
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
+
+  async function confirmRemove() {
+    if (!onRemove || removing) return;
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      await onRemove(item.id);
+      setRemoveOpen(false);
+    } catch (removeError) {
+      setRemoveError(errorMessage(removeError, "No pudimos retirar la evidencia del dataset."));
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
     <li className="rounded-lg border p-4">
       <div className="flex flex-wrap justify-between gap-2">
@@ -441,6 +482,49 @@ function EvidenceItem({ item }: { item: DatasetDetailResponse["items"][number] }
       <p className="mt-1 text-muted-foreground text-xs">
         Modelo {item.modelId} · versión {item.modelVersion}
       </p>
+      {canRemove && onRemove && (
+        <div className="mt-3 flex justify-end">
+          <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setRemoveError("");
+                setRemoveOpen(true);
+              }}
+            >
+              Retirar del dataset
+            </Button>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Retirar evidencia</DialogTitle>
+                <DialogDescription>
+                  La evidencia se conservará, pero no se incluirá en futuras exportaciones.
+                </DialogDescription>
+              </DialogHeader>
+              {removeError && (
+                <p role="alert" className="text-destructive text-sm">
+                  {removeError}
+                </p>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={removing}
+                  onClick={() => setRemoveOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="button" disabled={removing} onClick={() => void confirmRemove()}>
+                  {removing ? "Retirando evidencia…" : "Retirar evidencia"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
     </li>
   );
 }

@@ -13,6 +13,8 @@ import type {
   AddDatasetEvidenceResult,
   CreateDatasetInput,
   DatasetStoreResult,
+  RemoveDatasetEvidenceInput,
+  RemoveDatasetEvidenceResult,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 
@@ -84,6 +86,9 @@ function makeApp({
     ok: true,
     value: [datasetItem],
   }),
+  removeEvidence = async (
+    _input: RemoveDatasetEvidenceInput,
+  ): Promise<RemoveDatasetEvidenceResult> => ({ ok: true }),
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
@@ -106,12 +111,14 @@ function makeApp({
     offset: number,
   ) => Promise<DatasetAvailableEvidenceResponse | null>;
   addEvidence?: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
+  removeEvidence?: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
   const getMock = vi.fn(get);
   const listAvailableEvidenceMock = vi.fn(listAvailableEvidence);
   const addEvidenceMock = vi.fn(addEvidence);
+  const removeEvidenceMock = vi.fn(removeEvidence);
   const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
@@ -125,9 +132,18 @@ function makeApp({
       get: getMock,
       list: listMock,
       listAvailableEvidence: listAvailableEvidenceMock,
+      removeEvidence: removeEvidenceMock,
     },
   });
-  return { app, addEvidenceMock, createMock, getMock, listAvailableEvidenceMock, listMock };
+  return {
+    app,
+    addEvidenceMock,
+    createMock,
+    getMock,
+    listAvailableEvidenceMock,
+    listMock,
+    removeEvidenceMock,
+  };
 }
 
 function jsonRequest(body: unknown) {
@@ -233,6 +249,50 @@ describe("application datasets", () => {
     expect(await rejected.json()).toMatchObject({
       message: "Esta evidencia no coincide con el tipo de tarea del dataset.",
     });
+  });
+
+  it("removes a dataset item for administrators and reports missing items", async () => {
+    const { app, removeEvidenceMock } = makeApp();
+    const response = await app.request("/applications/app-1/datasets/dataset-1/evidence/item-1", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    expect(removeEvidenceMock).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "admin",
+    });
+
+    const member = makeApp({ membershipRole: "member" });
+    const forbidden = await member.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1",
+      { method: "DELETE" },
+    );
+    expect(forbidden.status).toBe(403);
+    expect(member.removeEvidenceMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({
+      removeEvidence: async () => ({ ok: false, reason: "notFound" }),
+    });
+    const notFound = await missing.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/foreign-item",
+      { method: "DELETE" },
+    );
+    expect(notFound.status).toBe(404);
+    expect(await notFound.json()).toMatchObject({
+      message: "No encontramos este ítem del dataset.",
+    });
+
+    const archived = makeApp({ application: { ...activeApplication, status: "archived" } });
+    const unavailable = await archived.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1",
+      { method: "DELETE" },
+    );
+    expect(unavailable.status).toBe(409);
+    expect(archived.removeEvidenceMock).not.toHaveBeenCalled();
   });
 
   it("does not expose available evidence for foreign or archived applications", async () => {

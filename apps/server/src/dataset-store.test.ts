@@ -7,6 +7,7 @@ import {
   getDataset,
   listAvailableDatasetEvidence,
   listDatasets,
+  removeDatasetEvidence,
 } from "./dataset-store";
 
 const input = {
@@ -32,12 +33,15 @@ function makeDatabase({
   evidenceRows = [evidence],
   attachedRows = [] as { evidenceId: string }[],
   datasetItemRows = [] as Record<string, unknown>[],
+  deleteRows = [{ id: "item-1" }] as Record<string, unknown>[],
 }: {
   evidenceRows?: EvidenceRow[];
   attachedRows?: { evidenceId: string }[];
   datasetItemRows?: Record<string, unknown>[];
+  deleteRows?: Record<string, unknown>[];
 } = {}) {
   const insertedValues: Record<string, unknown>[] = [];
+  const deletedTables: unknown[] = [];
   const tx = {
     select: () => ({
       from(table: unknown) {
@@ -99,11 +103,17 @@ function makeDatabase({
         };
       },
     }),
+    delete: (table: unknown) => {
+      deletedTables.push(table);
+      return {
+        where: () => ({ returning: async () => deleteRows }),
+      };
+    },
   };
   const database = {
     transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
   } as unknown as ApplicationDatabase;
-  return { database, insertedValues };
+  return { database, deletedTables, insertedValues };
 }
 
 describe("addDatasetEvidence", () => {
@@ -171,6 +181,27 @@ describe("addDatasetEvidence", () => {
       reason: "alreadyAdded",
     });
     expect(insertedValues).toEqual([]);
+  });
+});
+
+describe("removeDatasetEvidence", () => {
+  it("deletes only the dataset item association", async () => {
+    const { database, deletedTables } = makeDatabase();
+
+    expect(await removeDatasetEvidence(database, { ...input, itemId: "item-1" })).toEqual({
+      ok: true,
+    });
+    expect(deletedTables).toEqual([datasetItem]);
+  });
+
+  it("reports an item that does not belong to the dataset as not found", async () => {
+    const { database, deletedTables } = makeDatabase({ deleteRows: [] });
+
+    expect(await removeDatasetEvidence(database, { ...input, itemId: "foreign-item" })).toEqual({
+      ok: false,
+      reason: "notFound",
+    });
+    expect(deletedTables).toEqual([datasetItem]);
   });
 });
 
