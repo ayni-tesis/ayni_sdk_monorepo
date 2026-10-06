@@ -1,5 +1,6 @@
 import {
   DatasetAddEvidenceRequestSchema,
+  DatasetAvailableEvidenceQuerySchema,
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
@@ -31,6 +32,7 @@ type Dependencies = {
     listAvailableEvidence: (
       applicationId: string,
       datasetId: string,
+      offset: number,
     ) => Promise<DatasetAvailableEvidenceResponse | null>;
   };
 };
@@ -77,11 +79,19 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
     if (application.status !== "active") {
       return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
     }
+    const query = DatasetAvailableEvidenceQuerySchema.safeParse({ offset: c.req.query("offset") });
+    if (!query.success) {
+      return c.json(
+        { message: "El desplazamiento de página no es válido.", code: "invalidEvidencePage" },
+        400,
+      );
+    }
 
     try {
       const available = await datasets.listAvailableEvidence(
         application.id,
         c.req.param("datasetId"),
+        query.data.offset,
       );
       if (!available) return c.json({ message: "No encontramos este dataset." }, 404);
       return c.json(available);

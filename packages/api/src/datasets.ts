@@ -55,7 +55,13 @@ export const DatasetDetailResponseSchema = z
   .object({ dataset: DatasetListItemSchema, items: z.array(DatasetItemSchema) })
   .strict();
 export const DatasetAvailableEvidenceResponseSchema = z
-  .object({ evidence: z.array(DatasetEvidenceSchema) })
+  .object({
+    evidence: z.array(DatasetEvidenceSchema),
+    nextOffset: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export const DatasetAvailableEvidenceQuerySchema = z
+  .object({ offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0) })
   .strict();
 export const DatasetAddEvidenceRequestSchema = z
   .object({ evidenceIds: z.array(z.string().min(1)).min(1) })
@@ -134,12 +140,14 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
         applicationId: z.string().openapi({ example: "app-123" }),
         datasetId: z.string().openapi({ example: "dataset-123" }),
       }),
+      query: DatasetAvailableEvidenceQuerySchema,
     },
     responses: {
       "200": {
-        description: "Evidencia compatible disponible.",
+        description: "Página de evidencia compatible disponible.",
         content: { "application/json": { schema: DatasetAvailableEvidenceResponseSchema } },
       },
+      "400": errorResponse("El desplazamiento de página no es válido."),
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para agregar evidencia."),
       "404": errorResponse("No encontramos este dataset."),

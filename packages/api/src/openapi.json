@@ -3196,11 +3196,22 @@
             "required": true,
             "name": "datasetId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Evidencia compatible disponible.",
+            "description": "Página de evidencia compatible disponible.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3243,9 +3254,33 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "nextOffset": {
+                      "type": ["integer", "null"],
+                      "minimum": 0
                     }
                   },
-                  "required": ["evidence"],
+                  "required": ["evidence", "nextOffset"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El desplazamiento de página no es válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }

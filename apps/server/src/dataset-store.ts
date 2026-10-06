@@ -9,7 +9,7 @@ import type {
   DatasetTaskType,
 } from "@ayni/api/datasets";
 import { dataset, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -34,6 +34,7 @@ type DatasetRow = {
   name: string;
   taskType: DatasetTaskType;
   createdAt: Date | string;
+  evidenceCount: number;
 };
 
 type DatasetItemRow = {
@@ -57,10 +58,12 @@ type DatasetEvidenceRow = {
 };
 
 type DatasetQuery = Promise<Record<string, unknown>[]> & {
+  leftJoin: (table: unknown, condition: unknown) => DatasetQuery;
   innerJoin: (table: unknown, condition: unknown) => DatasetQuery;
   where: (condition: unknown) => DatasetQuery;
-  orderBy: (...columns: unknown[]) => Promise<Record<string, unknown>[]>;
+  orderBy: (...columns: unknown[]) => DatasetQuery;
   limit: (count: number) => DatasetQuery;
+  offset: (count: number) => Promise<Record<string, unknown>[]>;
   for: (lock: "update") => Promise<Record<string, unknown>[]>;
 };
 
@@ -82,13 +85,16 @@ const datasetFields = {
   name: dataset.name,
   taskType: dataset.taskType,
   createdAt: dataset.createdAt,
+  evidenceCount: sql<number>`(select count(*)::int from ${datasetItem} where ${datasetItem.applicationId} = ${dataset.applicationId} and ${datasetItem.datasetId} = ${dataset.id})`,
 };
 
-function toDatasetListItem(row: DatasetRow, evidenceCount = 0): DatasetListItem {
+const DATASET_EVIDENCE_PAGE_SIZE = 50;
+
+function toDatasetListItem(row: DatasetRow): DatasetListItem {
   return {
     ...row,
     createdAt: toIsoString(row.createdAt),
-    evidenceCount,
+    evidenceCount: row.evidenceCount,
     // ponytail: review totals remain zero until the review workflow adds item states.
     approvedCount: 0,
   };
@@ -117,14 +123,7 @@ export async function listDatasets(
       .from(dataset)
       .where(eq(dataset.applicationId, applicationId))
       .orderBy(asc(dataset.createdAt), asc(dataset.id))) as DatasetRow[];
-    const items = (await tx
-      .select({ datasetId: datasetItem.datasetId })
-      .from(datasetItem)
-      .where(eq(datasetItem.applicationId, applicationId))) as { datasetId: string }[];
-    const counts = new Map<string, number>();
-    for (const item of items) counts.set(item.datasetId, (counts.get(item.datasetId) ?? 0) + 1);
-
-    return { datasets: rows.map((row) => toDatasetListItem(row, counts.get(row.id) ?? 0)) };
+    return { datasets: rows.map(toDatasetListItem) };
   });
 }
 
@@ -166,7 +165,7 @@ export async function getDataset(
       )
       .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as DatasetItemRow[];
     return {
-      dataset: toDatasetListItem(row, items.length),
+      dataset: toDatasetListItem(row),
       items: items.map(toDatasetItem),
     };
   });
@@ -176,6 +175,7 @@ export async function listAvailableDatasetEvidence(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
+  offset = 0,
 ): Promise<DatasetAvailableEvidenceResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetReadExecutor;
@@ -187,15 +187,6 @@ export async function listAvailableDatasetEvidence(
     const found = datasets[0];
     if (!found) return null;
 
-    const attached = (await tx
-      .select({ evidenceId: datasetItem.evidenceId })
-      .from(datasetItem)
-      .where(
-        and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
-      )) as {
-      evidenceId: string;
-    }[];
-    const attachedIds = new Set(attached.map((item) => item.evidenceId));
     const rows = (await tx
       .select({
         evidenceId: sdkEvidence.evidenceId,
@@ -206,16 +197,30 @@ export async function listAvailableDatasetEvidence(
         capturedAt: sdkEvidence.capturedAt,
       })
       .from(sdkEvidence)
+      .leftJoin(
+        datasetItem,
+        and(
+          eq(datasetItem.applicationId, applicationId),
+          eq(datasetItem.datasetId, datasetId),
+          eq(datasetItem.evidenceId, sdkEvidence.evidenceId),
+        ),
+      )
       .where(
         and(
           eq(sdkEvidence.applicationId, applicationId),
           eq(sdkEvidence.taskType, found.taskType),
           eq(sdkEvidence.status, "received"),
+          isNull(datasetItem.evidenceId),
         ),
       )
-      .orderBy(desc(sdkEvidence.capturedAt), desc(sdkEvidence.evidenceId))) as DatasetEvidenceRow[];
+      .orderBy(desc(sdkEvidence.capturedAt), desc(sdkEvidence.evidenceId))
+      .limit(DATASET_EVIDENCE_PAGE_SIZE + 1)
+      .offset(offset)) as DatasetEvidenceRow[];
+    const hasMore = rows.length > DATASET_EVIDENCE_PAGE_SIZE;
+    const page = hasMore ? rows.slice(0, DATASET_EVIDENCE_PAGE_SIZE) : rows;
     return {
-      evidence: rows.filter((row) => !attachedIds.has(row.evidenceId)).map(toDatasetEvidence),
+      evidence: page.map(toDatasetEvidence),
+      nextOffset: hasMore ? offset + page.length : null,
     };
   });
 }

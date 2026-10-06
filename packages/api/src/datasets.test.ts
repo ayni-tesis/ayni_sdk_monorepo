@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DatasetAddEvidenceRequestSchema,
+  DatasetAvailableEvidenceQuerySchema,
   DatasetAvailableEvidenceResponseSchema,
   DatasetCreateRequestSchema,
   DatasetDetailResponseSchema,
@@ -86,13 +87,22 @@ describe("dataset creation contract", () => {
       true,
     );
     expect(DatasetAddEvidenceRequestSchema.safeParse({ evidenceIds: [] }).success).toBe(false);
-    expect(DatasetAvailableEvidenceResponseSchema.safeParse({ evidence: [] }).success).toBe(true);
+    expect(
+      DatasetAvailableEvidenceResponseSchema.safeParse({ evidence: [], nextOffset: null }).success,
+    ).toBe(true);
+    expect(DatasetAvailableEvidenceQuerySchema.parse({ offset: "50" })).toEqual({ offset: 50 });
+    expect(DatasetAvailableEvidenceQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
 
     const document = createOpenApiDocument();
+    const availableOperation =
+      document.paths?.["/applications/{applicationId}/datasets/{datasetId}/available-evidence"]
+        ?.get;
+    expect(availableOperation?.responses?.["200"]).toBeDefined();
     expect(
-      document.paths?.["/applications/{applicationId}/datasets/{datasetId}/available-evidence"]?.get
-        ?.responses?.["200"],
-    ).toBeDefined();
+      availableOperation?.parameters?.some(
+        (parameter) => "name" in parameter && parameter.name === "offset",
+      ),
+    ).toBe(true);
     expect(
       document.paths?.["/applications/{applicationId}/datasets/{datasetId}/evidence"]?.post
         ?.responses?.["201"],

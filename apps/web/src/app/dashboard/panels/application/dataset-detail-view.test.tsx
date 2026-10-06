@@ -64,7 +64,7 @@ describe("DatasetDetailView", () => {
       .mockReset()
       .mockImplementation(async (url: string) =>
         url.endsWith("/available-evidence")
-          ? { data: { evidence: [evidence] } }
+          ? { data: { evidence: [evidence], nextOffset: null } }
           : { data: { dataset, items: [] } },
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
@@ -100,6 +100,33 @@ describe("DatasetDetailView", () => {
     expect(postMock).toHaveBeenCalledWith("/applications/app-1/datasets/dataset-1/evidence", {
       evidenceIds: ["evidence-1"],
     });
+  });
+
+  it("loads additional compatible evidence pages on demand", async () => {
+    const olderEvidence = {
+      ...evidence,
+      evidenceId: "evidence-2",
+      result: { type: "classification", label: "cedro", confidence: 0.7 },
+    };
+    getMock.mockImplementation(async (url: string, options?: { params?: { offset?: number } }) => {
+      if (url.endsWith("/available-evidence")) {
+        return options?.params?.offset
+          ? { data: { evidence: [olderEvidence], nextOffset: null } }
+          : { data: { evidence: [evidence], nextOffset: 50 } };
+      }
+      return { data: { dataset, items: [] } };
+    });
+    renderManagedDetail();
+    await screen.findByRole("heading", { name: "Flores" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar evidencia" }));
+    await screen.findByText("Predicción: pino (90%)");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Cargar más evidencias" }));
+
+    expect(await screen.findByText("Predicción: cedro (70%)")).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1/available-evidence",
+      expect.objectContaining({ params: { offset: 50 } }),
+    );
   });
 
   it("shows loading, not-found, and retryable error states", async () => {

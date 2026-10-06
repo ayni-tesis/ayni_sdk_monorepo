@@ -55,6 +55,7 @@ export function DatasetDetailView({
   const [notice, setNotice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [available, setAvailable] = useState<DatasetAvailableEvidenceResponse["evidence"]>([]);
+  const [nextEvidenceOffset, setNextEvidenceOffset] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [availableLoading, setAvailableLoading] = useState(false);
   const [availableError, setAvailableError] = useState("");
@@ -89,27 +90,39 @@ export function DatasetDetailView({
     }
   }, [application.id, datasetId]);
 
-  const loadAvailableEvidence = useCallback(async () => {
-    availableAbortRef.current?.abort();
-    const controller = new AbortController();
-    availableAbortRef.current = controller;
-    setAvailableLoading(true);
-    setAvailableError("");
-    try {
-      const { data } = await httpClient.get<DatasetAvailableEvidenceResponse>(
-        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/available-evidence`,
-        { signal: controller.signal },
-      );
-      if (!controller.signal.aborted) setAvailable(data.evidence);
-    } catch (loadError) {
-      if (!controller.signal.aborted) {
+  const loadAvailableEvidence = useCallback(
+    async (offset = 0) => {
+      availableAbortRef.current?.abort();
+      const controller = new AbortController();
+      availableAbortRef.current = controller;
+      setAvailableLoading(true);
+      setAvailableError("");
+      if (offset === 0) {
         setAvailable([]);
-        setAvailableError(errorMessage(loadError, "No pudimos cargar las evidencias."));
+        setNextEvidenceOffset(null);
       }
-    } finally {
-      if (!controller.signal.aborted) setAvailableLoading(false);
-    }
-  }, [application.id, datasetId]);
+      try {
+        const { data } = await httpClient.get<DatasetAvailableEvidenceResponse>(
+          `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/available-evidence`,
+          { params: { offset }, signal: controller.signal },
+        );
+        if (!controller.signal.aborted) {
+          setAvailable((current) =>
+            offset === 0 ? data.evidence : [...current, ...data.evidence],
+          );
+          setNextEvidenceOffset(data.nextOffset);
+        }
+      } catch (loadError) {
+        if (!controller.signal.aborted) {
+          if (offset === 0) setAvailable([]);
+          setAvailableError(errorMessage(loadError, "No pudimos cargar las evidencias."));
+        }
+      } finally {
+        if (!controller.signal.aborted) setAvailableLoading(false);
+      }
+    },
+    [application.id, datasetId],
+  );
 
   useEffect(() => {
     if (!addOpen || !canManage || application.status !== "active") return;
@@ -263,9 +276,9 @@ export function DatasetDetailView({
                     Selecciona evidencia recibida compatible con el tipo de tarea del dataset.
                   </DialogDescription>
                 </DialogHeader>
-                {availableLoading ? (
+                {availableLoading && available.length === 0 ? (
                   <p role="status">Cargando evidencias…</p>
-                ) : availableError ? (
+                ) : availableError && available.length === 0 ? (
                   <div className="space-y-2" role="alert">
                     <p className="text-destructive text-sm">{availableError}</p>
                     <Button
@@ -297,6 +310,21 @@ export function DatasetDetailView({
                       />
                     ))}
                   </ul>
+                )}
+                {availableError && available.length > 0 && (
+                  <p role="alert" className="text-destructive text-sm">
+                    {availableError}
+                  </p>
+                )}
+                {nextEvidenceOffset !== null && available.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={availableLoading}
+                    onClick={() => void loadAvailableEvidence(nextEvidenceOffset)}
+                  >
+                    {availableLoading ? "Cargando evidencias…" : "Cargar más evidencias"}
+                  </Button>
                 )}
                 {addError && (
                   <p role="alert" className="text-destructive text-sm">

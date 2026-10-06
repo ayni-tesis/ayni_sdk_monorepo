@@ -266,8 +266,8 @@ const datasets = {
   get(applicationId: string, datasetId: string) {
     return getDataset(db, applicationId, datasetId);
   },
-  listAvailableEvidence(applicationId: string, datasetId: string) {
-    return listAvailableDatasetEvidence(db, applicationId, datasetId);
+  listAvailableEvidence(applicationId: string, datasetId: string, offset: number) {
+    return listAvailableDatasetEvidence(db, applicationId, datasetId, offset);
   },
 };
 

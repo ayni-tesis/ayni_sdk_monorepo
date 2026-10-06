@@ -68,7 +68,11 @@ function makeApp({
   listAvailableEvidence = async (
     _applicationId: string,
     _datasetId: string,
-  ): Promise<DatasetAvailableEvidenceResponse | null> => ({ evidence: [availableEvidence] }),
+    _offset: number,
+  ): Promise<DatasetAvailableEvidenceResponse | null> => ({
+    evidence: [availableEvidence],
+    nextOffset: null,
+  }),
   addEvidence = async (_input: AddDatasetEvidenceInput): Promise<AddDatasetEvidenceResult> => ({
     ok: true,
     value: [datasetItem],
@@ -88,6 +92,7 @@ function makeApp({
   listAvailableEvidence?: (
     applicationId: string,
     datasetId: string,
+    offset: number,
   ) => Promise<DatasetAvailableEvidenceResponse | null>;
   addEvidence?: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
@@ -147,11 +152,15 @@ describe("application datasets", () => {
 
   it("lists only an administrator's compatible evidence for an active dataset", async () => {
     const { app, listAvailableEvidenceMock } = makeApp();
-    const response = await app.request("/applications/app-1/datasets/dataset-1/available-evidence");
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1/available-evidence?offset=50",
+    );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ evidence: [availableEvidence] });
-    expect(listAvailableEvidenceMock).toHaveBeenCalledWith("app-1", "dataset-1");
+    expect(await response.json()).toEqual({ evidence: [availableEvidence], nextOffset: null });
+    expect(listAvailableEvidenceMock).toHaveBeenCalledWith("app-1", "dataset-1", 50);
+    await app.request("/applications/app-1/datasets/dataset-1/available-evidence");
+    expect(listAvailableEvidenceMock).toHaveBeenLastCalledWith("app-1", "dataset-1", 0);
 
     const member = makeApp({ membershipRole: "member" });
     const forbidden = await member.app.request(
@@ -159,6 +168,13 @@ describe("application datasets", () => {
     );
     expect(forbidden.status).toBe(403);
     expect(member.listAvailableEvidenceMock).not.toHaveBeenCalled();
+
+    const invalidOffset = makeApp();
+    const invalidPage = await invalidOffset.app.request(
+      "/applications/app-1/datasets/dataset-1/available-evidence?offset=-1",
+    );
+    expect(invalidPage.status).toBe(400);
+    expect(invalidOffset.listAvailableEvidenceMock).not.toHaveBeenCalled();
   });
 
   it("adds selected evidence and reports a task-type mismatch", async () => {

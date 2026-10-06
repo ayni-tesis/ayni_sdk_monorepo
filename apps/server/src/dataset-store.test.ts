@@ -2,7 +2,7 @@ import type { DatasetTaskType } from "@ayni/api/datasets";
 import { application, dataset, datasetItem, member, sdkEvidence } from "@ayni/db/schema/index";
 import { describe, expect, it } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
-import { addDatasetEvidence } from "./dataset-store";
+import { addDatasetEvidence, listAvailableDatasetEvidence, listDatasets } from "./dataset-store";
 
 const input = {
   applicationId: "app-1",
@@ -34,24 +34,46 @@ function makeDatabase({
   const tx = {
     select: () => ({
       from(table: unknown) {
-        const rows =
+        const rows: Record<string, unknown>[] =
           table === application
             ? [{ id: "app-1", organizationId: "org-1", name: "Ayni", status: "active" }]
             : table === member
               ? [{ role: "admin" }]
               : table === dataset
-                ? [{ id: "dataset-1", taskType: "classification" }]
+                ? [
+                    {
+                      id: "dataset-1",
+                      applicationId: "app-1",
+                      name: "Flores",
+                      taskType: "classification",
+                      createdAt: new Date("2026-10-01T00:00:00.000Z"),
+                      evidenceCount: 3,
+                    },
+                  ]
                 : table === sdkEvidence
                   ? evidenceRows
                   : table === datasetItem
                     ? attachedRows
                     : [];
-        const query = Object.assign(Promise.resolve(rows), {
-          where: () => query,
-          limit: () => query,
-          for: async () => rows,
-        });
-        return query;
+        const makeQuery = (resultRows: Record<string, unknown>[]) =>
+          Object.assign(Promise.resolve(resultRows), {
+            leftJoin: () =>
+              makeQuery(
+                table === sdkEvidence
+                  ? resultRows.filter(
+                      (row) =>
+                        !attachedRows.some((attached) => attached.evidenceId === row.evidenceId),
+                    )
+                  : resultRows,
+              ),
+            innerJoin: () => makeQuery(resultRows),
+            where: () => makeQuery(resultRows),
+            orderBy: () => makeQuery(resultRows),
+            limit: (count: number) => makeQuery(resultRows.slice(0, count)),
+            offset: async (count: number) => resultRows.slice(count),
+            for: async () => resultRows,
+          });
+        return makeQuery(rows);
       },
     }),
     insert: () => ({
@@ -140,5 +162,26 @@ describe("addDatasetEvidence", () => {
       reason: "alreadyAdded",
     });
     expect(insertedValues).toEqual([]);
+  });
+});
+
+describe("dataset evidence pages", () => {
+  it("counts items in the dataset query and returns available evidence in pages", async () => {
+    const evidenceRows = Array.from({ length: 51 }, (_, index) => ({
+      ...evidence,
+      evidenceId: `evidence-${index + 1}`,
+    }));
+    const { database } = makeDatabase({ evidenceRows });
+
+    const datasets = await listDatasets(database, "app-1");
+    expect(datasets.datasets[0]?.evidenceCount).toBe(3);
+
+    const firstPage = await listAvailableDatasetEvidence(database, "app-1", "dataset-1");
+    expect(firstPage?.evidence).toHaveLength(50);
+    expect(firstPage?.nextOffset).toBe(50);
+
+    const secondPage = await listAvailableDatasetEvidence(database, "app-1", "dataset-1", 50);
+    expect(secondPage?.evidence).toHaveLength(1);
+    expect(secondPage?.nextOffset).toBeNull();
   });
 });
