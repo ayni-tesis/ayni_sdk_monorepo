@@ -14,6 +14,8 @@ import type {
   AddDatasetEvidenceResult,
   CreateDatasetInput,
   DatasetStoreResult,
+  RemoveDatasetEvidenceInput,
+  RemoveDatasetEvidenceResult,
 } from "./dataset-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el dataset.";
@@ -38,6 +40,7 @@ type Dependencies = {
       datasetId: string,
       offset: number,
     ) => Promise<DatasetAvailableEvidenceResponse | null>;
+    removeEvidence: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
   };
 };
 
@@ -183,6 +186,54 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
     }
     return c.json(
       { message: "No pudimos agregar la evidencia al dataset.", code: "datasetEvidenceSaveFailed" },
+      500,
+    );
+  });
+
+  app.delete("/applications/:applicationId/datasets/:datasetId/evidence/:itemId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este ítem del dataset." }, 404);
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para retirar evidencia.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+
+    const result = await datasets.removeEvidence({
+      applicationId: application.id,
+      datasetId: c.req.param("datasetId"),
+      itemId: c.req.param("itemId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.body(null, 204);
+    if (result.reason === "forbidden") {
+      return c.json(
+        { message: "No tienes permiso para retirar evidencia.", code: "forbidden" },
+        403,
+      );
+    }
+    if (result.reason === "archived") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+    if (result.reason === "notFound") {
+      return c.json({ message: "No encontramos este ítem del dataset.", code: "notFound" }, 404);
+    }
+    return c.json(
+      {
+        message: "No pudimos retirar la evidencia del dataset.",
+        code: "datasetEvidenceRemoveFailed",
+      },
       500,
     );
   });

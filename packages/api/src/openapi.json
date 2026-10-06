@@ -3763,6 +3763,153 @@
         }
       }
     },
+    "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}": {
+      "delete": {
+        "tags": ["Datasets"],
+        "operationId": "retirar-evidencia-dataset",
+        "summary": "Retirar evidencia de un dataset",
+        "description": "Retira el ítem del dataset para excluirlo de futuras exportaciones; la evidencia original se conserva.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "item-123"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Evidencia retirada del dataset."
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para retirar evidencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este ítem del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No puedes modificar datasets de una aplicación archivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos retirar la evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{applicationId}/datasets": {
       "get": {
         "tags": ["Datasets"],

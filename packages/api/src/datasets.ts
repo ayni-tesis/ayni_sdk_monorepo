@@ -196,6 +196,32 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
   });
 
   registry.registerPath({
+    method: "delete",
+    path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}",
+    tags: ["Datasets"],
+    operationId: "retirar-evidencia-dataset",
+    summary: "Retirar evidencia de un dataset",
+    description:
+      "Retira el ítem del dataset para excluirlo de futuras exportaciones; la evidencia original se conserva.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        itemId: z.string().openapi({ example: "item-123" }),
+      }),
+    },
+    responses: {
+      "204": { description: "Evidencia retirada del dataset." },
+      "401": errorResponse("La sesión no está autenticada."),
+      "403": errorResponse("No tienes permiso para retirar evidencia."),
+      "404": errorResponse("No encontramos este ítem del dataset."),
+      "409": errorResponse("No puedes modificar datasets de una aplicación archivada."),
+      "500": errorResponse("No pudimos retirar la evidencia del dataset."),
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/applications/{applicationId}/datasets",
     tags: ["Datasets"],

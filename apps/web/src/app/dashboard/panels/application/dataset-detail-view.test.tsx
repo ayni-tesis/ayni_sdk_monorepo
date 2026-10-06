@@ -4,8 +4,14 @@ import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getMock, postMock } = vi.hoisted(() => ({ getMock: vi.fn(), postMock: vi.fn() }));
-vi.mock("@/lib/http-client", () => ({ httpClient: { get: getMock, post: postMock } }));
+const { deleteMock, getMock, postMock } = vi.hoisted(() => ({
+  deleteMock: vi.fn(),
+  getMock: vi.fn(),
+  postMock: vi.fn(),
+}));
+vi.mock("@/lib/http-client", () => ({
+  httpClient: { delete: deleteMock, get: getMock, post: postMock },
+}));
 
 const { DatasetDetailView } = await import("./dataset-detail-view");
 
@@ -68,6 +74,7 @@ describe("DatasetDetailView", () => {
           : { data: { dataset, items: [], nextItemOffset: null } },
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
+    deleteMock.mockReset().mockResolvedValue({ data: undefined });
   });
 
   afterEach(() => cleanup());
@@ -178,6 +185,146 @@ describe("DatasetDetailView", () => {
       "/applications/app-1/datasets/dataset-1",
       expect.objectContaining({ params: { offset: 50 } }),
     );
+  });
+
+  it("lets administrators retire a dataset item while preserving its source evidence", async () => {
+    let removed = false;
+    getMock.mockImplementation(async (url: string) =>
+      url.endsWith("/available-evidence")
+        ? { data: { evidence: [evidence], nextOffset: null } }
+        : {
+            data: removed
+              ? {
+                  dataset: { ...dataset, evidenceCount: 0 },
+                  items: [],
+                  nextItemOffset: null,
+                }
+              : {
+                  dataset: { ...dataset, evidenceCount: 1 },
+                  items: [item],
+                  nextItemOffset: null,
+                },
+          },
+    );
+    deleteMock.mockImplementation(async () => {
+      removed = true;
+      return { data: undefined };
+    });
+    renderManagedDetail();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retirar del dataset" }));
+    expect(
+      screen.getByText("La evidencia se conservará, pero no se incluirá en futuras exportaciones."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+
+    expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Agregar evidencia" });
+    expect(screen.getByText("Aún no hay evidencias en este dataset.")).toBeInTheDocument();
+    expect(deleteMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1",
+    );
+    await user.click(screen.getByRole("button", { name: "Agregar evidencia" }));
+    expect(await screen.findByText("Predicción: pino (90%)")).toBeInTheDocument();
+  });
+
+  it("retires an item from a later page without discarding loaded items or reloading the detail", async () => {
+    const olderItem = {
+      ...item,
+      id: "item-2",
+      evidenceId: "evidence-2",
+      originalResult: { type: "classification", label: "cedro", confidence: 0.7 },
+    };
+    const laterItem = {
+      ...item,
+      id: "item-3",
+      evidenceId: "evidence-3",
+      originalResult: { type: "classification", label: "roble", confidence: 0.6 },
+    };
+    let removed = false;
+    getMock.mockImplementation(async (url: string, options?: { params?: { offset?: number } }) => {
+      if (url.endsWith("/available-evidence")) {
+        return { data: { evidence: [evidence], nextOffset: null } };
+      }
+      if (options?.params?.offset === 1 && removed) {
+        return {
+          data: {
+            dataset: { ...dataset, evidenceCount: 2 },
+            items: [laterItem],
+            nextItemOffset: null,
+          },
+        };
+      }
+      if (options?.params?.offset === 1) {
+        return {
+          data: {
+            dataset: { ...dataset, evidenceCount: 3 },
+            items: [olderItem],
+            nextItemOffset: 2,
+          },
+        };
+      }
+      return {
+        data: { dataset: { ...dataset, evidenceCount: 3 }, items: [item], nextItemOffset: 1 },
+      };
+    });
+    deleteMock.mockImplementation(async () => {
+      removed = true;
+      return { data: undefined };
+    });
+    renderManagedDetail();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+    expect(await screen.findByText("Predicción original: cedro (70%)")).toBeInTheDocument();
+    const removeButtons = screen.getAllByRole("button", { name: "Retirar del dataset" });
+    expect(removeButtons).toHaveLength(2);
+    const laterItemRemoveButton = removeButtons[1];
+    if (!laterItemRemoveButton) throw new Error("Expected a remove button for the later page");
+    await user.click(laterItemRemoveButton);
+    await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+
+    expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+    expect(screen.getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    expect(screen.queryByText("Predicción original: cedro (70%)")).not.toBeInTheDocument();
+    expect(screen.getByText("Evidencias", { selector: "dt" }).nextElementSibling).toHaveTextContent(
+      "2",
+    );
+    expect(getMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Cargando dataset…")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+    expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+    expect(getMock).toHaveBeenLastCalledWith(
+      "/applications/app-1/datasets/dataset-1",
+      expect.objectContaining({ params: { offset: 1 } }),
+    );
+  });
+
+  it("keeps the dataset item and shows a missing-item error when retirement fails", async () => {
+    getMock.mockResolvedValue({ data: { dataset, items: [item], nextItemOffset: null } });
+    deleteMock.mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { message: "No encontramos este ítem del dataset." } },
+    });
+    renderManagedDetail();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retirar del dataset" }));
+    await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No encontramos este ítem del dataset.",
+    );
+    expect(screen.getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+  });
+
+  it("does not offer retirement to workspace members", async () => {
+    getMock.mockResolvedValue({ data: { dataset, items: [item], nextItemOffset: null } });
+    renderDetail();
+
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retirar del dataset" })).not.toBeInTheDocument();
   });
 
   it("loads additional compatible evidence pages on demand", async () => {
