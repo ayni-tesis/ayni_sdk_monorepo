@@ -39,10 +39,13 @@ function modelInputSummary({ inputs: { image } }: ModelNode) {
   return `Imagen ${image.width} × ${image.height} · ${image.channels} canales · ${NORMALIZATION_LABELS[image.normalization] ?? image.normalization}`;
 }
 
+const SCORE_TYPE_LABELS = { logits: "logits", probabilities: "probabilidades" } as const;
+
 function modelOutputSummary({ outputs: { result } }: ModelNode) {
-  return result.type === "classification"
-    ? `Clasificación: ${result.labels.join(", ")}`
-    : `Detección: ${result.labels.join(", ")} · umbral ${decimalFormat.format(result.scoreThreshold)}`;
+  if (result.type === "classification") return `Clasificación: ${result.labels.join(", ")}`;
+  if (result.type === "segmentation")
+    return `Segmentación: ${result.labels.join(", ")} · ${SCORE_TYPE_LABELS[result.scoreType] ?? "puntaje sin definir"}`;
+  return `Detección: ${result.labels.join(", ")} · umbral ${decimalFormat.format(result.scoreThreshold)}`;
 }
 
 /** The form's values, as typed, for the node types that have editable settings. */

@@ -129,6 +129,65 @@ describe("ModelVersionsDialog", () => {
     expect(screen.queryByTestId("model-versions-loading")).toBeNull();
   });
 
+  it("shows Segmentación and saves the score type of a segmentation contract (US-158)", async () => {
+    const segmentationContract: NonNullable<ModelVersionListItem["contract"]> = {
+      input: {
+        type: "image",
+        width: 257,
+        height: 257,
+        channels: 3,
+        normalization: "minus_one_to_one",
+      },
+      output: { type: "segmentation", labels: ["fondo", "roya"], scoreType: "logits" },
+    };
+    client.get.mockResolvedValue({
+      data: { versions: [{ ...listedVersion, contract: segmentationContract }] },
+    });
+    client.patch.mockImplementation(async (_url, payload) => ({ data: { contract: payload } }));
+
+    renderDialog({ canManage: true });
+    const row = await screen.findByTestId("model-version-row-mv-1");
+    expect(within(row).getByText("Segmentación")).toBeTruthy();
+    fireEvent.click(within(row).getByRole("button", { name: "Editar contrato" }));
+
+    const editor = await screen.findByRole("dialog", { name: "Contrato de la versión 1.0.0" });
+    const scoreType = within(editor).getByLabelText("Tipo de puntaje") as HTMLSelectElement;
+    expect(scoreType.value).toBe("logits");
+    expect(within(editor).queryByLabelText("Umbral de confianza")).toBeNull();
+    fireEvent.change(scoreType, { target: { value: "probabilities" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Guardar contrato" }));
+
+    await waitFor(() => {
+      expect(client.patch).toHaveBeenCalledWith(
+        "/applications/app-1/models/model-1/versions/mv-1/contract",
+        {
+          input: segmentationContract.input,
+          output: { type: "segmentation", labels: ["fondo", "roya"], scoreType: "probabilities" },
+        },
+      );
+    });
+  });
+
+  it("requires choosing the score type of a new segmentation contract (US-158)", async () => {
+    client.get.mockResolvedValue({ data: { versions: [listedVersion] } });
+
+    renderDialog({ canManage: true });
+    const row = await screen.findByTestId("model-version-row-mv-1");
+    fireEvent.click(within(row).getByRole("button", { name: "Definir contrato" }));
+    const editor = await screen.findByRole("dialog", { name: "Contrato de la versión 1.0.0" });
+    fireEvent.change(within(editor).getByLabelText(/Tipo de tarea/), {
+      target: { value: "segmentation" },
+    });
+    expect((within(editor).getByLabelText("Tipo de puntaje") as HTMLSelectElement).value).toBe("");
+    fireEvent.change(within(editor).getByLabelText(/Etiquetas/), { target: { value: "fondo" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Guardar contrato" }));
+
+    expect((await within(editor).findByRole("alert")).textContent).toBe(
+      "Elige si la salida del modelo trae logits o probabilidades.",
+    );
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+
   it("loads, saves, and reloads a non-default detection tensor role map", async () => {
     const initialContract: NonNullable<ModelVersionListItem["contract"]> = {
       input: {

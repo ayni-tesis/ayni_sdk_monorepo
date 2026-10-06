@@ -1,6 +1,10 @@
 import type { ModelVersionContract } from "@ayni/db/schema/index";
 
-type Tensor = { shape: number[]; type: number };
+/**
+ * A tensor as the FlatBuffer stores it. `shapeSignature` keeps -1 for each
+ * dynamic dimension, which `shape` stores as 1; it is empty when absent.
+ */
+export type Tensor = { shape: number[]; type: number; shapeSignature?: number[] };
 type DetectionTensorIndices = { boxes: number; classes: number; scores: number; count: number };
 
 export function isDetectionTensorRolesCompatible(
@@ -34,6 +38,38 @@ export function isDetectionTensorRolesCompatible(
     scores[1] === boxes[1] &&
     ((count?.length === 1 && count[0] === 1) ||
       (count?.length === 2 && count[0] === 1 && count[1] === 1))
+  );
+}
+
+/** Largest segmentation mask (height × width) the SDK decodes on a phone (US-158). */
+export const MAX_SEGMENTATION_PIXELS = 1_048_576;
+
+const FLOAT32 = 0;
+
+/**
+ * A segmentation model must have one float32 output shaped [1, H, W, C], with
+ * one channel per label and at most [MAX_SEGMENTATION_PIXELS] pixels.
+ */
+export function isSegmentationOutputCompatible(
+  outputs: readonly Tensor[],
+  labelCount: number,
+): boolean {
+  const [output] = outputs;
+  if (outputs.length !== 1 || !output || output.type !== FLOAT32) return false;
+  const [batch, height, width, channels] = output.shape;
+  // A dynamic height or width stores 1 in `shape` and -1 in its signature: the
+  // mask size is unknown until the model runs, so the contract cannot fix it.
+  const [, signatureHeight, signatureWidth] = output.shapeSignature ?? [];
+  if ((signatureHeight ?? 1) < 1 || (signatureWidth ?? 1) < 1) return false;
+  return (
+    output.shape.length === 4 &&
+    batch === 1 &&
+    height !== undefined &&
+    width !== undefined &&
+    height > 0 &&
+    width > 0 &&
+    height * width <= MAX_SEGMENTATION_PIXELS &&
+    channels === labelCount
   );
 }
 
@@ -106,7 +142,9 @@ class FlatbufferReader {
     const typeField = this.field(table, 1);
     const type = typeField ? this.u8(typeField) : 0;
     if (shape.some((dimension) => dimension < 1)) throw new Error("Dynamic tensor shape");
-    return { shape, type };
+    // Field 7 of the TFLite schema's Tensor table is `shape_signature`.
+    const shapeSignature = this.intVector(this.field(table, 7));
+    return { shape, type, shapeSignature };
   }
 
   readMainSubgraph(): { inputs: Tensor[]; outputs: Tensor[] } {
@@ -158,6 +196,10 @@ export function isTfliteContractCompatible(
         output.shape.at(-1) === contract.output.labels.length &&
         output.shape.length <= 2
       );
+    }
+
+    if (contract.output.type === "segmentation") {
+      return isSegmentationOutputCompatible(outputs, contract.output.labels.length);
     }
 
     if (contract.output.tensorIndices) {

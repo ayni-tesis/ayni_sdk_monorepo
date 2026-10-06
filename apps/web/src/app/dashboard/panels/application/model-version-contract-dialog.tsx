@@ -16,6 +16,8 @@ import { httpClient } from "@/lib/http-client";
 
 export type ModelVersionContract = SdkModelVersionContract;
 
+type ScoreType = Extract<ModelVersionContract["output"], { type: "segmentation" }>["scoreType"];
+
 type DetectionTensorIndices = NonNullable<
   Extract<ModelVersionContract["output"], { type: "detection" }>["tensorIndices"]
 >;
@@ -41,7 +43,7 @@ export function ModelVersionContractDialog({
   contract,
   onSaved,
 }: Props) {
-  const [task, setTask] = useState<"classification" | "detection">("classification");
+  const [task, setTask] = useState<ModelVersionContract["output"]["type"]>("classification");
   const [width, setWidth] = useState("224");
   const [height, setHeight] = useState("224");
   const [channels, setChannels] = useState("3");
@@ -49,6 +51,8 @@ export function ModelVersionContractDialog({
     useState<ModelVersionContract["input"]["normalization"]>("zero_to_one");
   const [labels, setLabels] = useState("");
   const [scoreThreshold, setScoreThreshold] = useState("0.5");
+  // No default: logits and probabilities decode differently, so the person chooses (US-158).
+  const [scoreType, setScoreType] = useState<ScoreType | "">("");
   const [boxesIndex, setBoxesIndex] = useState("");
   const [classesIndex, setClassesIndex] = useState("");
   const [scoresIndex, setScoresIndex] = useState("");
@@ -67,6 +71,7 @@ export function ModelVersionContractDialog({
     setScoreThreshold(
       String(contract?.output.type === "detection" ? contract.output.scoreThreshold : 0.5),
     );
+    setScoreType(contract?.output.type === "segmentation" ? contract.output.scoreType : "");
     const tensorIndices =
       contract?.output.type === "detection" ? contract.output.tensorIndices : undefined;
     setBoxesIndex(tensorIndices ? String(tensorIndices.boxes) : "");
@@ -112,15 +117,23 @@ export function ModelVersionContractDialog({
         count: values[3],
       };
     }
-    const output: ModelVersionContract["output"] =
-      task === "classification"
-        ? { type: task, labels: parsedLabels }
-        : {
-            type: task,
-            labels: parsedLabels,
-            scoreThreshold: Number(scoreThreshold),
-            ...(tensorIndices ? { tensorIndices } : {}),
-          };
+    let output: ModelVersionContract["output"];
+    if (task === "classification") {
+      output = { type: task, labels: parsedLabels };
+    } else if (task === "segmentation") {
+      if (scoreType === "") {
+        setError("Elige si la salida del modelo trae logits o probabilidades.");
+        return;
+      }
+      output = { type: task, labels: parsedLabels, scoreType };
+    } else {
+      output = {
+        type: task,
+        labels: parsedLabels,
+        scoreThreshold: Number(scoreThreshold),
+        ...(tensorIndices ? { tensorIndices } : {}),
+      };
+    }
     const nextContract = { input, output };
 
     setSaving(true);
@@ -158,6 +171,7 @@ export function ModelVersionContractDialog({
             >
               <option value="classification">Clasificación</option>
               <option value="detection">Detección</option>
+              <option value="segmentation">Segmentación</option>
             </select>
           </label>
           <fieldset className="grid grid-cols-2 gap-3">
@@ -220,6 +234,28 @@ export function ModelVersionContractDialog({
               onChange={(event) => setLabels(event.target.value)}
             />
           </label>
+          {task === "segmentation" && (
+            <div className="grid gap-1 text-sm">
+              <label htmlFor="segmentation-score-type">Tipo de puntaje</label>
+              <select
+                id="segmentation-score-type"
+                className="h-9 rounded-md border bg-background px-3"
+                required
+                aria-describedby="segmentation-score-type-help"
+                value={scoreType}
+                onChange={(event) => setScoreType(event.target.value as ScoreType)}
+              >
+                <option value="" disabled>
+                  Elige un tipo de puntaje
+                </option>
+                <option value="logits">Logits</option>
+                <option value="probabilities">Probabilidades</option>
+              </select>
+              <span id="segmentation-score-type-help" className="text-muted-foreground text-xs">
+                Indica si la salida del modelo trae logits o probabilidades por píxel.
+              </span>
+            </div>
+          )}
           {task === "detection" && (
             <>
               <label className="grid gap-1 text-sm">

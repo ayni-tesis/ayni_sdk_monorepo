@@ -56,5 +56,11 @@ export type ModelVersionContract = {
         labels: string[];
         scoreThreshold: number;
         tensorIndices?: { boxes: number; classes: number; scores: number; count: number };
+      }
+    | {
+        type: "segmentation";
+        labels: string[];
+        /** Whether the per-pixel channels are raw logits or probabilities (US-158). */
+        scoreType: "logits" | "probabilities";
       };
 };

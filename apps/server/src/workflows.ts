@@ -91,14 +91,14 @@ const conditionNodeSchema = z.object({
 const outputSourceSchema = z.object({
   sourceNodeId: z.string().min(1),
   sourcePort: z.enum(["result", "true", "false"]),
-  resultType: z.enum(["classification", "detection", "boolean"]),
+  resultType: z.enum(["classification", "detection", "segmentation", "boolean"]),
 });
 const outputNodeSchema = z.object({
   type: z.literal("output"),
   name: z.string().trim().min(1),
   sourceNodeId: z.string().min(1),
   sourcePort: z.enum(["result", "true", "false"]),
-  resultType: z.enum(["classification", "detection", "boolean"]),
+  resultType: z.enum(["classification", "detection", "segmentation", "boolean"]),
   sources: z.array(outputSourceSchema).optional(),
   position: workflowPositionSchema.optional(),
 });

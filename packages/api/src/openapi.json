@@ -1205,6 +1205,26 @@
                   }
                 },
                 "required": ["type", "labels", "scoreThreshold"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["segmentation"]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scoreType": {
+                    "type": "string",
+                    "enum": ["logits", "probabilities"]
+                  }
+                },
+                "required": ["type", "labels", "scoreType"]
               }
             ]
           }

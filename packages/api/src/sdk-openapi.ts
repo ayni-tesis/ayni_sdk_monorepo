@@ -127,6 +127,11 @@ export const SdkModelVersionContractSchema = z
           .refine((indices) => new Set(Object.values(indices)).size === 4)
           .optional(),
       }),
+      z.object({
+        type: z.literal("segmentation"),
+        labels: z.array(z.string()),
+        scoreType: z.enum(["logits", "probabilities"]),
+      }),
     ]),
   })
   .openapi("SdkModelVersionContract");

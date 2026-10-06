@@ -94,6 +94,9 @@ export function workflowNodesToDelete(
   return draft.nodes.filter((node) => removed.has(node.id)).map((node) => node.id);
 }
 
+/** The result types an output can return; `segmentation` since US-159. */
+export type WorkflowResultType = "classification" | "detection" | "segmentation" | "boolean";
+
 /** What the port rules read from a node; server and dashboard nodes both fit it. */
 export type WorkflowPortNode =
   | { id: string; type: "input.image" }
@@ -103,7 +106,10 @@ export type WorkflowPortNode =
       id: string;
       type: "model.tflite";
       outputs: {
-        result: { type: "classification" | "detection"; labels: readonly string[] };
+        result: {
+          type: "classification" | "detection" | "segmentation";
+          labels: readonly string[];
+        };
       };
     }
   | { id: string; type: "condition"; sourceNodeId: string; label: string }
@@ -112,11 +118,11 @@ export type WorkflowPortNode =
       type: "output";
       sourceNodeId: string;
       sourcePort: string;
-      resultType: "classification" | "detection" | "boolean";
+      resultType: WorkflowResultType;
       sources?: readonly {
         sourceNodeId: string;
         sourcePort: string;
-        resultType: "classification" | "detection" | "boolean";
+        resultType: WorkflowResultType;
       }[];
     };
 
@@ -145,12 +151,13 @@ export function workflowOutputPortType(node: WorkflowPortNode | undefined, sourc
  * The types an input port takes from a connection, or none if the node has no
  * such input: a model's `image`, a capture's `imagen` and `resultado`, the
  * result of a classification or detection model, and a capture's optional
- * `condicion`, a condition branch it hangs from (US-074).
+ * `condicion`, a condition branch it hangs from (US-074). A capture never takes
+ * a segmentation result: evidence stores classifications and detections only.
  */
 export function workflowInputPortTypes(
   node: WorkflowPortNode | undefined,
   targetPort: string,
-): readonly ("image" | "classification" | "detection" | "boolean")[] {
+): readonly ("image" | WorkflowResultType)[] {
   if (node?.type === "model.tflite" && targetPort === "image") return ["image"];
   if (node?.type === "dataset.capture" && targetPort === "imagen") return ["image"];
   if (node?.type === "dataset.capture" && targetPort === "resultado")
@@ -201,7 +208,7 @@ export function isConditionSourceCompatible(source: WorkflowPortNode | undefined
 export function isOutputSourceCompatible(
   source: WorkflowPortNode | undefined,
   sourcePort: string,
-  resultType: "classification" | "detection" | "boolean",
+  resultType: WorkflowResultType,
 ) {
   return resultType === "boolean"
     ? source?.type === "condition" && (sourcePort === "true" || sourcePort === "false")

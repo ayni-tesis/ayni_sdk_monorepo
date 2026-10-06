@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findWorkflowCycle,
   isCaptureConditionCompatible,
+  isOutputSourceCompatible,
   type WorkflowGraphDraft,
   type WorkflowPortDraft,
   type WorkflowPortNode,
@@ -121,7 +122,7 @@ describe("findWorkflowCycle", () => {
 const image = (id: string): WorkflowPortNode => ({ id, type: "input.image" });
 const model = (
   id: string,
-  type: "classification" | "detection" = "classification",
+  type: "classification" | "detection" | "segmentation" = "classification",
   labels = ["perro"],
 ): WorkflowPortNode => ({ id, type: "model.tflite", outputs: { result: { type, labels } } });
 const connect = (
@@ -240,6 +241,68 @@ describe("the inputs of a dataset capture", () => {
     expect(
       workflowPortCompatibility(connected, connect("capture", "resultado", "detector", "image")),
     ).toBe("incompatible");
+  });
+});
+
+describe("a segmentation model (US-159)", () => {
+  const draft: WorkflowPortDraft = {
+    nodes: [
+      image("image"),
+      model("segmenter", "segmentation", ["fondo", "roya"]),
+      model("classifier", "classification", ["roya"]),
+      { id: "capture", type: "dataset.capture" },
+      { id: "condition", type: "condition", sourceNodeId: "classifier", label: "roya" },
+      {
+        id: "mask",
+        type: "output",
+        sourceNodeId: "segmenter",
+        sourcePort: "result",
+        resultType: "segmentation",
+      },
+      {
+        id: "diagnosis",
+        type: "output",
+        sourceNodeId: "classifier",
+        sourcePort: "result",
+        resultType: "classification",
+      },
+    ],
+  };
+
+  it("takes the image and feeds an output of type segmentation", () => {
+    expect(workflowPortCompatibility(draft, connect("image", "imagen", "segmenter", "image"))).toBe(
+      "compatible",
+    );
+    expect(workflowPortCompatibility(draft, connect("segmenter", "result", "mask", "source"))).toBe(
+      "connected",
+    );
+  });
+
+  it("rejects an output of another result type, a capture and, until US-161, a condition", () => {
+    expect(
+      workflowPortCompatibility(draft, connect("segmenter", "result", "diagnosis", "source")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(draft, connect("segmenter", "result", "capture", "resultado")),
+    ).toBe("incompatible");
+    expect(
+      workflowPortCompatibility(draft, connect("segmenter", "result", "condition", "source")),
+    ).toBe("incompatible");
+  });
+
+  it("accepts a segmentation source inside a combined output", () => {
+    const segmenter = draft.nodes.find((node) => node.id === "segmenter");
+    const classifier = draft.nodes.find((node) => node.id === "classifier");
+    // A combined output checks its own source and each entry of `sources`.
+    const sources = [
+      { node: classifier, sourcePort: "result", resultType: "classification" },
+      { node: segmenter, sourcePort: "result", resultType: "segmentation" },
+    ] as const;
+    for (const source of sources)
+      expect(isOutputSourceCompatible(source.node, source.sourcePort, source.resultType)).toBe(
+        true,
+      );
+    expect(isOutputSourceCompatible(segmenter, "result", "classification")).toBe(false);
   });
 });
 

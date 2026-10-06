@@ -101,10 +101,12 @@ al instante y la nueva se muestra una sola vez.
    archivo en «Archivo TensorFlow Lite (.tflite)» y pulsa «Subir versión». Al
    terminar, el dashboard confirma que subió y verificó la versión.
 5. En la fila del modelo, pulsa «Versiones» y, en la versión subida, «Definir
-   contrato». Completa el «Tipo de tarea» («Clasificación» o «Detección»), la
-   «Entrada de imagen» («Ancho», «Alto», «Canales» y «Normalización») y las
+   contrato». Completa el «Tipo de tarea» («Clasificación», «Detección» o «Segmentación»),
+   la «Entrada de imagen» («Ancho», «Alto», «Canales» y «Normalización») y las
    «Etiquetas, una por línea». Para una detección, completa también el «Umbral
-   de confianza». Pulsa «Guardar contrato».
+   de confianza». Para una segmentación, elige el «Tipo de puntaje» («Logits» o
+   «Probabilidades»): indica si el modelo entrega logits o probabilidades por
+   píxel y es obligatorio. Pulsa «Guardar contrato».
 
 **Resultado esperado:** en «Versiones» la versión muestra su tipo de tarea en
 la columna «Contrato».
