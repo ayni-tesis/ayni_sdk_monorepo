@@ -3000,11 +3000,22 @@
             "required": true,
             "name": "datasetId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Detalle del dataset.",
+            "description": "Detalle del dataset y sus evidencias.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3049,9 +3060,80 @@
                         "approvedCount"
                       ],
                       "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "evidenceId": {
+                            "type": "string"
+                          },
+                          "modelId": {
+                            "type": "string"
+                          },
+                          "modelVersion": {
+                            "type": "string"
+                          },
+                          "taskType": {
+                            "type": "string",
+                            "enum": ["classification", "detection"]
+                          },
+                          "originalResult": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "capturedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "addedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "evidenceId",
+                          "modelId",
+                          "modelVersion",
+                          "taskType",
+                          "originalResult",
+                          "capturedAt",
+                          "addedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextItemOffset": {
+                      "type": ["integer", "null"],
+                      "minimum": 0
                     }
                   },
-                  "required": ["dataset"],
+                  "required": ["dataset", "items", "nextItemOffset"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El desplazamiento de página no es válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3099,6 +3181,467 @@
           },
           "500": {
             "description": "No pudimos cargar el dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{applicationId}/datasets/{datasetId}/available-evidence": {
+      "get": {
+        "tags": ["Datasets"],
+        "operationId": "listar-evidencia-disponible-dataset",
+        "summary": "Listar evidencia compatible para un dataset",
+        "description": "Solo administradores y propietarios pueden consultar evidencia recibida y compatible que aún no pertenece al dataset.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de evidencia compatible disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "evidence": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "evidenceId": {
+                            "type": "string"
+                          },
+                          "modelId": {
+                            "type": "string"
+                          },
+                          "modelVersion": {
+                            "type": "string"
+                          },
+                          "taskType": {
+                            "type": "string",
+                            "enum": ["classification", "detection"]
+                          },
+                          "result": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "capturedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "evidenceId",
+                          "modelId",
+                          "modelVersion",
+                          "taskType",
+                          "result",
+                          "capturedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextOffset": {
+                      "type": ["integer", "null"],
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["evidence", "nextOffset"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El desplazamiento de página no es válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para agregar evidencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No puedes modificar datasets de una aplicación archivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos cargar las evidencias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{applicationId}/datasets/{datasetId}/evidence": {
+      "post": {
+        "tags": ["Datasets"],
+        "operationId": "agregar-evidencia-dataset",
+        "summary": "Agregar evidencia a un dataset",
+        "description": "Agrega de forma atómica evidencia recibida de la misma aplicación y tipo de tarea, sin duplicarla ni modificar su predicción original.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "evidenceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  }
+                },
+                "required": ["evidenceIds"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Evidencia agregada al dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "evidenceId": {
+                            "type": "string"
+                          },
+                          "modelId": {
+                            "type": "string"
+                          },
+                          "modelVersion": {
+                            "type": "string"
+                          },
+                          "taskType": {
+                            "type": "string",
+                            "enum": ["classification", "detection"]
+                          },
+                          "originalResult": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "capturedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "addedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "evidenceId",
+                          "modelId",
+                          "modelVersion",
+                          "taskType",
+                          "originalResult",
+                          "capturedAt",
+                          "addedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Selecciona evidencia para agregar al dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para agregar evidencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este dataset o evidencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La evidencia no coincide o ya está agregada al dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos agregar la evidencia al dataset.",
             "content": {
               "application/json": {
                 "schema": {

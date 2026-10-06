@@ -1,13 +1,20 @@
 import {
+  DatasetAddEvidenceRequestSchema,
+  type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
-  type DatasetListItem,
   type DatasetListResponse,
+  DatasetPageQuerySchema,
   DatasetTaskTypeSchema,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
-import type { CreateDatasetInput, DatasetStoreResult } from "./dataset-store";
+import type {
+  AddDatasetEvidenceInput,
+  AddDatasetEvidenceResult,
+  CreateDatasetInput,
+  DatasetStoreResult,
+} from "./dataset-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el dataset.";
 const TASK_TYPE_REQUIRED_MESSAGE = "Selecciona el tipo de tarea.";
@@ -18,9 +25,19 @@ type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   applications: Parameters<typeof getApplicationForMember>[0];
   datasets: {
+    addEvidence: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
-    get: (applicationId: string, datasetId: string) => Promise<DatasetListItem | null>;
+    get: (
+      applicationId: string,
+      datasetId: string,
+      offset: number,
+    ) => Promise<DatasetDetailResponse | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
+    listAvailableEvidence: (
+      applicationId: string,
+      datasetId: string,
+      offset: number,
+    ) => Promise<DatasetAvailableEvidenceResponse | null>;
   };
 };
 
@@ -37,15 +54,137 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       session.user.id,
     );
     if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    const query = DatasetPageQuerySchema.safeParse({ offset: c.req.query("offset") });
+    if (!query.success) {
+      return c.json(
+        { message: "El desplazamiento de página no es válido.", code: "invalidDatasetPage" },
+        400,
+      );
+    }
 
     try {
-      const dataset = await datasets.get(application.id, c.req.param("datasetId"));
-      if (!dataset) return c.json({ message: "No encontramos este dataset." }, 404);
-      const response: DatasetDetailResponse = { dataset };
+      const response = await datasets.get(
+        application.id,
+        c.req.param("datasetId"),
+        query.data.offset,
+      );
+      if (!response) return c.json({ message: "No encontramos este dataset." }, 404);
       return c.json(response);
     } catch {
       return c.json({ message: "No pudimos cargar el dataset.", code: "datasetLoadFailed" }, 500);
     }
+  });
+
+  app.get("/applications/:applicationId/datasets/:datasetId/available-evidence", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para agregar evidencia.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+    const query = DatasetPageQuerySchema.safeParse({ offset: c.req.query("offset") });
+    if (!query.success) {
+      return c.json(
+        { message: "El desplazamiento de página no es válido.", code: "invalidEvidencePage" },
+        400,
+      );
+    }
+
+    try {
+      const available = await datasets.listAvailableEvidence(
+        application.id,
+        c.req.param("datasetId"),
+        query.data.offset,
+      );
+      if (!available) return c.json({ message: "No encontramos este dataset." }, 404);
+      return c.json(available);
+    } catch {
+      return c.json(
+        { message: "No pudimos cargar las evidencias.", code: "datasetEvidenceLoadFailed" },
+        500,
+      );
+    }
+  });
+
+  app.post("/applications/:applicationId/datasets/:datasetId/evidence", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para agregar evidencia.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = DatasetAddEvidenceRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { message: "Selecciona evidencia para agregar al dataset.", code: "invalidEvidence" },
+        400,
+      );
+    }
+
+    const result = await datasets.addEvidence({
+      applicationId: application.id,
+      datasetId: c.req.param("datasetId"),
+      evidenceIds: parsed.data.evidenceIds,
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ items: result.value }, 201);
+    if (result.reason === "forbidden") {
+      return c.json(
+        { message: "No tienes permiso para agregar evidencia.", code: "forbidden" },
+        403,
+      );
+    }
+    if (result.reason === "archived") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+    if (result.reason === "notFound") {
+      return c.json({ message: "No encontramos este dataset o evidencia.", code: "notFound" }, 404);
+    }
+    if (result.reason === "incompatible") {
+      return c.json(
+        {
+          message: "Esta evidencia no coincide con el tipo de tarea del dataset.",
+          code: "datasetEvidenceIncompatible",
+        },
+        409,
+      );
+    }
+    if (result.reason === "alreadyAdded") {
+      return c.json(
+        { message: "Esta evidencia ya está agregada al dataset.", code: "datasetEvidenceExists" },
+        409,
+      );
+    }
+    return c.json(
+      { message: "No pudimos agregar la evidencia al dataset.", code: "datasetEvidenceSaveFailed" },
+      500,
+    );
   });
 
   app.get("/applications/:applicationId/datasets", async (c) => {

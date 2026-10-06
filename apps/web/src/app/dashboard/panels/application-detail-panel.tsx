@@ -161,6 +161,7 @@ export function ApplicationDetailPanel({
             key={`${application.id}:${datasetId}`}
             application={application}
             datasetId={datasetId}
+            canManage={canManage}
             onBackToDatasets={onBackToDatasets}
           />
         ) : (

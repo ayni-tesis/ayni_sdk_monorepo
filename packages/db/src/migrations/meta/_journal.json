@@ -204,6 +204,13 @@
       "when": 1791252793232,
       "tag": "0028_create_application_dataset",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791257748693,
+      "tag": "0029_open_scalphunter",
+      "breakpoints": true
     }
   ]
 }

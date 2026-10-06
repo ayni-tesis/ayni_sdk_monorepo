@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { application } from "./application";
 
@@ -16,6 +16,7 @@ export const dataset = pgTable(
   },
   (table) => [
     index("dataset_application_id_idx").on(table.applicationId),
+    uniqueIndex("dataset_application_id_id_unique").on(table.applicationId, table.id),
     check("dataset_task_type_check", sql`${table.taskType} in ('classification', 'detection')`),
   ],
 );

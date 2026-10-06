@@ -2,6 +2,7 @@ export * from "./application";
 export * from "./auth";
 export * from "./collection-policy";
 export * from "./dataset";
+export * from "./dataset-item";
 export * from "./invitation-link";
 export * from "./model";
 export * from "./model-version";
