@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../data/validation_model_repository.dart';
@@ -22,7 +23,12 @@ abstract interface class ValidationTfliteEngine {
 }
 
 class TfliteCpuInferenceEngine implements ValidationTfliteEngine {
-  const TfliteCpuInferenceEngine();
+  /// With [float32Outputs] a four-dimensional output (a segmentation score
+  /// map) goes back as a [Float32List] instead of a boxed list of doubles;
+  /// classification and detection outputs are always copied as before.
+  const TfliteCpuInferenceEngine({this.float32Outputs = false});
+
+  final bool float32Outputs;
 
   @override
   Future<List<ValidationTensor>> run({
@@ -37,6 +43,7 @@ class TfliteCpuInferenceEngine implements ValidationTfliteEngine {
       inputContract.height,
       inputContract.channels,
       inputContract.normalization,
+      float32Outputs,
     ),
   );
 }
@@ -46,19 +53,31 @@ class DirectTfliteRunner implements ValidationConditionRunner {
     required ValidationResourceProfile profile,
     required ValidationModelRepository modelRepository,
     required WorkflowDefinitionRepository workflowDefinitions,
-    ValidationTfliteEngine inferenceEngine = const TfliteCpuInferenceEngine(),
+    ValidationTfliteEngine? inferenceEngine,
     ValidationOutputNormalizer outputNormalizer =
         const ValidationOutputNormalizer(),
   }) : _profile = profile,
        _modelRepository = modelRepository,
        _workflowDefinitions = workflowDefinitions,
-       _inferenceEngine = inferenceEngine,
+       _inferenceEngine =
+           inferenceEngine ??
+           TfliteCpuInferenceEngine(
+             float32Outputs: profile.modelRequirements.any(
+               (model) =>
+                   model.modelOutputContract.resultType ==
+                   ValidationResultType.segmentation,
+             ),
+           ),
        _outputNormalizer = outputNormalizer;
 
   final ValidationResourceProfile _profile;
   final ValidationModelRepository _modelRepository;
   final WorkflowDefinitionRepository _workflowDefinitions;
   final ValidationTfliteEngine _inferenceEngine;
+
+  /// The engine this runner runs its models with.
+  @visibleForTesting
+  ValidationTfliteEngine get inferenceEngine => _inferenceEngine;
   final ValidationOutputNormalizer _outputNormalizer;
   Map<String, VerifiedModelArtifact> _artifacts = const {};
   Map<String, Object?>? _workflow;
@@ -161,7 +180,8 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         modelVersionId: primaryArtifact.modelVersionId,
         modelSha256: primaryArtifact.sha256,
         modelArtifacts: _modelArtifacts,
-        normalizedOutput: output,
+        // The mask's RLE and SHA-256 are built after the stopwatch stopped.
+        normalizedOutput: ValidationOutputNormalizer.encodeDeferred(output),
       );
     } on ValidationExecutionException catch (error) {
       stopwatch.stop();
@@ -318,22 +338,30 @@ class DirectTfliteRunner implements ValidationConditionRunner {
                 labels: contract.labels,
                 scoreThreshold: contract.scoreThreshold,
                 tensorIndices: contract.tensorIndices,
+                scoreType: contract.scoreType,
               ),
             ],
+            deferSegmentationEncoding: true,
           )['result'];
         case 'condition':
           final source = values[node['sourceNodeId']];
           final label = node['label'];
-          if (source is! Map ||
-              source['type'] != 'classification' ||
-              source['confidences'] is! Map ||
-              !(source['confidences'] as Map).containsKey(label)) {
+          // A classification compares the label's score; a segmentation
+          // compares the fraction of the mask the label covers.
+          final scores = source is Map
+              ? switch (source['type']) {
+                  'classification' => source['confidences'],
+                  'segmentation' => source['areaFractions'],
+                  _ => null,
+                }
+              : null;
+          if (scores is! Map || !scores.containsKey(label)) {
             throw const ValidationExecutionException(
               'workflowConditionInputMissing',
               'La condición no encontró la clasificación declarada.',
             );
           }
-          final confidence = (source['confidences'] as Map)[label];
+          final confidence = scores[label];
           final threshold = node['threshold'];
           if (confidence is! num || threshold is! num) {
             throw const ValidationExecutionException(
@@ -402,7 +430,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
     const rootFields = {'schemaVersion', 'nodes', 'connections'};
     if (definition.keys.toSet().difference(rootFields).isNotEmpty ||
         rootFields.difference(definition.keys.toSet()).isNotEmpty ||
-        !{'1', '2'}.contains(definition['schemaVersion']) ||
+        !{'1', '2', '4'}.contains(definition['schemaVersion']) ||
         definition['nodes'] is! List ||
         definition['connections'] is! List) {
       throw const ValidationExecutionException(
@@ -470,7 +498,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
       }
       if (type == 'output' &&
           node.containsKey('sources') &&
-          definition['schemaVersion'] != '2') {
+          !{'2', '4'}.contains(definition['schemaVersion'])) {
         throw const ValidationExecutionException(
           'workflowDefinitionInvalid',
           'La versión del workflow no admite salidas compuestas.',
@@ -582,8 +610,10 @@ class DirectTfliteRunner implements ValidationConditionRunner {
           .firstOrNull;
       final branches = node['branches'];
       if (source?['type'] != 'model.tflite' ||
-          requirement?.modelOutputContract.resultType !=
-              ValidationResultType.classification ||
+          !{
+            ValidationResultType.classification,
+            ValidationResultType.segmentation,
+          }.contains(requirement?.modelOutputContract.resultType) ||
           !requirement!.modelOutputContract.labels.contains(node['label']) ||
           !{'gte', 'gt', 'lte', 'lt'}.contains(node['operator']) ||
           node['threshold'] is! num ||
@@ -607,6 +637,7 @@ class DirectTfliteRunner implements ValidationConditionRunner {
         final expectedType = switch (contract.resultType) {
           ValidationResultType.classification => 'classification',
           ValidationResultType.detection => 'detection',
+          ValidationResultType.segmentation => 'segmentation',
           ValidationResultType.boolean => 'boolean',
         };
         final validSource = sourceNode?['type'] == 'condition'
@@ -784,6 +815,7 @@ List<ValidationTensor> _runTfliteCpu(
   int height,
   int channels,
   String normalization,
+  bool float32Outputs,
 ) {
   final input = prepareValidationImageTensor(
     imageBytes,
@@ -838,15 +870,29 @@ List<ValidationTensor> _runTfliteCpu(
     interpreter.runForMultipleInputs([inputBytes], outputs);
     return [
       for (var index = 0; index < outputTensors.length; index++)
-        ValidationTensor(
-          shape: List<int>.of(outputTensors[index].shape),
-          values: List<double>.of(views[index]!),
-        ),
+        validationKeepsFloat32Output(float32Outputs, outputTensors[index].shape)
+            ? ValidationTensor.float32(
+                shape: List<int>.of(outputTensors[index].shape),
+                values: views[index]!,
+              )
+            : ValidationTensor(
+                shape: List<int>.of(outputTensors[index].shape),
+                values: List<double>.of(views[index]!),
+              ),
     ];
   } finally {
     interpreter?.close();
   }
 }
+
+/// Whether an output tensor stays a [Float32List] instead of being copied into
+/// a boxed list: only in a profile with a segmentation model and only a
+/// four-dimensional score map. Classification and detection outputs (ranks 1
+/// to 3) are always copied, as the 0.3.1 campaign did.
+bool validationKeepsFloat32Output(
+  bool profileHasSegmentation,
+  List<int> shape,
+) => profileHasSegmentation && shape.length == 4;
 
 bool _sameShape(List<int> left, List<int> right) =>
     left.length == right.length &&

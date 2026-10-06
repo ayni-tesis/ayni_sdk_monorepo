@@ -14,7 +14,7 @@ void main() {
       pubspec.replaceAll('\r\n', '\n'),
       contains('  ayni_sdk:\n    path: ../../packages/sdk_flutter'),
     );
-    expect(validationSdkVersion, '0.3.1');
+    expect(validationSdkVersion, '0.4.0');
     expect(android, contains('compileSdk = 36'));
     expect(android, contains('minSdk = 26'));
   });

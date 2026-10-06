@@ -246,6 +246,111 @@ void main() {
       expect(await first.file.readAsBytes(), [1, 2, 3, 4, 5]);
     },
   );
+
+  group('segmentation contracts', () {
+    const labels = ['background', 'person'];
+    ValidationModelRequirement requirement({String scoreType = 'logits'}) =>
+        ValidationModelRequirement(
+          nodeId: 'seg-node',
+          modelVersionId: 'model-version-1',
+          sha256: 'b' * 64,
+          inputContract: const ValidationInputContract(
+            width: 257,
+            height: 257,
+            channels: 3,
+            normalization: 'minus_one_to_one',
+          ),
+          modelOutputContract: ValidationModelOutputContract(
+            resultType: ValidationResultType.segmentation,
+            labels: labels,
+            scoreType: scoreType,
+          ),
+        );
+    Map<String, Object?> contract({Map<String, Object?>? output}) => {
+      'input': {
+        'type': 'image',
+        'width': 257,
+        'height': 257,
+        'channels': 3,
+        'normalization': 'minus_one_to_one',
+      },
+      'output':
+          output ??
+          {'type': 'segmentation', 'labels': labels, 'scoreType': 'logits'},
+    };
+
+    test('accepts the segmentation contract the profile declares', () {
+      expect(
+        modelContractMatchesRequirement(contract(), requirement()),
+        isTrue,
+      );
+    });
+
+    test('rejects another scoreType, labels, keys or type', () {
+      expect(
+        modelContractMatchesRequirement(
+          contract(),
+          requirement(scoreType: 'probabilities'),
+        ),
+        isFalse,
+      );
+      for (final output in <Map<String, Object?>>[
+        {'type': 'segmentation', 'labels': labels},
+        {'type': 'segmentation', 'labels': labels, 'scoreType': 'softmax'},
+        {
+          'type': 'segmentation',
+          'labels': ['background', 'car'],
+          'scoreType': 'logits',
+        },
+        {
+          'type': 'segmentation',
+          'labels': labels,
+          'scoreType': 'logits',
+          'extra': true,
+        },
+        {'type': 'classification', 'labels': labels},
+      ]) {
+        expect(
+          modelContractMatchesRequirement(
+            contract(output: output),
+            requirement(),
+          ),
+          isFalse,
+          reason: '$output',
+        );
+      }
+    });
+
+    test('a classification contract may not declare a scoreType', () {
+      expect(
+        modelContractMatchesRequirement(
+          contract(
+            output: {
+              'type': 'classification',
+              'labels': labels,
+              'scoreType': 'logits',
+            },
+          ),
+          ValidationModelRequirement(
+            nodeId: 'node',
+            modelVersionId: 'model-version-1',
+            sha256: 'b' * 64,
+            inputContract: const ValidationInputContract(
+              width: 257,
+              height: 257,
+              channels: 3,
+              normalization: 'minus_one_to_one',
+            ),
+            modelOutputContract: ValidationModelOutputContract(
+              resultType: ValidationResultType.classification,
+              labels: labels,
+            ),
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
 }
 
 HttpValidationModelRepository _repository(

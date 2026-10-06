@@ -11,6 +11,7 @@ import '../models/validation_run_record.dart';
 import '../storage/validation_jsonl_store.dart';
 import '../validation_performance_trace.dart';
 import 'validation_condition_runner.dart';
+import 'validation_segmentation.dart';
 
 class ValidationBatchController {
   static const quickRunPercentage = 20;
@@ -38,6 +39,12 @@ class ValidationBatchController {
   final Future<List<int>> Function(String path) _readBytes;
   final ValidationPerformanceTrace _performanceTrace;
   ValidationConditionRunner? _activeRunner;
+
+  /// The zone value `runSuite` gives `runPhase` for one scenario: the control's
+  /// compact segmentations by repetition and case, until the SDK's runs of the
+  /// same scenario pair with them. A zone keeps it local to its own suite, so
+  /// a second suite on this controller can neither see nor clear it.
+  static final _segmentationPairsKey = Object();
   bool _cancelRequested = false;
 
   Future<BatchRunSummary> runPhase({
@@ -211,6 +218,13 @@ class ValidationBatchController {
             tracePersistenceFailed: result.tracePersistenceFailed,
           );
         }
+        final pairing = _pairSegmentation(
+          runner.condition,
+          result,
+          repetition: index + 1,
+          caseId: selectedCase.caseId,
+          inputSha256: inputHash,
+        );
         final record = ValidationRunRecord(
           pairRunId: pairRunId,
           repetition: phase == ValidationPhase.coldStart
@@ -238,6 +252,8 @@ class ValidationBatchController {
           tracePersistenceFailed: result.tracePersistenceFailed,
           errorCode: result.errorCode,
           errorMessage: result.errorMessage,
+          segmentationAgreement: pairing.agreement,
+          segmentationAgreementUnavailable: pairing.unavailable,
         );
         await _store.append(record);
         onRecord(record);
@@ -318,39 +334,48 @@ class ValidationBatchController {
 
     for (final scenario in scenarios) {
       final profileId = scenario.resourceProfileId!;
+      // Within a scenario the control runs first and the SDK second, with the
+      // same case in each repetition, so the SDK's segmentation is compared
+      // with the control's of the same repetition.
+      final segmentationPairs = <String, Map<String, Object?>>{};
       for (final condition in conditions) {
         if (await isCancelled()) {
           stopped = true;
           break;
         }
         final runner = runnersByProfileId[profileId]![condition]!;
-        final phaseSummary = await runPhase(
-          plan: plan,
-          pairRunId: pairRunId,
-          runner: runner,
-          dataset: datasetsByProfileId[profileId]!,
-          scenarioId: scenario.id,
-          phase: scenario.phase,
-          repetitionLimit: quickRun ? repetitionsByScenario[scenario.id] : null,
-          captureTrace:
-              condition == ValidationCondition.treatment && captureTrace,
-          isCancelled: isCancelled,
-          onRecord: (record) {
-            onRecord(record);
-            completed++;
-            onProgress(
-              ValidationSuiteProgress(
-                completedAttempts: completed,
-                totalAttempts: totalAttempts,
-                profileId: profileId,
-                scenarioId: scenario.id,
-                phase: scenario.phase,
-                condition: condition,
-                caseId: record.caseId,
-                repetition: record.repetition,
-              ),
-            );
-          },
+        final phaseSummary = await _withSegmentationPairs(
+          segmentationPairs,
+          () => runPhase(
+            plan: plan,
+            pairRunId: pairRunId,
+            runner: runner,
+            dataset: datasetsByProfileId[profileId]!,
+            scenarioId: scenario.id,
+            phase: scenario.phase,
+            repetitionLimit: quickRun
+                ? repetitionsByScenario[scenario.id]
+                : null,
+            captureTrace:
+                condition == ValidationCondition.treatment && captureTrace,
+            isCancelled: isCancelled,
+            onRecord: (record) {
+              onRecord(record);
+              completed++;
+              onProgress(
+                ValidationSuiteProgress(
+                  completedAttempts: completed,
+                  totalAttempts: totalAttempts,
+                  profileId: profileId,
+                  scenarioId: scenario.id,
+                  phase: scenario.phase,
+                  condition: condition,
+                  caseId: record.caseId,
+                  repetition: record.repetition,
+                ),
+              );
+            },
+          ),
         );
         attempted += phaseSummary.attempted;
         successes += phaseSummary.successes;
@@ -465,6 +490,72 @@ class ValidationBatchController {
           verifiedPaths[datasetCase.localPath] = datasetCase.sha256;
         }
       }
+    }
+  }
+
+  Future<T> _withSegmentationPairs<T>(
+    Map<String, Map<String, Object?>> pairs,
+    Future<T> Function() body,
+  ) => Zone.current.fork(zoneValues: {_segmentationPairsKey: pairs}).run(body);
+
+  /// Remembers the control's segmentation of a repetition in the suite's pairs
+  /// and, for the SDK's row of the same `(repetition, caseId, inputSha256)`,
+  /// compares the two.
+  ///
+  /// A control row stores its compact JSON output, not the decoded mask.
+  /// A successful SDK row with a segmentation either gets its agreement or a
+  /// typed reason: `controlMissing` when no control row was paired, `invalid`
+  /// when the segmentations could not be compared. Any other row, and any run
+  /// outside a suite, gets neither.
+  ({SegmentationAgreement? agreement, String? unavailable}) _pairSegmentation(
+    ValidationCondition condition,
+    ConditionRunResult result, {
+    required int repetition,
+    required String caseId,
+    required String inputSha256,
+  }) {
+    const none = (agreement: null, unavailable: null);
+    final pairs = Zone.current[_segmentationPairsKey];
+    if (pairs is! Map<String, Map<String, Object?>> ||
+        result.outcome != ValidationRunOutcome.success) {
+      return none;
+    }
+    final outputs = result.normalizedOutput.entries
+        .where(
+          (entry) =>
+              entry.value is Map &&
+              (entry.value as Map)['type'] == 'segmentation',
+        )
+        .toList(growable: false);
+    if (outputs.isEmpty) return none;
+    final isControl = condition == ValidationCondition.control;
+    if (outputs.length != 1) {
+      return (agreement: null, unavailable: isControl ? null : 'invalid');
+    }
+    final key = '$repetition|$caseId|$inputSha256|${outputs.single.key}';
+    final output = (outputs.single.value as Map).map(
+      (name, value) => MapEntry(name.toString(), value),
+    );
+    if (isControl) {
+      // Only the compact form is kept (RLE, SHA-256, size, areas and
+      // confidence), so a stress phase does not hold every decoded mask while
+      // the SDK runs. It is decoded once, when the SDK row pairs with it.
+      pairs[key] = output;
+      return none;
+    }
+    final control = pairs.remove(key);
+    if (control == null) {
+      return (agreement: null, unavailable: 'controlMissing');
+    }
+    try {
+      // Each side is decoded and checked against its SHA-256 exactly once. This
+      // runs after the runner returned, so it is never in a timed region.
+      return (
+        agreement: compareSegmentationOutputs(control, output),
+        unavailable: null,
+      );
+    } on Object {
+      return (agreement: null, unavailable: 'invalid');
     }
   }
 

@@ -2,9 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import '../execution/validation_segmentation.dart';
+
 enum ValidationPhase { coldStart, warmup, measured, stress, fault }
 
-enum ValidationResultType { classification, detection, boolean }
+enum ValidationResultType { classification, detection, boolean, segmentation }
 
 enum ValidationResourceProfileStatus { pending, ready }
 
@@ -278,6 +280,7 @@ class ValidationResourceProfile {
             labels: outputContract.first.labels,
             scoreThreshold: outputContract.first.scoreThreshold,
             tensorIndices: outputContract.first.tensorIndices,
+            scoreType: outputContract.first.scoreType,
           ),
         ),
       ],
@@ -525,6 +528,7 @@ class ValidationModelOutputContract {
     required List<String> labels,
     this.scoreThreshold,
     Map<String, int>? tensorIndices,
+    this.scoreType,
   }) : labels = List.unmodifiable(labels),
        tensorIndices = tensorIndices == null
            ? null
@@ -535,6 +539,9 @@ class ValidationModelOutputContract {
   final double? scoreThreshold;
   final Map<String, int>? tensorIndices;
 
+  /// `logits` or `probabilities`; only segmentation outputs declare it.
+  final String? scoreType;
+
   factory ValidationModelOutputContract.fromJson(Map<String, Object?> json) {
     const requiredKeys = {'type', 'labels'};
     if (requiredKeys.difference(json.keys.toSet()).isNotEmpty ||
@@ -542,6 +549,7 @@ class ValidationModelOutputContract {
           ...requiredKeys,
           'scoreThreshold',
           'tensorIndices',
+          'scoreType',
         }).isNotEmpty) {
       throw const FormatException(
         'model output contract has missing or unknown fields.',
@@ -555,13 +563,14 @@ class ValidationModelOutputContract {
         'scoreThreshold': json['scoreThreshold'],
       if (json.containsKey('tensorIndices'))
         'tensorIndices': json['tensorIndices'],
+      if (json.containsKey('scoreType')) 'scoreType': json['scoreType'],
     });
     if (contract.resultType == ValidationResultType.boolean ||
         (contract.resultType == ValidationResultType.detection &&
             (contract.scoreThreshold == null ||
                 contract.tensorIndices == null))) {
       throw const FormatException(
-        'Model outputs must declare classification or complete detection contracts.',
+        'Model outputs must declare classification, segmentation or complete detection contracts.',
       );
     }
     return ValidationModelOutputContract(
@@ -569,6 +578,7 @@ class ValidationModelOutputContract {
       labels: contract.labels,
       scoreThreshold: contract.scoreThreshold,
       tensorIndices: contract.tensorIndices,
+      scoreType: contract.scoreType,
     );
   }
 }
@@ -580,6 +590,7 @@ class ValidationOutputContract {
     required List<String> labels,
     this.scoreThreshold,
     Map<String, int>? tensorIndices,
+    this.scoreType,
   }) : labels = List.unmodifiable(labels),
        tensorIndices = tensorIndices == null
            ? null
@@ -591,6 +602,9 @@ class ValidationOutputContract {
   final double? scoreThreshold;
   final Map<String, int>? tensorIndices;
 
+  /// `logits` or `probabilities`; only segmentation outputs declare it.
+  final String? scoreType;
+
   factory ValidationOutputContract.fromJson(Map<String, Object?> json) {
     const requiredKeys = {'name', 'resultType', 'labels'};
     if (requiredKeys.difference(json.keys.toSet()).isNotEmpty ||
@@ -598,6 +612,7 @@ class ValidationOutputContract {
           ...requiredKeys,
           'scoreThreshold',
           'tensorIndices',
+          'scoreType',
         }).isNotEmpty) {
       throw const FormatException(
         'output contract has missing or unknown fields.',
@@ -617,6 +632,22 @@ class ValidationOutputContract {
     }
     if (resultType == ValidationResultType.boolean && labels.isNotEmpty) {
       throw const FormatException('Boolean outputs must not declare labels.');
+    }
+    if (resultType == ValidationResultType.segmentation) {
+      if (labels.isEmpty || labels.length > validationMaxSegmentationLabels) {
+        throw const FormatException(
+          'Segmentation outputs require 1 to 256 labels.',
+        );
+      }
+      if (!{'logits', 'probabilities'}.contains(json['scoreType'])) {
+        throw const FormatException(
+          'Segmentation outputs require a logits or probabilities scoreType.',
+        );
+      }
+    } else if (json.containsKey('scoreType')) {
+      throw const FormatException(
+        'Only segmentation outputs may declare a scoreType.',
+      );
     }
     final scoreThreshold = json['scoreThreshold'];
     final rawTensorIndices = json['tensorIndices'];
@@ -667,6 +698,7 @@ class ValidationOutputContract {
               for (final entry in (rawTensorIndices as Map).entries)
                 entry.key as String: entry.value as int,
             },
+      scoreType: json['scoreType'] as String?,
     );
   }
 }

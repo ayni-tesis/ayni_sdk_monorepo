@@ -324,24 +324,24 @@ void main() {
           tomatoProfile.modelRequirements.single.nodeId,
           '96c2e159-e4e4-4c2e-b7c5-ee30063c43fa',
         );
-        expect(plan.resourceProfiles, hasLength(4));
+        expect(plan.resourceProfiles, hasLength(5));
         expect(
           plan.resourceProfiles
               .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          containsAll(['S1', 'S2']),
+          containsAll(['S1', 'S2', 'SEG-01']),
         );
         final runnable = plan.scenarios
             .where(
               (scenario) => (scenario as dynamic).resourceProfileId != null,
             )
             .toList();
-        expect(runnable, hasLength(12));
+        expect(runnable, hasLength(15));
         expect(
           runnable
               .map((scenario) => (scenario as dynamic).resourceProfileId)
               .toSet(),
-          {'INT-01', 'S1', 'REU-01', 'S2'},
+          {'INT-01', 'S1', 'REU-01', 'S2', 'SEG-01'},
         );
         for (final scenario in runnable) {
           final expected = switch (scenario.phase) {
@@ -371,7 +371,7 @@ void main() {
           plan.resourceProfiles
               .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          ['S1', 'S2'],
+          ['S1', 'S2', 'SEG-01'],
         );
       },
     );
@@ -610,6 +610,234 @@ void main() {
         throwsFormatException,
       );
     });
+  });
+
+  group('segmentation contracts', () {
+    final voc = ['background', 'aeroplane', 'person'];
+
+    Map<String, Object?> output({
+      Object? scoreType = 'logits',
+      bool withScoreType = true,
+      List<String>? labels,
+      String resultType = 'segmentation',
+    }) => {
+      'name': 'mask',
+      'resultType': resultType,
+      'labels': labels ?? voc,
+      if (withScoreType) 'scoreType': scoreType,
+    };
+
+    test('requires a logits or probabilities scoreType on segmentation', () {
+      for (final scoreType in ['logits', 'probabilities']) {
+        final contract = ValidationOutputContract.fromJson(
+          output(scoreType: scoreType),
+        );
+        expect(contract.resultType, ValidationResultType.segmentation);
+        expect(contract.scoreType, scoreType);
+        expect(contract.labels, voc);
+      }
+
+      expect(
+        () => ValidationOutputContract.fromJson(output(withScoreType: false)),
+        throwsFormatException,
+      );
+      for (final bad in ['softmax', '', null, 1]) {
+        expect(
+          () => ValidationOutputContract.fromJson(output(scoreType: bad)),
+          throwsFormatException,
+          reason: '$bad',
+        );
+      }
+    });
+
+    test('allows scoreType only on segmentation outputs', () {
+      final withoutScoreType = <Map<String, Object?>>[
+        {
+          'name': 'classification',
+          'resultType': 'classification',
+          'labels': ['coffee'],
+        },
+        {
+          'name': 'objects',
+          'resultType': 'detection',
+          'labels': ['coffee'],
+          'scoreThreshold': 0.5,
+          'tensorIndices': {'boxes': 0, 'classes': 1, 'scores': 2, 'count': 3},
+        },
+        {'name': 'accepted', 'resultType': 'boolean', 'labels': <String>[]},
+      ];
+      for (final json in withoutScoreType) {
+        expect(ValidationOutputContract.fromJson(json).scoreType, isNull);
+        expect(
+          () => ValidationOutputContract.fromJson({
+            ...json,
+            'scoreType': 'logits',
+          }),
+          throwsFormatException,
+          reason: '${json['resultType']}',
+        );
+      }
+    });
+
+    test('accepts one to 256 distinct labels', () {
+      expect(
+        () => ValidationOutputContract.fromJson(output(labels: [])),
+        throwsFormatException,
+      );
+      expect(
+        ValidationOutputContract.fromJson(
+          output(labels: [for (var i = 0; i < 256; i++) 'label-$i']),
+        ).labels,
+        hasLength(256),
+      );
+      expect(
+        () => ValidationOutputContract.fromJson(
+          output(labels: [for (var i = 0; i < 257; i++) 'label-$i']),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => ValidationOutputContract.fromJson(output(labels: ['a', 'a'])),
+        throwsFormatException,
+      );
+    });
+
+    test('a model output contract keeps its scoreType', () {
+      final contract = ValidationModelOutputContract.fromJson({
+        'type': 'segmentation',
+        'labels': voc,
+        'scoreType': 'probabilities',
+      });
+      expect(contract.resultType, ValidationResultType.segmentation);
+      expect(contract.scoreType, 'probabilities');
+
+      expect(
+        () => ValidationModelOutputContract.fromJson({
+          'type': 'segmentation',
+          'labels': voc,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => ValidationModelOutputContract.fromJson({
+          'type': 'classification',
+          'labels': voc,
+          'scoreType': 'logits',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('the one-model constructor carries the scoreType to its model', () {
+      final profile = ValidationResourceProfile(
+        id: 'SEG-01',
+        datasetVersionId: 'dataset-version',
+        datasetPartition: 'test',
+        datasetSha256: 'a' * 64,
+        controlModelVersionId: 'model-version',
+        controlModelSha256: 'b' * 64,
+        treatmentWorkflowId: 'workflow',
+        treatmentWorkflowVersionId: 'workflow-version',
+        treatmentWorkflowVersion: '1.0.0',
+        treatmentModelVersionId: 'model-version',
+        treatmentModelSha256: 'b' * 64,
+        inputContract: const ValidationInputContract(
+          width: 257,
+          height: 257,
+          channels: 3,
+          normalization: 'minus_one_to_one',
+        ),
+        outputContract: [
+          ValidationOutputContract(
+            name: 'mask',
+            resultType: ValidationResultType.segmentation,
+            labels: voc,
+            scoreType: 'logits',
+          ),
+        ],
+      );
+
+      expect(
+        profile.modelRequirements.single.modelOutputContract.scoreType,
+        'logits',
+      );
+    });
+
+    test(
+      'a ready profile with a segmentation model and boolean output parses',
+      () {
+        final profile = ValidationResourceProfile.fromJson({
+          'id': 'SEG-01',
+          'status': 'ready',
+          'datasetId': 'dataset-id',
+          'datasetVersionId': 'dataset-version-id',
+          'datasetPartition': 'test',
+          'datasetSha256': 'a' * 64,
+          'workflowId': 'workflow-id',
+          'workflowVersionId': 'workflow-version-id',
+          'workflowVersion': '1.0.0',
+          'modelRequirements': [
+            {
+              'nodeId': 'seg-node',
+              'modelVersionId': 'seg-version',
+              'sha256': 'b' * 64,
+              'inputContract': {
+                'width': 257,
+                'height': 257,
+                'channels': 3,
+                'normalization': 'minus_one_to_one',
+              },
+              'modelOutputContract': {
+                'type': 'segmentation',
+                'labels': voc,
+                'scoreType': 'logits',
+              },
+            },
+          ],
+          'outputContract': [
+            output(),
+            {
+              'name': 'hasPerson',
+              'resultType': 'boolean',
+              'labels': <String>[],
+            },
+          ],
+        });
+
+        expect(profile.outputContract.map((item) => item.resultType), [
+          ValidationResultType.segmentation,
+          ValidationResultType.boolean,
+        ]);
+      },
+    );
+
+    test(
+      'the bundled plan declares SEG-01 as pending with the three phases',
+      () async {
+        final source = await rootBundle.loadString(ExperimentPlan.assetPath);
+        final plan = ExperimentPlan.fromJson(
+          (jsonDecode(source) as Map).cast<String, Object?>(),
+        );
+
+        final profile = plan.resourceProfiles.singleWhere(
+          (item) => item.id == 'SEG-01',
+        );
+        expect(profile.isPending, isTrue);
+        expect(
+          plan.scenarios
+              .where((scenario) => scenario.resourceProfileId == 'SEG-01')
+              .map(
+                (scenario) =>
+                    (scenario.id, scenario.phase, scenario.repetitions),
+              ),
+          [
+            ('SEG-01-PERF-02-WARMUP', ValidationPhase.warmup, 20),
+            ('SEG-01-PERF-02', ValidationPhase.measured, 300),
+            ('SEG-01-PERF-04', ValidationPhase.stress, 1024),
+          ],
+        );
+      },
+    );
   });
 }
 

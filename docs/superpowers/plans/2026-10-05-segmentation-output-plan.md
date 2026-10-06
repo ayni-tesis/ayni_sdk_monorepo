@@ -123,3 +123,49 @@ Va en el mismo PR. Las pruebas lo exigen; verificar con `bun run verify`.
 - **Normalización:** en `validation_output_normalizer.dart`, `_segmentationFromTensors` con implementación propia del control, y `SegmentationResult` en `_normalizeSdkValue`.
 - **Condición del control directo:** `apps/native/lib/validation/execution/direct_tflite_runner.dart` (~:324-348), con `areaFractions[label]` (movido desde PR-3).
 - **Registro JSONL:** `maskSha256`, `width`, `height`, `areaFractions`, `confidence` y la máscara en RLE. Nunca se envía al servidor.
+
+### Detalle de PR-4 (revisado contra `apps/native`, 6 de octubre de 2026)
+
+**Hallazgos que amplían lo anterior:**
+- **Esquemas.** Los dos runners solo aceptan los esquemas `'1'` y `'2'`: `ayni_sdk_runner.dart:433` y `direct_tflite_runner.dart:405`, y `sources` solo con `'2'` (`:471-478`).
+  - Hay que aceptar `'4'`, y `sources` en `'2'` y `'4'`.
+  - El `'3'` (captura) sigue fuera, porque el control no ejecuta `dataset.capture`.
+- **Gate de versión.** Comparar con `'0.3.1'` por igualdad bloquearía la detección con 0.4.0.
+- **`switch` sobre `ValidationResultType`.** Agregar `segmentation` obliga a tocarlos todos:
+  - `validation_output_normalizer.dart:25-37`;
+  - `validation_model_repository.dart:417-421` y `:484-488`;
+  - `direct_tflite_runner.dart:607-611`.
+- **Pasos.** Seguir este orden:
+  1. **Versión.**
+     - `validationSdkVersion = '0.4.0'`, que también será el valor por defecto de `sdkVersion` en el runner.
+     - Comparador SemVer propio y mínimo; no se importa `pub_semver`, que es transitiva. Una versión `-pre` vale menos que la estable.
+     - La detección exige al menos 0.3.1. La segmentación exige al menos 0.4.0; si no, `sdkSegmentationUnsupported` («La segmentación requiere ayni_sdk 0.4.0 o posterior.») antes de inicializar.
+  2. **Contrato.**
+     - `ValidationResultType.segmentation`.
+     - `scoreType` (`logits` o `probabilities`), obligatorio solo en segmentación, en `ValidationOutputContract` y `ValidationModelOutputContract`.
+     - La segmentación admite de 1 a 256 etiquetas.
+     - Claves exactas `{type, labels, scoreType}` en `modelContractMatchesRequirement` y `_matchesModelOutput`.
+  3. **Codificación común**, en el archivo nuevo `lib/validation/execution/validation_segmentation.dart`.
+     - `segmentationOutputJson` devuelve `{type, width, height, areaFractions (en el orden de labels), confidence, maskSha256, maskRle}`.
+     - El RLE es por fila: H listas de pares `[índice, longitud]` cuyas longitudes suman W.
+     - `decodeMaskRle` valida lo que lee.
+  4. **Normalización.**
+     - `_segmentationFromTensors` es propia del control y aplica las mismas reglas y topes que el SDK: argmax estricto, softmax estable y máximo con `probabilities`.
+     - `SegmentationResult` en `_normalizeSdkValue` verifica las etiquetas, el largo de la máscara y las claves de `areaFractions`.
+  5. **Control directo.**
+     - Pasa `scoreType`.
+     - La condición lee `confidences` (clasificación) o `areaFractions` (segmentación).
+     - `expectedType` incluye la segmentación.
+     - Los tensores de segmentación se manejan como `Float32List` sin copias en caja.
+     - Las salidas de clasificación y detección no cambian, para no alterar el instrumento de la campaña con 0.3.1.
+  6. **Métrica en el dispositivo.**
+     - `compareSegmentationOutputs` devuelve `pixelAgreement`, `meanIou`, `maxAbsAreaFractionDelta`, `absConfidenceDelta` y `dimensionsMatch`.
+     - Se guarda en el campo opcional `segmentationAgreement` del registro `treatment` exitoso, emparejado con el control por `(repetition, caseId, inputSha256)` dentro de `runSuite`.
+     - Los registros de clasificación y detección no cambian byte a byte, y las filas antiguas se siguen leyendo.
+  7. **Perfil.** `SEG-01` queda en `pending`, con los escenarios `SEG-01-PERF-02-WARMUP` (20), `SEG-01-PERF-02` (300) y `SEG-01-PERF-04` (1024). Se activa cuando existan el modelo registrado, el workflow con esquema 4 (salida de segmentación más la condición `person gte 0.1` con salida booleana `sources` true/false) y un dataset con licencia.
+  8. **README.**
+     - `ayni_sdk` 0.4.0 y la regla SemVer.
+     - SEG-01 y los conteos con 5 perfiles.
+     - Corregir lo del botón deshabilitado: basta un perfil listo.
+     - Privacidad: el JSONL lleva la máscara en RLE, nunca sale salvo con `Exportar JSONL`, y la traza del SDK no la incluye.
+- **Bloqueado por artefactos del usuario:** el modelo registrado, el workflow publicado, el dataset con licencia y la compilación y el registro de un APK nuevo.
