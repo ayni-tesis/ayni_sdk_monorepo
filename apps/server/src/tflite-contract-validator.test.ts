@@ -6,6 +6,7 @@ import {
   isSegmentationOutputCompatible,
   isTfliteContractCompatible,
   MAX_SEGMENTATION_PIXELS,
+  MAX_SEGMENTATION_VALUES,
 } from "./tflite-contract-validator";
 
 // One 1×1 convolution from [1, H, W, 3] to [1, H, W, 3], converted with TensorFlow 2.19:
@@ -67,10 +68,25 @@ describe("isSegmentationOutputCompatible", () => {
     expect(isSegmentationOutputCompatible(outputs, 21)).toBe(false);
   });
 
+  it("rejects a dynamic channel count but accepts a dynamic batch", () => {
+    const withSignature = (shapeSignature: number[]) => [
+      { shape: [1, 4, 4, 1], shapeSignature, type: 0 },
+    ];
+    expect(isSegmentationOutputCompatible(withSignature([1, 4, 4, -1]), 1)).toBe(false);
+    expect(isSegmentationOutputCompatible(withSignature([-1, 4, 4, 1]), 1)).toBe(true);
+  });
+
   it("rejects masks larger than the pixel limit", () => {
     expect(MAX_SEGMENTATION_PIXELS).toBe(1024 * 1024);
     expect(isSegmentationOutputCompatible([float32([1, 1024, 1024, 2])], 2)).toBe(true);
     expect(isSegmentationOutputCompatible([float32([1, 1025, 1024, 2])], 2)).toBe(false);
+  });
+
+  it("rejects tensors with more values than the value limit", () => {
+    expect(MAX_SEGMENTATION_VALUES).toBe(16_777_216);
+    // 1024 × 1024 pixels × 16 channels is exactly the limit.
+    expect(isSegmentationOutputCompatible([float32([1, 1024, 1024, 16])], 16)).toBe(true);
+    expect(isSegmentationOutputCompatible([float32([1, 1024, 1024, 17])], 17)).toBe(false);
   });
 });
 

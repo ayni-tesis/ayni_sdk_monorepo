@@ -382,6 +382,21 @@ class WorkflowTrace {
               },
           ],
         },
+        SegmentationResult(
+          :final nodeId,
+          :final width,
+          :final height,
+          :final confidence,
+          :final areaFractions,
+        ) =>
+          {
+            'type': 'segmentation',
+            'nodeId': nodeId,
+            'width': width,
+            'height': height,
+            'confidence': confidence,
+            'areaFractions': areaFractions,
+          },
         BooleanResult(:final nodeId, :final value) => {
           'type': 'boolean',
           'nodeId': nodeId,

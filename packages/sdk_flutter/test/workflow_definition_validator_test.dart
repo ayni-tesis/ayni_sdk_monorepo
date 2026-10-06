@@ -35,6 +35,7 @@ void main() {
     List<String> labels = const ['perro', 'gato'],
     Object? scoreThreshold,
     Object? tensorIndices,
+    Object? scoreType,
   }) => {
     'id': id,
     'type': 'model.tflite',
@@ -56,6 +57,7 @@ void main() {
         'labels': labels,
         if (scoreThreshold != null) 'scoreThreshold': scoreThreshold,
         if (tensorIndices != null) 'tensorIndices': tensorIndices,
+        if (scoreType != null) 'scoreType': scoreType,
       },
     },
   };
@@ -384,7 +386,7 @@ void main() {
     'rejects unsupported schema versions as unsupportedSchemaVersion (US-098)',
     () {
       expect(
-        validate(definition(schemaVersion: '4')),
+        validate(definition(schemaVersion: '5')),
         WorkflowValidationStatus.unsupportedSchemaVersion,
       );
       expect(
@@ -397,7 +399,7 @@ void main() {
       );
       expect(
         validate({
-          'schemaVersion': '4',
+          'schemaVersion': '5',
           'nodes': const <Object>[],
           'connections': const <Object>[],
           'futureField': true,
@@ -1279,6 +1281,247 @@ void main() {
       ),
       WorkflowValidationStatus.incompatiblePort,
     );
+  });
+
+  group('segmentation (US-160)', () {
+    Map<String, Object> segmenter({
+      String id = 'model-1',
+      String modelVersionId = 'model-version-1',
+      List<String> labels = const ['fondo', 'hoja'],
+      Object? scoreType = 'logits',
+    }) => model(
+      id: id,
+      modelVersionId: modelVersionId,
+      resultType: 'segmentation',
+      labels: labels,
+      scoreType: scoreType,
+    );
+
+    WorkflowValidationStatus validateSegmentation({
+      Object? schemaVersion = '4',
+      Map<String, Object>? node,
+    }) => validate(
+      definition(
+        schemaVersion: schemaVersion,
+        nodes: [
+          imageInput(),
+          node ?? segmenter(),
+          output(resultType: 'segmentation'),
+        ],
+        connections: [imageConnection()],
+      ),
+    );
+
+    test('accepts a segmentation model in schema 4', () {
+      expect(validateSegmentation(), WorkflowValidationStatus.valid);
+      expect(
+        validateSegmentation(node: segmenter(scoreType: 'probabilities')),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('accepts from 1 to 256 labels', () {
+      expect(
+        validateSegmentation(node: segmenter(labels: ['fondo'])),
+        WorkflowValidationStatus.valid,
+      );
+      expect(
+        validateSegmentation(
+          node: segmenter(labels: [for (var i = 0; i < 256; i++) 'l$i']),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('rejects a segmentation model in any schema but 4', () {
+      for (final schemaVersion in ['1', '2', '3', null]) {
+        expect(
+          validateSegmentation(schemaVersion: schemaVersion),
+          WorkflowValidationStatus.invalidSchema,
+          reason: '$schemaVersion',
+        );
+      }
+    });
+
+    test('rejects a damaged segmentation contract', () {
+      final damaged = <String, Map<String, Object>>{
+        'no scoreType': segmenter(scoreType: null),
+        'unknown scoreType': segmenter(scoreType: 'softmax'),
+        'numeric scoreType': segmenter(scoreType: 1),
+        'no labels': segmenter(labels: const []),
+        'too many labels': segmenter(
+          labels: [for (var i = 0; i < 257; i++) 'l$i'],
+        ),
+        'duplicate labels': segmenter(labels: const ['fondo', 'hoja', 'fondo']),
+        'empty label': segmenter(labels: const ['fondo', '']),
+        'blank label': segmenter(labels: const ['fondo', '   ']),
+        'score threshold': model(
+          resultType: 'segmentation',
+          scoreThreshold: 0.5,
+          scoreType: 'logits',
+        ),
+      };
+      for (final entry in damaged.entries) {
+        expect(
+          validateSegmentation(node: entry.value),
+          WorkflowValidationStatus.invalidSchema,
+          reason: entry.key,
+        );
+      }
+    });
+
+    test('rejects a scoreType on a classification or detection model', () {
+      for (final node in [
+        model(scoreType: 'logits'),
+        model(
+          resultType: 'detection',
+          scoreThreshold: 0.5,
+          scoreType: 'logits',
+        ),
+      ]) {
+        expect(
+          validate(
+            definition(
+              schemaVersion: '4',
+              nodes: [imageInput(), node, output()],
+              connections: [imageConnection()],
+            ),
+          ),
+          WorkflowValidationStatus.invalidSchema,
+        );
+      }
+    });
+
+    test('accepts schema 4 with everything schema 3 had', () {
+      final capture = {
+        'id': 'capture-1',
+        'type': 'dataset.capture',
+        'inputs': {'imagen': 'image', 'resultado': 'inferenceResult'},
+      };
+      expect(
+        validate(
+          definition(
+            schemaVersion: '4',
+            nodes: [imageInput(), model(), output(), capture],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'capture-1', targetPort: 'imagen'),
+              imageConnection(
+                sourceNodeId: 'model-1',
+                sourcePort: 'result',
+                targetNodeId: 'capture-1',
+                targetPort: 'resultado',
+              ),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('accepts a combined output with a segmentation in schema 4', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '4',
+            nodes: [
+              imageInput(),
+              model(),
+              segmenter(id: 'model-2', modelVersionId: 'model-version-2'),
+              combinedOutput(
+                sources: [
+                  {
+                    'sourceNodeId': 'model-1',
+                    'sourcePort': 'result',
+                    'resultType': 'classification',
+                  },
+                  {
+                    'sourceNodeId': 'model-2',
+                    'sourcePort': 'result',
+                    'resultType': 'segmentation',
+                  },
+                ],
+              ),
+            ],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'model-2'),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.valid,
+      );
+    });
+
+    test('rejects a segmentation output declared as another type', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '4',
+            nodes: [
+              imageInput(),
+              segmenter(),
+              output(resultType: 'classification'),
+            ],
+            connections: [imageConnection()],
+          ),
+        ),
+        WorkflowValidationStatus.incompatiblePort,
+      );
+    });
+
+    test('rejects a segmentation on the result port of a capture', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '4',
+            nodes: [
+              imageInput(),
+              segmenter(),
+              output(resultType: 'segmentation'),
+              {
+                'id': 'capture-1',
+                'type': 'dataset.capture',
+                'inputs': {'imagen': 'image', 'resultado': 'inferenceResult'},
+              },
+            ],
+            connections: [
+              imageConnection(),
+              imageConnection(targetNodeId: 'capture-1', targetPort: 'imagen'),
+              imageConnection(
+                sourceNodeId: 'model-1',
+                sourcePort: 'result',
+                targetNodeId: 'capture-1',
+                targetPort: 'resultado',
+              ),
+            ],
+          ),
+        ),
+        WorkflowValidationStatus.incompatiblePort,
+      );
+    });
+
+    test('rejects a condition on a segmentation until US-161', () {
+      expect(
+        validate(
+          definition(
+            schemaVersion: '4',
+            nodes: [
+              imageInput(),
+              segmenter(),
+              condition(label: 'hoja'),
+              output(
+                sourceNodeId: 'condition-1',
+                sourcePort: 'true',
+                resultType: 'boolean',
+              ),
+            ],
+            connections: [imageConnection()],
+          ),
+        ),
+        WorkflowValidationStatus.incompatiblePort,
+      );
+    });
   });
 
   test('reports only a machine-readable reason, never the definition', () {

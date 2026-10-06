@@ -50,8 +50,8 @@ Scenario: El tensor no coincide con las etiquetas
 
 ## Criterios de aceptación
 
-- **Contrato de segmentación:** `{ type: "segmentation", labels: string[] (1 a 256), scoreType: "logits" | "probabilities" }`. Se rechazan los campos extra.
-- **Compatibilidad con el `.tflite`:** el servidor la acepta solo si el archivo tiene exactamente una salida **float32** `[1, H, W, C]`, con `C = labels.length`, `H ≥ 1`, `W ≥ 1` y `H × W ≤ 1.048.576`. El alto y el ancho no pueden ser dinámicos: en `shape_signature` no pueden valer -1.
+- **Contrato de segmentación:** `{ type: "segmentation", labels: string[] (1 a 256), scoreType: "logits" | "probabilities" }`. Se rechazan los campos extra y las etiquetas repetidas (`incompatibleContract`): las fracciones de área se indexan por etiqueta.
+- **Compatibilidad con el `.tflite`:** el servidor la acepta solo si el archivo tiene exactamente una salida **float32** `[1, H, W, C]`, con `C = labels.length`, `H ≥ 1`, `W ≥ 1` y `H × W ≤ 1.048.576` y `H × W × C ≤ 16.777.216` valores (unos 64 MB de float32). El alto y el ancho no pueden ser dinámicos: en `shape_signature` no pueden valer -1.
 - **API y OpenAPI:** el OpenAPI (`packages/api/src/openapi.json`) incluye la variante y `openapi:verify` pasa.
 - **Dashboard:** el diálogo guarda y vuelve a cargar `scoreType`; la tabla de versiones distingue `Clasificación`, `Detección` y `Segmentación`.
 - **Sin efecto en los SDK publicados:** ningún workflow publicado cambia de esquema por este contrato. Hasta US-159 no se puede agregar un modelo de segmentación a un workflow.

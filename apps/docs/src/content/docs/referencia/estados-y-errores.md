@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Esta página describe `ayni_sdk` 0.3.1. Para diagnosticar un problema a
+Esta página describe `ayni_sdk` 0.4.0. Para diagnosticar un problema a
 partir de lo que ve tu app, sigue
 [Solucionar problemas de sincronización](/guias/solucionar-problemas-de-sincronizacion/).
 

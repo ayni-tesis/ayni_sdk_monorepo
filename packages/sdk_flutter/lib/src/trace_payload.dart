@@ -174,6 +174,15 @@ final Map<String, _Field> _traceDetectionOutputFields = {
   'detections': _list(_object(_traceDetectionFields)),
 };
 
+final Map<String, _Field> _traceSegmentationOutputFields = {
+  'type': _string,
+  'nodeId': _string,
+  'width': _number,
+  'height': _number,
+  'confidence': _number,
+  'areaFractions': _record(_number),
+};
+
 const _traceBooleanOutputFields = {
   'type': _string,
   'nodeId': _string,
@@ -190,6 +199,7 @@ final Map<String, _Field> _traceCombinedOutputFields = {
 final Map<String, Map<String, _Field>> _traceScalarOutputTypes = {
   'classification': _traceClassificationOutputFields,
   'detection': _traceDetectionOutputFields,
+  'segmentation': _traceSegmentationOutputFields,
   'boolean': _traceBooleanOutputFields,
 };
 

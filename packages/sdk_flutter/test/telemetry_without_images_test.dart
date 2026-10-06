@@ -206,6 +206,54 @@ void main() {
       expect(allowlistedTracePayload(trace), trace);
     });
 
+    test('keeps a segmentation summary without its mask', () {
+      final trace = _completeTrace().toJson();
+      final summary = (trace['outputs']! as Map)['Segmentación'] as Map;
+
+      expect(summary, {
+        'type': 'segmentation',
+        'nodeId': 'model-3',
+        'width': 2,
+        'height': 2,
+        'confidence': 0.75,
+        'areaFractions': {'fondo': 0.5, 'hoja': 0.5},
+      });
+      expect(summary.keys.toSet(), const {
+        'type',
+        'nodeId',
+        'width',
+        'height',
+        'confidence',
+        'areaFractions',
+      });
+      expect(allowlistedTracePayload(trace), trace);
+    });
+
+    test('drops a mask attached to a segmentation output', () {
+      final trace = _completeTrace().toJson();
+      final outputs = Map<String, Object?>.from(trace['outputs']! as Map);
+      outputs['Segmentación'] = {
+        ...(outputs['Segmentación']! as Map).cast<String, Object?>(),
+        'mask': [0, 1, 0, 1],
+        'labels': ['fondo', 'hoja'],
+      };
+
+      final allowed = allowlistedTracePayload({...trace, 'outputs': outputs});
+
+      expect(allowed, trace);
+      expect(
+        (((allowed['outputs']! as Map)['Segmentación']) as Map).keys.toSet(),
+        const {
+          'type',
+          'nodeId',
+          'width',
+          'height',
+          'confidence',
+          'areaFractions',
+        },
+      );
+    });
+
     test(
       'rejects an image attached to a trace and keeps only the allowed metadata',
       () async {
@@ -355,6 +403,7 @@ WorkflowTrace _completeTrace() => createWorkflowTrace(
     'Detección': const DetectionResult('model-2', [
       Detection('broca', 0.8, 0.1, 0.2, 0.3, 0.4),
     ]),
+    'Segmentación': _segmentation('model-3'),
     'Combinada': const CombinedWorkflowResult('output-2', [
       BooleanResult('condition-1', true),
     ]),
@@ -365,6 +414,17 @@ WorkflowTrace _completeTrace() => createWorkflowTrace(
     nodeId: 'model-1',
     modelVersionId: 'model-version-1',
   ),
+);
+
+/// A 2x2 segmentation whose mask the trace must never carry.
+SegmentationResult _segmentation(String nodeId) => SegmentationResult(
+  nodeId,
+  width: 2,
+  height: 2,
+  labels: const ['fondo', 'hoja'],
+  mask: Uint8List.fromList([0, 1, 0, 1]),
+  areaFractions: const {'fondo': 0.5, 'hoja': 0.5},
+  confidence: 0.75,
 );
 
 /// [trace] with the input image and other data no trace may carry, at the top

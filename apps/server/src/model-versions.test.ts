@@ -627,6 +627,10 @@ describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVers
       },
     },
     {
+      name: "with duplicate labels",
+      output: { type: "segmentation", labels: ["leaf", "rust", "leaf"], scoreType: "logits" },
+    },
+    {
       name: "with a detection threshold",
       output: { type: "segmentation", labels: ["leaf"], scoreType: "logits", scoreThreshold: 0.5 },
     },

@@ -19,7 +19,7 @@ Una definición publicada es un objeto `{ schemaVersion, nodes, connections }`:
 
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
-| `schemaVersion` | `"1"`, `"2"` o `"3"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
+| `schemaVersion` | `"1"`, `"2"`, `"3"` o `"4"` | La versión de esquema de la definición. El SDK comprueba que sea una versión soportada antes de instalar o ejecutar el workflow. |
 | `nodes` | Lista de nodos | Los nodos del workflow. Cada `id` es único dentro de la definición. |
 | `connections` | Lista de conexiones | Las conexiones de la entrada de imagen con los modelos y las capturas, de un modelo con una captura y de la rama de una condición con una captura. El servidor la publica vacía si no hay ninguna. |
 
@@ -60,8 +60,8 @@ La imagen que la app entrega al workflow.
 
 ### `model.tflite`
 
-Una versión de un modelo TensorFlow Lite que clasifica la imagen o detecta
-objetos en ella.
+Una versión de un modelo TensorFlow Lite que clasifica la imagen, detecta
+objetos en ella o segmenta sus píxeles.
 
 | Campo | Valor | Descripción |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ objetos en ella.
 | `modelName` | Texto | Nombre del modelo en el dashboard. |
 | `version` | Texto | Versión del modelo, por ejemplo `2.0.0`. |
 | `inputs` | `{ "image": { … } }` | Su puerto de entrada `image`, con la entrada del contrato del modelo: `type`, `width`, `height`, `channels` y `normalization`. |
-| `outputs` | `{ "result": { … } }` | Su puerto de salida `result`, con la salida del contrato: `type` (`classification` o `detection`) y `labels`, la lista de etiquetas. Una detección añade `scoreThreshold`, un número. |
+| `outputs` | `{ "result": { … } }` | Su puerto de salida `result`, con la salida del contrato: `type` (`classification`, `detection` o `segmentation`) y `labels`, la lista de etiquetas. Una detección añade `scoreThreshold`, un número. Una segmentación (de 1 a 256 etiquetas distintas, solo en el esquema 4) añade `scoreType`, `"logits"` o `"probabilities"`. |
 
 ### `condition`
 
@@ -103,14 +103,14 @@ de esos mismos tres campos para combinar varios resultados compatibles.
 | `name` | Texto | Nombre del resultado. |
 | `sourceNodeId` | Texto (esquema 1) | El nodo del que lee el resultado: un modelo o una condición. |
 | `sourcePort` | Texto (esquema 1) | El puerto que lee: `result` de un modelo, o `true` o `false` de una condición. |
-| `resultType` | `"classification"`, `"detection"` o `"boolean"` (esquema 1) | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
+| `resultType` | `"classification"`, `"detection"`, `"segmentation"` o `"boolean"` (esquema 1) | El tipo de resultado. Con un modelo, coincide con el tipo de su salida; con una condición, es `boolean`. |
 | `sources` | Lista no vacía | En el esquema 2 o posterior, orígenes que se combinan en un único resultado nombrado. Cada origen contiene `sourceNodeId`, `sourcePort` y `resultType`. |
 
 ### `dataset.capture`
 
 Pide guardar la imagen de entrada y el resultado de un modelo como evidencia
-para un dataset de la aplicación. Solo existe en el esquema 3, con el que el
-servidor publica todo workflow que lo incluye. No tiene salidas ni contiene
+para un dataset de la aplicación. Existe desde el esquema 3, con el que el
+servidor publica todo workflow que lo incluye (el esquema 4 también lo admite). No tiene salidas ni contiene
 código.
 
 Cuando `run()` alcanza el nodo, el SDK guarda la evidencia en el dispositivo
@@ -132,7 +132,7 @@ Qué guarda y cómo borrarlo está en
 | --- | --- | --- |
 | `id` | Texto | Identificador del nodo. |
 | `type` | `"dataset.capture"` | Tipo del nodo. |
-| `inputs` | `{ "imagen": "image", "resultado": "inferenceResult" }` | Sus puertos de entrada obligatorios: `imagen` recibe la imagen de entrada y `resultado`, el resultado de un modelo de clasificación o detección. Cada uno recibe exactamente una conexión en `connections`. El puerto opcional `condicion` recibe como mucho una. |
+| `inputs` | `{ "imagen": "image", "resultado": "inferenceResult" }` | Sus puertos de entrada obligatorios: `imagen` recibe la imagen de entrada y `resultado`, el resultado de un modelo de clasificación o detección; no acepta el de un modelo de segmentación. Cada uno recibe exactamente una conexión en `connections`. El puerto opcional `condicion` recibe como mucho una. |
 
 ## Conexiones
 
@@ -177,7 +177,7 @@ una de estas reglas:
 | Regla | Qué comprueba |
 | --- | --- |
 | Esquema exacto | La definición es un JSON válido. La definición, cada nodo, cada conexión y los objetos `outputs`, `inputs`, `result` y `branches` tienen exactamente los campos de esta página, ni uno más ni uno menos. Los campos de texto de los nodos y las conexiones no están vacíos, `operator`, `threshold`, `resultType` y el `type` de `result` tienen un valor permitido, `labels` es una lista de textos y ningún `id` se repite. El SDK no comprueba los campos internos de `inputs.image` ni los textos de `branches`. |
-| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"`, `"2"` o `"3"`). El esquema 1 admite un origen por salida; el esquema 2 admite además `sources`, y el esquema 3, además, `dataset.capture`. Si el workflow declara una versión no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
+| Versión de esquema compatible | El campo `schemaVersion` declara una de las versiones de esquema que soporta el SDK (`"1"`, `"2"`, `"3"` o `"4"`). El esquema 1 admite un origen por salida; el esquema 2 admite además `sources`; el esquema 3, además, `dataset.capture`, y el esquema 4, además, modelos con salida `segmentation`. Un modelo de segmentación en un esquema distinto de 4 hace inválida la definición. Si el workflow declara una versión no admitida, el SDK lo rechaza con `SyncResourceStatus.unsupportedWorkflowVersion`. |
 | Tipos de nodo compatibles | El `type` de cada nodo es uno de los [tipos de nodo](#tipos-de-nodo) de la versión del SDK. |
 | Modelos declarados | El `modelVersionId` de cada modelo está en los `modelVersionIds` del workflow que devolvió `POST /sdk/sync`. |
 | Nodos existentes | Cada conexión y cada `sourceNodeId` nombran un nodo de la definición. |

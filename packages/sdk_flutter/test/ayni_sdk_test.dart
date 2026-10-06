@@ -818,7 +818,7 @@ void main() {
         inventoryJson: _manifest(workflowVersion: '1.0.0'),
         workflowVersionId: 'workflow-version-1.0.0',
         definitionJson: _unsupportedSchemaWorkflowDefinition(
-          schemaVersion: '4',
+          schemaVersion: '5',
         ),
       );
       await expectLater(
@@ -1265,7 +1265,7 @@ void main() {
       final inventory = await seedInventory(client);
       responseBody = _manifest(workflowVersion: '2.0.0');
       workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
-        schemaVersion: '4',
+        schemaVersion: '5',
       );
       final downloads = <WorkflowVersionDownloadResult>[];
       final rejectingClient = sdk(onWorkflowDownload: downloads.add);
@@ -1315,7 +1315,7 @@ void main() {
     'commits other resources when a never-installed workflow has unsupported schema version (US-098)',
     () async {
       workflowResponseBody = _unsupportedSchemaWorkflowDefinition(
-        schemaVersion: '4',
+        schemaVersion: '5',
       );
 
       final result = await sdk().sync();
@@ -2994,7 +2994,7 @@ void main() {
       () {
         expect(
           AyniSdk.supportedWorkflowSchemaVersions,
-          equals({'1', '2', '3'}),
+          equals({'1', '2', '3', '4'}),
         );
       },
     );
