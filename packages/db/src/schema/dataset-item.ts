@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   foreignKey,
   index,
   jsonb,
@@ -20,6 +22,12 @@ export const datasetItem = pgTable(
     evidenceId: text("evidence_id").notNull(),
     originalResult: jsonb("original_result").$type<Record<string, unknown>>().notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
+    reviewStatus: text("review_status", { enum: ["pending", "approved", "rejected"] })
+      .default("pending")
+      .notNull(),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at"),
+    reviewReason: text("review_reason"),
   },
   (table) => [
     foreignKey({
@@ -41,6 +49,18 @@ export const datasetItem = pgTable(
       table.applicationId,
       table.datasetId,
       table.addedAt,
+    ),
+    check(
+      "dataset_item_review_status_check",
+      sql`${table.reviewStatus} in ('pending', 'approved', 'rejected')`,
+    ),
+    check(
+      "dataset_item_reviewed_at_check",
+      sql`(${table.reviewStatus} = 'pending') = (${table.reviewedAt} is null)`,
+    ),
+    check(
+      "dataset_item_review_reason_check",
+      sql`(${table.reviewStatus} = 'rejected') or (${table.reviewReason} is null)`,
     ),
   ],
 );

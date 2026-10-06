@@ -1,5 +1,12 @@
 import type { DatasetTaskType } from "@ayni/api/datasets";
-import { application, dataset, datasetItem, member, sdkEvidence } from "@ayni/db/schema/index";
+import {
+  application,
+  dataset,
+  datasetItem,
+  member,
+  sdkEvidence,
+  user,
+} from "@ayni/db/schema/index";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
 import {
@@ -8,8 +15,13 @@ import {
   listAvailableDatasetEvidence,
   listDatasets,
   removeDatasetEvidence,
+  reviewDatasetEvidence,
 } from "./dataset-store";
 import { logger } from "./lib/logger";
+
+vi.mock("./lib/storage", () => ({
+  getDownloadUrl: vi.fn(async (key: string) => `https://evidence.example/${key}`),
+}));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -28,6 +40,9 @@ const evidence = {
   result: { type: "classification", label: "pino", confidence: 0.8 },
   capturedAt: new Date("2026-10-01T00:00:00.000Z"),
   status: "received",
+  storageKey: "apps/app-1/evidence/evidence-1.jpg",
+  imageWidth: 640,
+  imageHeight: 480,
 };
 
 type EvidenceRow = Omit<typeof evidence, "taskType"> & { taskType: DatasetTaskType };
@@ -37,14 +52,17 @@ function makeDatabase({
   attachedRows = [] as { evidenceId: string }[],
   datasetItemRows = [] as Record<string, unknown>[],
   deleteRows = [{ id: "item-1" }] as Record<string, unknown>[],
+  membershipRole = "admin",
 }: {
   evidenceRows?: EvidenceRow[];
   attachedRows?: { evidenceId: string }[];
   datasetItemRows?: Record<string, unknown>[];
   deleteRows?: Record<string, unknown>[];
+  membershipRole?: string;
 } = {}) {
   const insertedValues: Record<string, unknown>[] = [];
   const deletedTables: unknown[] = [];
+  const updatedValues: Record<string, unknown>[] = [];
   const tx = {
     select: () => ({
       from(table: unknown) {
@@ -52,25 +70,28 @@ function makeDatabase({
           table === application
             ? [{ id: "app-1", organizationId: "org-1", name: "Ayni", status: "active" }]
             : table === member
-              ? [{ role: "admin" }]
-              : table === dataset
-                ? [
-                    {
-                      id: "dataset-1",
-                      applicationId: "app-1",
-                      name: "Flores",
-                      taskType: "classification",
-                      createdAt: new Date("2026-10-01T00:00:00.000Z"),
-                      evidenceCount: 3,
-                    },
-                  ]
-                : table === sdkEvidence
-                  ? evidenceRows
-                  : table === datasetItem
-                    ? datasetItemRows.length > 0
-                      ? datasetItemRows
-                      : attachedRows
-                    : [];
+              ? [{ role: membershipRole }]
+              : table === user
+                ? [{ name: "Diego" }]
+                : table === dataset
+                  ? [
+                      {
+                        id: "dataset-1",
+                        applicationId: "app-1",
+                        name: "Flores",
+                        taskType: "classification",
+                        createdAt: new Date("2026-10-01T00:00:00.000Z"),
+                        evidenceCount: 3,
+                        approvedCount: 1,
+                      },
+                    ]
+                  : table === sdkEvidence
+                    ? evidenceRows
+                    : table === datasetItem
+                      ? datasetItemRows.length > 0
+                        ? datasetItemRows
+                        : attachedRows
+                      : [];
         const makeQuery = (resultRows: Record<string, unknown>[]) =>
           Object.assign(Promise.resolve(resultRows), {
             leftJoin: () =>
@@ -112,11 +133,21 @@ function makeDatabase({
         where: () => ({ returning: async () => deleteRows }),
       };
     },
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        updatedValues.push(values);
+        return {
+          where: () => ({
+            returning: async () => [{ id: "item-1", reviewedAt: values.reviewedAt }],
+          }),
+        };
+      },
+    }),
   };
   const database = {
     transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
   } as unknown as ApplicationDatabase;
-  return { database, deletedTables, insertedValues };
+  return { database, deletedTables, insertedValues, updatedValues };
 }
 
 describe("addDatasetEvidence", () => {
@@ -130,6 +161,8 @@ describe("addDatasetEvidence", () => {
       evidenceId: evidence.evidenceId,
       originalResult: evidence.result,
       taskType: evidence.taskType,
+      imageUrl: `https://evidence.example/${evidence.storageKey}`,
+      reviewStatus: "pending",
     });
     expect(insertedValues[0]).toMatchObject({
       applicationId: input.applicationId,
@@ -262,16 +295,76 @@ describe("dataset evidence pages", () => {
       originalResult: evidence.result,
       capturedAt: new Date("2026-10-01T00:00:00.000Z"),
       addedAt: new Date("2026-10-02T00:00:00.000Z"),
+      storageKey: `apps/app-1/evidence/evidence-${index + 1}.jpg`,
+      imageWidth: 640,
+      imageHeight: 480,
+      reviewStatus: index === 0 ? "approved" : "pending",
+      reviewerName: index === 0 ? "Diego" : null,
+      reviewedAt: index === 0 ? new Date("2026-10-03T00:00:00.000Z") : null,
+      reviewReason: null,
     }));
     const { database } = makeDatabase({ datasetItemRows });
 
     const firstPage = await getDataset(database, "app-1", "dataset-1");
     expect(firstPage?.dataset.evidenceCount).toBe(3);
+    expect(firstPage?.dataset.approvedCount).toBe(1);
     expect(firstPage?.items).toHaveLength(50);
+    expect(firstPage?.items[0]).toMatchObject({
+      imageUrl: "https://evidence.example/apps/app-1/evidence/evidence-1.jpg",
+      reviewStatus: "approved",
+      reviewerName: "Diego",
+      reviewedAt: "2026-10-03T00:00:00.000Z",
+    });
     expect(firstPage?.nextItemOffset).toBe(50);
 
     const secondPage = await getDataset(database, "app-1", "dataset-1", 50);
     expect(secondPage?.items).toHaveLength(1);
     expect(secondPage?.nextItemOffset).toBeNull();
+  });
+});
+
+describe("reviewDatasetEvidence", () => {
+  it("stores the review status, reviewer, timestamp, and optional reason for any member", async () => {
+    const { database, updatedValues } = makeDatabase({ membershipRole: "member" });
+    const result = await reviewDatasetEvidence(database, {
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "reviewer-1",
+      status: "rejected",
+      reason: "Imagen borrosa",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({
+      status: "rejected",
+      reviewerName: "Diego",
+      reason: "Imagen borrosa",
+    });
+    const reviewedAt = updatedValues[0]?.reviewedAt;
+    expect(reviewedAt).toBeInstanceOf(Date);
+    if (!(reviewedAt instanceof Date)) return;
+    expect(result.value.reviewedAt).toBe(reviewedAt.toISOString());
+    expect(updatedValues[0]).toMatchObject({
+      reviewStatus: "rejected",
+      reviewedBy: "reviewer-1",
+      reviewReason: "Imagen borrosa",
+    });
+  });
+
+  it("clears a rejection reason when evidence is approved", async () => {
+    const { database, updatedValues } = makeDatabase();
+    const result = await reviewDatasetEvidence(database, {
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "reviewer-1",
+      status: "approved",
+      reason: "ignored",
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { status: "approved", reason: null } });
+    expect(updatedValues[0]?.reviewReason).toBeNull();
   });
 });

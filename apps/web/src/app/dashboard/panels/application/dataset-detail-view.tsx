@@ -4,9 +4,11 @@ import type {
   DatasetAvailableEvidenceResponse,
   DatasetDetailResponse,
   DatasetEvidence,
+  DatasetReviewResponse,
 } from "@ayni/api/datasets";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Breadcrumb,
@@ -213,6 +215,38 @@ export function DatasetDetailView({
       };
     });
     setNotice("Evidencia retirada del dataset.");
+  }
+
+  async function reviewEvidence(itemId: string, status: "approved" | "rejected", reason?: string) {
+    const { data } = await httpClient.patch<DatasetReviewResponse>(
+      `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/review`,
+      { status, ...(reason ? { reason } : {}) },
+    );
+    setDetail((current) => {
+      if (!current) return current;
+      const oldItem = current.items.find((item) => item.id === itemId);
+      const countChange =
+        Number(data.status === "approved") - Number(oldItem?.reviewStatus === "approved");
+      return {
+        ...current,
+        dataset: {
+          ...current.dataset,
+          approvedCount: Math.max(0, current.dataset.approvedCount + countChange),
+        },
+        items: current.items.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                reviewStatus: data.status,
+                reviewerName: data.reviewerName,
+                reviewedAt: data.reviewedAt,
+                reviewReason: data.reason,
+              }
+            : item,
+        ),
+      };
+    });
+    setNotice(status === "approved" ? "Evidencia aprobada." : "Evidencia rechazada.");
   }
 
   useEffect(() => {
@@ -426,6 +460,7 @@ export function DatasetDetailView({
                   item={item}
                   canRemove={canManage && application.status === "active"}
                   onRemove={removeEvidence}
+                  onReview={reviewEvidence}
                 />
               ))}
             </ul>
@@ -461,14 +496,20 @@ function EvidenceItem({
   item,
   canRemove,
   onRemove,
+  onReview,
 }: {
   item: DatasetDetailResponse["items"][number];
   canRemove: boolean;
   onRemove: (itemId: string) => Promise<void>;
+  onReview: (itemId: string, status: "approved" | "rejected", reason?: string) => Promise<void>;
 }) {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewReason, setReviewReason] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   async function confirmRemove() {
     if (removing) return;
@@ -484,6 +525,21 @@ function EvidenceItem({
     }
   }
 
+  async function saveReview(status: "approved" | "rejected", reason?: string) {
+    if (reviewing) return;
+    setReviewing(true);
+    setReviewError("");
+    try {
+      await onReview(item.id, status, reason);
+      setReviewOpen(false);
+      setReviewReason("");
+    } catch (error) {
+      setReviewError(errorMessage(error, "No pudimos revisar la evidencia del dataset."));
+    } finally {
+      setReviewing(false);
+    }
+  }
+
   return (
     <li className="rounded-lg border p-4">
       <div className="flex flex-wrap justify-between gap-2">
@@ -492,10 +548,96 @@ function EvidenceItem({
           {formatLongDateEs(item.capturedAt)}
         </time>
       </div>
+      <Image
+        src={item.imageUrl}
+        alt={`Evidencia ${item.evidenceId}`}
+        width={item.imageWidth}
+        height={item.imageHeight}
+        unoptimized
+        className="mt-3 max-h-80 w-auto max-w-full rounded object-contain"
+      />
       <p className="mt-2 text-sm">Predicción original: {resultSummary(item.originalResult)}</p>
+      <p className="mt-1 text-sm" data-testid={`dataset-evidence-review-status-${item.id}`}>
+        Estado: {reviewStatusLabel(item.reviewStatus)}
+      </p>
+      {item.reviewedAt && (
+        <p className="mt-1 text-muted-foreground text-xs">
+          Revisada por {item.reviewerName ?? "un miembro"} · {formatLongDateEs(item.reviewedAt)}
+        </p>
+      )}
+      {item.reviewReason && <p className="mt-1 text-sm">Motivo: {item.reviewReason}</p>}
       <p className="mt-1 text-muted-foreground text-xs">
         Modelo {item.modelId} · versión {item.modelVersion}
       </p>
+      {reviewError && !reviewOpen && (
+        <p role="alert" className="mt-2 text-destructive text-sm">
+          {reviewError}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={reviewing}
+          onClick={() => void saveReview("approved")}
+        >
+          {reviewing ? "Guardando revisión…" : "Aprobar"}
+        </Button>
+        <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={reviewing}
+            onClick={() => {
+              setReviewError("");
+              setReviewOpen(true);
+            }}
+          >
+            Rechazar
+          </Button>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rechazar evidencia</DialogTitle>
+              <DialogDescription>Indica un motivo opcional para el rechazo.</DialogDescription>
+            </DialogHeader>
+            <label htmlFor={`dataset-evidence-rejection-reason-${item.id}`} className="text-sm">
+              Motivo opcional
+            </label>
+            <textarea
+              id={`dataset-evidence-rejection-reason-${item.id}`}
+              value={reviewReason}
+              maxLength={500}
+              disabled={reviewing}
+              onChange={(event) => setReviewReason(event.target.value)}
+              className="min-h-20 w-full rounded-md border bg-background p-2 text-sm"
+            />
+            {reviewError && (
+              <p role="alert" className="text-destructive text-sm">
+                {reviewError}
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={reviewing}
+                onClick={() => setReviewOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={reviewing}
+                onClick={() => void saveReview("rejected", reviewReason.trim() || undefined)}
+              >
+                {reviewing ? "Rechazando evidencia…" : "Rechazar evidencia"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
       {canRemove && (
         <div className="mt-3 flex justify-end">
           <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
@@ -541,6 +683,17 @@ function EvidenceItem({
       )}
     </li>
   );
+}
+
+function reviewStatusLabel(status: DatasetDetailResponse["items"][number]["reviewStatus"]) {
+  switch (status) {
+    case "approved":
+      return "Aprobada";
+    case "rejected":
+      return "Rechazada";
+    default:
+      return "Pendiente";
+  }
 }
 
 function EvidenceOption({

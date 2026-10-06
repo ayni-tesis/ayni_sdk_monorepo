@@ -4,13 +4,14 @@ import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { deleteMock, getMock, postMock } = vi.hoisted(() => ({
+const { deleteMock, getMock, patchMock, postMock } = vi.hoisted(() => ({
   deleteMock: vi.fn(),
   getMock: vi.fn(),
+  patchMock: vi.fn(),
   postMock: vi.fn(),
 }));
 vi.mock("@/lib/http-client", () => ({
-  httpClient: { delete: deleteMock, get: getMock, post: postMock },
+  httpClient: { delete: deleteMock, get: getMock, patch: patchMock, post: postMock },
 }));
 
 const { DatasetDetailView } = await import("./dataset-detail-view");
@@ -48,6 +49,13 @@ const item = {
   ...evidence,
   originalResult: evidence.result,
   addedAt: "2026-10-02T00:00:00.000Z",
+  imageUrl: "https://evidence.example/image",
+  imageWidth: 640,
+  imageHeight: 480,
+  reviewStatus: "pending" as const,
+  reviewerName: null,
+  reviewedAt: null,
+  reviewReason: null,
 };
 
 function renderDetail(onBackToDatasets?: () => void) {
@@ -75,6 +83,14 @@ describe("DatasetDetailView", () => {
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
     deleteMock.mockReset().mockResolvedValue({ data: undefined });
+    patchMock.mockReset().mockResolvedValue({
+      data: {
+        status: "rejected",
+        reviewerName: "Diego",
+        reviewedAt: "2026-10-03T00:00:00.000Z",
+        reason: "Imagen borrosa",
+      },
+    });
   });
 
   afterEach(() => cleanup());
@@ -121,6 +137,32 @@ describe("DatasetDetailView", () => {
     expect(postMock).toHaveBeenCalledWith("/applications/app-1/datasets/dataset-1/evidence", {
       evidenceIds: ["evidence-1"],
     });
+  });
+
+  it("shows the image and lets a workspace member reject evidence with an optional reason", async () => {
+    getMock.mockResolvedValue({
+      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+    });
+    renderDetail();
+    expect(await screen.findByRole("img", { name: "Evidencia evidence-1" })).toHaveAttribute(
+      "src",
+      "https://evidence.example/image",
+    );
+    expect(screen.getByText("Estado: Pendiente")).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Rechazar" }));
+    await user.type(screen.getByLabelText("Motivo opcional"), "Imagen borrosa");
+    await user.click(screen.getByRole("button", { name: "Rechazar evidencia" }));
+
+    expect(patchMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/review",
+      { status: "rejected", reason: "Imagen borrosa" },
+    );
+    expect(await screen.findByText("Estado: Rechazada")).toBeInTheDocument();
+    expect(screen.getByText("Evidencia rechazada.")).toBeInTheDocument();
+    expect(screen.getByText("Motivo: Imagen borrosa")).toBeInTheDocument();
+    expect(screen.getByText(/Revisada por Diego/)).toBeInTheDocument();
   });
 
   it("does not duplicate newly added evidence when loading later dataset pages", async () => {

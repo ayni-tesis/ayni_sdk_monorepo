@@ -211,6 +211,13 @@
       "when": 1791257748693,
       "tag": "0029_open_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791265964034,
+      "tag": "0030_smooth_terrax",
+      "breakpoints": true
     }
   ]
 }

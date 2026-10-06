@@ -3193,6 +3193,32 @@
                           "addedAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "imageUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "imageWidth": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "imageHeight": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "reviewStatus": {
+                            "type": "string",
+                            "enum": ["pending", "approved", "rejected"]
+                          },
+                          "reviewerName": {
+                            "type": ["string", "null"]
+                          },
+                          "reviewedAt": {
+                            "type": ["string", "null"],
+                            "format": "date-time"
+                          },
+                          "reviewReason": {
+                            "type": ["string", "null"]
                           }
                         },
                         "required": [
@@ -3203,7 +3229,14 @@
                           "taskType",
                           "originalResult",
                           "capturedAt",
-                          "addedAt"
+                          "addedAt",
+                          "imageUrl",
+                          "imageWidth",
+                          "imageHeight",
+                          "reviewStatus",
+                          "reviewerName",
+                          "reviewedAt",
+                          "reviewReason"
                         ],
                         "additionalProperties": false
                       }
@@ -3618,6 +3651,32 @@
                           "addedAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "imageUrl": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "imageWidth": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "imageHeight": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "reviewStatus": {
+                            "type": "string",
+                            "enum": ["pending", "approved", "rejected"]
+                          },
+                          "reviewerName": {
+                            "type": ["string", "null"]
+                          },
+                          "reviewedAt": {
+                            "type": ["string", "null"],
+                            "format": "date-time"
+                          },
+                          "reviewReason": {
+                            "type": ["string", "null"]
                           }
                         },
                         "required": [
@@ -3628,7 +3687,14 @@
                           "taskType",
                           "originalResult",
                           "capturedAt",
-                          "addedAt"
+                          "addedAt",
+                          "imageUrl",
+                          "imageWidth",
+                          "imageHeight",
+                          "reviewStatus",
+                          "reviewerName",
+                          "reviewedAt",
+                          "reviewReason"
                         ],
                         "additionalProperties": false
                       }
@@ -3889,6 +3955,180 @@
           },
           "500": {
             "description": "No pudimos retirar la evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/review": {
+      "patch": {
+        "tags": ["Datasets"],
+        "operationId": "revisar-evidencia-dataset",
+        "summary": "Aprobar o rechazar evidencia de un dataset",
+        "description": "Cualquier miembro del workspace puede revisar evidencia. Una evidencia nueva permanece pendiente y la revisión conserva quién y cuándo la realizó.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "item-123"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["approved", "rejected"]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": ["status"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado de revisión guardado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["pending", "approved", "rejected"]
+                    },
+                    "reviewerName": {
+                      "type": ["string", "null"]
+                    },
+                    "reviewedAt": {
+                      "type": ["string", "null"],
+                      "format": "date-time"
+                    },
+                    "reason": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["status", "reviewerName", "reviewedAt", "reason"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "La decisión de revisión no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos esta evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos revisar la evidencia del dataset.",
             "content": {
               "application/json": {
                 "schema": {

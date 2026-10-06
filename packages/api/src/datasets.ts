@@ -39,6 +39,7 @@ export const DatasetEvidenceSchema = z
     capturedAt: z.string().datetime(),
   })
   .strict();
+export const DatasetReviewStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export const DatasetItemSchema = z
   .object({
     id: z.string(),
@@ -49,6 +50,13 @@ export const DatasetItemSchema = z
     originalResult: DatasetEvidenceResultSchema,
     capturedAt: z.string().datetime(),
     addedAt: z.string().datetime(),
+    imageUrl: z.string().url(),
+    imageWidth: z.number().int().positive(),
+    imageHeight: z.number().int().positive(),
+    reviewStatus: DatasetReviewStatusSchema,
+    reviewerName: z.string().nullable(),
+    reviewedAt: z.string().datetime().nullable(),
+    reviewReason: z.string().nullable(),
   })
   .strict();
 export const DatasetDetailResponseSchema = z
@@ -70,6 +78,20 @@ export const DatasetPageQuerySchema = z
 export const DatasetAddEvidenceRequestSchema = z
   .object({ evidenceIds: z.array(z.string().min(1)).min(1).max(500) })
   .strict();
+export const DatasetReviewRequestSchema = z
+  .object({
+    status: z.enum(["approved", "rejected"]),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict();
+export const DatasetReviewResponseSchema = z
+  .object({
+    status: DatasetReviewStatusSchema,
+    reviewerName: z.string().nullable(),
+    reviewedAt: z.string().datetime().nullable(),
+    reason: z.string().nullable(),
+  })
+  .strict();
 export const DatasetAddEvidenceResponseSchema = z
   .object({ items: z.array(DatasetItemSchema) })
   .strict();
@@ -89,6 +111,8 @@ export type DatasetAvailableEvidenceResponse = z.infer<
 >;
 export type DatasetAddEvidenceRequest = z.infer<typeof DatasetAddEvidenceRequestSchema>;
 export type DatasetAddEvidenceResponse = z.infer<typeof DatasetAddEvidenceResponseSchema>;
+export type DatasetReviewRequest = z.infer<typeof DatasetReviewRequestSchema>;
+export type DatasetReviewResponse = z.infer<typeof DatasetReviewResponseSchema>;
 
 function errorResponse(description: string) {
   return {
@@ -218,6 +242,38 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos este ítem del dataset."),
       "409": errorResponse("No puedes modificar datasets de una aplicación archivada."),
       "500": errorResponse("No pudimos retirar la evidencia del dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/review",
+    tags: ["Datasets"],
+    operationId: "revisar-evidencia-dataset",
+    summary: "Aprobar o rechazar evidencia de un dataset",
+    description:
+      "Cualquier miembro del workspace puede revisar evidencia. Una evidencia nueva permanece pendiente y la revisión conserva quién y cuándo la realizó.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        itemId: z.string().openapi({ example: "item-123" }),
+      }),
+      body: {
+        required: true,
+        content: { "application/json": { schema: DatasetReviewRequestSchema } },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Estado de revisión guardado.",
+        content: { "application/json": { schema: DatasetReviewResponseSchema } },
+      },
+      "400": errorResponse("La decisión de revisión no es válida."),
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos esta evidencia del dataset."),
+      "500": errorResponse("No pudimos revisar la evidencia del dataset."),
     },
   });
 

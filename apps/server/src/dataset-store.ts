@@ -6,9 +6,11 @@ import type {
   DatasetItem,
   DatasetListItem,
   DatasetListResponse,
+  DatasetReviewRequest,
+  DatasetReviewResponse,
   DatasetTaskType,
 } from "@ayni/api/datasets";
-import { dataset, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
+import { dataset, datasetItem, sdkEvidence, user } from "@ayni/db/schema/index";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
@@ -16,6 +18,7 @@ import {
   type TransactionExecutor,
 } from "./application-actions";
 import { logger } from "./lib/logger";
+import { getDownloadUrl } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
 export type CreateDatasetInput = {
@@ -36,6 +39,7 @@ type DatasetRow = {
   taskType: DatasetTaskType;
   createdAt: Date | string;
   evidenceCount: number;
+  approvedCount: number;
 };
 
 type DatasetItemRow = {
@@ -47,6 +51,13 @@ type DatasetItemRow = {
   originalResult: Record<string, unknown>;
   capturedAt: Date | string;
   addedAt: Date | string;
+  storageKey: string;
+  imageWidth: number;
+  imageHeight: number;
+  reviewStatus: DatasetItem["reviewStatus"];
+  reviewerName: string | null;
+  reviewedAt: Date | string | null;
+  reviewReason: string | null;
 };
 
 type DatasetEvidenceRow = {
@@ -56,6 +67,13 @@ type DatasetEvidenceRow = {
   taskType: DatasetTaskType;
   result: Record<string, unknown>;
   capturedAt: Date | string;
+};
+
+type DatasetEvidenceForAddRow = DatasetEvidenceRow & {
+  status: string;
+  storageKey: string;
+  imageWidth: number;
+  imageHeight: number;
 };
 
 type DatasetQuery = Promise<Record<string, unknown>[]> & {
@@ -83,6 +101,13 @@ type DatasetWriteExecutor = DatasetReadExecutor & {
       returning: (fields?: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
     };
   };
+  update: (table: unknown) => {
+    set: (values: Record<string, unknown>) => {
+      where: (condition: unknown) => {
+        returning: (fields?: Record<string, unknown>) => Promise<Record<string, unknown>[]>;
+      };
+    };
+  };
 };
 
 const datasetFields = {
@@ -92,6 +117,7 @@ const datasetFields = {
   taskType: dataset.taskType,
   createdAt: dataset.createdAt,
   evidenceCount: sql<number>`(select count(*)::int from ${datasetItem} where ${datasetItem.applicationId} = ${dataset.applicationId} and ${datasetItem.datasetId} = ${dataset.id})`,
+  approvedCount: sql<number>`(select count(*)::int from ${datasetItem} where ${datasetItem.applicationId} = ${dataset.applicationId} and ${datasetItem.datasetId} = ${dataset.id} and ${datasetItem.reviewStatus} = 'approved')`,
 };
 
 const DATASET_EVIDENCE_PAGE_SIZE = 50;
@@ -101,21 +127,30 @@ function toDatasetListItem(row: DatasetRow): DatasetListItem {
     ...row,
     createdAt: toIsoString(row.createdAt),
     evidenceCount: row.evidenceCount,
-    // ponytail: review totals remain zero until the review workflow adds item states.
-    approvedCount: 0,
+    approvedCount: row.approvedCount,
   };
 }
 
-function toDatasetItem(row: DatasetItemRow): DatasetItem {
+async function toDatasetItem(row: DatasetItemRow): Promise<DatasetItem> {
+  const { storageKey, reviewedAt, ...item } = row;
   return {
-    ...row,
-    capturedAt: toIsoString(row.capturedAt),
-    addedAt: toIsoString(row.addedAt),
+    ...item,
+    capturedAt: toIsoString(item.capturedAt),
+    addedAt: toIsoString(item.addedAt),
+    reviewedAt: reviewedAt === null ? null : toIsoString(reviewedAt),
+    imageUrl: await getDownloadUrl(storageKey),
   };
 }
 
 function toDatasetEvidence(row: DatasetEvidenceRow): DatasetEvidence {
-  return { ...row, capturedAt: toIsoString(row.capturedAt) };
+  return {
+    evidenceId: row.evidenceId,
+    modelId: row.modelId,
+    modelVersion: row.modelVersion,
+    taskType: row.taskType,
+    result: row.result,
+    capturedAt: toIsoString(row.capturedAt),
+  };
 }
 
 export async function listDatasets(
@@ -158,6 +193,13 @@ export async function getDataset(
         originalResult: datasetItem.originalResult,
         capturedAt: sdkEvidence.capturedAt,
         addedAt: datasetItem.addedAt,
+        storageKey: sdkEvidence.storageKey,
+        imageWidth: sdkEvidence.imageWidth,
+        imageHeight: sdkEvidence.imageHeight,
+        reviewStatus: datasetItem.reviewStatus,
+        reviewerName: user.name,
+        reviewedAt: datasetItem.reviewedAt,
+        reviewReason: datasetItem.reviewReason,
       })
       .from(datasetItem)
       .innerJoin(
@@ -167,6 +209,7 @@ export async function getDataset(
           eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
         ),
       )
+      .leftJoin(user, eq(user.id, datasetItem.reviewedBy))
       .where(
         and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
       )
@@ -177,7 +220,7 @@ export async function getDataset(
     const page = hasMore ? items.slice(0, DATASET_EVIDENCE_PAGE_SIZE) : items;
     return {
       dataset: toDatasetListItem(row),
-      items: page.map(toDatasetItem),
+      items: await Promise.all(page.map(toDatasetItem)),
       nextItemOffset: hasMore ? offset + page.length : null,
     };
   });
@@ -295,6 +338,9 @@ export async function addDatasetEvidence(
             result: sdkEvidence.result,
             capturedAt: sdkEvidence.capturedAt,
             status: sdkEvidence.status,
+            storageKey: sdkEvidence.storageKey,
+            imageWidth: sdkEvidence.imageWidth,
+            imageHeight: sdkEvidence.imageHeight,
           })
           .from(sdkEvidence)
           .where(
@@ -302,7 +348,7 @@ export async function addDatasetEvidence(
               eq(sdkEvidence.applicationId, input.applicationId),
               inArray(sdkEvidence.evidenceId, uniqueIds),
             ),
-          )) as (DatasetEvidenceRow & { status: string })[];
+          )) as DatasetEvidenceForAddRow[];
         if (rows.length !== uniqueIds.length || rows.some((row) => row.status !== "received")) {
           return { kind: "notFound" };
         }
@@ -338,25 +384,39 @@ export async function addDatasetEvidence(
             evidenceId: datasetItem.evidenceId,
             originalResult: datasetItem.originalResult,
             addedAt: datasetItem.addedAt,
-          })) as Omit<DatasetItemRow, "modelId" | "modelVersion" | "taskType" | "capturedAt">[];
+          })) as {
+          id: string;
+          evidenceId: string;
+          originalResult: Record<string, unknown>;
+          addedAt: Date | string;
+        }[];
         if (inserted.length !== rows.length)
           throw new Error("Dataset evidence insert returned no record");
 
         const evidenceById = new Map(rows.map((row) => [row.evidenceId, row]));
         return {
           kind: "added",
-          items: inserted.map((item) => {
-            const evidence = evidenceById.get(item.evidenceId);
-            if (!evidence) throw new Error("Dataset evidence metadata was not found");
-            return {
-              ...item,
-              modelId: evidence.modelId,
-              modelVersion: evidence.modelVersion,
-              taskType: evidence.taskType,
-              capturedAt: toIsoString(evidence.capturedAt),
-              addedAt: toIsoString(item.addedAt),
-            };
-          }),
+          items: await Promise.all(
+            inserted.map(async (item) => {
+              const evidence = evidenceById.get(item.evidenceId);
+              if (!evidence) throw new Error("Dataset evidence metadata was not found");
+              return {
+                ...item,
+                modelId: evidence.modelId,
+                modelVersion: evidence.modelVersion,
+                taskType: evidence.taskType,
+                capturedAt: toIsoString(evidence.capturedAt),
+                addedAt: toIsoString(item.addedAt),
+                imageUrl: await getDownloadUrl(evidence.storageKey),
+                imageWidth: evidence.imageWidth,
+                imageHeight: evidence.imageHeight,
+                reviewStatus: "pending" as const,
+                reviewerName: null,
+                reviewedAt: null,
+                reviewReason: null,
+              };
+            }),
+          ),
         };
       },
     );
@@ -413,6 +473,85 @@ export async function removeDatasetEvidence(
         itemId: input.itemId,
       },
       "Failed to remove dataset evidence",
+    );
+    return { ok: false, reason: "databaseFailed" };
+  }
+}
+
+export type ReviewDatasetEvidenceInput = {
+  applicationId: string;
+  datasetId: string;
+  itemId: string;
+  userId: string;
+} & DatasetReviewRequest;
+
+export type ReviewDatasetEvidenceResult =
+  | { ok: true; value: DatasetReviewResponse }
+  | { ok: false; reason: "notFound" | "databaseFailed" };
+
+export async function reviewDatasetEvidence(
+  database: ApplicationDatabase,
+  input: ReviewDatasetEvidenceInput,
+): Promise<ReviewDatasetEvidenceResult> {
+  try {
+    const reviewedAt = new Date();
+    const reason = input.status === "rejected" ? input.reason?.trim() || null : null;
+    const result = await executeApplicationAction(
+      database,
+      {
+        applicationId: input.applicationId,
+        userId: input.userId,
+        allowArchived: true,
+        requireAdmin: false,
+      },
+      async (transaction) => {
+        const tx = transaction as unknown as DatasetWriteExecutor;
+        const updated = (await tx
+          .update(datasetItem)
+          .set({
+            reviewStatus: input.status,
+            reviewedBy: input.userId,
+            reviewedAt,
+            reviewReason: reason,
+          })
+          .where(
+            and(
+              eq(datasetItem.applicationId, input.applicationId),
+              eq(datasetItem.datasetId, input.datasetId),
+              eq(datasetItem.id, input.itemId),
+            ),
+          )
+          .returning({ id: datasetItem.id, reviewedAt: datasetItem.reviewedAt })) as {
+          id: string;
+          reviewedAt: Date | string;
+        }[];
+        const saved = updated[0];
+        if (!saved) return null;
+
+        const reviewers = (await tx
+          .select({ name: user.name })
+          .from(user)
+          .where(eq(user.id, input.userId))
+          .limit(1)) as { name: string }[];
+        return {
+          status: input.status,
+          reviewerName: reviewers[0]?.name ?? null,
+          reviewedAt: toIsoString(saved.reviewedAt),
+          reason,
+        };
+      },
+    );
+    if (!result.ok) return { ok: false, reason: "notFound" };
+    return result.value ? { ok: true, value: result.value } : { ok: false, reason: "notFound" };
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        applicationId: input.applicationId,
+        datasetId: input.datasetId,
+        itemId: input.itemId,
+      },
+      "Failed to review dataset evidence",
     );
     return { ok: false, reason: "databaseFailed" };
   }
