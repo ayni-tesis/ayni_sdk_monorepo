@@ -68,6 +68,14 @@ describe("isSegmentationOutputCompatible", () => {
     expect(isSegmentationOutputCompatible(outputs, 21)).toBe(false);
   });
 
+  it("rejects a dynamic channel count but accepts a dynamic batch", () => {
+    const withSignature = (shapeSignature: number[]) => [
+      { shape: [1, 4, 4, 1], shapeSignature, type: 0 },
+    ];
+    expect(isSegmentationOutputCompatible(withSignature([1, 4, 4, -1]), 1)).toBe(false);
+    expect(isSegmentationOutputCompatible(withSignature([-1, 4, 4, 1]), 1)).toBe(true);
+  });
+
   it("rejects masks larger than the pixel limit", () => {
     expect(MAX_SEGMENTATION_PIXELS).toBe(1024 * 1024);
     expect(isSegmentationOutputCompatible([float32([1, 1024, 1024, 2])], 2)).toBe(true);

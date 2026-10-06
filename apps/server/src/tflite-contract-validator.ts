@@ -61,10 +61,13 @@ export function isSegmentationOutputCompatible(
   const [output] = outputs;
   if (outputs.length !== 1 || !output || output.type !== FLOAT32) return false;
   const [batch, height, width, channels] = output.shape;
-  // A dynamic height or width stores 1 in `shape` and -1 in its signature: the
-  // mask size is unknown until the model runs, so the contract cannot fix it.
-  const [, signatureHeight, signatureWidth] = output.shapeSignature ?? [];
-  if ((signatureHeight ?? 1) < 1 || (signatureWidth ?? 1) < 1) return false;
+  // A dynamic height, width or channel count stores 1 in `shape` and -1 in its
+  // signature: the output size is unknown until the model runs, so the contract
+  // cannot fix it. A dynamic batch is allowed because the SDK always runs one image.
+  const [, signatureHeight, signatureWidth, signatureChannels] = output.shapeSignature ?? [];
+  if ((signatureHeight ?? 1) < 1 || (signatureWidth ?? 1) < 1 || (signatureChannels ?? 1) < 1) {
+    return false;
+  }
   return (
     output.shape.length === 4 &&
     batch === 1 &&
