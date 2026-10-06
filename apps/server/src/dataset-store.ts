@@ -131,6 +131,7 @@ export async function getDataset(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
+  offset = 0,
 ): Promise<DatasetDetailResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetReadExecutor;
@@ -163,10 +164,15 @@ export async function getDataset(
       .where(
         and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
       )
-      .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as DatasetItemRow[];
+      .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))
+      .limit(DATASET_EVIDENCE_PAGE_SIZE + 1)
+      .offset(offset)) as DatasetItemRow[];
+    const hasMore = items.length > DATASET_EVIDENCE_PAGE_SIZE;
+    const page = hasMore ? items.slice(0, DATASET_EVIDENCE_PAGE_SIZE) : items;
     return {
       dataset: toDatasetListItem(row),
-      items: items.map(toDatasetItem),
+      items: page.map(toDatasetItem),
+      nextItemOffset: hasMore ? offset + page.length : null,
     };
   });
 }

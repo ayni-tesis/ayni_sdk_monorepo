@@ -1,10 +1,10 @@
 import {
   DatasetAddEvidenceRequestSchema,
-  DatasetAvailableEvidenceQuerySchema,
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
   type DatasetListResponse,
+  DatasetPageQuerySchema,
   DatasetTaskTypeSchema,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
@@ -27,7 +27,11 @@ type Dependencies = {
   datasets: {
     addEvidence: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
-    get: (applicationId: string, datasetId: string) => Promise<DatasetDetailResponse | null>;
+    get: (
+      applicationId: string,
+      datasetId: string,
+      offset: number,
+    ) => Promise<DatasetDetailResponse | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
     listAvailableEvidence: (
       applicationId: string,
@@ -50,9 +54,20 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       session.user.id,
     );
     if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    const query = DatasetPageQuerySchema.safeParse({ offset: c.req.query("offset") });
+    if (!query.success) {
+      return c.json(
+        { message: "El desplazamiento de página no es válido.", code: "invalidDatasetPage" },
+        400,
+      );
+    }
 
     try {
-      const response = await datasets.get(application.id, c.req.param("datasetId"));
+      const response = await datasets.get(
+        application.id,
+        c.req.param("datasetId"),
+        query.data.offset,
+      );
       if (!response) return c.json({ message: "No encontramos este dataset." }, 404);
       return c.json(response);
     } catch {
@@ -79,7 +94,7 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
     if (application.status !== "active") {
       return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
     }
-    const query = DatasetAvailableEvidenceQuerySchema.safeParse({ offset: c.req.query("offset") });
+    const query = DatasetPageQuerySchema.safeParse({ offset: c.req.query("offset") });
     if (!query.success) {
       return c.json(
         { message: "El desplazamiento de página no es válido.", code: "invalidEvidencePage" },

@@ -2,7 +2,12 @@ import type { DatasetTaskType } from "@ayni/api/datasets";
 import { application, dataset, datasetItem, member, sdkEvidence } from "@ayni/db/schema/index";
 import { describe, expect, it } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
-import { addDatasetEvidence, listAvailableDatasetEvidence, listDatasets } from "./dataset-store";
+import {
+  addDatasetEvidence,
+  getDataset,
+  listAvailableDatasetEvidence,
+  listDatasets,
+} from "./dataset-store";
 
 const input = {
   applicationId: "app-1",
@@ -26,9 +31,11 @@ type EvidenceRow = Omit<typeof evidence, "taskType"> & { taskType: DatasetTaskTy
 function makeDatabase({
   evidenceRows = [evidence],
   attachedRows = [] as { evidenceId: string }[],
+  datasetItemRows = [] as Record<string, unknown>[],
 }: {
   evidenceRows?: EvidenceRow[];
   attachedRows?: { evidenceId: string }[];
+  datasetItemRows?: Record<string, unknown>[];
 } = {}) {
   const insertedValues: Record<string, unknown>[] = [];
   const tx = {
@@ -53,7 +60,9 @@ function makeDatabase({
                 : table === sdkEvidence
                   ? evidenceRows
                   : table === datasetItem
-                    ? attachedRows
+                    ? datasetItemRows.length > 0
+                      ? datasetItemRows
+                      : attachedRows
                     : [];
         const makeQuery = (resultRows: Record<string, unknown>[]) =>
           Object.assign(Promise.resolve(resultRows), {
@@ -183,5 +192,28 @@ describe("dataset evidence pages", () => {
     const secondPage = await listAvailableDatasetEvidence(database, "app-1", "dataset-1", 50);
     expect(secondPage?.evidence).toHaveLength(1);
     expect(secondPage?.nextOffset).toBeNull();
+  });
+
+  it("returns dataset items in pages with the total evidence count", async () => {
+    const datasetItemRows = Array.from({ length: 51 }, (_, index) => ({
+      id: `item-${index + 1}`,
+      evidenceId: `evidence-${index + 1}`,
+      modelId: "model-1",
+      modelVersion: "1.0.0",
+      taskType: "classification",
+      originalResult: evidence.result,
+      capturedAt: new Date("2026-10-01T00:00:00.000Z"),
+      addedAt: new Date("2026-10-02T00:00:00.000Z"),
+    }));
+    const { database } = makeDatabase({ datasetItemRows });
+
+    const firstPage = await getDataset(database, "app-1", "dataset-1");
+    expect(firstPage?.dataset.evidenceCount).toBe(3);
+    expect(firstPage?.items).toHaveLength(50);
+    expect(firstPage?.nextItemOffset).toBe(50);
+
+    const secondPage = await getDataset(database, "app-1", "dataset-1", 50);
+    expect(secondPage?.items).toHaveLength(1);
+    expect(secondPage?.nextItemOffset).toBeNull();
   });
 });

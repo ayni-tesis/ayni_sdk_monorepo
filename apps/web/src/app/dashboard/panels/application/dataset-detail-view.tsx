@@ -34,6 +34,7 @@ import type { Application } from "../../types";
 
 const NOT_FOUND = "No encontramos este dataset.";
 const LOAD_ERROR = "No pudimos cargar el dataset.";
+const MAX_EVIDENCE_PER_ADD = 500;
 
 export type DatasetDetailViewProps = {
   application: Application;
@@ -52,6 +53,8 @@ export function DatasetDetailView({
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  const [itemsError, setItemsError] = useState("");
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [available, setAvailable] = useState<DatasetAvailableEvidenceResponse["evidence"]>([]);
@@ -62,15 +65,18 @@ export function DatasetDetailView({
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
 
   const loadDetail = useCallback(async () => {
     abortRef.current?.abort();
+    itemsAbortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
     setNotFound(false);
     setError("");
+    setItemsError("");
     try {
       const { data } = await httpClient.get<DatasetDetailResponse>(
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
@@ -89,6 +95,39 @@ export function DatasetDetailView({
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [application.id, datasetId]);
+
+  const loadMoreDatasetItems = useCallback(async () => {
+    const offset = detail?.nextItemOffset;
+    if (offset === null || offset === undefined || itemsLoading) return;
+    itemsAbortRef.current?.abort();
+    const controller = new AbortController();
+    itemsAbortRef.current = controller;
+    setItemsLoading(true);
+    setItemsError("");
+    try {
+      const { data } = await httpClient.get<DatasetDetailResponse>(
+        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
+        { params: { offset }, signal: controller.signal },
+      );
+      if (!controller.signal.aborted) {
+        setDetail((current) =>
+          current
+            ? {
+                ...current,
+                items: [...current.items, ...data.items],
+                nextItemOffset: data.nextItemOffset,
+              }
+            : current,
+        );
+      }
+    } catch (loadError) {
+      if (!controller.signal.aborted) {
+        setItemsError(errorMessage(loadError, "No pudimos cargar las evidencias del dataset."));
+      }
+    } finally {
+      if (!controller.signal.aborted) setItemsLoading(false);
+    }
+  }, [application.id, datasetId, detail?.nextItemOffset, itemsLoading]);
 
   const loadAvailableEvidence = useCallback(
     async (offset = 0) => {
@@ -166,7 +205,10 @@ export function DatasetDetailView({
 
   useEffect(() => {
     void loadDetail();
-    return () => abortRef.current?.abort();
+    return () => {
+      abortRef.current?.abort();
+      itemsAbortRef.current?.abort();
+    };
   }, [loadDetail]);
 
   if (loading) {
@@ -273,7 +315,7 @@ export function DatasetDetailView({
                 <DialogHeader>
                   <DialogTitle>Agregar evidencia</DialogTitle>
                   <DialogDescription>
-                    Selecciona evidencia recibida compatible con el tipo de tarea del dataset.
+                    Selecciona evidencia compatible. Puedes agregar hasta 500 por operación.
                   </DialogDescription>
                 </DialogHeader>
                 {availableLoading && available.length === 0 ? (
@@ -300,6 +342,10 @@ export function DatasetDetailView({
                         key={evidence.evidenceId}
                         evidence={evidence}
                         selected={selectedIds.includes(evidence.evidenceId)}
+                        disabled={
+                          !selectedIds.includes(evidence.evidenceId) &&
+                          selectedIds.length >= MAX_EVIDENCE_PER_ADD
+                        }
                         onToggle={() =>
                           setSelectedIds((current) =>
                             current.includes(evidence.evidenceId)
@@ -367,6 +413,22 @@ export function DatasetDetailView({
               ))}
             </ul>
           )}
+          {itemsError && (
+            <p role="alert" className="mt-3 text-destructive text-sm">
+              {itemsError}
+            </p>
+          )}
+          {detail.nextItemOffset !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3"
+              disabled={itemsLoading}
+              onClick={() => void loadMoreDatasetItems()}
+            >
+              {itemsLoading ? "Cargando evidencias…" : "Cargar más evidencias del dataset"}
+            </Button>
+          )}
         </TabsContent>
         <TabsContent value="exports">
           <p className="text-muted-foreground text-sm">
@@ -398,10 +460,12 @@ function EvidenceItem({ item }: { item: DatasetDetailResponse["items"][number] }
 function EvidenceOption({
   evidence,
   selected,
+  disabled,
   onToggle,
 }: {
   evidence: DatasetEvidence;
   selected: boolean;
+  disabled: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -410,6 +474,7 @@ function EvidenceOption({
         <input
           type="checkbox"
           checked={selected}
+          disabled={disabled}
           onChange={onToggle}
           className="mt-1 size-4 accent-primary"
         />

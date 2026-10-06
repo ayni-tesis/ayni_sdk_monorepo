@@ -65,7 +65,7 @@ describe("DatasetDetailView", () => {
       .mockImplementation(async (url: string) =>
         url.endsWith("/available-evidence")
           ? { data: { evidence: [evidence], nextOffset: null } }
-          : { data: { dataset, items: [] } },
+          : { data: { dataset, items: [], nextItemOffset: null } },
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
   });
@@ -129,6 +129,35 @@ describe("DatasetDetailView", () => {
     );
   });
 
+  it("loads additional attached evidence pages on demand", async () => {
+    const olderItem = {
+      ...item,
+      id: "item-2",
+      evidenceId: "evidence-2",
+      originalResult: { type: "classification", label: "cedro", confidence: 0.7 },
+    };
+    getMock.mockImplementation(async (url: string, options?: { params?: { offset?: number } }) => {
+      if (url.endsWith("/available-evidence")) {
+        return { data: { evidence: [evidence], nextOffset: null } };
+      }
+      return options?.params?.offset
+        ? { data: { dataset, items: [olderItem], nextItemOffset: null } }
+        : { data: { dataset, items: [item], nextItemOffset: 1 } };
+    });
+    renderDetail();
+
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+    expect(await screen.findByText("Predicción original: cedro (70%)")).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1",
+      expect.objectContaining({ params: { offset: 1 } }),
+    );
+  });
+
   it("shows loading, not-found, and retryable error states", async () => {
     getMock.mockReturnValueOnce(new Promise(() => {}));
     renderDetail();
@@ -143,7 +172,7 @@ describe("DatasetDetailView", () => {
     getMock.mockRejectedValueOnce(new Error("offline"));
     renderDetail();
     expect(await screen.findByText("No pudimos cargar el dataset.")).toBeInTheDocument();
-    getMock.mockResolvedValueOnce({ data: { dataset, items: [] } });
+    getMock.mockResolvedValueOnce({ data: { dataset, items: [], nextItemOffset: null } });
     await userEvent.setup().click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByRole("heading", { name: "Flores" })).toBeInTheDocument();
   });

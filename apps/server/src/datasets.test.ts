@@ -53,7 +53,11 @@ const datasetItem: DatasetItem = {
   addedAt: "2026-10-02T00:00:00.000Z",
 };
 
-const datasetDetail: DatasetDetailResponse = { dataset: datasetListItem, items: [datasetItem] };
+const datasetDetail: DatasetDetailResponse = {
+  dataset: datasetListItem,
+  items: [datasetItem],
+  nextItemOffset: null,
+};
 
 function makeApp({
   session = { user: { id: "admin" } },
@@ -63,8 +67,11 @@ function makeApp({
     ok: true,
     value: dataset,
   }),
-  get = async (_applicationId: string, _datasetId: string): Promise<DatasetDetailResponse | null> =>
-    datasetDetail,
+  get = async (
+    _applicationId: string,
+    _datasetId: string,
+    _offset: number,
+  ): Promise<DatasetDetailResponse | null> => datasetDetail,
   listAvailableEvidence = async (
     _applicationId: string,
     _datasetId: string,
@@ -88,7 +95,11 @@ function makeApp({
     | null;
   membershipRole?: string | null;
   create?: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
-  get?: (applicationId: string, datasetId: string) => Promise<DatasetDetailResponse | null>;
+  get?: (
+    applicationId: string,
+    datasetId: string,
+    offset: number,
+  ) => Promise<DatasetDetailResponse | null>;
   listAvailableEvidence?: (
     applicationId: string,
     datasetId: string,
@@ -134,7 +145,10 @@ describe("application datasets", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(datasetDetail);
-    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1");
+    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1", 0);
+
+    await app.request("/applications/app-1/datasets/dataset-1?offset=50");
+    expect(getMock).toHaveBeenLastCalledWith("app-1", "dataset-1", 50);
 
     const foreign = makeApp({ application: null });
     const hiddenApplication = await foreign.app.request("/applications/app-1/datasets/dataset-1");
@@ -148,6 +162,13 @@ describe("application datasets", () => {
     const hiddenDataset = await missing.app.request("/applications/app-1/datasets/foreign-id");
     expect(hiddenDataset.status).toBe(404);
     expect(await hiddenDataset.json()).toMatchObject({ message: "No encontramos este dataset." });
+
+    const invalidOffset = makeApp();
+    const invalidPage = await invalidOffset.app.request(
+      "/applications/app-1/datasets/dataset-1?offset=invalid",
+    );
+    expect(invalidPage.status).toBe(400);
+    expect(invalidOffset.getMock).not.toHaveBeenCalled();
   });
 
   it("lists only an administrator's compatible evidence for an active dataset", async () => {
@@ -192,6 +213,14 @@ describe("application datasets", () => {
       evidenceIds: ["evidence-1"],
       userId: "admin",
     });
+
+    const tooMany = makeApp();
+    const oversized = await tooMany.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence",
+      jsonRequest({ evidenceIds: Array.from({ length: 501 }, (_, index) => `evidence-${index}`) }),
+    );
+    expect(oversized.status).toBe(400);
+    expect(tooMany.addEvidenceMock).not.toHaveBeenCalled();
 
     const incompatible = makeApp({
       addEvidence: async () => ({ ok: false, reason: "incompatible" }),

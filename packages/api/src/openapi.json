@@ -3000,6 +3000,17 @@
             "required": true,
             "name": "datasetId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3096,9 +3107,33 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "nextItemOffset": {
+                      "type": ["integer", "null"],
+                      "minimum": 0
                     }
                   },
-                  "required": ["dataset", "items"],
+                  "required": ["dataset", "items", "nextItemOffset"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "El desplazamiento de página no es válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
@@ -3433,7 +3468,8 @@
                       "type": "string",
                       "minLength": 1
                     },
-                    "minItems": 1
+                    "minItems": 1,
+                    "maxItems": 500
                   }
                 },
                 "required": ["evidenceIds"],
