@@ -46,7 +46,8 @@ export const DATASET_ANNOTATIONS_MAX = 100;
 
 /**
  * The errors of a reviewed detection, by priority: an out-of-bounds box comes
- * first, because it is the one a person can make by dragging past the image.
+ * first, since a body can break several rules at once. Each message is unique,
+ * because `parseDatasetAnnotationsRequest` finds the code by its message.
  */
 export const DATASET_ANNOTATIONS_ERRORS = {
   boxOutOfBounds: "La caja debe permanecer dentro de la imagen.",

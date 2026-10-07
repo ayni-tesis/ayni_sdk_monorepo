@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -452,6 +452,119 @@ describe("DatasetDetailView", () => {
         "Esta evidencia no es de detección.",
       );
       expect(within(panel).getByText("Sin anotaciones revisadas")).toBeInTheDocument();
+    });
+
+    it("moves and resizes a box by dragging it, without leaving the image", async () => {
+      const panel = await renderDetection(null);
+      const [first] = panel.querySelectorAll<HTMLElement>("[data-annotation-box]");
+      const frame = first?.parentElement;
+      if (!first || !frame) throw new Error("The boxes are not drawn over the image");
+      // The 640 × 480 image is drawn at half size, so one screen pixel is two image pixels.
+      vi.spyOn(frame, "getBoundingClientRect").mockReturnValue(
+        DOMRect.fromRect({ x: 0, y: 0, width: 320, height: 240 }),
+      );
+
+      fireEvent.pointerDown(first, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerMove(frame, { pointerId: 1, clientX: 110, clientY: 90 });
+      fireEvent.pointerUp(frame, { pointerId: 1 });
+      expect(box(panel, 1).getByLabelText("X mínima")).toHaveValue(84);
+      expect(box(panel, 1).getByLabelText("Y mínima")).toHaveValue(76);
+      expect(box(panel, 1).getByLabelText("X máxima")).toHaveValue(340);
+      expect(box(panel, 1).getByLabelText("Y máxima")).toHaveValue(268);
+
+      const handle = first.querySelector<HTMLElement>("[data-annotation-resize]");
+      if (!handle) throw new Error("The box has no resize handle");
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(frame, { pointerId: 1, clientX: 1000, clientY: 1000 });
+      fireEvent.pointerUp(frame, { pointerId: 1 });
+      fireEvent.pointerMove(frame, { pointerId: 1, clientX: 0, clientY: 0 });
+      expect(box(panel, 1).getByLabelText("X mínima")).toHaveValue(84);
+      expect(box(panel, 1).getByLabelText("X máxima")).toHaveValue(640);
+      expect(box(panel, 1).getByLabelText("Y máxima")).toHaveValue(480);
+      expect(box(panel, 2).getByLabelText("X mínima")).toHaveValue(320);
+    });
+
+    it("starts from predicted boxes kept inside the image", async () => {
+      getMock.mockResolvedValue({
+        data: {
+          dataset: { ...dataset, taskType: "detection", evidenceCount: 1 },
+          items: [
+            {
+              ...detectionItem,
+              originalResult: {
+                type: "detection",
+                detections: [
+                  {
+                    label: "gato",
+                    confidence: 0.9,
+                    box: { xMin: -0.01, yMin: 0.5, xMax: 1.02, yMax: 1 },
+                  },
+                ],
+              },
+            },
+          ],
+          nextItemOffset: null,
+        },
+      });
+      renderDetail();
+      const panel = await screen.findByRole("region", { name: "Anotaciones revisadas" });
+
+      expect(box(panel, 1).getByLabelText("X mínima")).toHaveValue(0);
+      expect(box(panel, 1).getByLabelText("X máxima")).toHaveValue(640);
+    });
+
+    it("keeps unsaved box edits when the detail reloads after adding evidence", async () => {
+      const otherEvidence = {
+        ...evidence,
+        evidenceId: "evidence-2",
+        taskType: "detection" as const,
+        result: prediction,
+      };
+      let added = false;
+      getMock.mockImplementation(async (url: string) =>
+        url.endsWith("/available-evidence")
+          ? { data: { evidence: [otherEvidence], nextOffset: null } }
+          : {
+              // Every load builds new objects, as a real response does.
+              data: structuredClone({
+                dataset: { ...dataset, taskType: "detection", evidenceCount: added ? 2 : 1 },
+                items: added
+                  ? [
+                      detectionItem,
+                      {
+                        ...detectionItem,
+                        ...otherEvidence,
+                        id: "item-2",
+                        originalResult: prediction,
+                      },
+                    ]
+                  : [detectionItem],
+                nextItemOffset: null,
+              }),
+            },
+      );
+      postMock.mockImplementation(async () => {
+        added = true;
+        return { data: { items: [] } };
+      });
+      renderManagedDetail();
+      const user = userEvent.setup();
+      const [panel] = await screen.findAllByRole("region", { name: "Anotaciones revisadas" });
+      if (!panel) throw new Error("The annotations panel is missing");
+      await user.clear(box(panel, 1).getByLabelText("Etiqueta"));
+      await user.type(box(panel, 1).getByLabelText("Etiqueta"), "lince");
+
+      await user.click(screen.getByRole("button", { name: "Agregar evidencia" }));
+      await user.click(await screen.findByRole("checkbox"));
+      await user.click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+      expect(await screen.findByText("Evidencia agregada al dataset.")).toBeInTheDocument();
+
+      // The closing dialog keeps the page aria-hidden for a moment in jsdom.
+      await waitFor(() =>
+        expect(screen.getAllByRole("region", { name: "Anotaciones revisadas" })).toHaveLength(2),
+      );
+      const [reloaded] = screen.getAllByRole("region", { name: "Anotaciones revisadas" });
+      expect(box(reloaded as HTMLElement, 1).getByLabelText("Etiqueta")).toHaveValue("lince");
     });
   });
 

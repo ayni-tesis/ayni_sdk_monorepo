@@ -8,7 +8,7 @@ import {
   parseDatasetAnnotationsRequest,
 } from "@ayni/api/datasets";
 import Image from "next/image";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type PointerEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/api-error";
@@ -49,22 +49,84 @@ export function ReviewedAnnotationsPanel({
 }) {
   const id = useId();
   const nextKey = useRef(0);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    key: number;
+    mode: "move" | "resize";
+    pointerX: number;
+    pointerY: number;
+    scaleX: number;
+    scaleY: number;
+    start: Record<(typeof COORDINATES)[number]["name"], number>;
+  } | null>(null);
   const { reviewedAnnotations, originalResult, imageWidth, imageHeight } = item;
   const [draft, setDraft] = useState(() => initialDraft(item, nextKey));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const suggestions = predictedLabels(originalResult);
+  const suggestions = detectionLabels(originalResult);
   const size = { x: imageWidth, y: imageHeight };
+  // Compared by value: reloading the detail (e.g. after adding evidence) builds
+  // new objects but must keep unsaved edits; only saving new boxes resets them.
+  const draftSource = JSON.stringify({
+    reviewedAnnotations,
+    originalResult,
+    imageWidth,
+    imageHeight,
+  });
 
-  // Saving replaces the item's boxes, so the draft restarts from what was saved.
   useEffect(() => {
-    setDraft(
-      initialDraft({ reviewedAnnotations, originalResult, imageWidth, imageHeight }, nextKey),
-    );
-  }, [reviewedAnnotations, originalResult, imageWidth, imageHeight]);
+    setDraft(initialDraft(JSON.parse(draftSource), nextKey));
+  }, [draftSource]);
 
   function update(key: number, change: Partial<Omit<DraftBox, "key">>) {
     setDraft((current) => current.map((box) => (box.key === key ? { ...box, ...change } : box)));
+  }
+
+  function startDrag(event: PointerEvent<HTMLElement>, box: DraftBox, mode: "move" | "resize") {
+    const frame = frameRef.current?.getBoundingClientRect();
+    const start = numericBox(box);
+    if (saving || !frame?.width || !frame.height || !start) return;
+    event.preventDefault();
+    event.stopPropagation();
+    frameRef.current?.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      key: box.key,
+      mode,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      // Screen pixels to image pixels: the image may be drawn smaller than it is.
+      scaleX: size.x / frame.width,
+      scaleY: size.y / frame.height,
+      start,
+    };
+  }
+
+  function drag(event: PointerEvent<HTMLElement>) {
+    const current = dragRef.current;
+    if (!current) return;
+    const dx = (event.clientX - current.pointerX) * current.scaleX;
+    const dy = (event.clientY - current.pointerY) * current.scaleY;
+    const { xMin, yMin, xMax, yMax } = current.start;
+    // Dragging keeps the box inside the image; only typed values can leave it.
+    if (current.mode === "move") {
+      const left = between(xMin + dx, 0, size.x - (xMax - xMin));
+      const top = between(yMin + dy, 0, size.y - (yMax - yMin));
+      update(current.key, {
+        xMin: roundPixels(left),
+        yMin: roundPixels(top),
+        xMax: roundPixels(left + xMax - xMin),
+        yMax: roundPixels(top + yMax - yMin),
+      });
+    } else {
+      update(current.key, {
+        xMax: roundPixels(between(xMax + dx, xMin + 1, size.x)),
+        yMax: roundPixels(between(yMax + dy, yMin + 1, size.y)),
+      });
+    }
+  }
+
+  function endDrag() {
+    dragRef.current = null;
   }
 
   function addBox() {
@@ -112,15 +174,23 @@ export function ReviewedAnnotationsPanel({
       <h3 id={`${id}-title`} className="font-medium text-sm">
         Anotaciones revisadas
       </h3>
-      <div className="relative inline-block max-w-full">
+      <div
+        ref={frameRef}
+        className="relative inline-block max-w-full touch-none select-none"
+        onPointerMove={drag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
         <Image
           src={item.imageUrl}
           alt={`Evidencia ${item.evidenceId}`}
           width={item.imageWidth}
           height={item.imageHeight}
           unoptimized
+          draggable={false}
           className="block max-h-80 w-auto max-w-full rounded"
         />
+        {/* Dragging is a shortcut for the coordinate fields below, which also work by keyboard. */}
         {draft.map((box, index) => {
           const area = drawnArea(box, size);
           return (
@@ -129,12 +199,18 @@ export function ReviewedAnnotationsPanel({
                 key={box.key}
                 data-annotation-box
                 aria-hidden="true"
-                className="pointer-events-none absolute border-2 border-primary"
+                className={`absolute border-2 border-primary ${saving ? "pointer-events-none" : "cursor-move"}`}
                 style={area}
+                onPointerDown={(event) => startDrag(event, box, "move")}
               >
                 <span className="absolute top-0 left-0 max-w-full truncate bg-primary px-1 text-primary-foreground text-xs">
                   {index + 1}. {box.label}
                 </span>
+                <span
+                  data-annotation-resize
+                  className="absolute -right-1.5 -bottom-1.5 size-3 cursor-se-resize rounded-sm border border-background bg-primary"
+                  onPointerDown={(event) => startDrag(event, box, "resize")}
+                />
               </div>
             )
           );
@@ -270,12 +346,31 @@ function toDraftBox(
 
 /** A relative coordinate in pixels, rounded to hundredths to hide floating-point noise. */
 function toPixels(relative: number, size: number) {
-  return String(Math.round(relative * size * 100) / 100);
+  return roundPixels(relative * size);
+}
+
+function roundPixels(value: number) {
+  return String(Math.round(value * 100) / 100);
 }
 
 /** A typed pixel coordinate; a blank field is not a number, so it never passes as `0`. */
 function pixels(value: string) {
   return value.trim() === "" ? Number.NaN : Number(value);
+}
+
+/** The box's typed coordinates as numbers, or null while one of them is not a number. */
+function numericBox(box: DraftBox) {
+  const numbers = {
+    xMin: pixels(box.xMin),
+    yMin: pixels(box.yMin),
+    xMax: pixels(box.xMax),
+    yMax: pixels(box.yMax),
+  };
+  return Object.values(numbers).every(Number.isFinite) ? numbers : null;
+}
+
+function between(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 /** Where a draft box is drawn over the image, in percentages, while it has an area. */
@@ -309,7 +404,10 @@ function savedSummary(annotations: DatasetAnnotation[] | null) {
   return `Anotaciones revisadas: ${annotations.length} ${annotations.length === 1 ? "caja" : "cajas"}`;
 }
 
-/** The well-formed boxes of a detection prediction, as reviewed annotations to start from. */
+/**
+ * The well-formed boxes of a detection prediction, as reviewed annotations to
+ * start from, kept inside the image when the model placed an edge past it.
+ */
 function predictedAnnotations(result: Record<string, unknown>): DatasetAnnotation[] {
   if (result.type !== "detection" || !Array.isArray(result.detections)) return [];
   return result.detections.flatMap((detection: unknown) => {
@@ -325,11 +423,16 @@ function predictedAnnotations(result: Record<string, unknown>): DatasetAnnotatio
     ) {
       return [];
     }
-    return [{ label, box: { xMin, yMin, xMax, yMax } }];
+    return [
+      {
+        label,
+        box: { xMin: clamp(xMin), yMin: clamp(yMin), xMax: clamp(xMax), yMax: clamp(yMax) },
+      },
+    ];
   });
 }
 
 /** The labels a detection prediction names, offered as suggestions for every box. */
-function predictedLabels(result: Record<string, unknown>) {
+function detectionLabels(result: Record<string, unknown>) {
   return [...new Set(predictedAnnotations(result).map(({ label }) => label))];
 }
