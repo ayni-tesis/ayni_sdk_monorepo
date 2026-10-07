@@ -6,6 +6,7 @@ import type {
   DatasetItem,
   DatasetListItem,
   DatasetListResponse,
+  DatasetReviewResponse,
 } from "@ayni/api/datasets";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -15,6 +16,8 @@ import type {
   DatasetStoreResult,
   RemoveDatasetEvidenceInput,
   RemoveDatasetEvidenceResult,
+  ReviewDatasetEvidenceInput,
+  ReviewDatasetEvidenceResult,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 
@@ -53,6 +56,20 @@ const datasetItem: DatasetItem = {
   ...availableEvidence,
   originalResult: availableEvidence.result,
   addedAt: "2026-10-02T00:00:00.000Z",
+  imageUrl: "https://evidence.example/image",
+  imageWidth: 640,
+  imageHeight: 480,
+  reviewStatus: "pending",
+  reviewerName: null,
+  reviewedAt: null,
+  reviewReason: null,
+};
+
+const reviewed: DatasetReviewResponse = {
+  status: "rejected",
+  reviewerName: "Diego",
+  reviewedAt: "2026-10-03T00:00:00.000Z",
+  reason: "Imagen borrosa",
 };
 
 const datasetDetail: DatasetDetailResponse = {
@@ -89,6 +106,9 @@ function makeApp({
   removeEvidence = async (
     _input: RemoveDatasetEvidenceInput,
   ): Promise<RemoveDatasetEvidenceResult> => ({ ok: true }),
+  reviewEvidence = async (
+    _input: ReviewDatasetEvidenceInput,
+  ): Promise<ReviewDatasetEvidenceResult> => ({ ok: true, value: reviewed }),
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
@@ -112,6 +132,7 @@ function makeApp({
   ) => Promise<DatasetAvailableEvidenceResponse | null>;
   addEvidence?: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
   removeEvidence?: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
+  reviewEvidence?: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
@@ -119,6 +140,7 @@ function makeApp({
   const listAvailableEvidenceMock = vi.fn(listAvailableEvidence);
   const addEvidenceMock = vi.fn(addEvidence);
   const removeEvidenceMock = vi.fn(removeEvidence);
+  const reviewEvidenceMock = vi.fn(reviewEvidence);
   const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
@@ -133,6 +155,7 @@ function makeApp({
       list: listMock,
       listAvailableEvidence: listAvailableEvidenceMock,
       removeEvidence: removeEvidenceMock,
+      reviewEvidence: reviewEvidenceMock,
     },
   });
   return {
@@ -143,12 +166,13 @@ function makeApp({
     listAvailableEvidenceMock,
     listMock,
     removeEvidenceMock,
+    reviewEvidenceMock,
   };
 }
 
-function jsonRequest(body: unknown) {
+function jsonRequest(body: unknown, method = "POST") {
   return {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   };
@@ -403,5 +427,42 @@ describe("application datasets", () => {
 
     expect(response.status).toBe(409);
     expect(archived.createMock).not.toHaveBeenCalled();
+  });
+
+  it("lets any workspace member approve or reject evidence and records the review", async () => {
+    const { app, reviewEvidenceMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/review",
+      jsonRequest({ status: "rejected", reason: "Imagen borrosa" }, "PATCH"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(reviewed);
+    expect(reviewEvidenceMock).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "admin",
+      status: "rejected",
+      reason: "Imagen borrosa",
+    });
+  });
+
+  it("hides foreign evidence and rejects invalid review decisions", async () => {
+    const foreign = makeApp({ application: null });
+    const hidden = await foreign.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/review",
+      jsonRequest({ status: "approved" }, "PATCH"),
+    );
+    expect(hidden.status).toBe(404);
+    expect(foreign.reviewEvidenceMock).not.toHaveBeenCalled();
+
+    const invalid = makeApp();
+    const rejected = await invalid.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/review",
+      jsonRequest({ status: "pending" }, "PATCH"),
+    );
+    expect(rejected.status).toBe(400);
+    expect(invalid.reviewEvidenceMock).not.toHaveBeenCalled();
   });
 });

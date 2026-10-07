@@ -32,6 +32,7 @@ import {
   listAvailableDatasetEvidence,
   listDatasets,
   removeDatasetEvidence,
+  reviewDatasetEvidence,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
@@ -272,6 +273,9 @@ const datasets = {
   },
   removeEvidence(input: Parameters<typeof removeDatasetEvidence>[1]) {
     return removeDatasetEvidence(db, input);
+  },
+  reviewEvidence(input: Parameters<typeof reviewDatasetEvidence>[1]) {
+    return reviewDatasetEvidence(db, input);
   },
 };
 

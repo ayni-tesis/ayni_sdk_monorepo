@@ -26,6 +26,7 @@ export type ApplicationActionInput = {
   applicationId: string;
   userId: string;
   allowArchived?: boolean;
+  requireAdmin?: boolean;
 };
 
 export type ApplicationActionResult<T> =
@@ -40,7 +41,7 @@ export type AuthorizedApplication = {
 
 export async function executeApplicationAction<T>(
   database: ApplicationDatabase,
-  { applicationId, userId, allowArchived = false }: ApplicationActionInput,
+  { applicationId, userId, allowArchived = false, requireAdmin = true }: ApplicationActionInput,
   action: (tx: TransactionExecutor, application: AuthorizedApplication) => Promise<T>,
 ): Promise<ApplicationActionResult<T>> {
   return database.transaction(async (transaction) => {
@@ -72,7 +73,7 @@ export async function executeApplicationAction<T>(
     const membership = membershipRows[0];
 
     if (!membership) return { ok: false, reason: "notFound" };
-    if (membership.role !== "admin" && membership.role !== "owner") {
+    if (requireAdmin && membership.role !== "admin" && membership.role !== "owner") {
       return { ok: false, reason: "forbidden" };
     }
     if (!allowArchived && foundApplication.status !== "active") {

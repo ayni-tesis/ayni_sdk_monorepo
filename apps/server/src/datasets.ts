@@ -5,6 +5,7 @@ import {
   type DatasetDetailResponse,
   type DatasetListResponse,
   DatasetPageQuerySchema,
+  DatasetReviewRequestSchema,
   DatasetTaskTypeSchema,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
@@ -16,6 +17,8 @@ import type {
   DatasetStoreResult,
   RemoveDatasetEvidenceInput,
   RemoveDatasetEvidenceResult,
+  ReviewDatasetEvidenceInput,
+  ReviewDatasetEvidenceResult,
 } from "./dataset-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el dataset.";
@@ -41,6 +44,7 @@ type Dependencies = {
       offset: number,
     ) => Promise<DatasetAvailableEvidenceResponse | null>;
     removeEvidence: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
+    reviewEvidence: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
   };
 };
 
@@ -237,6 +241,54 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       500,
     );
   });
+
+  app.patch(
+    "/applications/:applicationId/datasets/:datasetId/evidence/:itemId/review",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) {
+        return c.json({ message: "No encontramos esta evidencia del dataset." }, 404);
+      }
+
+      const body: unknown = await c.req.json().catch(() => null);
+      const parsed = DatasetReviewRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { message: "La decisión de revisión no es válida.", code: "invalidReview" },
+          400,
+        );
+      }
+
+      const result = await datasets.reviewEvidence({
+        applicationId: application.id,
+        datasetId: c.req.param("datasetId"),
+        itemId: c.req.param("itemId"),
+        userId: session.user.id,
+        ...parsed.data,
+      });
+      if (result.ok) return c.json(result.value);
+      if (result.reason === "notFound") {
+        return c.json(
+          { message: "No encontramos esta evidencia del dataset.", code: "notFound" },
+          404,
+        );
+      }
+      return c.json(
+        {
+          message: "No pudimos revisar la evidencia del dataset.",
+          code: "datasetEvidenceReviewFailed",
+        },
+        500,
+      );
+    },
+  );
 
   app.get("/applications/:applicationId/datasets", async (c) => {
     const session = await getSession(c.req.raw.headers);

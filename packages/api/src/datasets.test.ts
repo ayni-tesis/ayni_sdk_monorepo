@@ -4,8 +4,11 @@ import {
   DatasetAvailableEvidenceResponseSchema,
   DatasetCreateRequestSchema,
   DatasetDetailResponseSchema,
+  DatasetItemSchema,
   DatasetListResponseSchema,
   DatasetPageQuerySchema,
+  DatasetReviewRequestSchema,
+  DatasetReviewResponseSchema,
 } from "./datasets";
 import { createOpenApiDocument } from "./index";
 
@@ -126,5 +129,46 @@ describe("dataset creation contract", () => {
     expect(removalOperation?.responses?.["204"]).toBeDefined();
     expect(removalOperation?.responses?.["403"]).toBeDefined();
     expect(removalOperation?.responses?.["404"]).toBeDefined();
+  });
+
+  it("validates review states, image metadata, and review audit fields", () => {
+    const item = {
+      id: "item-1",
+      evidenceId: "evidence-1",
+      modelId: "model-1",
+      modelVersion: "1.0.0",
+      taskType: "classification",
+      originalResult: { type: "classification", label: "pino", confidence: 0.9 },
+      capturedAt: "2026-10-01T00:00:00.000Z",
+      addedAt: "2026-10-02T00:00:00.000Z",
+      imageUrl: "https://evidence.example/image",
+      imageWidth: 640,
+      imageHeight: 480,
+      reviewStatus: "rejected",
+      reviewerName: "Diego",
+      reviewedAt: "2026-10-03T00:00:00.000Z",
+      reviewReason: "Imagen borrosa",
+    };
+    expect(DatasetItemSchema.safeParse(item).success).toBe(true);
+    expect(
+      DatasetReviewRequestSchema.safeParse({ status: "rejected", reason: "Imagen borrosa" })
+        .success,
+    ).toBe(true);
+    expect(DatasetReviewRequestSchema.safeParse({ status: "pending" }).success).toBe(false);
+    expect(
+      DatasetReviewResponseSchema.safeParse({
+        status: "rejected",
+        reviewerName: "Diego",
+        reviewedAt: item.reviewedAt,
+        reason: "Imagen borrosa",
+      }).success,
+    ).toBe(true);
+
+    const operation =
+      createOpenApiDocument().paths?.[
+        "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/review"
+      ]?.patch;
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
   });
 });
