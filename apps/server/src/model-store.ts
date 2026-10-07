@@ -5,6 +5,7 @@ import {
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
+import { qualifiedColumn } from "./lib/sql";
 
 export type { TransactionExecutor };
 export type ModelDatabase = ApplicationDatabase;
@@ -116,7 +117,7 @@ export async function listModels(database: ModelDatabase, applicationId: string)
         applicationId: model.applicationId,
         name: model.name,
         runtime: model.runtime,
-        versionCount: sql<number>`(select count(*)::int from ${modelVersion} where ${modelVersion.modelId} = ${model.id})`,
+        versionCount: sql<number>`(select count(*)::int from ${modelVersion} where ${qualifiedColumn(modelVersion, modelVersion.modelId)} = ${qualifiedColumn(model, model.id)})`,
         createdAt: model.createdAt,
         updatedAt: model.updatedAt,
       })
