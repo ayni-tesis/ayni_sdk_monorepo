@@ -8,6 +8,7 @@ import {
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
   DatasetTaskTypeSchema,
+  parseDatasetAnnotationsRequest,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
@@ -20,6 +21,8 @@ import type {
   RemoveDatasetEvidenceResult,
   ReviewDatasetEvidenceInput,
   ReviewDatasetEvidenceResult,
+  SaveDatasetItemAnnotationsInput,
+  SaveDatasetItemAnnotationsResult,
   SaveDatasetItemLabelInput,
   SaveDatasetItemLabelResult,
 } from "./dataset-store";
@@ -51,6 +54,9 @@ type Dependencies = {
     removeEvidence: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
     reviewEvidence: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
     saveLabel: (input: SaveDatasetItemLabelInput) => Promise<SaveDatasetItemLabelResult>;
+    saveAnnotations: (
+      input: SaveDatasetItemAnnotationsInput,
+    ) => Promise<SaveDatasetItemAnnotationsResult>;
   };
 };
 
@@ -339,6 +345,50 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       500,
     );
   });
+
+  app.put(
+    "/applications/:applicationId/datasets/:datasetId/evidence/:itemId/annotations",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE }, 404);
+
+      const body: unknown = await c.req.json().catch(() => null);
+      const parsed = parseDatasetAnnotationsRequest(body);
+      if (!parsed.success) return c.json(parsed.error, 400);
+
+      const result = await datasets.saveAnnotations({
+        applicationId: application.id,
+        datasetId: c.req.param("datasetId"),
+        itemId: c.req.param("itemId"),
+        userId: session.user.id,
+        ...parsed.data,
+      });
+      if (result.ok) return c.json(result.value);
+      if (result.reason === "notFound") {
+        return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+      }
+      if (result.reason === "notDetection") {
+        return c.json(
+          { message: "Esta evidencia no es de detección.", code: "datasetEvidenceNotDetection" },
+          409,
+        );
+      }
+      return c.json(
+        {
+          message: "No pudimos guardar las anotaciones revisadas.",
+          code: "datasetAnnotationsSaveFailed",
+        },
+        500,
+      );
+    },
+  );
 
   app.get("/applications/:applicationId/datasets", async (c) => {
     const session = await getSession(c.req.raw.headers);

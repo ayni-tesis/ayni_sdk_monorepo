@@ -18,6 +18,8 @@ import type {
   RemoveDatasetEvidenceResult,
   ReviewDatasetEvidenceInput,
   ReviewDatasetEvidenceResult,
+  SaveDatasetItemAnnotationsInput,
+  SaveDatasetItemAnnotationsResult,
   SaveDatasetItemLabelInput,
   SaveDatasetItemLabelResult,
 } from "./dataset-store";
@@ -66,6 +68,7 @@ const datasetItem: DatasetItem = {
   reviewedAt: null,
   reviewReason: null,
   reviewedLabel: null,
+  reviewedAnnotations: null,
 };
 
 const reviewed: DatasetReviewResponse = {
@@ -116,6 +119,12 @@ function makeApp({
     ok: true,
     value: { reviewedLabel: input.label },
   }),
+  saveAnnotations = async (
+    input: SaveDatasetItemAnnotationsInput,
+  ): Promise<SaveDatasetItemAnnotationsResult> => ({
+    ok: true,
+    value: { reviewedAnnotations: input.annotations },
+  }),
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
@@ -141,6 +150,9 @@ function makeApp({
   removeEvidence?: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
   reviewEvidence?: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
   saveLabel?: (input: SaveDatasetItemLabelInput) => Promise<SaveDatasetItemLabelResult>;
+  saveAnnotations?: (
+    input: SaveDatasetItemAnnotationsInput,
+  ) => Promise<SaveDatasetItemAnnotationsResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
@@ -150,6 +162,7 @@ function makeApp({
   const removeEvidenceMock = vi.fn(removeEvidence);
   const reviewEvidenceMock = vi.fn(reviewEvidence);
   const saveLabelMock = vi.fn(saveLabel);
+  const saveAnnotationsMock = vi.fn(saveAnnotations);
   const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
@@ -166,6 +179,7 @@ function makeApp({
       removeEvidence: removeEvidenceMock,
       reviewEvidence: reviewEvidenceMock,
       saveLabel: saveLabelMock,
+      saveAnnotations: saveAnnotationsMock,
     },
   });
   return {
@@ -177,6 +191,7 @@ function makeApp({
     listMock,
     removeEvidenceMock,
     reviewEvidenceMock,
+    saveAnnotationsMock,
     saveLabelMock,
   };
 }
@@ -556,6 +571,95 @@ describe("application datasets", () => {
     expect(await unavailable.json()).toEqual({
       message: "No pudimos guardar la etiqueta revisada.",
       code: "datasetLabelSaveFailed",
+    });
+  });
+
+  const annotationsPath = "/applications/app-1/datasets/dataset-1/evidence/item-1/annotations";
+  const box = { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 };
+
+  it("lets any workspace member save reviewed detection annotations", async () => {
+    const { app, saveAnnotationsMock } = makeApp({
+      application: { ...activeApplication, status: "archived" },
+      membershipRole: "member",
+    });
+    const response = await app.request(
+      annotationsPath,
+      jsonRequest({ annotations: [{ label: " gato ", box }] }, "PUT"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ reviewedAnnotations: [{ label: "gato", box }] });
+    expect(saveAnnotationsMock).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "admin",
+      annotations: [{ label: "gato", box }],
+    });
+  });
+
+  it.each([
+    [
+      { annotations: [{ label: "gato", box: { ...box, xMax: 1.2 } }] },
+      "La caja debe permanecer dentro de la imagen.",
+      "boxOutOfBounds",
+    ],
+    [
+      { annotations: [{ label: "gato", box: { ...box, yMax: 0.2 } }] },
+      "La caja debe tener ancho y alto.",
+      "emptyBox",
+    ],
+    [
+      { annotations: [{ label: "  ", box }] },
+      "Ingresa una etiqueta para cada caja.",
+      "labelRequired",
+    ],
+    [{ boxes: [] }, "Las anotaciones revisadas no son válidas.", "invalidAnnotations"],
+  ])(
+    "rejects invalid annotations before writing, keeping the previous ones",
+    async (body, message, code) => {
+      const { app, saveAnnotationsMock } = makeApp();
+      const response = await app.request(annotationsPath, jsonRequest(body, "PUT"));
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ message, code });
+      expect(saveAnnotationsMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("hides foreign evidence and reports classification items and save failures", async () => {
+    const body = { annotations: [{ label: "gato", box }] };
+    const foreign = makeApp({ application: null });
+    const hidden = await foreign.app.request(annotationsPath, jsonRequest(body, "PUT"));
+    expect(hidden.status).toBe(404);
+    expect(foreign.saveAnnotationsMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({ saveAnnotations: async () => ({ ok: false, reason: "notFound" }) });
+    const notFound = await missing.app.request(annotationsPath, jsonRequest(body, "PUT"));
+    expect(notFound.status).toBe(404);
+    expect(await notFound.json()).toEqual({
+      message: "No encontramos esta evidencia del dataset.",
+      code: "notFound",
+    });
+
+    const classification = makeApp({
+      saveAnnotations: async () => ({ ok: false, reason: "notDetection" }),
+    });
+    const conflict = await classification.app.request(annotationsPath, jsonRequest(body, "PUT"));
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({
+      message: "Esta evidencia no es de detección.",
+      code: "datasetEvidenceNotDetection",
+    });
+
+    const failed = makeApp({
+      saveAnnotations: async () => ({ ok: false, reason: "databaseFailed" }),
+    });
+    const unavailable = await failed.app.request(annotationsPath, jsonRequest(body, "PUT"));
+    expect(unavailable.status).toBe(500);
+    expect(await unavailable.json()).toEqual({
+      message: "No pudimos guardar las anotaciones revisadas.",
+      code: "datasetAnnotationsSaveFailed",
     });
   });
 });

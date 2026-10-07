@@ -225,6 +225,13 @@
       "when": 1791388207219,
       "tag": "0031_young_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791390774535,
+      "tag": "0032_many_valkyrie",
+      "breakpoints": true
     }
   ]
 }
