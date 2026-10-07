@@ -119,8 +119,8 @@ export function ReviewedAnnotationsPanel({
       });
     } else {
       update(current.key, {
-        xMax: roundPixels(between(xMax + dx, xMin + 1, size.x)),
-        yMax: roundPixels(between(yMax + dy, yMin + 1, size.y)),
+        xMax: roundPixels(between(xMax + dx, Math.min(xMin + 1, size.x), size.x)),
+        yMax: roundPixels(between(yMax + dy, Math.min(yMin + 1, size.y), size.y)),
       });
     }
   }

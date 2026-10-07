@@ -484,6 +484,35 @@ describe("DatasetDetailView", () => {
       expect(box(panel, 2).getByLabelText("X mínima")).toHaveValue(320);
     });
 
+    it("keeps a resized box inside the image when its edge is near the border", async () => {
+      const panel = await renderDetection(null);
+      const user = userEvent.setup();
+      // A half-pixel box at the bottom-right corner: shrinking it cannot keep
+      // one pixel of size, so it must stay at the image edge instead.
+      for (const [label, value] of [
+        ["X máxima", "640"],
+        ["Y máxima", "480"],
+        ["X mínima", "639.5"],
+        ["Y mínima", "479.5"],
+      ] as const) {
+        await user.clear(box(panel, 1).getByLabelText(label));
+        await user.type(box(panel, 1).getByLabelText(label), value);
+      }
+      const [first] = panel.querySelectorAll<HTMLElement>("[data-annotation-box]");
+      const frame = first?.parentElement;
+      const handle = first?.querySelector<HTMLElement>("[data-annotation-resize]");
+      if (!first || !frame || !handle) throw new Error("The boxes are not drawn over the image");
+      vi.spyOn(frame, "getBoundingClientRect").mockReturnValue(
+        DOMRect.fromRect({ x: 0, y: 0, width: 320, height: 240 }),
+      );
+
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100, clientY: 100 });
+      fireEvent.pointerMove(frame, { pointerId: 1, clientX: 90, clientY: 90 });
+      fireEvent.pointerUp(frame, { pointerId: 1 });
+      expect(box(panel, 1).getByLabelText("X máxima")).toHaveValue(640);
+      expect(box(panel, 1).getByLabelText("Y máxima")).toHaveValue(480);
+    });
+
     it("starts from predicted boxes kept inside the image", async () => {
       getMock.mockResolvedValue({
         data: {
