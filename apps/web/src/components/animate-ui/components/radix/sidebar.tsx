@@ -1,8 +1,8 @@
 "use client";
 
-import { IconLayoutSidebar } from "@tabler/icons-react";
+import { IconLayoutSidebar, IconX } from "@tabler/icons-react";
 import { cva, type VariantProps } from "class-variance-authority";
-import type { Transition } from "motion/react";
+import { type Transition, useReducedMotion } from "motion/react";
 import { Slot } from "radix-ui";
 import * as React from "react";
 import { Highlight, HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -28,6 +29,12 @@ const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+const SIDEBAR_HIGHLIGHT_TRANSITION: Transition = {
+  type: "tween",
+  duration: 0.16,
+  ease: [0.16, 1, 0.3, 1],
+};
+const REDUCED_MOTION_TRANSITION: Transition = { type: "tween", duration: 0 };
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
@@ -40,6 +47,14 @@ type SidebarContextProps = {
 };
 
 const [LocalSidebarProvider, useSidebar] = getStrictContext<SidebarContextProps>("SidebarContext");
+
+function getSidebarToggleLabel({ state, isMobile, openMobile }: SidebarContextProps) {
+  if (isMobile) {
+    return openMobile ? "Cerrar el menú de navegación" : "Abrir el menú de navegación";
+  }
+
+  return state === "expanded" ? "Contraer la barra lateral" : "Expandir la barra lateral";
+}
 
 type SidebarProviderProps = React.ComponentProps<"div"> & {
   defaultOpen?: boolean;
@@ -157,20 +172,23 @@ function Sidebar({
   children,
   animateOnHover = true,
   containerClassName,
-  transition = { type: "spring", stiffness: 350, damping: 35 },
+  transition = SIDEBAR_HIGHLIGHT_TRANSITION,
   ...props
 }: SidebarProps) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const prefersReducedMotion = useReducedMotion();
+  const effectiveAnimateOnHover = animateOnHover && !prefersReducedMotion;
+  const effectiveTransition = prefersReducedMotion ? REDUCED_MOTION_TRANSITION : transition;
 
   if (collapsible === "none") {
     return (
       <Highlight
-        enabled={animateOnHover}
+        enabled={effectiveAnimateOnHover}
         hover
         controlledItems
         mode="parent"
         containerClassName={containerClassName}
-        transition={transition}
+        transition={effectiveTransition}
       >
         <div
           data-slot="sidebar"
@@ -193,7 +211,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          showCloseButton={false}
+          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground motion-reduce:animate-none motion-reduce:transition-none"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -201,17 +220,33 @@ function Sidebar({
           }
           side={side}
         >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+          <SheetHeader className="flex-row items-center justify-between border-sidebar-border border-b p-3">
+            <div className="min-w-0">
+              <SheetTitle className="text-sidebar-foreground">Menú de navegación</SheetTitle>
+            </div>
+            <SheetClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-11 shrink-0 motion-reduce:transition-none"
+                aria-label="Cerrar el menú de navegación"
+              >
+                <IconX aria-hidden="true" />
+              </Button>
+            </SheetClose>
+            {/* The dialog description stays available to assistive technology. */}
+            <SheetDescription className="sr-only">
+              Elige una sección del panel para continuar.
+            </SheetDescription>
           </SheetHeader>
           <Highlight
-            enabled={animateOnHover}
+            enabled={effectiveAnimateOnHover}
             hover
             controlledItems
             mode="parent"
             containerClassName={cn("h-full", containerClassName)}
-            transition={transition}
+            transition={effectiveTransition}
           >
             <div className="flex h-full w-full flex-col">{children}</div>
           </Highlight>
@@ -233,7 +268,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-400 ease-[cubic-bezier(0.7,-0.15,0.25,1.15)]",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:duration-0",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -244,7 +279,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-400 ease-[cubic-bezier(0.75,0,0.25,1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-[220ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:duration-0 md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -257,12 +292,12 @@ function Sidebar({
       >
         <Highlight
           containerClassName={cn("size-full", containerClassName)}
-          enabled={animateOnHover}
+          enabled={effectiveAnimateOnHover}
           hover
           controlledItems
           mode="parent"
           forceUpdateBounds
-          transition={transition}
+          transition={effectiveTransition}
         >
           <div
             data-sidebar="sidebar"
@@ -280,7 +315,9 @@ function Sidebar({
 type SidebarTriggerProps = React.ComponentProps<typeof Button>;
 
 function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
-  const { toggleSidebar } = useSidebar();
+  const sidebar = useSidebar();
+  const { toggleSidebar } = sidebar;
+  const toggleLabel = getSidebarToggleLabel(sidebar);
 
   return (
     <Button
@@ -289,7 +326,8 @@ function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
       data-testid="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("size-7", className)}
+      className={cn("size-11 motion-reduce:transition-none md:size-7", className)}
+      aria-expanded={sidebar.isMobile ? sidebar.openMobile : sidebar.open}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
@@ -297,7 +335,7 @@ function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
       {...props}
     >
       <IconLayoutSidebar />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{toggleLabel}</span>
     </Button>
   );
 }
@@ -305,7 +343,9 @@ function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
 type SidebarRailProps = React.ComponentProps<"button">;
 
 function SidebarRail({ className, ...props }: SidebarRailProps) {
-  const { toggleSidebar } = useSidebar();
+  const sidebar = useSidebar();
+  const { toggleSidebar } = sidebar;
+  const toggleLabel = getSidebarToggleLabel(sidebar);
 
   return (
     <button
@@ -313,12 +353,12 @@ function SidebarRail({ className, ...props }: SidebarRailProps) {
       data-sidebar="rail"
       data-slot="sidebar-rail"
       data-testid="sidebar-rail"
-      aria-label="Toggle Sidebar"
+      aria-label={toggleLabel}
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      title={toggleLabel}
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
+        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 motion-reduce:transition-none sm:flex",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
         "group-data-[collapsible=offcanvas]:translate-x-0 hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:after:left-full",
@@ -440,7 +480,7 @@ function SidebarGroupLabel({ className, asChild = false, ...props }: SidebarGrou
       data-slot="sidebar-group-label"
       data-sidebar="group-label"
       className={cn(
-        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground/70 text-xs outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-300 ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground/70 text-xs outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-out focus-visible:ring-2 motion-reduce:duration-0 [&>svg]:size-4 [&>svg]:shrink-0",
         "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
@@ -527,7 +567,7 @@ const sidebarMenuButtonActiveVariants = cva(
 );
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md border-transparent border-l-2 p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding,border-color] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:border-primary data-active:border-primary data-[active=true]:bg-sidebar-accent data-active:bg-sidebar-accent data-[active=true]:font-medium data-active:font-medium data-[active=true]:text-sidebar-accent-foreground data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&:not([data-highlight])]:hover:bg-sidebar-accent [&:not([data-highlight])]:hover:text-sidebar-accent-foreground [&:not([data-highlight])]:data-[state=open]:hover:bg-sidebar-accent [&:not([data-highlight])]:data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md border-transparent border-l-2 p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding,border-color,background-color,color] duration-150 focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:border-primary data-active:border-primary data-[active=true]:bg-sidebar-accent data-active:bg-sidebar-accent data-[active=true]:font-medium data-active:font-medium data-[active=true]:text-sidebar-accent-foreground data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! motion-reduce:duration-0 [&:not([data-highlight])]:hover:bg-sidebar-accent [&:not([data-highlight])]:hover:text-sidebar-accent-foreground [&:not([data-highlight])]:data-[state=open]:hover:bg-sidebar-accent [&:not([data-highlight])]:data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
   {
     variants: {
       variant: {

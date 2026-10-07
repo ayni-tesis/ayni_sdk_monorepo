@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:better_fullstack_app/validation/data/dataset_bundle_loader.dart';
 import 'package:better_fullstack_app/validation/execution/validation_batch_controller.dart';
 import 'package:better_fullstack_app/validation/execution/validation_condition_runner.dart';
+import 'package:better_fullstack_app/validation/execution/validation_segmentation.dart';
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_metadata.dart';
@@ -277,7 +278,7 @@ void main() {
         onProgress: (_) {},
       );
 
-      expect(calls, hasLength(24));
+      expect(calls, hasLength(30));
       expect(calls.take(4), [
         'INT-01:PERF-02-WARMUP:control',
         'INT-01:PERF-02-WARMUP:treatment',
@@ -288,7 +289,11 @@ void main() {
         calls.skip(18).take(6).every((call) => call.startsWith('S2:')),
         isTrue,
       );
-      expect(summary.attempted, 10752);
+      expect(
+        calls.skip(24).take(6).every((call) => call.startsWith('SEG-01:')),
+        isTrue,
+      );
+      expect(summary.attempted, 13440);
       expect(summary.stoppedByCancellation, isFalse);
       expect(await store.readAll(), isEmpty);
     },
@@ -325,9 +330,9 @@ void main() {
         onProgress: (_) {},
       );
 
-      expect(calls, hasLength(18));
-      expect(calls.any((call) => call.startsWith('S2:')), isFalse);
-      expect(summary.attempted, 8064);
+      expect(calls, hasLength(24));
+      expect(calls.any((call) => call.startsWith('SEG-01:')), isFalse);
+      expect(summary.attempted, 10752);
       expect(summary.stoppedByCancellation, isFalse);
       expect(await store.readAll(), isEmpty);
     },
@@ -362,11 +367,11 @@ void main() {
       onProgress: (_) {},
     );
 
-    expect(calls, hasLength(24));
+    expect(calls, hasLength(30));
     expect(controller.repetitions, contains('INT-01:PERF-02-WARMUP:control:4'));
     expect(controller.repetitions, contains('INT-01:PERF-02:control:60'));
     expect(controller.repetitions, contains('INT-01:PERF-04:control:205'));
-    expect(summary.attempted, 2152);
+    expect(summary.attempted, 2690);
     expect(summary.stoppedByCancellation, isFalse);
   });
 
@@ -449,6 +454,326 @@ void main() {
       expect(summary.stoppedByCancellation, isTrue);
     },
   );
+
+  group('segmentation pairing', () {
+    Future<
+      (
+        ExperimentPlan,
+        Map<String, Map<ValidationCondition, ValidationConditionRunner>>,
+      )
+    >
+    segmentationSuite({
+      required _SegmentationRunner control,
+      required ValidationConditionRunner treatment,
+    }) async {
+      final suitePlan = await _segmentationPlan(dataset);
+      return (
+        suitePlan,
+        {
+          'SEG-01': {
+            ValidationCondition.control: control,
+            ValidationCondition.treatment: treatment,
+          },
+        },
+      );
+    }
+
+    Future<List<ValidationRunRecord>> runQuickSuite(
+      ExperimentPlan suitePlan,
+      Map<String, Map<ValidationCondition, ValidationConditionRunner>> runners,
+      ValidationJsonlStore store,
+    ) async {
+      final controller = ValidationBatchController(
+        store: store,
+        metadata: _metadata,
+      );
+      final summary = await controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-seg',
+        datasetsByProfileId: {'SEG-01': dataset},
+        runnersByProfileId: runners,
+        conditions: const [
+          ValidationCondition.control,
+          ValidationCondition.treatment,
+        ],
+        quickRun: true,
+        captureTrace: false,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      );
+      expect(summary.attempted, 2 * (4 + 60 + 205));
+      return store.readAll();
+    }
+
+    test(
+      'pairs each SDK row with the control row of its repetition and case',
+      () async {
+        final control = _SegmentationRunner(ValidationCondition.control);
+        final treatment = _SegmentationRunner(ValidationCondition.treatment);
+        final (suitePlan, runners) = await segmentationSuite(
+          control: control,
+          treatment: treatment,
+        );
+        final store = ValidationJsonlStore(
+          File('${directory.path}${Platform.pathSeparator}segmentation.jsonl'),
+        );
+
+        final records = await runQuickSuite(suitePlan, runners, store);
+
+        final controls = records.where(
+          (record) => record.condition == ValidationCondition.control,
+        );
+        final treatments = records
+            .where(
+              (record) => record.condition == ValidationCondition.treatment,
+            )
+            .toList();
+        expect(controls.every((r) => r.segmentationAgreement == null), isTrue);
+        expect(treatments, hasLength(269));
+        expect(
+          treatments.every((r) => r.segmentationAgreement != null),
+          isTrue,
+        );
+        final seen = <double>{};
+        for (final record in treatments) {
+          final expected = compareSegmentationOutputs(
+            _segmentationOutput(_caseMasks[record.caseId]!),
+            record.normalizedOutput['mask']! as Map<String, Object?>,
+          );
+          expect(
+            record.segmentationAgreement,
+            expected,
+            reason:
+                '${record.scenarioId} ${record.repetition} ${record.caseId}',
+          );
+          seen.add(expected.pixelAgreement);
+        }
+        // Rows differ only on every third repetition, so both kinds appear.
+        expect(seen, contains(1.0));
+        expect(seen.any((value) => value < 1), isTrue);
+      },
+    );
+
+    test('leaves the row alone when the control failed', () async {
+      final control = _SegmentationRunner(
+        ValidationCondition.control,
+        failRepetitions: {2},
+      );
+      final treatment = _SegmentationRunner(ValidationCondition.treatment);
+      final (suitePlan, runners) = await segmentationSuite(
+        control: control,
+        treatment: treatment,
+      );
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}failed.jsonl'),
+      );
+
+      final records = await runQuickSuite(suitePlan, runners, store);
+
+      final unpaired = records.where(
+        (record) =>
+            record.condition == ValidationCondition.treatment &&
+            record.outcome == ValidationRunOutcome.success &&
+            record.segmentationAgreement == null,
+      );
+      // Repetition 2 of each of the three scenarios.
+      expect(unpaired.map((record) => record.repetition), [2, 2, 2]);
+      expect(
+        unpaired.map((record) => record.segmentationAgreementUnavailable),
+        ['controlMissing', 'controlMissing', 'controlMissing'],
+      );
+      expect(
+        records
+            .where((record) => record.segmentationAgreement != null)
+            .every((record) => record.segmentationAgreementUnavailable == null),
+        isTrue,
+      );
+    });
+
+    test('records why a corrupt control cannot be compared', () async {
+      final control = _SegmentationRunner(
+        ValidationCondition.control,
+        tamper: (output) => {
+          ...output,
+          // A run length near the int limit: a corrupt RLE must never abort.
+          'maskRle': [
+            [
+              [0, 1],
+              [1, 9223372036854775807],
+            ],
+            [
+              [1, 2],
+            ],
+          ],
+        },
+      );
+      final treatment = _SegmentationRunner(ValidationCondition.treatment);
+      final (suitePlan, runners) = await segmentationSuite(
+        control: control,
+        treatment: treatment,
+      );
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}corrupt.jsonl'),
+      );
+
+      final records = await runQuickSuite(suitePlan, runners, store);
+
+      final treatments = records.where(
+        (record) => record.condition == ValidationCondition.treatment,
+      );
+      expect(treatments, hasLength(269));
+      expect(
+        treatments.every((r) => r.outcome == ValidationRunOutcome.success),
+        isTrue,
+      );
+      expect(treatments.every((r) => r.segmentationAgreement == null), isTrue);
+      expect(
+        treatments.every(
+          (r) => r.segmentationAgreementUnavailable == 'invalid',
+        ),
+        isTrue,
+      );
+    });
+
+    test('an SDK-only suite says every control is missing', () async {
+      final suitePlan = await _segmentationPlan(dataset);
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}sdk-only.jsonl'),
+      );
+      final controller = ValidationBatchController(
+        store: store,
+        metadata: _metadata,
+      );
+
+      await controller.runSuite(
+        plan: suitePlan,
+        pairRunId: 'pair-sdk-only',
+        datasetsByProfileId: {'SEG-01': dataset},
+        runnersByProfileId: {
+          'SEG-01': {
+            ValidationCondition.treatment: _SegmentationRunner(
+              ValidationCondition.treatment,
+            ),
+          },
+        },
+        conditions: const [ValidationCondition.treatment],
+        quickRun: true,
+        captureTrace: false,
+        isCancelled: () async => false,
+        onRecord: (_) {},
+        onProgress: (_) {},
+      );
+
+      final records = await store.readAll();
+      expect(records, hasLength(269));
+      expect(
+        records.every(
+          (r) =>
+              r.segmentationAgreement == null &&
+              r.segmentationAgreementUnavailable == 'controlMissing',
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'a second concurrent suite cannot clear the pairs of the first',
+      () async {
+        final gate = Completer<void>();
+        final first = _SegmentationRunner(
+          ValidationCondition.control,
+          gate: gate,
+        );
+        final (suitePlan, runners) = await segmentationSuite(
+          control: first,
+          treatment: _SegmentationRunner(ValidationCondition.treatment),
+        );
+        final store = ValidationJsonlStore(
+          File('${directory.path}${Platform.pathSeparator}concurrent.jsonl'),
+        );
+        final controller = ValidationBatchController(
+          store: store,
+          metadata: _metadata,
+        );
+        Future<BatchRunSummary> suite(
+          Map<String, Map<ValidationCondition, ValidationConditionRunner>>
+          suiteRunners,
+        ) => controller.runSuite(
+          plan: suitePlan,
+          pairRunId: 'pair-concurrent',
+          datasetsByProfileId: {'SEG-01': dataset},
+          runnersByProfileId: suiteRunners,
+          conditions: const [
+            ValidationCondition.control,
+            ValidationCondition.treatment,
+          ],
+          quickRun: true,
+          captureTrace: false,
+          isCancelled: () async => false,
+          onRecord: (_) {},
+          onProgress: (_) {},
+        );
+
+        final running = suite(runners);
+        await first.started.future;
+        final (_, otherRunners) = await segmentationSuite(
+          control: _SegmentationRunner(ValidationCondition.control),
+          treatment: _SegmentationRunner(ValidationCondition.treatment),
+        );
+        await expectLater(
+          suite(otherRunners),
+          throwsA(
+            isA<ValidationBatchException>().having(
+              (error) => error.code,
+              'code',
+              'batchAlreadyRunning',
+            ),
+          ),
+        );
+        gate.complete();
+        final summary = await running;
+
+        expect(summary.attempted, 2 * (4 + 60 + 205));
+        final records = await store.readAll();
+        final treatments = records.where(
+          (record) => record.condition == ValidationCondition.treatment,
+        );
+        expect(treatments, hasLength(269));
+        expect(
+          treatments.every((r) => r.segmentationAgreement != null),
+          isTrue,
+        );
+      },
+    );
+
+    test('does not add the field to classification rows', () async {
+      final suitePlan = await _segmentationPlan(dataset);
+      final store = ValidationJsonlStore(
+        File('${directory.path}${Platform.pathSeparator}classification.jsonl'),
+      );
+
+      final records = await runQuickSuite(suitePlan, {
+        'SEG-01': {
+          ValidationCondition.control: _SegmentationRunner(
+            ValidationCondition.control,
+            segmentation: false,
+          ),
+          ValidationCondition.treatment: _SegmentationRunner(
+            ValidationCondition.treatment,
+            segmentation: false,
+          ),
+        },
+      }, store);
+
+      expect(records, isNotEmpty);
+      expect(records.every((r) => r.segmentationAgreement == null), isTrue);
+      expect(
+        (await store.file.readAsString()).contains('segmentationAgreement'),
+        isFalse,
+      );
+    });
+  });
 }
 
 const _metadata = ValidationRunMetadata(
@@ -720,3 +1045,149 @@ Map<String, Map<ValidationCondition, ValidationConditionRunner>> _runnersFor(
       ),
     },
 };
+
+const _caseMasks = {
+  'coffee-1': [0, 0, 1, 1],
+  'coffee-2': [1, 1, 1, 0],
+};
+
+Map<String, Object?> _segmentationOutput(List<int> mask) =>
+    segmentationOutputJson(
+      width: 2,
+      height: 2,
+      labels: const ['fondo', 'roya'],
+      mask: Uint8List.fromList(mask),
+      areaFractions: {
+        'fondo': mask.where((index) => index == 0).length / 4,
+        'roya': mask.where((index) => index == 1).length / 4,
+      },
+      confidence: 0.9,
+    );
+
+/// The control returns each case's mask; the SDK returns the same mask except
+/// that it flips its first pixel on every third repetition.
+class _SegmentationRunner implements ValidationConditionRunner {
+  _SegmentationRunner(
+    this.runCondition, {
+    this.failRepetitions = const {},
+    this.segmentation = true,
+    this.tamper,
+    this.gate,
+  });
+
+  /// Changes the segmentation output before it is returned.
+  final Map<String, Object?> Function(Map<String, Object?> output)? tamper;
+
+  /// When set, the first run waits for it after signalling [started].
+  final Completer<void>? gate;
+  final started = Completer<void>();
+
+  final ValidationCondition runCondition;
+  final Set<int> failRepetitions;
+
+  /// When false the runner answers with a classification instead.
+  final bool segmentation;
+
+  @override
+  ValidationCondition get condition => runCondition;
+
+  @override
+  Future<void> prepare() async {}
+
+  @override
+  Future<ConditionRunResult> runCase(ValidationRunRequest request) async {
+    final isControl = runCondition == ValidationCondition.control;
+    if (!started.isCompleted) started.complete();
+    if (gate != null) await gate!.future;
+    if (isControl && failRepetitions.contains(request.repetition)) {
+      return ConditionRunResult.failure(
+        durationMicros: 3,
+        modelVersionId: 'model-version-SEG-01',
+        modelSha256: 'b' * 64,
+        errorCode: 'inferenceFailed',
+        errorMessage: 'failed',
+      );
+    }
+    final mask = [..._caseMasks[request.caseId]!];
+    if (!isControl && request.repetition % 3 == 0) mask[0] = 1 - mask[0];
+    return ConditionRunResult.success(
+      durationMicros: 8,
+      modelVersionId: 'model-version-SEG-01',
+      modelSha256: 'b' * 64,
+      workflowVersionId: isControl ? null : 'workflow-version-SEG-01',
+      workflowVersion: isControl ? null : '1.0.0',
+      normalizedOutput: segmentation
+          ? {
+              'mask': tamper == null
+                  ? _segmentationOutput(mask)
+                  : tamper!(_segmentationOutput(mask)),
+            }
+          : const {
+              'classification': {'label': 'roya'},
+            },
+    );
+  }
+
+  @override
+  Future<void> cancelActive() async {}
+
+  @override
+  Future<void> close() async {}
+}
+
+/// The bundled plan with SEG-01 ready on [dataset] and every other profile
+/// pending, so a suite runs only SEG-01.
+Future<ExperimentPlan> _segmentationPlan(VerifiedDataset dataset) async {
+  final raw =
+      jsonDecode(await rootBundle.loadString(ExperimentPlan.assetPath))
+          as Map<String, Object?>;
+  raw['resourceProfiles'] = [
+    for (final profile in raw['resourceProfiles']! as List)
+      if ((profile as Map)['id'] == 'SEG-01')
+        {
+          'id': 'SEG-01',
+          'status': 'ready',
+          'datasetId': dataset.datasetId,
+          'datasetVersionId': dataset.datasetVersionId,
+          'datasetPartition': dataset.partition,
+          'datasetSha256': dataset.zipSha256,
+          'workflowId': 'workflow-SEG-01',
+          'workflowVersionId': 'workflow-version-SEG-01',
+          'workflowVersion': '1.0.0',
+          'modelRequirements': [
+            {
+              'nodeId': 'model-node-SEG-01',
+              'modelVersionId': 'model-version-SEG-01',
+              'sha256': 'b' * 64,
+              'inputContract': {
+                'width': 257,
+                'height': 257,
+                'channels': 3,
+                'normalization': 'minus_one_to_one',
+              },
+              'modelOutputContract': {
+                'type': 'segmentation',
+                'labels': ['fondo', 'roya'],
+                'scoreType': 'logits',
+              },
+            },
+          ],
+          'outputContract': [
+            {
+              'name': 'mask',
+              'resultType': 'segmentation',
+              'labels': ['fondo', 'roya'],
+              'scoreType': 'logits',
+            },
+          ],
+        }
+      else
+        {'id': profile['id'], 'status': 'pending'},
+  ];
+  for (final scenario in raw['scenarios']! as List) {
+    if ((scenario as Map)['resourceProfileId'] == 'SEG-01') {
+      scenario['caseIds'] = ['coffee-1', 'coffee-2'];
+    }
+  }
+  return ExperimentPlan.fromJson(raw);
+}

@@ -41,15 +41,15 @@ describe("home landing page", () => {
     render(<Home />);
 
     expect(
-      screen.getByRole("heading", { name: /workflows that keep working offline/i }),
+      screen.getByRole("heading", { name: /workflows que siguen funcionando sin conexión/i }),
     ).toBeTruthy();
-    expect(screen.getByRole("link", { name: /create your workspace/i }).getAttribute("href")).toBe(
-      "/sign-up",
-    );
-    expect(screen.getByRole("link", { name: /go to dashboard/i }).getAttribute("href")).toBe(
+    expect(
+      screen.getByRole("link", { name: /crear tu espacio de trabajo/i }).getAttribute("href"),
+    ).toBe("/sign-up");
+    expect(screen.getByRole("link", { name: /ir al dashboard/i }).getAttribute("href")).toBe(
       "/dashboard",
     );
-    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/connected/i));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/conectada/i));
   });
 
   it("gives the search dialog an accessible name", async () => {
@@ -57,8 +57,8 @@ describe("home landing page", () => {
     const Home = (await import("./page")).default;
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /search ayni/i }));
-    expect(screen.getByRole("dialog", { name: "Search Ayni" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /buscar páginas en ayni/i }));
+    expect(screen.getByRole("dialog", { name: "Buscar en Ayni" })).toBeTruthy();
   });
 
   it("links to the documentation from the main navigation in a new tab", async () => {
@@ -66,7 +66,7 @@ describe("home landing page", () => {
     const Home = (await import("./page")).default;
     render(<Home />);
 
-    const navigation = screen.getByRole("navigation", { name: "Main navigation" });
+    const navigation = screen.getByRole("navigation", { name: "Navegación principal" });
     const link = within(navigation).getByRole("link", {
       name: "Documentación (se abre en una pestaña nueva)",
     });
@@ -79,9 +79,9 @@ describe("home landing page", () => {
     const Home = (await import("./page")).default;
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /search ayni/i }));
-    const dialog = screen.getByRole("dialog", { name: "Search Ayni" });
-    fireEvent.change(within(dialog).getByLabelText("Find a page"), {
+    fireEvent.click(screen.getByRole("button", { name: /buscar páginas en ayni/i }));
+    const dialog = screen.getByRole("dialog", { name: "Buscar en Ayni" });
+    fireEvent.change(within(dialog).getByLabelText("Busca una página"), {
       target: { value: "documentación" },
     });
 

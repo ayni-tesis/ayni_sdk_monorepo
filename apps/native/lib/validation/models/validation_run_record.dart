@@ -1,3 +1,4 @@
+import '../execution/validation_segmentation.dart';
 import '../immutable_json.dart';
 
 import 'experiment_plan.dart';
@@ -81,6 +82,8 @@ class ValidationRunRecord {
     this.tracePersistenceFailed = false,
     this.errorCode,
     this.errorMessage,
+    this.segmentationAgreement,
+    this.segmentationAgreementUnavailable,
     DateTime? recordedAtUtc,
   }) : modelArtifacts = List.unmodifiable(modelArtifacts),
        normalizedOutput = freezeJsonMap(normalizedOutput),
@@ -141,6 +144,23 @@ class ValidationRunRecord {
         (errorCode == null || errorCode!.trim().isEmpty)) {
       throw const FormatException('Failed records require a typed error code.');
     }
+    if ((segmentationAgreement != null ||
+            segmentationAgreementUnavailable != null) &&
+        (condition != ValidationCondition.treatment ||
+            outcome != ValidationRunOutcome.success)) {
+      throw const FormatException(
+        'Only successful treatment records may carry a segmentation agreement.',
+      );
+    }
+    if (segmentationAgreementUnavailable != null &&
+        (segmentationAgreement != null ||
+            !segmentationAgreementUnavailableReasons.contains(
+              segmentationAgreementUnavailable,
+            ))) {
+      throw const FormatException(
+        'A segmentation agreement is either present or unavailable for a typed reason.',
+      );
+    }
   }
 
   final String pairRunId;
@@ -167,6 +187,21 @@ class ValidationRunRecord {
   final bool traceCaptureEnabled;
   final String? errorCode;
   final String? errorMessage;
+
+  /// How the SDK's segmentation compares with the control's for the same
+  /// image. Only a successful SDK record of a segmentation profile has it.
+  final SegmentationAgreement? segmentationAgreement;
+
+  /// Why a successful SDK segmentation row has no [segmentationAgreement]:
+  /// `controlMissing` (no successful control row of the same repetition and
+  /// case) or `invalid` (the control or SDK segmentation could not be
+  /// compared). It is `null` when the agreement exists or does not apply.
+  final String? segmentationAgreementUnavailable;
+
+  static const segmentationAgreementUnavailableReasons = {
+    'controlMissing',
+    'invalid',
+  };
   final DateTime recordedAtUtc;
 
   Map<String, Object?> toJson() => {
@@ -196,6 +231,10 @@ class ValidationRunRecord {
     'traceCaptureEnabled': traceCaptureEnabled,
     'errorCode': errorCode,
     'errorMessage': errorMessage,
+    if (segmentationAgreement != null)
+      'segmentationAgreement': segmentationAgreement!.toJson(),
+    if (segmentationAgreementUnavailable != null)
+      'segmentationAgreementUnavailable': segmentationAgreementUnavailable,
     'recordedAtUtc': recordedAtUtc.toIso8601String(),
   };
 
@@ -227,7 +266,9 @@ class ValidationRunRecord {
       'recordedAtUtc',
     };
     const keys = {...legacyKeys, 'modelArtifacts'};
-    final actualKeys = json.keys.toSet();
+    final actualKeys = json.keys.toSet()
+      ..remove('segmentationAgreement')
+      ..remove('segmentationAgreementUnavailable');
     final isLegacy =
         actualKeys.length == legacyKeys.length &&
         legacyKeys.containsAll(actualKeys);
@@ -286,6 +327,18 @@ class ValidationRunRecord {
       ),
       errorCode: _nullableString(json['errorCode'], 'errorCode'),
       errorMessage: _nullableString(json['errorMessage'], 'errorMessage'),
+      segmentationAgreement: json.containsKey('segmentationAgreement')
+          ? SegmentationAgreement.fromJson(
+              _asObject(json['segmentationAgreement'], 'segmentationAgreement'),
+            )
+          : null,
+      segmentationAgreementUnavailable:
+          json.containsKey('segmentationAgreementUnavailable')
+          ? _asString(
+              json['segmentationAgreementUnavailable'],
+              'segmentationAgreementUnavailable',
+            )
+          : null,
       recordedAtUtc: DateTime.parse(
         _asString(json['recordedAtUtc'], 'recordedAtUtc'),
       ),

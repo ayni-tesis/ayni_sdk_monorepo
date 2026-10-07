@@ -2046,9 +2046,11 @@ describe("Dashboard", () => {
 
     fireEvent.click(await screen.findByTestId("copy-credential"));
 
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_abcd1234secret"));
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_abcd1234secret");
+      expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
+    });
     expect(writeTextMock).toHaveBeenCalledTimes(1);
-    expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
   });
 
   it("links the generated credential to the quick start step without closing the dialog", async () => {
@@ -2808,8 +2810,10 @@ describe("Dashboard", () => {
 
     fireEvent.click(await screen.findByTestId("copy-regenerated-credential"));
 
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_newsecret99999"));
-    expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith("ayni_sk_newsecret99999");
+      expect(toastMock.success).toHaveBeenCalledWith("Credencial copiada.");
+    });
   });
 
   it("shows 'Regenerando credencial…' while regeneration is in flight", async () => {

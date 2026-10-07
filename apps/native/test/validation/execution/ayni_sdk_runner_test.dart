@@ -8,6 +8,8 @@ import 'package:better_fullstack_app/validation/data/validation_model_repository
 import 'package:better_fullstack_app/validation/data/workflow_definition_repository.dart';
 import 'package:better_fullstack_app/validation/execution/ayni_sdk_runner.dart';
 import 'package:better_fullstack_app/validation/execution/validation_condition_runner.dart';
+import 'package:better_fullstack_app/validation/execution/validation_output_normalizer.dart';
+import 'package:better_fullstack_app/validation/execution/validation_segmentation.dart';
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:better_fullstack_app/validation/storage/validation_preferences.dart';
@@ -438,6 +440,407 @@ void main() {
       expect(await preferences.traceCaptureAllowed, isFalse);
     },
   );
+
+  group('SDK version', () {
+    test('compares semantic versions instead of requiring one value', () {
+      for (final version in [
+        '0.3.1',
+        '0.3.2',
+        '0.4.0',
+        '0.10.0',
+        '1.0.0',
+        '0.4.0+build.7',
+      ]) {
+        expect(
+          validationSdkVersionAtLeast(version, '0.3.1'),
+          isTrue,
+          reason: version,
+        );
+      }
+      for (final version in ['0.3.0', '0.2.9', '0.3.1-dev.1', 'latest', '']) {
+        expect(
+          validationSdkVersionAtLeast(version, '0.3.1'),
+          isFalse,
+          reason: version,
+        );
+      }
+    });
+
+    test('a pre-release ranks below its release but above the previous', () {
+      expect(validationSdkVersionAtLeast('0.4.0-dev.1', '0.4.0'), isFalse);
+      expect(validationSdkVersionAtLeast('0.4.0-dev.1', '0.3.1'), isTrue);
+      expect(validationSdkVersionAtLeast('0.4.0', '0.4.0-dev.1'), isTrue);
+      expect(validationSdkVersionAtLeast('0.4.0-dev.2', '0.4.0-dev.1'), isTrue);
+      expect(
+        validationSdkVersionAtLeast('0.4.0-dev.1', '0.4.0-dev.2'),
+        isFalse,
+      );
+      expect(
+        validationSdkVersionAtLeast('0.4.0-dev.10', '0.4.0-dev.9'),
+        isTrue,
+      );
+      expect(validationSdkVersionAtLeast('0.4.0-alpha', '0.4.0-1'), isTrue);
+      expect(validationSdkVersionAtLeast('0.4.0-dev', '0.4.0-dev.1'), isFalse);
+    });
+
+    test('detection works with 0.3.1 and later and not before', () async {
+      modelRepository.sha256ByVersion = {
+        'classifier-version': 'b' * 64,
+        'detector-version': 'd' * 64,
+      };
+      for (final version in ['0.3.1', '0.4.0', '0.4.1']) {
+        runner = _makeRunner(
+          sdk: sdk,
+          modelRepository: modelRepository,
+          definitions: _FakeWorkflowDefinitionRepository(_multiModelWorkflow()),
+          preferences: preferences,
+          storageDirectory: temporaryDirectory,
+          profile: _multiProfile(),
+          sdkVersion: version,
+        );
+        await runner.prepare();
+      }
+      for (final version in ['0.3.0', '0.3.1-dev.1']) {
+        sdk.initialized = false;
+        runner = _makeRunner(
+          sdk: sdk,
+          modelRepository: modelRepository,
+          definitions: _FakeWorkflowDefinitionRepository(_multiModelWorkflow()),
+          preferences: preferences,
+          storageDirectory: temporaryDirectory,
+          profile: _multiProfile(),
+          sdkVersion: version,
+        );
+        await expectLater(
+          runner.prepare(),
+          throwsA(
+            isA<ValidationExecutionException>().having(
+              (error) => error.code,
+              'code',
+              'sdkDetectionTensorRolesUnsupported',
+            ),
+          ),
+        );
+        expect(sdk.initialized, isFalse, reason: version);
+      }
+    });
+
+    test(
+      'segmentation needs 0.4.0 and is refused before initializing',
+      () async {
+        for (final version in ['0.3.1', '0.4.0-dev.1', '0.3.9']) {
+          sdk.initialized = false;
+          definitions = _FakeWorkflowDefinitionRepository(
+            _segmentationWorkflow(),
+          );
+          runner = _makeRunner(
+            sdk: sdk,
+            modelRepository: modelRepository,
+            definitions: definitions,
+            preferences: preferences,
+            storageDirectory: temporaryDirectory,
+            profile: _segmentationProfile(),
+            sdkVersion: version,
+          );
+
+          await expectLater(
+            runner.prepare(),
+            throwsA(
+              isA<ValidationExecutionException>()
+                  .having(
+                    (error) => error.code,
+                    'code',
+                    'sdkSegmentationUnsupported',
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    'La segmentación requiere ayni_sdk 0.4.0 o posterior.',
+                  ),
+            ),
+          );
+          expect(sdk.initialized, isFalse, reason: version);
+          expect(definitions.requestedVersionIds, isEmpty, reason: version);
+        }
+      },
+    );
+  });
+
+  group('segmentation', () {
+    AyniSdkValidationRunner segmentationRunner({
+      Map<String, Object?>? workflow,
+      String sdkVersion = '0.4.0',
+    }) {
+      modelRepository.sha256ByVersion = {'seg-version': 'e' * 64};
+      definitions = _FakeWorkflowDefinitionRepository(
+        workflow ?? _segmentationWorkflow(),
+      );
+      return _makeRunner(
+        sdk: sdk,
+        modelRepository: modelRepository,
+        definitions: definitions,
+        preferences: preferences,
+        storageDirectory: temporaryDirectory,
+        profile: _segmentationProfile(),
+        sdkVersion: sdkVersion,
+      );
+    }
+
+    test('accepts the schema 4 workflow and normalizes the SDK mask', () async {
+      sdk.outputs = {
+        'mask': SegmentationResult(
+          'seg-node',
+          width: 2,
+          height: 2,
+          labels: const ['background', 'person'],
+          mask: Uint8List.fromList([0, 1, 1, 1]),
+          areaFractions: const {'background': 0.25, 'person': 0.75},
+          confidence: 0.875,
+        ),
+        'hasPerson': const BooleanResult('condition-node', true),
+      };
+      runner = segmentationRunner();
+
+      await runner.prepare();
+      final bytes = Uint8List.fromList([1, 2, 3]);
+      final result = await runner.runCase(
+        _requestForProfile(bytes, _segmentationProfile()),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.normalizedOutput['mask'], {
+        'type': 'segmentation',
+        'width': 2,
+        'height': 2,
+        'areaFractions': {'background': 0.25, 'person': 0.75},
+        'confidence': 0.875,
+        'maskSha256': sha256
+            .convert(Uint8List.fromList([0, 1, 1, 1]))
+            .toString(),
+        'maskRle': [
+          [
+            [0, 1],
+            [1, 1],
+          ],
+          [
+            [1, 2],
+          ],
+        ],
+      });
+      expect(result.normalizedOutput['hasPerson'], {
+        'type': 'boolean',
+        'value': true,
+      });
+    });
+
+    test('rejects the capture schema and a changed score type', () async {
+      final captureSchema = _segmentationWorkflow()..['schemaVersion'] = '3';
+      await expectLater(
+        segmentationRunner(workflow: captureSchema).prepare(),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'workflowDefinitionInvalid',
+          ),
+        ),
+      );
+
+      final probabilities = _segmentationWorkflow(scoreType: 'probabilities');
+      await expectLater(
+        segmentationRunner(workflow: probabilities).prepare(),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'workflowModelContractInvalid',
+          ),
+        ),
+      );
+    });
+
+    test('reports a result that is not a segmentation as a mismatch', () async {
+      sdk.outputs = {
+        'mask': const ClassificationResult('seg-node', 'person', 0.9, {
+          'background': 0.1,
+          'person': 0.9,
+        }),
+        'hasPerson': const BooleanResult('condition-node', true),
+      };
+      runner = segmentationRunner();
+      await runner.prepare();
+
+      final result = await runner.runCase(
+        _requestForProfile(
+          Uint8List.fromList([1, 2, 3]),
+          _segmentationProfile(),
+        ),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.error);
+      expect(result.errorCode, 'workflowOutputMismatch');
+    });
+  });
+
+  group('SDK version edge cases', () {
+    test('a huge component is not a version, so it is never enough', () {
+      expect(
+        validationSdkVersionAtLeast('99999999999999999999.0.0', '0.4.0'),
+        isFalse,
+      );
+      expect(
+        validationSdkVersionAtLeast('0.4.0', '0.99999999999999999999.0'),
+        isFalse,
+      );
+      expect(
+        validationSdkVersionAtLeast('0.4.99999999999999999999', '0.4.0'),
+        isFalse,
+      );
+    });
+
+    test('a pre-release identifier is numeric only when all digits', () {
+      // "0x1" is text, not the number 1 (Dart's int.tryParse reads hex): text
+      // ranks above any number, so it is above 2 and below 0x2.
+      expect(validationSdkVersionAtLeast('0.4.0-0x1', '0.4.0-2'), isTrue);
+      expect(validationSdkVersionAtLeast('0.4.0-2', '0.4.0-0x1'), isFalse);
+      expect(validationSdkVersionAtLeast('0.4.0-0x1', '0.4.0-0x2'), isFalse);
+      expect(validationSdkVersionAtLeast('0.4.0-0x2', '0.4.0-0x1'), isTrue);
+    });
+
+    test('numeric identifiers of any size still compare as numbers', () {
+      expect(
+        validationSdkVersionAtLeast('0.4.0-99999999999999999999', '0.4.0-9'),
+        isTrue,
+      );
+      expect(
+        validationSdkVersionAtLeast('0.4.0-9', '0.4.0-99999999999999999999'),
+        isFalse,
+      );
+      expect(validationSdkVersionAtLeast('0.4.0-10', '0.4.0-9'), isTrue);
+    });
+  });
+
+  group('timed region', () {
+    test('defers the mask encoding in a run and not in a preflight', () async {
+      final normalizer = _RecordingNormalizer();
+      sdk.outputs = {
+        'mask': SegmentationResult(
+          'seg-node',
+          width: 2,
+          height: 2,
+          labels: const ['background', 'person'],
+          mask: Uint8List.fromList([0, 1, 1, 1]),
+          areaFractions: const {'background': 0.25, 'person': 0.75},
+          confidence: 0.875,
+        ),
+        'hasPerson': const BooleanResult('condition-node', true),
+      };
+      modelRepository.sha256ByVersion = {'seg-version': 'e' * 64};
+      runner = AyniSdkValidationRunner(
+        profile: _segmentationProfile(),
+        credentials: runner.credentials,
+        storageDirectory: temporaryDirectory,
+        sdk: sdk,
+        modelRepository: modelRepository,
+        workflowDefinitions: _FakeWorkflowDefinitionRepository(
+          _segmentationWorkflow(),
+        ),
+        preferences: preferences,
+        outputNormalizer: normalizer,
+      );
+      await runner.prepare();
+      final bytes = Uint8List.fromList([1, 2, 3]);
+
+      await runner.preflight(bytes);
+      final result = await runner.runCase(
+        _requestForProfile(bytes, _segmentationProfile()),
+      );
+
+      expect(normalizer.deferred, [false, true]);
+      // The result still carries the finished record, not the pending one.
+      final mask = result.normalizedOutput['mask']! as Map;
+      expect(mask.keys, contains('maskRle'));
+      expect(mask.keys, contains('maskSha256'));
+      expect(mask.keys, isNot(contains('pendingEncoding')));
+    });
+
+    test('leaves classification output untouched by the deferral', () async {
+      final normalizer = _RecordingNormalizer();
+      runner = AyniSdkValidationRunner(
+        profile: _profile(),
+        credentials: runner.credentials,
+        storageDirectory: temporaryDirectory,
+        sdk: sdk,
+        modelRepository: modelRepository,
+        workflowDefinitions: definitions,
+        preferences: preferences,
+        outputNormalizer: normalizer,
+      );
+      await runner.prepare();
+
+      final result = await runner.runCase(_request(Uint8List.fromList([4])));
+
+      expect(result.normalizedOutput, {
+        'classification': {
+          'type': 'classification',
+          'label': 'roya',
+          'confidence': 0.8,
+          'confidences': {'sana': 0.1, 'roya': 0.8, 'minador': 0.1},
+        },
+      });
+    });
+
+    test('encodes the mask only after the stopwatch stopped', () async {
+      sdk.outputs = {
+        'mask': SegmentationResult(
+          'seg-node',
+          width: 2,
+          height: 2,
+          labels: const ['background', 'person'],
+          mask: Uint8List.fromList([0, 1, 1, 1]),
+          areaFractions: const {'background': 0.25, 'person': 0.75},
+          confidence: 0.875,
+        ),
+        'hasPerson': const BooleanResult('condition-node', true),
+      };
+      modelRepository.sha256ByVersion = {'seg-version': 'e' * 64};
+      runner = AyniSdkValidationRunner(
+        profile: _segmentationProfile(),
+        credentials: runner.credentials,
+        storageDirectory: temporaryDirectory,
+        sdk: sdk,
+        modelRepository: modelRepository,
+        workflowDefinitions: _FakeWorkflowDefinitionRepository(
+          _segmentationWorkflow(),
+        ),
+        preferences: preferences,
+        outputNormalizer: _SlowEncodingNormalizer(),
+      );
+      await runner.prepare();
+
+      final result = await runner.runCase(
+        _requestForProfile(
+          Uint8List.fromList([1, 2, 3]),
+          _segmentationProfile(),
+        ),
+      );
+
+      // The encoding takes 400 ms. Had it run before the stopwatch stopped,
+      // the measured duration would include it.
+      expect(
+        (result.normalizedOutput['mask']! as Map)['encoded'],
+        isTrue,
+      );
+      expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.durationMicros, lessThan(200000));
+    });
+
+    test('a numeric-looking identifier with a letter is text', () {
+      // "1a" is text and ranks above the number 100.
+      expect(validationSdkVersionAtLeast('0.4.0-1a', '0.4.0-100'), isTrue);
+      expect(validationSdkVersionAtLeast('0.4.0-100', '0.4.0-1a'), isFalse);
+    });
+  });
 }
 
 class _MemorySecureStore implements ValidationSecureStore {
@@ -904,4 +1307,192 @@ Map<String, Object?> _multiModelWorkflow({
       },
     ],
   };
+}
+
+const _segmentationLabels = ['background', 'person'];
+
+ValidationResourceProfile _segmentationProfile() =>
+    ValidationResourceProfile.fromJson({
+      'id': 'SEG-01',
+      'status': 'ready',
+      'datasetId': 'dataset-1',
+      'datasetVersionId': 'dataset-version-1',
+      'datasetPartition': 'test',
+      'datasetSha256': 'a' * 64,
+      'workflowId': 'workflow-1',
+      'workflowVersionId': 'workflow-version-1',
+      'workflowVersion': '1.0.0',
+      'modelRequirements': [
+        {
+          'nodeId': 'seg-node',
+          'modelVersionId': 'seg-version',
+          'sha256': 'e' * 64,
+          'inputContract': {
+            'width': 257,
+            'height': 257,
+            'channels': 3,
+            'normalization': 'minus_one_to_one',
+          },
+          'modelOutputContract': {
+            'type': 'segmentation',
+            'labels': _segmentationLabels,
+            'scoreType': 'logits',
+          },
+        },
+      ],
+      'outputContract': [
+        {
+          'name': 'mask',
+          'resultType': 'segmentation',
+          'labels': _segmentationLabels,
+          'scoreType': 'logits',
+        },
+        {'name': 'hasPerson', 'resultType': 'boolean', 'labels': <String>[]},
+      ],
+    });
+
+Map<String, Object?> _segmentationWorkflow({String scoreType = 'logits'}) => {
+  'schemaVersion': '4',
+  'nodes': [
+    {
+      'id': 'input-node',
+      'type': 'input.image',
+      'outputs': {'imagen': 'image'},
+    },
+    {
+      'id': 'seg-node',
+      'type': 'model.tflite',
+      'modelVersionId': 'seg-version',
+      'inputs': {
+        'image': {
+          'type': 'image',
+          'width': 257,
+          'height': 257,
+          'channels': 3,
+          'normalization': 'minus_one_to_one',
+        },
+      },
+      'outputs': {
+        'result': {
+          'type': 'segmentation',
+          'labels': _segmentationLabels,
+          'scoreType': scoreType,
+        },
+      },
+    },
+    {
+      'id': 'condition-node',
+      'type': 'condition',
+      'sourceNodeId': 'seg-node',
+      'label': 'person',
+      'operator': 'gte',
+      'threshold': 0.1,
+      'branches': {'true': 'boolean', 'false': 'boolean'},
+    },
+    {
+      'id': 'mask-output',
+      'type': 'output',
+      'name': 'mask',
+      'sourceNodeId': 'seg-node',
+      'sourcePort': 'result',
+      'resultType': 'segmentation',
+    },
+    {
+      'id': 'person-output',
+      'type': 'output',
+      'name': 'hasPerson',
+      'sources': [
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'true',
+          'resultType': 'boolean',
+        },
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'false',
+          'resultType': 'boolean',
+        },
+      ],
+    },
+  ],
+  'connections': [
+    {
+      'sourceNodeId': 'input-node',
+      'sourcePort': 'imagen',
+      'targetNodeId': 'seg-node',
+      'targetPort': 'image',
+    },
+  ],
+};
+
+class _RecordingNormalizer extends ValidationOutputNormalizer {
+  _RecordingNormalizer();
+
+  final deferred = <bool>[];
+
+  @override
+  Map<String, Object?> normalizeSdk({
+    required Map<String, WorkflowValue> outputs,
+    required List<ValidationOutputContract> contracts,
+    bool deferSegmentationEncoding = false,
+  }) {
+    deferred.add(deferSegmentationEncoding);
+    return super.normalizeSdk(
+      outputs: outputs,
+      contracts: contracts,
+      deferSegmentationEncoding: deferSegmentationEncoding,
+    );
+  }
+}
+
+/// A summary whose encoding takes a visible time and leaves a marker, to show
+/// when a runner encodes it: after its stopwatch stopped, never before.
+class _SlowSummary extends SegmentationSummary {
+  _SlowSummary(SegmentationSummary source)
+    : super(
+        width: source.width,
+        height: source.height,
+        labels: source.labels,
+        mask: source.mask,
+        areaFractions: source.areaFractions,
+        confidence: source.confidence,
+      );
+
+  @override
+  Map<String, Object?> toJson() {
+    final clock = Stopwatch()..start();
+    while (clock.elapsedMilliseconds < 400) {}
+    return {...super.toJson(), 'encoded': true};
+  }
+}
+
+Map<String, Object?> _withSlowEncoding(Map<String, Object?> outputs) => {
+  for (final entry in outputs.entries)
+    entry.key:
+        entry.value is Map &&
+            (entry.value as Map)['pendingEncoding'] is SegmentationSummary
+        ? {
+            ...(entry.value as Map).cast<String, Object?>(),
+            'pendingEncoding': _SlowSummary(
+              (entry.value as Map)['pendingEncoding'] as SegmentationSummary,
+            ),
+          }
+        : entry.value,
+};
+
+class _SlowEncodingNormalizer extends ValidationOutputNormalizer {
+  _SlowEncodingNormalizer();
+
+  @override
+  Map<String, Object?> normalizeSdk({
+    required Map<String, WorkflowValue> outputs,
+    required List<ValidationOutputContract> contracts,
+    bool deferSegmentationEncoding = false,
+  }) => _withSlowEncoding(
+    super.normalizeSdk(
+      outputs: outputs,
+      contracts: contracts,
+      deferSegmentationEncoding: deferSegmentationEncoding,
+    ),
+  );
 }

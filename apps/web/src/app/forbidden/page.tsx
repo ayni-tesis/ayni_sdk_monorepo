@@ -10,11 +10,11 @@ export default function ForbiddenPage() {
         aria-labelledby="forbidden-title"
         className="w-full max-w-lg rounded-lg border border-border bg-card p-6 sm:p-8"
       >
-        <p className="font-mono text-sm text-muted-foreground">403 · Acceso denegado</p>
-        <h1 id="forbidden-title" className="mt-4 text-3xl font-semibold tracking-tight">
+        <p className="font-mono text-muted-foreground text-sm">403 · Acceso denegado</p>
+        <h1 id="forbidden-title" className="mt-4 font-semibold text-3xl tracking-tight">
           No tienes permisos
         </h1>
-        <p className="mt-4 text-sm leading-6 text-muted-foreground sm:text-base">
+        <p className="mt-4 text-muted-foreground text-sm leading-6 sm:text-base">
           No puedes ver esta pantalla. Si necesitas acceso, consulta a un administrador de tu
           workspace.
         </p>

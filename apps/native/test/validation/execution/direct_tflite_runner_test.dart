@@ -10,6 +10,7 @@ import 'package:better_fullstack_app/validation/execution/direct_tflite_runner.d
 import 'package:better_fullstack_app/validation/execution/validation_condition_runner.dart';
 import 'package:better_fullstack_app/validation/execution/validation_image_preprocessor.dart';
 import 'package:better_fullstack_app/validation/execution/validation_output_normalizer.dart';
+import 'package:better_fullstack_app/validation/execution/validation_segmentation.dart';
 import 'package:better_fullstack_app/validation/models/experiment_plan.dart';
 import 'package:better_fullstack_app/validation/models/validation_run_record.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -449,6 +450,342 @@ void main() {
     );
     expect(repository.requestedModelVersions, isEmpty);
   });
+
+  group('segmentation', () {
+    // 20 pixels (4 rows of 5) and three labels. Three pixels are "roya" (15 %).
+    final scores = <double>[
+      for (var pixel = 0; pixel < 20; pixel++)
+        if (pixel < 3) ...[0.0, 5.0, 0.0] else ...[5.0, 0.0, 0.0],
+    ];
+
+    Future<DirectTfliteRunner> prepared({
+      Map<String, Object?>? workflow,
+      List<ValidationTensor>? tensors,
+      _FakeCpuEngine? engine,
+    }) async {
+      final artifact = await _artifact(
+        temporaryDirectory,
+        modelVersionId: 'seg-version',
+        sha256: 'e' * 64,
+        contract: _segmentationModelContract(),
+      );
+      final runner = DirectTfliteRunner(
+        profile: _segmentationProfile(),
+        modelRepository: _ModelRepository(artifact),
+        workflowDefinitions: _MemoryWorkflowDefinitionRepository(
+          workflow ?? _segmentationWorkflow(),
+        ),
+        inferenceEngine:
+            engine ??
+            _FakeCpuEngine(
+              outputsByModelVersion: {
+                'seg-version':
+                    tensors ??
+                    [
+                      ValidationTensor(shape: [1, 4, 5, 3], values: scores),
+                    ],
+              },
+            ),
+      );
+      await runner.prepare();
+      return runner;
+    }
+
+    test('evaluates "roya gte 0.1" as true when roya covers 15 %', () async {
+      final runner = await prepared();
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.success);
+      final mask = result.normalizedOutput['mask']! as Map;
+      expect(mask['type'], 'segmentation');
+      expect(mask['width'], 5);
+      expect(mask['height'], 4);
+      expect((mask['areaFractions']! as Map)['roya'], 0.15);
+      expect((mask['areaFractions']! as Map)['fondo'], 0.85);
+      expect(result.normalizedOutput['hasRoya'], {
+        'type': 'boolean',
+        'value': true,
+      });
+    });
+
+    test('emits the false branch boolean when the area is below it', () async {
+      final runner = await prepared(
+        workflow: _segmentationWorkflow(threshold: 0.2),
+      );
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.normalizedOutput['hasRoya'], {
+        'type': 'boolean',
+        'value': false,
+      });
+    });
+
+    test('compares areas with every operator like the SDK', () async {
+      // 15 % against a 0.15 threshold: only the inclusive operators hold.
+      final expected = {'gte': true, 'gt': false, 'lte': true, 'lt': false};
+      for (final entry in expected.entries) {
+        final runner = await prepared(
+          workflow: _segmentationWorkflow(operator: entry.key, threshold: 0.15),
+        );
+
+        final result = await runner.runCase(
+          _request(Uint8List.fromList([1, 2, 3])),
+        );
+
+        expect(
+          (result.normalizedOutput['hasRoya']! as Map)['value'],
+          entry.value,
+          reason: entry.key,
+        );
+      }
+    });
+
+    test('rejects a condition on a label the model does not declare', () async {
+      await expectLater(
+        prepared(workflow: _segmentationWorkflow(label: 'ausente')),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'workflowConditionInvalid',
+          ),
+        ),
+      );
+    });
+
+    test('reports an invalid score tensor as a typed failure', () async {
+      final runner = await prepared(
+        tensors: [
+          ValidationTensor(
+            shape: [1, 4, 5, 3],
+            values: [...scores.take(59), double.nan],
+          ),
+        ],
+      );
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(result.outcome, ValidationRunOutcome.error);
+      expect(result.errorCode, 'segmentationScoresInvalid');
+    });
+
+    test('accepts schema 4 but rejects the capture schema 3', () async {
+      final capture = _segmentationWorkflow()..['schemaVersion'] = '3';
+
+      await expectLater(
+        prepared(workflow: capture),
+        throwsA(
+          isA<ValidationExecutionException>().having(
+            (error) => error.code,
+            'code',
+            'workflowDefinitionInvalid',
+          ),
+        ),
+      );
+    });
+
+    test('ValidationTensor copies its values unless built with float32', () {
+      final source = Float32List.fromList([0.1, 0.8, 0.1]);
+      final copied = ValidationTensor(shape: [1, 3], values: source);
+      final kept = ValidationTensor.float32(
+        shape: [1, 1, 1, 3],
+        values: source,
+      );
+
+      source[0] = 0.5;
+
+      expect(copied.values, isNot(isA<Float32List>()));
+      expect(copied.values[0], isNot(0.5));
+      expect(identical(kept.values, source), isTrue);
+    });
+
+    test('keeps a Float32List only for a segmentation score map', () {
+      // Segmentation profile: the rank-4 score map is kept as it is.
+      expect(validationKeepsFloat32Output(true, [1, 257, 257, 21]), isTrue);
+      // Classification and detection outputs keep the 0.3.1 copy.
+      for (final shape in [
+        [1, 5],
+        [1, 10, 4],
+        [1, 10],
+        [1],
+        [5],
+      ]) {
+        expect(
+          validationKeepsFloat32Output(true, shape),
+          isFalse,
+          reason: '$shape',
+        );
+      }
+      // Without a segmentation model nothing changes, whatever the rank.
+      for (final shape in [
+        [1, 5],
+        [1, 10, 4],
+        [1, 257, 257, 21],
+      ]) {
+        expect(
+          validationKeepsFloat32Output(false, shape),
+          isFalse,
+          reason: '$shape',
+        );
+      }
+    });
+
+    test(
+      'a workflow without composed outputs still rejects schema 3',
+      () async {
+        final capture = _segmentationWorkflow()
+          ..['schemaVersion'] = '3'
+          ..['nodes'] = [
+            for (final node in (_segmentationWorkflow()['nodes']! as List))
+              if ((node as Map)['id'] != 'condition-node' &&
+                  node['id'] != 'roya-output')
+                node,
+          ];
+        expect(
+          (capture['nodes']! as List).any(
+            (node) => (node as Map).containsKey('sources'),
+          ),
+          isFalse,
+        );
+
+        await expectLater(
+          prepared(workflow: capture),
+          throwsA(
+            isA<ValidationExecutionException>().having(
+              (error) => error.code,
+              'code',
+              'workflowDefinitionInvalid',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('encodes the segmentation after the timed region', () async {
+      final normalizer = _DeferralRecorder();
+      final artifact = await _artifact(
+        temporaryDirectory,
+        modelVersionId: 'seg-version',
+        sha256: 'e' * 64,
+        contract: _segmentationModelContract(),
+      );
+      final runner = DirectTfliteRunner(
+        profile: _segmentationProfile(),
+        modelRepository: _ModelRepository(artifact),
+        workflowDefinitions: _MemoryWorkflowDefinitionRepository(
+          _segmentationWorkflow(),
+        ),
+        inferenceEngine: _FakeCpuEngine(
+          outputsByModelVersion: {
+            'seg-version': [
+              ValidationTensor(shape: [1, 4, 5, 3], values: scores),
+            ],
+          },
+        ),
+        outputNormalizer: normalizer,
+      );
+      await runner.prepare();
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(normalizer.deferred, [true]);
+      final mask = result.normalizedOutput['mask']! as Map;
+      expect(mask.keys, containsAll(['maskRle', 'maskSha256']));
+      expect(mask.keys, isNot(contains('pendingEncoding')));
+    });
+
+    test('turns on float32 outputs only for a profile with segmentation', () {
+      DirectTfliteRunner build(ValidationResourceProfile profile) =>
+          DirectTfliteRunner(
+            profile: profile,
+            modelRepository: _ModelRepository(
+              VerifiedModelArtifact(
+                file: File('model.tflite'),
+                modelVersionId: 'model-version-1',
+                sha256: 'b' * 64,
+                version: '1.0.0',
+                contract: _modelContract(),
+              ),
+            ),
+            workflowDefinitions: _MemoryWorkflowDefinitionRepository({}),
+          );
+      bool float32(DirectTfliteRunner runner) =>
+          (runner.inferenceEngine as TfliteCpuInferenceEngine).float32Outputs;
+
+      expect(float32(build(_segmentationProfile())), isTrue);
+      expect(float32(build(_profile())), isFalse);
+      expect(float32(build(_multiProfile())), isFalse);
+    });
+
+    test('keeps an injected engine whatever the profile', () {
+      final engine = _FakeCpuEngine();
+      final runner = DirectTfliteRunner(
+        profile: _segmentationProfile(),
+        modelRepository: _ModelRepository(
+          VerifiedModelArtifact(
+            file: File('model.tflite'),
+            modelVersionId: 'seg-version',
+            sha256: 'e' * 64,
+            version: '1.0.0',
+            contract: _segmentationModelContract(),
+          ),
+        ),
+        workflowDefinitions: _MemoryWorkflowDefinitionRepository({}),
+        inferenceEngine: engine,
+      );
+
+      expect(identical(runner.inferenceEngine, engine), isTrue);
+    });
+
+    test('encodes the mask only after the stopwatch stopped', () async {
+      final artifact = await _artifact(
+        temporaryDirectory,
+        modelVersionId: 'seg-version',
+        sha256: 'e' * 64,
+        contract: _segmentationModelContract(),
+      );
+      final runner = DirectTfliteRunner(
+        profile: _segmentationProfile(),
+        modelRepository: _ModelRepository(artifact),
+        workflowDefinitions: _MemoryWorkflowDefinitionRepository(
+          _segmentationWorkflow(),
+        ),
+        inferenceEngine: _FakeCpuEngine(
+          outputsByModelVersion: {
+            'seg-version': [
+              ValidationTensor(shape: [1, 4, 5, 3], values: scores),
+            ],
+          },
+        ),
+        outputNormalizer: _SlowEncodingNormalizer(),
+      );
+      await runner.prepare();
+
+      final result = await runner.runCase(
+        _request(Uint8List.fromList([1, 2, 3])),
+      );
+
+      // The encoding takes 400 ms. Had it run before the stopwatch stopped,
+      // the measured duration would include it.
+      expect(
+        (result.normalizedOutput['mask']! as Map)['encoded'],
+        isTrue,
+      );
+      expect(result.outcome, ValidationRunOutcome.success);
+      expect(result.durationMicros, lessThan(200000));
+    });
+  });
 }
 
 class _ModelRepository implements ValidationModelRepository {
@@ -831,3 +1168,196 @@ Map<String, Object?> _modelContract({
   },
   'output': {'type': 'classification', 'labels': labels},
 };
+
+ValidationResourceProfile _segmentationProfile() =>
+    ValidationResourceProfile.fromJson({
+      'id': 'SEG-01',
+      'status': 'ready',
+      'datasetId': 'dataset-1',
+      'datasetVersionId': 'dataset-version-1',
+      'datasetPartition': 'test',
+      'datasetSha256': 'a' * 64,
+      'workflowId': 'workflow-1',
+      'workflowVersionId': 'workflow-version-1',
+      'workflowVersion': '1.0.0',
+      'modelRequirements': [
+        {
+          'nodeId': 'seg-node',
+          'modelVersionId': 'seg-version',
+          'sha256': 'e' * 64,
+          'inputContract': {
+            'width': 257,
+            'height': 257,
+            'channels': 3,
+            'normalization': 'minus_one_to_one',
+          },
+          'modelOutputContract': {
+            'type': 'segmentation',
+            'labels': ['fondo', 'roya', 'sana'],
+            'scoreType': 'logits',
+          },
+        },
+      ],
+      'outputContract': [
+        {
+          'name': 'mask',
+          'resultType': 'segmentation',
+          'labels': ['fondo', 'roya', 'sana'],
+          'scoreType': 'logits',
+        },
+        {'name': 'hasRoya', 'resultType': 'boolean', 'labels': <String>[]},
+      ],
+    });
+
+Map<String, Object?> _segmentationModelContract() => {
+  'input': {
+    'type': 'image',
+    'width': 257,
+    'height': 257,
+    'channels': 3,
+    'normalization': 'minus_one_to_one',
+  },
+  'output': {
+    'type': 'segmentation',
+    'labels': ['fondo', 'roya', 'sana'],
+    'scoreType': 'logits',
+  },
+};
+
+Map<String, Object?> _segmentationWorkflow({
+  String label = 'roya',
+  String operator = 'gte',
+  double threshold = 0.1,
+}) => {
+  'schemaVersion': '4',
+  'nodes': [
+    {
+      'id': 'input-node',
+      'type': 'input.image',
+      'outputs': {'imagen': 'image'},
+    },
+    {
+      'id': 'seg-node',
+      'type': 'model.tflite',
+      'modelVersionId': 'seg-version',
+      'modelName': 'DeepLabV3',
+      'version': '1.0.0',
+      'inputs': {'image': _segmentationModelContract()['input']},
+      'outputs': {'result': _segmentationModelContract()['output']},
+    },
+    {
+      'id': 'condition-node',
+      'type': 'condition',
+      'sourceNodeId': 'seg-node',
+      'label': label,
+      'operator': operator,
+      'threshold': threshold,
+      'branches': {'true': 'boolean', 'false': 'boolean'},
+    },
+    {
+      'id': 'mask-output',
+      'type': 'output',
+      'name': 'mask',
+      'sourceNodeId': 'seg-node',
+      'sourcePort': 'result',
+      'resultType': 'segmentation',
+    },
+    {
+      'id': 'roya-output',
+      'type': 'output',
+      'name': 'hasRoya',
+      'sources': [
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'true',
+          'resultType': 'boolean',
+        },
+        {
+          'sourceNodeId': 'condition-node',
+          'sourcePort': 'false',
+          'resultType': 'boolean',
+        },
+      ],
+    },
+  ],
+  'connections': [
+    {
+      'sourceNodeId': 'input-node',
+      'sourcePort': 'imagen',
+      'targetNodeId': 'seg-node',
+      'targetPort': 'image',
+    },
+  ],
+};
+
+class _DeferralRecorder extends ValidationOutputNormalizer {
+  _DeferralRecorder();
+
+  final deferred = <bool>[];
+
+  @override
+  Map<String, Object?> normalizeDirect({
+    required List<ValidationTensor> tensors,
+    required List<ValidationOutputContract> contracts,
+    bool deferSegmentationEncoding = false,
+  }) {
+    deferred.add(deferSegmentationEncoding);
+    return super.normalizeDirect(
+      tensors: tensors,
+      contracts: contracts,
+      deferSegmentationEncoding: deferSegmentationEncoding,
+    );
+  }
+}
+
+/// A summary whose encoding takes a visible time and leaves a marker, to show
+/// when a runner encodes it: after its stopwatch stopped, never before.
+class _SlowSummary extends SegmentationSummary {
+  _SlowSummary(SegmentationSummary source)
+    : super(
+        width: source.width,
+        height: source.height,
+        labels: source.labels,
+        mask: source.mask,
+        areaFractions: source.areaFractions,
+        confidence: source.confidence,
+      );
+
+  @override
+  Map<String, Object?> toJson() {
+    final clock = Stopwatch()..start();
+    while (clock.elapsedMilliseconds < 400) {}
+    return {...super.toJson(), 'encoded': true};
+  }
+}
+
+Map<String, Object?> _withSlowEncoding(Map<String, Object?> outputs) => {
+  for (final entry in outputs.entries)
+    entry.key:
+        entry.value is Map &&
+            (entry.value as Map)['pendingEncoding'] is SegmentationSummary
+        ? {
+            ...(entry.value as Map).cast<String, Object?>(),
+            'pendingEncoding': _SlowSummary(
+              (entry.value as Map)['pendingEncoding'] as SegmentationSummary,
+            ),
+          }
+        : entry.value,
+};
+
+class _SlowEncodingNormalizer extends ValidationOutputNormalizer {
+  _SlowEncodingNormalizer();
+
+  @override
+  Map<String, Object?> normalizeDirect({
+    required List<ValidationTensor> tensors,
+    required List<ValidationOutputContract> contracts,
+    bool deferSegmentationEncoding = false,
+  }) => _withSlowEncoding(
+    super.normalizeDirect(
+      tensors: tensors,
+      contracts: contracts,
+      deferSegmentationEncoding: deferSegmentationEncoding,
+    ),
+  );
+}

@@ -1,10 +1,10 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa el SDK local `ayni_sdk` **0.3.1**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
+`apps/native` es el arnés Android de la tesis. Usa el SDK local `ayni_sdk` **0.4.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
-El plan contiene cuatro perfiles positivos: `INT-01` (Coffee EfficientNetB0 y BRACOL), `S1` (Coffee MobileNetV2 sobre el mismo BRACOL), `REU-01` (clasificador de tomate de diez etiquetas y PlantVillage) y `S2` (workflow completo de café con clasificador, detector, condición `sana >= 0.8` y salidas tipadas). Hoy `INT-01` tiene recursos publicados; `S1`, `REU-01` y `S2` siguen `pending`. El botón queda deshabilitado mientras falte cualquiera de esos perfiles, así que no produce una corrida parcial.
+El plan contiene cinco perfiles positivos: `INT-01` (Coffee EfficientNetB0 y BRACOL), `S1` (Coffee MobileNetV2 sobre el mismo BRACOL), `REU-01` (clasificador de tomate de diez etiquetas y PlantVillage), `S2` (workflow completo de café con clasificador, detector, condición `sana >= 0.8` y salidas tipadas) y `SEG-01` (segmentación semántica, ver abajo). Hoy `INT-01` y `REU-01` tienen recursos publicados; `S1`, `S2` y `SEG-01` siguen `pending`. El botón **Iniciar validación** se habilita con que haya al menos un perfil listo: la suite ejecuta solo los perfiles listos y omite los `pending`. Un recurso ausente o inválido de un perfil listo bloquea la suite completa.
 
 Provisiona los perfiles en este orden:
 
@@ -15,9 +15,65 @@ Provisiona los perfiles en este orden:
 5. Solo después de publicar y verificar los recursos, reemplaza el perfil correspondiente en `assets/validation/experiment_plan.json` con los IDs reales y SHA-256 del dataset y de cada modelo, el ID/versión del workflow y sus contratos. No copies IDs de ejemplo del ZIP ni incluyas una SDK Key.
 6. Ejecuta `flutter test test/validation/models/experiment_plan_test.dart`, `flutter test`, `flutter analyze` y `flutter build apk --debug`; luego genera el APK selector siguiendo las instrucciones de abajo.
 
-La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica todos los modelos y la definición publicada de cada workflow. Antes de escribir JSONL, comprueba todos los perfiles, ambas condiciones y todas las imágenes seleccionadas; un recurso ausente o inválido bloquea la suite completa. El lote automático incluye 12 filas de fase/escenario, 5 376 intentos por condición y 10 752 intentos en total cuando los cuatro perfiles están listos. Tras medir, vuelve a sincronizar el SDK para intentar despachar las trazas autorizadas.
+La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica todos los modelos y la definición publicada de cada workflow. Antes de escribir JSONL, comprueba todos los perfiles, ambas condiciones y todas las imágenes seleccionadas; un recurso ausente o inválido bloquea la suite completa. El lote automático incluye 15 filas de fase/escenario, 6 720 intentos por condición y 13 440 intentos en total cuando los cinco perfiles están listos (cada perfil listo aporta 3 filas y 1 344 intentos por condición). Tras medir, vuelve a sincronizar el SDK para intentar despachar las trazas autorizadas.
 
 La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) está fijada en la app. La SDK Key se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
+
+## Perfil SEG-01: segmentación semántica
+
+`SEG-01` mide si `ayni_sdk` 0.4.0 conserva la máscara de un modelo de segmentación y cuánto tarda, frente a la integración directa con TFLite sobre los mismos bytes. Usa las mismas fases (`SEG-01-PERF-02-WARMUP` de 20 intentos, `SEG-01-PERF-02` de 300 y `SEG-01-PERF-04` de 1 024) y el mismo botón. Sigue `pending`: no se activa hasta que existan el modelo registrado, el workflow publicado con esquema `4` y un dataset con licencia que permita guardarlo en el almacenamiento privado.
+
+- **Modelo previsto:** DeepLabV3 genérico de MediaPipe (float32), entrada `[1, 257, 257, 3]` con `minus_one_to_one`, 21 etiquetas VOC y `scoreType` `logits`.
+- **Workflow:** una salida de segmentación y la condición `person gte 0.1`, con una salida booleana cuyas `sources` son los puertos `true` y `false`. La integración directa evalúa la condición con su propio código sobre `areaFractions[label]` (operadores `gte`, `gt`, `lte`, `lt`, umbral en [0, 1]).
+- **Versión del SDK:** la app compara la versión con SemVer, no con una igualdad fija: detección exige al menos 0.3.1 y segmentación al menos 0.4.0. Si el SDK es anterior, la preparación se detiene con `sdkSegmentationUnsupported` («La segmentación requiere ayni_sdk 0.4.0 o posterior.») antes de inicializarlo. Una versión `-dev` vale menos que la estable.
+- **Registro:** cada fila exitosa de segmentación guarda `width`, `height`, `areaFractions`, `confidence`, `maskSha256` y la máscara en RLE fila por fila (`maskRle`: una lista de pares `[índice de etiqueta, longitud]` por fila, cuyas longitudes suman el ancho). La fila `treatment` exitosa agrega `segmentationAgreement` (`pixelAgreement`, `meanIou`, `maxAbsAreaFractionDelta`, `absConfidenceDelta`, `dimensionsMatch`), calculado en el dispositivo al emparejarla con la fila `control` de la misma repetición, caso y SHA-256 de entrada. Si una fila `treatment` exitosa con segmentación no recibe acuerdo, lleva `segmentationAgreementUnavailable` con el motivo: `controlMissing` (no hay fila `control` exitosa de la misma repetición y caso) o `invalid` (no se pudieron comparar las segmentaciones). Los registros de clasificación y detección no cambian y no llevan ninguno de los dos campos.
+- **`maskSha256`:** es el SHA-256 del contenido de la máscara, es decir los bytes de los índices de etiqueta fila por fila. No incluye las dimensiones, que van aparte en `width` y `height`: dos máscaras de otro tamaño pueden compartir el hash.
+- **Latencia de SEG-01:** el cronómetro de ambas condiciones incluye la inferencia y la decodificación de la salida (argmax y softmax en el control; la del SDK ocurre dentro de `run()`), y excluye por igual el RLE y el SHA-256 de la máscara, que se calculan después de detener el cronómetro. Para clasificación y detección el cronómetro no cambió.
+
+Plantilla para reemplazar el perfil pendiente cuando existan los recursos (los valores entre `<>` son los reales de cada publicación; no se inventan):
+
+```json
+{
+  "id": "SEG-01",
+  "status": "ready",
+  "datasetId": "<id>",
+  "datasetVersionId": "<id>",
+  "datasetPartition": "test",
+  "datasetSha256": "<sha256 del ZIP>",
+  "workflowId": "<id>",
+  "workflowVersionId": "<id>",
+  "workflowVersion": "1.0.0",
+  "modelRequirements": [
+    {
+      "nodeId": "<id del nodo model.tflite>",
+      "modelVersionId": "<id>",
+      "sha256": "<sha256 del modelo>",
+      "inputContract": {
+        "width": 257,
+        "height": 257,
+        "channels": 3,
+        "normalization": "minus_one_to_one"
+      },
+      "modelOutputContract": {
+        "type": "segmentation",
+        "labels": ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "dining table", "dog", "horse", "motorbike", "person", "potted plant", "sheep", "sofa", "train", "tv"],
+        "scoreType": "logits"
+      }
+    }
+  ],
+  "outputContract": [
+    {
+      "name": "<nombre de la salida de segmentación>",
+      "resultType": "segmentation",
+      "labels": ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "dining table", "dog", "horse", "motorbike", "person", "potted plant", "sheep", "sofa", "train", "tv"],
+      "scoreType": "logits"
+    },
+    { "name": "<nombre de la salida booleana>", "resultType": "boolean", "labels": [] }
+  ]
+}
+```
+
+Agrega también los tres escenarios que ya tiene el plan. La exactitud frente a máscaras de referencia (mIoU frente a PASCAL VOC) es opcional, se calcula fuera del teléfono y depende de la licencia de las imágenes.
 
 ## Ejecutar en desarrollo
 
@@ -34,7 +90,7 @@ flutter run -d <id-android>
 
 El emulador sirve para una prueba funcional; para resultados de medición de la tesis usa los dispositivos físicos definidos en el Plan.
 
-La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. Cuando los cuatro perfiles estén listos, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para cada perfil y ambas condiciones: 5 376 intentos por condición, 10 752 en total. El porcentaje y la actividad muestran el avance del lote completo. Con los recursos actuales, el botón permanece deshabilitado porque `S1`, `REU-01` y `S2` están pendientes. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
+La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. Cuando los cinco perfiles estén listos, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para cada perfil y ambas condiciones: 6 720 intentos por condición, 13 440 en total. El porcentaje y la actividad muestran el avance del lote completo. Los perfiles `pending` (hoy `S1`, `S2` y `SEG-01`) se omiten. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
 
 ### Diagnóstico: “No se completó la acción”
 
@@ -103,12 +159,14 @@ La app aún no expone un ejecutor automático para F1–F6. F2–F5 necesitan un
 
 ## Evidencia local
 
-Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro del directorio privado de documentos de la app. El registro incluye fase, escenario, pareja/repetición, caso, hashes, perfil de dispositivo (modelo, plataforma, versión de SO y API), versiones de la app y del SDK, backend CPU, duración, resultado normalizado, estado y si la captura de trazas estaba habilitada. Android excluye el almacenamiento privado de la app de copias en la nube y transferencias entre dispositivos. No incluye credenciales, imágenes, tensores, URL firmadas ni la traza SDK.
+Cada intento se agrega y sincroniza a disco en `validation/runs.jsonl` dentro del directorio privado de documentos de la app. El registro incluye fase, escenario, pareja/repetición, caso, hashes, perfil de dispositivo (modelo, plataforma, versión de SO y API), versiones de la app y del SDK, backend CPU, duración, resultado normalizado, estado y si la captura de trazas estaba habilitada. Android excluye el almacenamiento privado de la app de copias en la nube y transferencias entre dispositivos. No incluye credenciales, imágenes, tensores, URL firmadas ni la traza SDK. Una fila de segmentación sí lleva la máscara en RLE (y su SHA-256): es un dato derivado de la imagen que solo vive en este JSONL local, nunca se envía al servidor y solo sale del teléfono con **Exportar JSONL**. La traza del SDK no incluye la máscara, solo `width`, `height`, `confidence` y `areaFractions`.
+
+Todas las filas nuevas, también las de `S1`, `S2`, `INT-01` y `REU-01`, llevan `sdkVersion` `0.4.0` en sus metadatos, porque la app ahora se compila con `ayni_sdk` 0.4.0. La campaña medida con 0.3.1 se distingue por ese campo: sus filas dicen `0.3.1`.
 
 ## Requisitos de validación
 
-- La app no importa APIs internas del SDK; depende del paquete local `../../packages/sdk_flutter` (`ayni_sdk 0.3.1`).
-- El SDK 0.3.1 y el arnés admiten workflows de detección S2 con `tensorIndices`. El perfil S2 sigue pendiente hasta registrar y verificar sus versiones de dataset, modelos y workflow en `experiment_plan.json`.
+- La app no importa APIs internas del SDK; depende del paquete local `../../packages/sdk_flutter` (`ayni_sdk 0.4.0`).
+- El SDK 0.4.0 y el arnés admiten workflows de detección S2 con `tensorIndices` (desde 0.3.1) y de segmentación SEG-01 (desde 0.4.0). El perfil S2 sigue pendiente hasta registrar y verificar sus versiones de dataset, modelos y workflow en `experiment_plan.json`.
 - La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
 - La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.
 - El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.

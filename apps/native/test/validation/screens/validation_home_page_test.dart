@@ -295,7 +295,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byKey(const ValueKey('validation-error-card')), findsNothing);
-      expect(find.textContaining('12 fases automáticas'), findsOneWidget);
+      expect(find.textContaining('15 fases automáticas'), findsOneWidget);
       expect(_button(tester, 'run-validation').onPressed, isNotNull);
       await tester.tap(find.byKey(const ValueKey('run-validation')));
       await tester.pumpAndSettle();
@@ -319,11 +319,27 @@ void main() {
         'REU-01:treatment',
         'S2:control',
         'S2:treatment',
+        'SEG-01:control',
+        'SEG-01:treatment',
       ]);
-      expect(runtime.syncVerificationCalls, [true, true, true, true, false]);
-      expect(runtime.syncTraceUploadCalls, [false, false, false, false, true]);
+      expect(runtime.syncVerificationCalls, [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+      ]);
+      expect(runtime.syncTraceUploadCalls, [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+      ]);
       expect(runtime.runSuiteCalls, 1);
-      expect(runtime.runCalls, hasLength(24));
+      expect(runtime.runCalls, hasLength(30));
       expect(runtime.runCalls.take(4), [
         'control:PERF-02-WARMUP:false',
         'treatment:PERF-02-WARMUP:false',

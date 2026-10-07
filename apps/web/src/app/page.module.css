@@ -8,6 +8,37 @@
   font-family: var(--font-body);
 }
 
+:global(.dark) .page {
+  --color-paper: oklch(18% 0.025 258);
+  --color-paper-2: oklch(22% 0.028 258);
+  --color-paper-3: oklch(27% 0.03 258);
+  --color-ink: oklch(95% 0.012 258);
+  --color-ink-2: oklch(87% 0.018 258);
+  --color-muted: oklch(72% 0.02 258);
+  --color-neutral: oklch(79% 0.018 258);
+  --color-accent: oklch(72% 0.16 258);
+  --color-accent-deep: oklch(64% 0.15 258);
+  --color-accent-ink: oklch(17% 0.025 258);
+  --color-accent-soft: oklch(31% 0.06 258);
+  --color-graphite: oklch(24% 0.025 258);
+  --color-graphite-2: oklch(30% 0.03 258);
+  --color-rule: oklch(52% 0.023 258);
+  --color-rule-2: oklch(41% 0.028 258);
+  --color-focus: oklch(76% 0.16 258);
+  --color-success: oklch(73% 0.14 150);
+  --color-error: oklch(70% 0.17 25);
+  --color-dark-muted: oklch(78% 0.015 258);
+  --color-dark-dim: oklch(70% 0.02 258);
+  --color-dark-rule: oklch(47% 0.03 258);
+  --color-node-primary: oklch(82% 0.08 258);
+  --color-node-secondary: oklch(84% 0.06 205);
+  --color-node-tertiary: oklch(80% 0.12 150);
+  --color-network: oklch(80% 0.04 150);
+  --color-shadow: oklch(8% 0.02 258 / 0.36);
+  --color-dialog-shadow: oklch(7% 0.02 258 / 0.55);
+  --color-dialog-backdrop: oklch(7% 0.02 258 / 0.72);
+}
+
 .nav {
   border-bottom: var(--rule-hair) solid var(--color-rule);
   background: var(--color-paper);
@@ -23,6 +54,10 @@
 }
 .brand {
   flex: 0 0 auto;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
   color: var(--color-ink);
   text-decoration: none;
   font-size: 1.35rem;
@@ -34,7 +69,7 @@
 }
 .searchPill {
   min-width: 10.5rem;
-  height: 2.5rem;
+  height: 2.75rem;
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
@@ -168,7 +203,7 @@
   letter-spacing: -0.065em;
   line-height: 1.02;
 }
-.hero h1 span {
+.heroAccent {
   color: var(--color-accent);
 }
 .lede {
@@ -257,6 +292,9 @@
   background: var(--color-graphite);
   color: var(--color-paper);
   box-shadow: 0 1.5rem 3.5rem var(--color-shadow);
+}
+:global(.dark) .page .workflowVisual {
+  color: var(--color-ink);
 }
 .visualTopline,
 .visualFoot {
@@ -615,7 +653,20 @@
   }
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 50rem) {
+  .searchPill {
+    min-width: 2.75rem;
+    width: 2.75rem;
+    justify-content: center;
+    padding: 0;
+  }
+  .searchText,
+  .searchPill kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 45rem) {
   .navInner {
     min-height: 4rem;
     flex-wrap: wrap;
@@ -625,26 +676,21 @@
   .brand {
     margin-inline-end: auto;
   }
-  .searchPill {
-    min-width: 0;
-    width: 2.75rem;
-    justify-content: center;
-    padding: 0;
-  }
-  .searchText,
-  .searchPill kbd {
-    display: none;
-  }
   .navLinks {
     width: 100%;
     margin-inline-start: 0;
-    justify-content: space-between;
-    gap: 0.7rem;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    column-gap: 0.75rem;
+    row-gap: 0;
   }
   .navLink,
   .navAction {
     font-size: var(--text-xs);
   }
+}
+
+@media (max-width: 40rem) {
   .hero {
     padding-top: 3.5rem;
     padding-bottom: 3.5rem;
@@ -693,6 +739,7 @@
   .stageTag {
     grid-column: 2;
     margin-top: -0.35rem;
+    white-space: normal;
   }
   .footer {
     padding-bottom: 1rem;
@@ -727,9 +774,9 @@
   .page *,
   .page *::before,
   .page *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
   }
 }

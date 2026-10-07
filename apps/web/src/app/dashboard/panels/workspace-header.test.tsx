@@ -1,10 +1,30 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Application } from "../types";
 import { WorkspaceHeader } from "./workspace-header";
+
+const { pushMock, signOutMock, useSessionMock } = vi.hoisted(() => {
+  const sessionRef = {
+    data: { user: { name: "Diego sesión", email: "diego@example.test" } },
+    isPending: false,
+  };
+  return {
+    pushMock: vi.fn(),
+    signOutMock: vi.fn(),
+    useSessionMock: vi.fn(() => sessionRef),
+  };
+});
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+vi.mock("@/lib/auth-client", () => ({
+  authClient: {
+    useSession: useSessionMock,
+    signOut: signOutMock,
+  },
+}));
 
 beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -28,6 +48,10 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 describe("WorkspaceHeader", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -143,5 +167,47 @@ describe("WorkspaceHeader", () => {
     expect(item.tagName).toBe("A");
     expect(item.getAttribute("href")).toMatch(/^https?:\/\/[^/]+\/$/);
     expect(item.getAttribute("target")).toBe("_blank");
+  });
+
+  it("opens a name menu with only profile and sign-out actions", async () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole("button", { name: "Diego" }));
+
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent?.trim())).toEqual(["Mi perfil", "Cerrar sesión"]);
+  });
+
+  it("loads session details only when the profile view opens", () => {
+    renderHeader();
+
+    expect(useSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a read-only profile with the current session name and email", async () => {
+    renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: "Diego" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Mi perfil" }));
+
+    const profile = await screen.findByRole("dialog", { name: "Mi perfil" });
+    expect(useSessionMock).toHaveBeenCalled();
+    expect(within(profile).getByText("Diego sesión")).toBeTruthy();
+    expect(within(profile).getByText("diego@example.test")).toBeTruthy();
+    expect(within(profile).queryByRole("textbox")).toBeNull();
+  });
+
+  it("signs out through Better Auth and redirects only after success", async () => {
+    renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: "Diego" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Cerrar sesión" }));
+
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
+
+    const callback = signOutMock.mock.calls[0]?.[0]?.fetchOptions?.onSuccess;
+    expect(callback).toBeTypeOf("function");
+    callback?.();
+
+    expect(pushMock).toHaveBeenCalledWith("/");
   });
 });

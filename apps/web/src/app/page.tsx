@@ -17,16 +17,20 @@ type Destination = { label: string; description: string } & (
 );
 
 const destinations: readonly Destination[] = [
-  { label: "Create your workspace", href: "/sign-up", description: "Set up Ayni for your team" },
   {
-    label: "Go to dashboard",
-    href: "/dashboard",
-    description: "Open your applications and workflows",
+    label: "Crear tu espacio de trabajo",
+    href: "/sign-up",
+    description: "Configura Ayni para tu equipo",
   },
   {
-    label: "How Ayni works",
+    label: "Ir al Dashboard",
+    href: "/dashboard",
+    description: "Abre tus aplicaciones y workflows",
+  },
+  {
+    label: "Cómo funciona Ayni",
     href: "#workflow",
-    description: "Follow a model from workflow to device",
+    description: "Sigue el recorrido de un modelo desde su workflow hasta el dispositivo",
   },
   {
     label: "Documentación",
@@ -75,25 +79,25 @@ export default function Home() {
     <main className={styles.page}>
       <header className={styles.nav}>
         <div className={styles.navInner}>
-          <Link className={styles.brand} href="/" aria-label="Ayni home">
+          <Link className={styles.brand} href="/" aria-label="Ayni, inicio">
             ayni<span aria-hidden="true">.</span>
           </Link>
           <button
             className={styles.searchPill}
             type="button"
-            aria-label="Search Ayni (Ctrl or Command K)"
+            aria-label="Buscar páginas en Ayni (Ctrl o Comando + K)"
             onClick={() => {
               dialogRef.current?.showModal();
               window.setTimeout(() => searchRef.current?.focus(), 0);
             }}
           >
             <span className={styles.searchIcon} aria-hidden="true" />
-            <span className={styles.searchText}>Find your way</span>
+            <span className={styles.searchText}>Buscar páginas</span>
             <kbd>⌘ K</kbd>
           </button>
-          <nav className={styles.navLinks} aria-label="Main navigation">
+          <nav className={styles.navLinks} aria-label="Navegación principal">
             <a className={styles.navLink} href="#workflow">
-              How it works
+              Cómo funciona
             </a>
             <Link className={styles.navLink} href="/dashboard">
               Dashboard
@@ -102,7 +106,7 @@ export default function Home() {
               Documentación
             </DocsLink>
             <Link className={styles.navAction} href="/sign-up">
-              Get started <span aria-hidden="true">↗</span>
+              Comenzar <span aria-hidden="true">↗</span>
             </Link>
           </nav>
         </div>
@@ -111,46 +115,48 @@ export default function Home() {
       <section className={styles.hero} aria-labelledby="hero-title">
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>
-            <span className={styles.eyebrowMark} /> A workflow platform for on-device AI
+            <span className={styles.eyebrowMark} /> Workflows de IA que se ejecutan en el
+            dispositivo
           </p>
           <h1 id="hero-title">
-            Workflows that keep working <span>offline.</span>
+            Workflows que siguen funcionando{" "}
+            <span className={styles.heroAccent}>sin conexión.</span>
           </h1>
           <p className={styles.lede}>
-            Design versioned model workflows in Ayni, then run them in your Flutter app—even when
-            the network is gone.
+            Diseña workflows con versiones de modelo en Ayni y ejecútalos desde tu app Flutter,
+            incluso cuando no tengas conexión a internet.
           </p>
           <div className={styles.heroActions}>
             <Link className={styles.primaryButton} href="/sign-up">
-              Create your workspace <span aria-hidden="true">↗</span>
+              Crear tu espacio de trabajo <span aria-hidden="true">↗</span>
             </Link>
             <Link className={styles.textAction} href="/dashboard">
-              Go to dashboard <span aria-hidden="true">→</span>
+              Ir al Dashboard <span aria-hidden="true">→</span>
             </Link>
           </div>
           <div className={styles.health} aria-live="polite">
             <span
               className={`${styles.healthDot} ${health === "connected" ? styles.healthOn : health === "disconnected" ? styles.healthOff : ""}`}
             />
-            <span>API status</span>
+            <span>Estado de la API</span>
             <span className={styles.healthValue} role="status">
               {health === "checking"
-                ? "Checking…"
+                ? "Comprobando…"
                 : health === "connected"
-                  ? "Connected"
-                  : "Disconnected"}
+                  ? "Conectada"
+                  : "Desconectada"}
             </span>
           </div>
         </div>
 
         <section
           className={styles.workflowVisual}
-          aria-label="A workflow moves from design to device execution"
+          aria-label="El workflow pasa del diseño a la ejecución en el dispositivo"
         >
           <div className={styles.visualTopline}>
             <span>AYNI / WORKFLOW</span>
             <span className={styles.liveMark}>
-              <i /> ON-DEVICE
+              <i /> EN EL DISPOSITIVO
             </span>
           </div>
           <div className={styles.flowLine} aria-hidden="true">
@@ -165,8 +171,8 @@ export default function Home() {
                 ⌘
               </span>
               <span className={styles.nodeText}>
-                <strong>Compose</strong>
-                <small>Typed workflow DAG</small>
+                <strong>Diseñar</strong>
+                <small>Grafo dirigido acíclico con nodos tipados</small>
               </span>
             </li>
             <li>
@@ -175,8 +181,8 @@ export default function Home() {
                 ◎
               </span>
               <span className={styles.nodeText}>
-                <strong>Version</strong>
-                <small>Model + workflow release</small>
+                <strong>Versionar</strong>
+                <small>Versiones del modelo y del workflow</small>
               </span>
             </li>
             <li>
@@ -185,41 +191,41 @@ export default function Home() {
                 ↯
               </span>
               <span className={styles.nodeText}>
-                <strong>Run locally</strong>
+                <strong>Ejecutar en el dispositivo</strong>
                 <small>Flutter · TensorFlow Lite</small>
               </span>
             </li>
           </ol>
           <div className={styles.visualFoot}>
-            <span>NETWORK</span>
+            <span>RED</span>
             <span className={styles.networkState}>
-              <span /> NOT REQUIRED TO EXECUTE
+              <span /> NO SE NECESITA PARA EJECUTAR
             </span>
           </div>
         </section>
       </section>
 
-      <section className={styles.process} id="workflow" aria-label="How Ayni works">
+      <section className={styles.process} id="workflow" aria-label="Cómo funciona Ayni">
         <div className={styles.processIntro}>
-          <p className={styles.kicker}>From definition to device</p>
+          <p className={styles.kicker}>De la definición al dispositivo</p>
           <h2>
-            One workflow.
+            Un workflow.
             <br />
-            Three clear stages.
+            Tres etapas claras.
           </h2>
           <p>
-            Keep model logic structured and explicit, from the dashboard to the app in your user’s
-            hand.
+            Mantén la lógica del modelo ordenada y explícita, desde el Dashboard hasta la app de tus
+            usuarios.
           </p>
         </div>
         <ol className={styles.stageList}>
           <li className={styles.stage}>
             <span className={styles.stageNumber}>1.0</span>
             <div>
-              <h3>Shape the flow</h3>
+              <h3>Diseña el workflow</h3>
               <p>
-                Connect typed nodes into a directed acyclic graph. Define image inputs, model steps,
-                conditions, and outputs without embedding executable code.
+                Conecta nodos tipados para construir un grafo dirigido acíclico. Define entradas de
+                imagen, pasos del modelo, condiciones y salidas, sin incorporar código ejecutable.
               </p>
             </div>
             <span className={styles.stageTag}>DASHBOARD</span>
@@ -227,41 +233,41 @@ export default function Home() {
           <li className={styles.stage}>
             <span className={styles.stageNumber}>2.0</span>
             <div>
-              <h3>Publish a version</h3>
+              <h3>Publica una versión</h3>
               <p>
-                Validate the draft, then publish an immutable workflow version tied to the model
-                version it expects.
+                Valida el borrador y publica una versión inmutable del workflow, vinculada a la
+                versión del modelo con la que debe ejecutarse.
               </p>
             </div>
-            <span className={styles.stageTag}>VERSIONED</span>
+            <span className={styles.stageTag}>VERSIONADO</span>
           </li>
           <li className={styles.stage}>
             <span className={styles.stageNumber}>3.0</span>
             <div>
-              <h3>Run on the device</h3>
+              <h3>Ejecuta en el dispositivo</h3>
               <p>
-                Your Flutter app can keep the last verified model and workflow locally, ready to
-                execute offline.
+                Tu app Flutter puede conservar localmente la última versión verificada del modelo y
+                del workflow, lista para ejecutarse sin conexión.
               </p>
             </div>
-            <span className={styles.stageTag}>OFFLINE-READY</span>
+            <span className={styles.stageTag}>LISTO PARA USO SIN CONEXIÓN</span>
           </li>
         </ol>
       </section>
 
       <footer className={styles.footer}>
         <p className={styles.footerLine}>
-          Keep the model close.
+          Mantén el modelo a mano.
           <br />
-          <span>Keep the workflow clear.</span>
+          <span>Mantén el workflow claro.</span>
         </p>
         <div className={styles.footerMeta}>
           <Link className={styles.brand} href="/">
             ayni<span aria-hidden="true">.</span>
           </Link>
-          <span>Offline-first model workflows</span>
+          <span>Workflows de modelos listos para funcionar sin conexión</span>
           <div>
-            <Link href="/sign-up">Create workspace</Link>
+            <Link href="/sign-up">Crear espacio de trabajo</Link>
             <Link href="/dashboard">Dashboard</Link>
           </div>
         </div>
@@ -281,10 +287,10 @@ export default function Home() {
       >
         <div className={styles.dialogPanel}>
           <h2 className={styles.dialogTitle} id="search-title">
-            Search Ayni
+            Buscar en Ayni
           </h2>
           <label className={styles.dialogLabel} htmlFor="site-search">
-            Find a page
+            Busca una página
           </label>
           <input
             ref={searchRef}
@@ -292,9 +298,9 @@ export default function Home() {
             className={styles.searchInput}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Workflows, registration, dashboard…"
+            placeholder="Workflows, registro, Dashboard…"
           />
-          <p className={styles.resultHeading}>PAGES</p>
+          <p className={styles.resultHeading}>PÁGINAS</p>
           <div className={styles.resultList}>
             {results.length > 0 ? (
               results.map((item) => {
@@ -328,13 +334,16 @@ export default function Home() {
                 );
               })
             ) : (
-              <p className={styles.noResults}>No matching pages. Try “dashboard” or “workspace”.</p>
+              <p className={styles.noResults}>
+                No encontramos páginas con esa búsqueda. Prueba con “Dashboard” o “espacio de
+                trabajo”.
+              </p>
             )}
           </div>
           <div className={styles.dialogFoot}>
-            <span>Use Tab to move · Esc to close</span>
+            <span>Usa Tab para desplazarte · Esc para cerrar</span>
             <button type="button" onClick={() => dialogRef.current?.close()}>
-              Close
+              Cerrar
             </button>
           </div>
         </div>

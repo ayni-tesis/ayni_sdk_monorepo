@@ -19,8 +19,19 @@ import {
   useSidebar,
 } from "./sidebar";
 
+const { mockUseReducedMotion } = vi.hoisted(() => ({
+  mockUseReducedMotion: vi.fn(() => false),
+}));
+
+vi.mock("motion/react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("motion/react")>()),
+  useReducedMotion: mockUseReducedMotion,
+}));
+
 beforeEach(() => {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  window.innerWidth = 1024;
+  mockUseReducedMotion.mockReturnValue(false);
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn().mockImplementation((query) => ({
@@ -38,6 +49,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  mockUseReducedMotion.mockReturnValue(false);
+  window.innerWidth = 1024;
 });
 
 function TestConsumer() {
@@ -75,6 +88,124 @@ describe("Animate UI Sidebar", () => {
     expect(screen.getByTestId("sidebar-state").textContent).toBe("expanded");
     fireEvent.click(screen.getByTestId("custom-toggle"));
     expect(screen.getByTestId("sidebar-state").textContent).toBe("collapsed");
+  });
+
+  it("names the desktop controls for the action they perform", () => {
+    render(
+      <SidebarProvider defaultOpen>
+        <Sidebar collapsible="icon">
+          <SidebarRail />
+        </Sidebar>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    const trigger = screen.getByTestId("sidebar-trigger");
+    const rail = screen.getByTestId("sidebar-rail");
+
+    expect(trigger.textContent).toBe("Contraer la barra lateral");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(rail.getAttribute("aria-label")).toBe("Contraer la barra lateral");
+
+    fireEvent.click(trigger);
+
+    expect(trigger.textContent).toBe("Expandir la barra lateral");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(rail.getAttribute("aria-label")).toBe("Expandir la barra lateral");
+  });
+
+  it("describes the mobile navigation drawer and its current action in Spanish", () => {
+    window.innerWidth = 390;
+
+    render(
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupLabel>Espacio de trabajo</SidebarGroupLabel>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    const trigger = screen.getByTestId("sidebar-trigger");
+    expect(trigger.textContent).toBe("Abrir el menú de navegación");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.className).toContain("size-11");
+    expect(trigger.className).toContain("md:size-7");
+
+    fireEvent.click(trigger);
+
+    expect(trigger.textContent).toBe("Cerrar el menú de navegación");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const dialog = screen.getByRole("dialog", { name: "Menú de navegación" });
+    expect(dialog.className).toContain("motion-reduce:animate-none");
+    expect(screen.getByText("Elige una sección del panel para continuar.")).toBeTruthy();
+
+    const closeButton = screen.getByRole("button", { name: "Cerrar el menú de navegación" });
+    expect(closeButton.className).toContain("size-11");
+    fireEvent.click(closeButton);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger.textContent).toBe("Abrir el menú de navegación");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("uses decelerating sidebar transitions that stop moving when reduced motion is requested", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <Sidebar collapsible="icon" />
+      </SidebarProvider>,
+    );
+
+    const gap = container.querySelector('[data-slot="sidebar-gap"]');
+    const sidebarContainer = container.querySelector('[data-slot="sidebar-container"]');
+
+    expect(gap?.className).toContain("duration-[220ms]");
+    expect(gap?.className).toContain("ease-[cubic-bezier(0.16,1,0.3,1)]");
+    expect(gap?.className).toContain("motion-reduce:duration-0");
+    expect(gap?.className).not.toContain("cubic-bezier(0.7,-0.15,0.25,1.15)");
+    expect(sidebarContainer?.className).toContain("motion-reduce:duration-0");
+
+    mockUseReducedMotion.mockReturnValue(true);
+    render(
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="Aplicaciones">Aplicaciones</SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </Sidebar>
+      </SidebarProvider>,
+    );
+
+    const navigationItem = screen.getByRole("button", { name: "Aplicaciones" });
+    fireEvent.mouseEnter(navigationItem);
+    expect(navigationItem.getAttribute("data-highlight")).not.toBe("true");
+  });
+
+  it("transitions sidebar menu feedback without motion when requested", () => {
+    render(
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="Aplicaciones">Aplicaciones</SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </Sidebar>
+      </SidebarProvider>,
+    );
+
+    const navigationItem = screen.getByRole("button", { name: "Aplicaciones" });
+    expect(navigationItem.className).toContain(
+      "transition-[width,height,padding,border-color,background-color,color]",
+    );
+    expect(navigationItem.className).toContain("duration-150");
+    expect(navigationItem.className).toContain("motion-reduce:duration-0");
   });
 
   it("toggles sidebar via keyboard shortcut (Ctrl+B / Meta+B)", () => {

@@ -70,33 +70,38 @@ export function DatasetDetailView({
   const availableAbortRef = useRef<AbortController | null>(null);
   const retiredEvidenceIdsRef = useRef(new Set<string>());
 
-  const loadDetail = useCallback(async () => {
-    abortRef.current?.abort();
-    itemsAbortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true);
-    setNotFound(false);
-    setError("");
-    setItemsError("");
-    try {
-      const { data } = await httpClient.get<DatasetDetailResponse>(
-        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
-        { signal: controller.signal },
-      );
-      if (!controller.signal.aborted) setDetail(data);
-    } catch (loadError) {
-      if (controller.signal.aborted) return;
-      setDetail(null);
-      if (axios.isAxiosError(loadError) && loadError.response?.status === 404) {
-        setNotFound(true);
-      } else {
-        setError(errorMessage(loadError, LOAD_ERROR));
+  const loadDetail = useCallback(
+    async (showLoading = true) => {
+      abortRef.current?.abort();
+      itemsAbortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      if (showLoading) {
+        setLoading(true);
       }
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }, [application.id, datasetId]);
+      setNotFound(false);
+      setError("");
+      setItemsError("");
+      try {
+        const { data } = await httpClient.get<DatasetDetailResponse>(
+          `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
+          { signal: controller.signal },
+        );
+        if (!controller.signal.aborted) setDetail(data);
+      } catch (loadError) {
+        if (controller.signal.aborted) return;
+        setDetail(null);
+        if (axios.isAxiosError(loadError) && loadError.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(errorMessage(loadError, LOAD_ERROR));
+        }
+      } finally {
+        if (!controller.signal.aborted && showLoading) setLoading(false);
+      }
+    },
+    [application.id, datasetId],
+  );
 
   const loadMoreDatasetItems = useCallback(async () => {
     const offset = detail?.nextItemOffset;
@@ -183,10 +188,10 @@ export function DatasetDetailView({
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence`,
         { evidenceIds: selectedIds },
       );
-      await loadDetail();
-      setNotice("Evidencia agregada al dataset.");
       setAddOpen(false);
       setSelectedIds([]);
+      await loadDetail(false);
+      setNotice("Evidencia agregada al dataset.");
     } catch (saveError) {
       setAddError(errorMessage(saveError, "No pudimos agregar la evidencia al dataset."));
     } finally {

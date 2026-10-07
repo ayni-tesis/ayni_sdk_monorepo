@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 import 'models/validation_run_metadata.dart';
 
-const validationSdkVersion = '0.3.1';
+const validationSdkVersion = '0.4.0';
 
 class ValidationRunMetadataReader {
   const ValidationRunMetadataReader({

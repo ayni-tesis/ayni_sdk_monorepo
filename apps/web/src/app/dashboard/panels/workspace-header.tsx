@@ -1,6 +1,8 @@
 "use client";
 
 import { IconBook, IconChevronDown, IconHelpCircle } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { DocsLink } from "@/components/docs-link";
 import {
   Breadcrumb,
@@ -12,6 +14,13 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -20,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { authClient } from "@/lib/auth-client";
 import { type Application, DASHBOARD_VIEWS, type DashboardView } from "../types";
 
 export type WorkspaceHeaderProps = {
@@ -36,6 +46,37 @@ function activeViewLabel(view: DashboardView): string {
   return DASHBOARD_VIEWS[view]?.label ?? "Aplicaciones";
 }
 
+function WorkspaceProfileDialog({
+  fallbackName,
+  onOpenChange,
+}: {
+  fallbackName: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: session } = authClient.useSession();
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mi perfil</DialogTitle>
+          <DialogDescription>Datos de tu cuenta. Solo lectura.</DialogDescription>
+        </DialogHeader>
+        <dl className="grid gap-4 text-sm">
+          <div className="grid gap-1">
+            <dt className="font-medium">Nombre</dt>
+            <dd className="text-muted-foreground">{session?.user.name ?? fallbackName}</dd>
+          </div>
+          <div className="grid gap-1">
+            <dt className="font-medium">Correo electrónico</dt>
+            <dd className="text-muted-foreground">{session?.user.email ?? "—"}</dd>
+          </div>
+        </dl>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function WorkspaceHeader({
   userName,
   workspaceName,
@@ -45,6 +86,9 @@ export function WorkspaceHeader({
   onSelectApplication,
   onNavigateHome,
 }: WorkspaceHeaderProps) {
+  const router = useRouter();
+  const [profileOpen, setProfileOpen] = useState(false);
+
   return (
     <header className="flex min-h-15 items-center justify-between gap-4 border-b px-4">
       <div className="flex min-w-0 items-center gap-3">
@@ -140,7 +184,32 @@ export function WorkspaceHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <span className="truncate text-muted-foreground text-sm">{userName}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="sm" className="max-w-48 truncate text-muted-foreground">
+                {userName}
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setProfileOpen(true)}>Mi perfil</DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                authClient.signOut({
+                  fetchOptions: {
+                    onSuccess: () => router.push("/"),
+                  },
+                });
+              }}
+            >
+              Cerrar sesión
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {profileOpen && (
+          <WorkspaceProfileDialog fallbackName={userName} onOpenChange={setProfileOpen} />
+        )}
       </div>
     </header>
   );
