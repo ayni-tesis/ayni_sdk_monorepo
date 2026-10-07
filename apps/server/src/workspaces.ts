@@ -1,4 +1,4 @@
-import { Hono, type Handler } from "hono";
+import { type Handler, Hono } from "hono";
 
 export type WorkspaceItem = {
   id: string;
