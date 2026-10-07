@@ -41,6 +41,7 @@ import {
   reviewDatasetEvidence,
   saveDatasetItemLabel,
 } from "./dataset-store";
+import { createDatasetExport, listDatasetExports } from "./dataset-export-store";
 import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
 import {
@@ -263,6 +264,9 @@ const validationDatasets = createValidationDatasetStore({
 });
 
 const datasets = {
+  createExport(input: Parameters<typeof createDatasetExport>[1]) {
+    return createDatasetExport(db, input);
+  },
   addEvidence(input: Parameters<typeof addDatasetEvidence>[1]) {
     return addDatasetEvidence(db, input);
   },
@@ -271,6 +275,9 @@ const datasets = {
   },
   list(applicationId: string) {
     return listDatasets(db, applicationId);
+  },
+  listExports(applicationId: string, datasetId: string) {
+    return listDatasetExports(db, applicationId, datasetId);
   },
   get(applicationId: string, datasetId: string, offset: number) {
     return getDataset(db, applicationId, datasetId, offset);

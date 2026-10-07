@@ -3,6 +3,7 @@ import {
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
+  type DatasetExportListResponse,
   DatasetLabelRequestSchema,
   type DatasetListResponse,
   DatasetPageQuerySchema,
@@ -11,6 +12,7 @@ import {
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
+import type { CreateDatasetExportInput, CreateDatasetExportResult } from "./dataset-export-store";
 import type {
   AddDatasetEvidenceInput,
   AddDatasetEvidenceResult,
@@ -36,6 +38,7 @@ type Dependencies = {
   applications: Parameters<typeof getApplicationForMember>[0];
   datasets: {
     addEvidence: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
+    createExport?: (input: CreateDatasetExportInput) => Promise<CreateDatasetExportResult>;
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
     get: (
       applicationId: string,
@@ -43,6 +46,10 @@ type Dependencies = {
       offset: number,
     ) => Promise<DatasetDetailResponse | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
+    listExports?: (
+      applicationId: string,
+      datasetId: string,
+    ) => Promise<DatasetExportListResponse | null>;
     listAvailableEvidence: (
       applicationId: string,
       datasetId: string,
@@ -56,6 +63,119 @@ type Dependencies = {
 
 export function createDatasetsApp({ getSession, applications, datasets }: Dependencies) {
   const app = new Hono();
+
+  app.get("/applications/:applicationId/datasets/:datasetId/exports", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+
+    try {
+      if (!datasets.listExports) {
+        return c.json(
+          {
+            message: "No pudimos cargar las exportaciones del dataset.",
+            code: "datasetExportListFailed",
+          },
+          500,
+        );
+      }
+      const response = await datasets.listExports(application.id, c.req.param("datasetId"));
+      if (!response) return c.json({ message: "No encontramos este dataset." }, 404);
+      return c.json(response);
+    } catch {
+      return c.json(
+        {
+          message: "No pudimos cargar las exportaciones del dataset.",
+          code: "datasetExportListFailed",
+        },
+        500,
+      );
+    }
+  });
+
+  app.post("/applications/:applicationId/datasets/:datasetId/exports", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para exportar este dataset.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+    if (!datasets.createExport) {
+      return c.json(
+        { message: "No pudimos generar la exportación del dataset.", code: "datasetExportFailed" },
+        500,
+      );
+    }
+
+    const result = await datasets.createExport({
+      applicationId: application.id,
+      datasetId: c.req.param("datasetId"),
+      userId: session.user.id,
+    });
+    if (result.ok) return c.json({ export: result.value }, 201);
+    if (result.reason === "forbidden") {
+      return c.json(
+        { message: "No tienes permiso para exportar este dataset.", code: "forbidden" },
+        403,
+      );
+    }
+    if (result.reason === "archived") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+    if (result.reason === "notFound") {
+      return c.json({ message: "No encontramos este dataset.", code: "notFound" }, 404);
+    }
+    if (result.reason === "notClassification") {
+      return c.json(
+        {
+          message: "Solo se pueden exportar datasets de clasificación.",
+          code: "datasetNotClassification",
+        },
+        409,
+      );
+    }
+    if (result.reason === "noApprovedItems") {
+      return c.json(
+        {
+          message: "El dataset no tiene evidencias aprobadas para exportar.",
+          code: "datasetExportNoApprovedItems",
+        },
+        409,
+      );
+    }
+    if (result.reason === "missingLabel") {
+      return c.json(
+        {
+          message:
+            "Todas las evidencias aprobadas deben tener una etiqueta revisada para exportar.",
+          code: "datasetExportLabelRequired",
+        },
+        409,
+      );
+    }
+    return c.json(
+      { message: "No pudimos generar la exportación del dataset.", code: "datasetExportFailed" },
+      500,
+    );
+  });
 
   app.get("/applications/:applicationId/datasets/:datasetId", async (c) => {
     const session = await getSession(c.req.raw.headers);

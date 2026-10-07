@@ -5,6 +5,9 @@ import {
   type DatasetAvailableEvidenceResponse,
   type DatasetDetailResponse,
   type DatasetEvidence,
+  type DatasetExport,
+  type DatasetExportListResponse,
+  type DatasetExportResponse,
   type DatasetLabelResponse,
   type DatasetReviewResponse,
 } from "@ayni/api/datasets";
@@ -69,10 +72,23 @@ export function DatasetDetailView({
   const [availableError, setAvailableError] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
+  const [exports, setExports] = useState<DatasetExport[]>([]);
+  const [exportsLoading, setExportsLoading] = useState(true);
+  const [exportsError, setExportsError] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
+  const exportsAbortRef = useRef<AbortController | null>(null);
   const retiredEvidenceIdsRef = useRef(new Set<string>());
+  const exportsUrl =
+    "/applications/" +
+    encodeURIComponent(application.id) +
+    "/datasets/" +
+    encodeURIComponent(datasetId) +
+    "/exports";
 
   const loadDetail = useCallback(
     async (showLoading = true) => {
@@ -106,6 +122,27 @@ export function DatasetDetailView({
     },
     [application.id, datasetId],
   );
+
+  const loadExports = useCallback(async () => {
+    exportsAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportsAbortRef.current = controller;
+    setExportsLoading(true);
+    setExportsError("");
+    try {
+      const { data } = await httpClient.get<DatasetExportListResponse>(
+        exportsUrl,
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted) setExports(data.exports);
+    } catch (loadError) {
+      if (!controller.signal.aborted) {
+        setExportsError(errorMessage(loadError, "No pudimos cargar las exportaciones."));
+      }
+    } finally {
+      if (!controller.signal.aborted) setExportsLoading(false);
+    }
+  }, [exportsUrl]);
 
   const loadMoreDatasetItems = useCallback(async () => {
     const offset = detail?.nextItemOffset;
@@ -203,6 +240,32 @@ export function DatasetDetailView({
     }
   }
 
+  async function generateClassificationExport() {
+    if (
+      !canManage ||
+      application.status !== "active" ||
+      detail?.dataset.taskType !== "classification" ||
+      exporting
+    ) {
+      return;
+    }
+    setExporting(true);
+    setExportError("");
+    setNotice("");
+    try {
+      const { data } = await httpClient.post<DatasetExportResponse>(exportsUrl);
+      setExports((current) => [data.export, ...current]);
+      setExportOpen(false);
+      setNotice("Exportación de clasificación lista.");
+    } catch (saveError) {
+      setExportError(
+        errorMessage(saveError, "No pudimos generar la exportación de clasificación."),
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function removeEvidence(itemId: string) {
     if (!canManage || application.status !== "active") return;
     setNotice("");
@@ -288,11 +351,13 @@ export function DatasetDetailView({
 
   useEffect(() => {
     void loadDetail();
+    void loadExports();
     return () => {
       abortRef.current?.abort();
       itemsAbortRef.current?.abort();
+      exportsAbortRef.current?.abort();
     };
-  }, [loadDetail]);
+  }, [loadDetail, loadExports]);
 
   if (loading) {
     return (
@@ -521,9 +586,111 @@ export function DatasetDetailView({
           )}
         </TabsContent>
         <TabsContent value="exports">
-          <p className="text-muted-foreground text-sm">
-            Aún no hay exportaciones para este dataset.
-          </p>
+          <div className="space-y-4">
+            {canManage &&
+              application.status === "active" &&
+              dataset.taskType === "classification" && (
+                <Dialog
+                  open={exportOpen}
+                  onOpenChange={(open) => {
+                    setExportOpen(open);
+                    if (!open) setExportError("");
+                  }}
+                >
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setExportError("");
+                      setNotice("");
+                      setExportOpen(true);
+                    }}
+                  >
+                    Nueva exportación
+                  </Button>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Nueva exportación</DialogTitle>
+                      <DialogDescription>
+                        Clasificación (imágenes + CSV)
+                      </DialogDescription>
+                    </DialogHeader>
+                    <dl className="rounded-md border p-3 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <dt className="text-muted-foreground">Ítems aprobados</dt>
+                        <dd>{dataset.approvedCount}</dd>
+                      </div>
+                    </dl>
+                    {exportError && (
+                      <p role="alert" className="text-destructive text-sm">
+                        {exportError}
+                      </p>
+                    )}
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={exporting}
+                        onClick={() => setExportOpen(false)}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        disabled={exporting}
+                        onClick={() => void generateClassificationExport()}
+                      >
+                        {exporting ? "Generando exportación…" : "Generar exportación"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+            {exportsLoading ? (
+              <p role="status" className="text-muted-foreground text-sm">
+                Cargando exportaciones…
+              </p>
+            ) : exportsError ? (
+              <div role="alert" className="space-y-2">
+                <p className="text-destructive text-sm">{exportsError}</p>
+                <Button type="button" variant="outline" onClick={() => void loadExports()}>
+                  Reintentar
+                </Button>
+              </div>
+            ) : exports.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Aún no hay exportaciones para este dataset.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {exports.map((datasetExport) => (
+                  <li key={datasetExport.id} className="rounded-md border p-3 text-sm">
+                    <dl className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <dt className="text-muted-foreground">Formato</dt>
+                        <dd>Clasificación (imágenes + CSV)</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Versión del dataset</dt>
+                        <dd>v{datasetExport.version}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Generada el</dt>
+                        <dd>{formatLongDateEs(datasetExport.generatedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Estado</dt>
+                        <dd>Lista</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Imágenes</dt>
+                        <dd>{datasetExport.itemCount}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
     </section>
