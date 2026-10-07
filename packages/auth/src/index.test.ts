@@ -6,6 +6,9 @@ const { isClaimedEmailVerificationTokenMock, storeEmailVerificationTokenMock } =
 }));
 
 vi.mock("@ayni/db", () => ({ db: {} }));
+vi.mock("@ayni/env/privacy-notice", () => ({
+  AYNI_PRIVACY_NOTICE: { version: "1.0.1", status: "draft" },
+}));
 vi.mock("./verification", () => ({
   EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: 60 * 60,
   isClaimedEmailVerificationToken: isClaimedEmailVerificationTokenMock,
