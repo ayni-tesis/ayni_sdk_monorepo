@@ -63,12 +63,12 @@ export async function getApplicationTraceMetrics(
   { applicationId, ...period }: ApplicationTraceMetricsQuery & { applicationId: string },
 ): Promise<ApplicationTraceMetricsResponse> {
   const { from, before } = periodDates(period);
-  const now = new Date();
+  const now = new Date().toISOString();
   const traceFilter = sql`
     ${sdkTrace.applicationId} = ${applicationId}
     and ${sdkTrace.source} = 'clientReported'
-    and ${sdkTrace.receivedAt} >= ${from}
-    and ${sdkTrace.receivedAt} < ${before}
+    and ${sdkTrace.receivedAt} >= ${from.toISOString()}
+    and ${sdkTrace.receivedAt} < ${before.toISOString()}
     and ${sdkTrace.expiresAt} > ${now}
   `;
 
