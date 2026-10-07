@@ -2,6 +2,8 @@
 
 import {
   DATASET_LABEL_MAX_LENGTH,
+  type DatasetAnnotation,
+  type DatasetAnnotationsResponse,
   type DatasetAvailableEvidenceResponse,
   type DatasetDetailResponse,
   type DatasetEvidence,
@@ -38,6 +40,7 @@ import { errorMessage } from "@/lib/api-error";
 import { formatLongDateEs } from "@/lib/format-date";
 import { httpClient } from "@/lib/http-client";
 import type { Application } from "../../types";
+import { ReviewedAnnotationsPanel } from "./reviewed-annotations-panel";
 
 const NOT_FOUND = "No encontramos este dataset.";
 const LOAD_ERROR = "No pudimos cargar el dataset.";
@@ -349,6 +352,27 @@ export function DatasetDetailView({
     setNotice("Etiqueta revisada guardada.");
   }
 
+  async function saveAnnotations(itemId: string, annotations: DatasetAnnotation[]) {
+    const { data } = await httpClient.put<DatasetAnnotationsResponse>(
+      `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/annotations`,
+      { annotations },
+    );
+    if (retiredEvidenceIdsRef.current.has(itemId)) return;
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.id === itemId
+                ? { ...item, reviewedAnnotations: data.reviewedAnnotations }
+                : item,
+            ),
+          }
+        : current,
+    );
+    setNotice("Anotaciones revisadas guardadas.");
+  }
+
   useEffect(() => {
     void loadDetail();
     void loadExports();
@@ -564,6 +588,7 @@ export function DatasetDetailView({
                   onRemove={removeEvidence}
                   onReview={reviewEvidence}
                   onSaveLabel={saveLabel}
+                  onSaveAnnotations={saveAnnotations}
                 />
               ))}
             </ul>
@@ -703,12 +728,14 @@ function EvidenceItem({
   onRemove,
   onReview,
   onSaveLabel,
+  onSaveAnnotations,
 }: {
   item: DatasetDetailResponse["items"][number];
   canRemove: boolean;
   onRemove: (itemId: string) => Promise<void>;
   onReview: (itemId: string, status: "approved" | "rejected", reason?: string) => Promise<void>;
   onSaveLabel: (itemId: string, label: string) => Promise<void>;
+  onSaveAnnotations: (itemId: string, annotations: DatasetAnnotation[]) => Promise<void>;
 }) {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -755,18 +782,24 @@ function EvidenceItem({
           {formatLongDateEs(item.capturedAt)}
         </time>
       </div>
-      <Image
-        src={item.imageUrl}
-        alt={`Evidencia ${item.evidenceId}`}
-        width={item.imageWidth}
-        height={item.imageHeight}
-        unoptimized
-        className="mt-3 max-h-80 w-auto max-w-full rounded object-contain"
-      />
       {item.taskType === "classification" ? (
-        <ReviewedLabelPanel item={item} onSave={onSaveLabel} />
+        <>
+          <Image
+            src={item.imageUrl}
+            alt={`Evidencia ${item.evidenceId}`}
+            width={item.imageWidth}
+            height={item.imageHeight}
+            unoptimized
+            className="mt-3 max-h-80 w-auto max-w-full rounded object-contain"
+          />
+          <ReviewedLabelPanel item={item} onSave={onSaveLabel} />
+        </>
       ) : (
-        <p className="mt-2 text-sm">Predicción original: {resultSummary(item.originalResult)}</p>
+        <ReviewedAnnotationsPanel
+          item={item}
+          predictionSummary={resultSummary(item.originalResult)}
+          onSave={onSaveAnnotations}
+        />
       )}
       <p className="mt-1 text-sm" data-testid={`dataset-evidence-review-status-${item.id}`}>
         Estado: {reviewStatusLabel(item.reviewStatus)}

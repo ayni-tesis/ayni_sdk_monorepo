@@ -16,6 +16,7 @@ import {
   listDatasets,
   removeDatasetEvidence,
   reviewDatasetEvidence,
+  saveDatasetItemAnnotations,
   saveDatasetItemLabel,
 } from "./dataset-store";
 import { logger } from "./lib/logger";
@@ -164,6 +165,7 @@ describe("addDatasetEvidence", () => {
       taskType: evidence.taskType,
       imageUrl: `https://evidence.example/${evidence.storageKey}`,
       reviewStatus: "pending",
+      reviewedAnnotations: null,
     });
     expect(insertedValues[0]).toMatchObject({
       applicationId: input.applicationId,
@@ -426,6 +428,81 @@ describe("saveDatasetItemLabel", () => {
     expect(errorSpy).toHaveBeenCalledWith(
       { err: failure, applicationId: "app-1", datasetId: "dataset-1", itemId: "item-1" },
       "Failed to save dataset item label",
+    );
+  });
+});
+
+describe("saveDatasetItemAnnotations", () => {
+  const annotations = [
+    { label: "gato", box: { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 } },
+    { label: "perro", box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 } },
+  ];
+  const annotationsInput = {
+    applicationId: "app-1",
+    datasetId: "dataset-1",
+    itemId: "item-1",
+    userId: "member-1",
+    annotations,
+  };
+
+  it("stores the reviewed boxes for any member without touching the original prediction", async () => {
+    const { database, updatedValues } = makeDatabase({
+      membershipRole: "member",
+      datasetItemRows: [{ id: "item-1", taskType: "detection" }],
+    });
+
+    expect(await saveDatasetItemAnnotations(database, annotationsInput)).toEqual({
+      ok: true,
+      value: { reviewedAnnotations: annotations },
+    });
+    expect(updatedValues).toEqual([{ reviewedAnnotations: annotations }]);
+  });
+
+  it("stores an empty list when the image shows no object", async () => {
+    const { database, updatedValues } = makeDatabase({
+      datasetItemRows: [{ id: "item-1", taskType: "detection" }],
+    });
+
+    expect(
+      await saveDatasetItemAnnotations(database, { ...annotationsInput, annotations: [] }),
+    ).toEqual({ ok: true, value: { reviewedAnnotations: [] } });
+    expect(updatedValues).toEqual([{ reviewedAnnotations: [] }]);
+  });
+
+  it("refuses classification items and items outside the dataset without writing", async () => {
+    const classification = makeDatabase({
+      datasetItemRows: [{ id: "item-1", taskType: "classification" }],
+    });
+    expect(await saveDatasetItemAnnotations(classification.database, annotationsInput)).toEqual({
+      ok: false,
+      reason: "notDetection",
+    });
+    expect(classification.updatedValues).toEqual([]);
+
+    const missing = makeDatabase();
+    expect(await saveDatasetItemAnnotations(missing.database, annotationsInput)).toEqual({
+      ok: false,
+      reason: "notFound",
+    });
+    expect(missing.updatedValues).toEqual([]);
+  });
+
+  it("logs transaction failures", async () => {
+    const failure = new Error("database unavailable");
+    const database = {
+      transaction: async () => {
+        throw failure;
+      },
+    } as unknown as ApplicationDatabase;
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    expect(await saveDatasetItemAnnotations(database, annotationsInput)).toEqual({
+      ok: false,
+      reason: "databaseFailed",
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      { err: failure, applicationId: "app-1", datasetId: "dataset-1", itemId: "item-1" },
+      "Failed to save dataset item annotations",
     );
   });
 });

@@ -1,6 +1,6 @@
 {
-  "id": "5ebcf028-28ae-456f-a446-1b421e0b0aa4",
-  "prevId": "e629dd1e-617d-489a-a16b-85823b20671b",
+  "id": "9b58bdb9-afd1-4750-b91c-1ce5857bbf37",
+  "prevId": "5ebcf028-28ae-456f-a446-1b421e0b0aa4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -70,8 +70,12 @@
           "name": "application_organization_id_organization_id_fk",
           "tableFrom": "application",
           "tableTo": "organization",
-          "columnsFrom": ["organization_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -193,8 +197,12 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -297,8 +305,12 @@
           "name": "invitation_organization_id_organization_id_fk",
           "tableFrom": "invitation",
           "tableTo": "organization",
-          "columnsFrom": ["organization_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -306,8 +318,12 @@
           "name": "invitation_inviter_id_user_id_fk",
           "tableFrom": "invitation",
           "tableTo": "user",
-          "columnsFrom": ["inviter_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "inviter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -413,8 +429,12 @@
           "name": "member_organization_id_organization_id_fk",
           "tableFrom": "member",
           "tableTo": "organization",
-          "columnsFrom": ["organization_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -422,8 +442,12 @@
           "name": "member_user_id_user_id_fk",
           "tableFrom": "member",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -483,7 +507,9 @@
         "organization_slug_unique": {
           "name": "organization_slug_unique",
           "nullsNotDistinct": false,
-          "columns": ["slug"]
+          "columns": [
+            "slug"
+          ]
         }
       },
       "policies": {},
@@ -572,8 +598,12 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -583,7 +613,9 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": ["token"]
+          "columns": [
+            "token"
+          ]
         }
       },
       "policies": {},
@@ -659,7 +691,9 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": ["email"]
+          "columns": [
+            "email"
+          ]
         }
       },
       "policies": {},
@@ -723,8 +757,12 @@
           "name": "user_terms_acceptance_user_id_user_id_fk",
           "tableFrom": "user_terms_acceptance",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -867,8 +905,12 @@
           "name": "application_collection_policy_application_id_application_id_fk",
           "tableFrom": "application_collection_policy",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -876,8 +918,12 @@
           "name": "application_collection_policy_updated_by_id_user_id_fk",
           "tableFrom": "application_collection_policy",
           "tableTo": "user",
-          "columnsFrom": ["updated_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "updated_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -901,6 +947,135 @@
         "application_collection_policy_image_quality_check": {
           "name": "application_collection_policy_image_quality_check",
           "value": "\"application_collection_policy\".\"image_quality\" between 10 and 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.dataset_export": {
+      "name": "dataset_export",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dataset_id": {
+          "name": "dataset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "format": {
+          "name": "format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generated_at": {
+          "name": "generated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "item_count": {
+          "name": "item_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "dataset_export_application_dataset_version_unique": {
+          "name": "dataset_export_application_dataset_version_unique",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dataset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dataset_export_application_dataset_fkey": {
+          "name": "dataset_export_application_dataset_fkey",
+          "tableFrom": "dataset_export",
+          "tableTo": "dataset",
+          "columnsFrom": [
+            "application_id",
+            "dataset_id"
+          ],
+          "columnsTo": [
+            "application_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "dataset_export_version_check": {
+          "name": "dataset_export_version_check",
+          "value": "\"dataset_export\".\"version\" > 0"
+        },
+        "dataset_export_format_check": {
+          "name": "dataset_export_format_check",
+          "value": "\"dataset_export\".\"format\" = 'classification_images_csv'"
+        },
+        "dataset_export_status_check": {
+          "name": "dataset_export_status_check",
+          "value": "\"dataset_export\".\"status\" = 'ready'"
+        },
+        "dataset_export_item_count_check": {
+          "name": "dataset_export_item_count_check",
+          "value": "\"dataset_export\".\"item_count\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -1045,8 +1220,14 @@
           "name": "dataset_item_application_dataset_fkey",
           "tableFrom": "dataset_item",
           "tableTo": "dataset",
-          "columnsFrom": ["application_id", "dataset_id"],
-          "columnsTo": ["application_id", "id"],
+          "columnsFrom": [
+            "application_id",
+            "dataset_id"
+          ],
+          "columnsTo": [
+            "application_id",
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1054,8 +1235,14 @@
           "name": "dataset_item_application_evidence_fkey",
           "tableFrom": "dataset_item",
           "tableTo": "sdk_evidence",
-          "columnsFrom": ["application_id", "evidence_id"],
-          "columnsTo": ["application_id", "evidence_id"],
+          "columnsFrom": [
+            "application_id",
+            "evidence_id"
+          ],
+          "columnsTo": [
+            "application_id",
+            "evidence_id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1166,8 +1353,12 @@
           "name": "dataset_application_id_application_id_fk",
           "tableFrom": "dataset",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1275,8 +1466,12 @@
           "name": "invitation_link_organization_id_organization_id_fk",
           "tableFrom": "invitation_link",
           "tableTo": "organization",
-          "columnsFrom": ["organization_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1284,8 +1479,12 @@
           "name": "invitation_link_inviter_id_user_id_fk",
           "tableFrom": "invitation_link",
           "tableTo": "user",
-          "columnsFrom": ["inviter_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "inviter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1370,8 +1569,12 @@
           "name": "model_application_id_application_id_fk",
           "tableFrom": "model",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1505,8 +1708,12 @@
           "name": "model_version_model_id_model_id_fk",
           "tableFrom": "model_version",
           "tableTo": "model",
-          "columnsFrom": ["model_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "model_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1514,8 +1721,12 @@
           "name": "model_version_uploaded_by_id_user_id_fk",
           "tableFrom": "model_version",
           "tableTo": "user",
-          "columnsFrom": ["uploaded_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "uploaded_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1587,8 +1798,12 @@
           "name": "application_privacy_notice_version_application_id_application_id_fk",
           "tableFrom": "application_privacy_notice_version",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1596,8 +1811,12 @@
           "name": "application_privacy_notice_version_published_by_id_user_id_fk",
           "tableFrom": "application_privacy_notice_version",
           "tableTo": "user",
-          "columnsFrom": ["published_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "published_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1607,7 +1826,10 @@
         "application_privacy_notice_version_app_version_unique": {
           "name": "application_privacy_notice_version_app_version_unique",
           "nullsNotDistinct": false,
-          "columns": ["application_id", "version"]
+          "columns": [
+            "application_id",
+            "version"
+          ]
         }
       },
       "policies": {},
@@ -1754,8 +1976,12 @@
           "name": "application_privacy_rights_request_application_id_application_id_fk",
           "tableFrom": "application_privacy_rights_request",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1763,8 +1989,12 @@
           "name": "application_privacy_rights_request_updated_by_id_user_id_fk",
           "tableFrom": "application_privacy_rights_request",
           "tableTo": "user",
-          "columnsFrom": ["updated_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "updated_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1864,8 +2094,12 @@
           "name": "application_privacy_rights_request_event_request_id_application_privacy_rights_request_id_fk",
           "tableFrom": "application_privacy_rights_request_event",
           "tableTo": "application_privacy_rights_request",
-          "columnsFrom": ["request_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1873,8 +2107,12 @@
           "name": "application_privacy_rights_request_event_actor_user_id_user_id_fk",
           "tableFrom": "application_privacy_rights_request_event",
           "tableTo": "user",
-          "columnsFrom": ["actor_user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1934,8 +2172,12 @@
           "name": "application_privacy_treatment_map_application_id_application_id_fk",
           "tableFrom": "application_privacy_treatment_map",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1943,8 +2185,12 @@
           "name": "application_privacy_treatment_map_updated_by_id_user_id_fk",
           "tableFrom": "application_privacy_treatment_map",
           "tableTo": "user",
-          "columnsFrom": ["updated_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "updated_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2049,8 +2295,12 @@
           "name": "sdk_consent_receipt_application_id_application_id_fk",
           "tableFrom": "sdk_consent_receipt",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2058,7 +2308,10 @@
       "compositePrimaryKeys": {
         "sdk_consent_receipt_application_id_receipt_id_pk": {
           "name": "sdk_consent_receipt_application_id_receipt_id_pk",
-          "columns": ["application_id", "receipt_id"]
+          "columns": [
+            "application_id",
+            "receipt_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2160,8 +2413,12 @@
           "name": "sdk_credential_application_id_application_id_fk",
           "tableFrom": "sdk_credential",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2366,8 +2623,12 @@
           "name": "sdk_evidence_application_id_application_id_fk",
           "tableFrom": "sdk_evidence",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2375,8 +2636,12 @@
           "name": "sdk_evidence_workflow_id_workflow_id_fk",
           "tableFrom": "sdk_evidence",
           "tableTo": "workflow",
-          "columnsFrom": ["workflow_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2384,8 +2649,12 @@
           "name": "sdk_evidence_workflow_version_id_workflow_version_id_fk",
           "tableFrom": "sdk_evidence",
           "tableTo": "workflow_version",
-          "columnsFrom": ["workflow_version_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workflow_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2393,7 +2662,10 @@
       "compositePrimaryKeys": {
         "sdk_evidence_application_id_evidence_id_pk": {
           "name": "sdk_evidence_application_id_evidence_id_pk",
-          "columns": ["application_id", "evidence_id"]
+          "columns": [
+            "application_id",
+            "evidence_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2536,8 +2808,12 @@
           "name": "sdk_trace_application_id_application_id_fk",
           "tableFrom": "sdk_trace",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2545,7 +2821,10 @@
       "compositePrimaryKeys": {
         "sdk_trace_application_id_trace_id_pk": {
           "name": "sdk_trace_application_id_trace_id_pk",
-          "columns": ["application_id", "trace_id"]
+          "columns": [
+            "application_id",
+            "trace_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2619,8 +2898,12 @@
           "name": "task_user_id_user_id_fk",
           "tableFrom": "task",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2675,8 +2958,12 @@
           "name": "application_telemetry_policy_application_id_application_id_fk",
           "tableFrom": "application_telemetry_policy",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2684,8 +2971,12 @@
           "name": "application_telemetry_policy_updated_by_id_user_id_fk",
           "tableFrom": "application_telemetry_policy",
           "tableTo": "user",
-          "columnsFrom": ["updated_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "updated_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2781,8 +3072,12 @@
           "name": "workflow_application_id_application_id_fk",
           "tableFrom": "workflow",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2883,8 +3178,12 @@
           "name": "workflow_version_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_version",
           "tableTo": "workflow",
-          "columnsFrom": ["workflow_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2892,8 +3191,12 @@
           "name": "workflow_version_published_by_id_user_id_fk",
           "tableFrom": "workflow_version",
           "tableTo": "user",
-          "columnsFrom": ["published_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "published_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -3000,8 +3303,12 @@
           "name": "validation_dataset_application_id_application_id_fk",
           "tableFrom": "validation_dataset",
           "tableTo": "application",
-          "columnsFrom": ["application_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3009,8 +3316,12 @@
           "name": "validation_dataset_created_by_id_user_id_fk",
           "tableFrom": "validation_dataset",
           "tableTo": "user",
-          "columnsFrom": ["created_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "created_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -3158,8 +3469,12 @@
           "name": "validation_dataset_version_dataset_id_validation_dataset_id_fk",
           "tableFrom": "validation_dataset_version",
           "tableTo": "validation_dataset",
-          "columnsFrom": ["dataset_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "dataset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3167,8 +3482,12 @@
           "name": "validation_dataset_version_uploaded_by_id_user_id_fk",
           "tableFrom": "validation_dataset_version",
           "tableTo": "user",
-          "columnsFrom": ["uploaded_by_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "uploaded_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         }

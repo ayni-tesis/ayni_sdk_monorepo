@@ -1,0 +1,2 @@
+ALTER TABLE "dataset_item" ADD COLUMN "reviewed_annotations" jsonb;--> statement-breakpoint
+ALTER TABLE "dataset_item" ADD CONSTRAINT "dataset_item_reviewed_annotations_check" CHECK ("dataset_item"."reviewed_annotations" is null or jsonb_typeof("dataset_item"."reviewed_annotations") = 'array');

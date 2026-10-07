@@ -1,5 +1,8 @@
 import type {
   Dataset,
+  DatasetAnnotation,
+  DatasetAnnotationsRequest,
+  DatasetAnnotationsResponse,
   DatasetAvailableEvidenceResponse,
   DatasetDetailResponse,
   DatasetEvidence,
@@ -61,6 +64,7 @@ type DatasetItemRow = {
   reviewedAt: Date | string | null;
   reviewReason: string | null;
   reviewedLabel: string | null;
+  reviewedAnnotations: DatasetAnnotation[] | null;
 };
 
 type DatasetEvidenceRow = {
@@ -204,6 +208,7 @@ export async function getDataset(
         reviewedAt: datasetItem.reviewedAt,
         reviewReason: datasetItem.reviewReason,
         reviewedLabel: datasetItem.reviewedLabel,
+        reviewedAnnotations: datasetItem.reviewedAnnotations,
       })
       .from(datasetItem)
       .innerJoin(
@@ -419,6 +424,7 @@ export async function addDatasetEvidence(
                 reviewedAt: null,
                 reviewReason: null,
                 reviewedLabel: null,
+                reviewedAnnotations: null,
               };
             }),
           ),
@@ -562,12 +568,14 @@ export async function reviewDatasetEvidence(
   }
 }
 
-export type SaveDatasetItemLabelInput = {
+type DatasetItemLocator = {
   applicationId: string;
   datasetId: string;
   itemId: string;
   userId: string;
-} & DatasetLabelRequest;
+};
+
+export type SaveDatasetItemLabelInput = DatasetItemLocator & DatasetLabelRequest;
 
 export type SaveDatasetItemLabelResult =
   | { ok: true; value: DatasetLabelResponse }
@@ -582,6 +590,69 @@ export async function saveDatasetItemLabel(
   database: ApplicationDatabase,
   input: SaveDatasetItemLabelInput,
 ): Promise<SaveDatasetItemLabelResult> {
+  const result = await saveReviewedGroundTruth(
+    database,
+    input,
+    "classification",
+    { reviewedLabel: input.label.trim() },
+    "Failed to save dataset item label",
+  );
+  if (result.ok) return result;
+  return {
+    ok: false,
+    reason: result.reason === "wrongTaskType" ? "notClassification" : result.reason,
+  };
+}
+
+export type SaveDatasetItemAnnotationsInput = DatasetItemLocator & DatasetAnnotationsRequest;
+
+export type SaveDatasetItemAnnotationsResult =
+  | { ok: true; value: DatasetAnnotationsResponse }
+  | { ok: false; reason: "notFound" | "notDetection" | "databaseFailed" };
+
+/**
+ * Replaces the reviewed detection boxes of a dataset item (US-082) in their
+ * own column, so `originalResult` keeps the model's prediction unchanged. The
+ * request schema already kept every box inside the image (coordinates from 0
+ * to 1 of its width and height). Any workspace member may correct them.
+ */
+export async function saveDatasetItemAnnotations(
+  database: ApplicationDatabase,
+  input: SaveDatasetItemAnnotationsInput,
+): Promise<SaveDatasetItemAnnotationsResult> {
+  const result = await saveReviewedGroundTruth(
+    database,
+    input,
+    "detection",
+    { reviewedAnnotations: input.annotations },
+    "Failed to save dataset item annotations",
+  );
+  if (result.ok) return result;
+  return {
+    ok: false,
+    reason: result.reason === "wrongTaskType" ? "notDetection" : result.reason,
+  };
+}
+
+/**
+ * Writes a person's ground truth on a dataset item whose dataset has the given
+ * task type, leaving the rest of the item, its prediction included, untouched.
+ */
+async function saveReviewedGroundTruth<
+  Values extends Pick<
+    Partial<typeof datasetItem.$inferInsert>,
+    "reviewedLabel" | "reviewedAnnotations"
+  >,
+>(
+  database: ApplicationDatabase,
+  input: DatasetItemLocator,
+  taskType: DatasetTaskType,
+  values: Values,
+  failureMessage: string,
+): Promise<
+  | { ok: true; value: Values }
+  | { ok: false; reason: "notFound" | "wrongTaskType" | "databaseFailed" }
+> {
   try {
     const result = await executeApplicationAction(
       database,
@@ -612,17 +683,16 @@ export async function saveDatasetItemLabel(
           .limit(1)) as { id: string; taskType: DatasetTaskType }[];
         const item = items[0];
         if (!item) return "notFound" as const;
-        if (item.taskType !== "classification") return "notClassification" as const;
+        if (item.taskType !== taskType) return "wrongTaskType" as const;
 
         // The task type never changes, so no lock is needed: an item removed
         // meanwhile simply updates no row.
-        const reviewedLabel = input.label.trim();
         const updated = await tx
           .update(datasetItem)
-          .set({ reviewedLabel })
+          .set(values)
           .where(itemCondition)
           .returning({ id: datasetItem.id });
-        return updated.length ? { reviewedLabel } : ("notFound" as const);
+        return updated.length ? values : ("notFound" as const);
       },
     );
     if (!result.ok) return { ok: false, reason: "notFound" };
@@ -637,7 +707,7 @@ export async function saveDatasetItemLabel(
         datasetId: input.datasetId,
         itemId: input.itemId,
       },
-      "Failed to save dataset item label",
+      failureMessage,
     );
     return { ok: false, reason: "databaseFailed" };
   }
