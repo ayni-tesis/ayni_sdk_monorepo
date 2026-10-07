@@ -133,10 +133,9 @@ export function DatasetDetailView({
     setExportsLoading(true);
     setExportsError("");
     try {
-      const { data } = await httpClient.get<DatasetExportListResponse>(
-        exportsUrl,
-        { signal: controller.signal },
-      );
+      const { data } = await httpClient.get<DatasetExportListResponse>(exportsUrl, {
+        signal: controller.signal,
+      });
       if (!controller.signal.aborted) setExports(data.exports);
     } catch (loadError) {
       if (!controller.signal.aborted) {
@@ -635,9 +634,7 @@ export function DatasetDetailView({
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Nueva exportación</DialogTitle>
-                      <DialogDescription>
-                        Clasificación (imágenes + CSV)
-                      </DialogDescription>
+                      <DialogDescription>Clasificación (imágenes + CSV)</DialogDescription>
                     </DialogHeader>
                     <p className="text-muted-foreground text-sm">
                       Tamaño total máximo de imágenes: 128 MiB.

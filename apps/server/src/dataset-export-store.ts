@@ -204,7 +204,9 @@ export async function createDatasetExport(
       }
       const filename = `images/${item.id}.jpg`;
       files[filename] = await r2EvidenceStorage.read(item.storageKey);
-      const label = item.reviewedLabel!.trim().replaceAll('"', '""');
+      const reviewedLabel = item.reviewedLabel?.trim();
+      if (!reviewedLabel) throw new Error("Approved dataset item has no reviewed label");
+      const label = reviewedLabel.replaceAll('"', '""');
       csvRows.push(`"${filename}","${label}"`);
     }
     files["labels.csv"] = new TextEncoder().encode(`${csvRows.join("\r\n")}\r\n`);
