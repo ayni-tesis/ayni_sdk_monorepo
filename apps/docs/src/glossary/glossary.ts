@@ -147,6 +147,20 @@ export const glossary: GlossaryEntry[] = [
       "El servidor recibe la evidencia, pero el dashboard todavía no la muestra ni la agrega a datasets.",
   },
   {
+    source: "Dataset",
+    term: "Dataset",
+    definition:
+      "Una colección de evidencias de una aplicación para una tarea de clasificación o detección. Cada elemento conserva el resultado original separado de la revisión humana y las anotaciones corregidas.",
+    avoid: ["dataset de validación"],
+  },
+  {
+    source: "Dataset Export",
+    term: "Exportación del dataset",
+    definition:
+      "Un paquete inmutable generado con las evidencias aprobadas y las anotaciones revisadas que cumplen los requisitos del dataset. Tiene una versión propia y una fecha de generación; los cambios posteriores al dataset no modifican una exportación existente.",
+    avoid: ["revisión del dataset"],
+  },
+  {
     source: "Slug",
     term: "Slug",
     definition:

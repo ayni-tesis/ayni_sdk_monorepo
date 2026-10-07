@@ -60,6 +60,14 @@ _Avoid_: Capture settings, upload settings
 An image the SDK keeps on the device when an execution of a Workflow Version reaches a `dataset.capture` node and completes successfully (a failed or cancelled execution creates none), together with the inference result the node received, the Workflow Version and the Model Version that produced the result, to send it later to its Application's datasets. A `dataset.capture` node that hangs from a branch of a condition is reached only when the condition takes that branch, so an Application can collect, for example, only low-confidence predictions. The SDK creates it only while the app says the person consents to evidence collection, and never delays or changes the result it returns. It keeps a copy of the image reduced and compressed with the Collection Policy's maximum size and quality, never the image the workflow used, and discards an evidence it cannot prepare or has no space to save. A saved evidence stays pending in a local queue on the device, without a connection and across restarts, and is never counted as sent before the server confirms it received it; once it does, the SDK deletes the evidence from the device, while an upload without that confirmation keeps it. An upload that fails is retried in later syncs with the same ID, waiting longer after each failure, up to a configured number of attempts; after that the evidence stays on the device as failed (`Fallida`) and is no longer sent automatically. It only leaves the device while the Collection Policy is enabled and over the network it allows: with only Wi-Fi allowed, evidence waits for Wi-Fi (`Pendiente de Wi-Fi`) instead of using mobile data. The server accepts it only for the Application of the SDK credential, from a `dataset.capture` node of one of that Application's Workflow Versions, and keeps it, image and data, associated with that Application, Workflow, Workflow Version and Model Version.
 _Avoid_: Sample, upload, telemetry
 
+**Dataset**:
+An Application-owned collection of Evidence for one task type (classification or detection), where each item keeps its original result separate from its human review and corrected annotations.
+_Avoid_: Validation Dataset
+
+**Dataset Export**:
+An immutable package generated from the eligible approved Evidence and reviewed annotations in a Dataset, identified by a per-dataset version and generation date. Changes to the Dataset do not alter an existing export.
+_Avoid_: Dataset revision
+
 **Slug**:
 A unique URL-safe identifier generated for each Workspace upon creation to satisfy organization constraints.
 _Avoid_: Workspace handle, organization code

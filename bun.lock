@@ -52,6 +52,7 @@
         "better-auth": "catalog:",
         "dotenv": "catalog:",
         "drizzle-orm": "^0.45.2",
+        "fflate": "^0.8.3",
         "hono": "catalog:",
         "pino": "^10.3.1",
         "pino-http": "^11.0.0",
