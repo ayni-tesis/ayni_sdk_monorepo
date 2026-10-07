@@ -2,15 +2,21 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { privacyNoticeMock, pushMock, signInEmailMock, signUpEmailMock, toastMock } = vi.hoisted(
-  () => ({
-    privacyNoticeMock: { version: "1.0.1", status: "published" as "draft" | "published" },
-    pushMock: vi.fn(),
-    signInEmailMock: vi.fn(),
-    signUpEmailMock: vi.fn(),
-    toastMock: { success: vi.fn(), error: vi.fn() },
-  }),
-);
+const {
+  privacyNoticeMock,
+  pushMock,
+  signInEmailMock,
+  signInSocialMock,
+  signUpEmailMock,
+  toastMock,
+} = vi.hoisted(() => ({
+  privacyNoticeMock: { version: "1.0.1", status: "published" as "draft" | "published" },
+  pushMock: vi.fn(),
+  signInEmailMock: vi.fn(),
+  signInSocialMock: vi.fn(),
+  signUpEmailMock: vi.fn(),
+  toastMock: { success: vi.fn(), error: vi.fn() },
+}));
 
 vi.mock("@ayni/env/privacy-notice", () => ({ AYNI_PRIVACY_NOTICE: privacyNoticeMock }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
@@ -18,7 +24,7 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     useSession: () => ({ isPending: false }),
-    signIn: { email: signInEmailMock },
+    signIn: { email: signInEmailMock, social: signInSocialMock },
     signUp: { email: signUpEmailMock },
   },
 }));
@@ -30,6 +36,8 @@ describe("AuthDiptych", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     privacyNoticeMock.status = "published";
+    window.history.replaceState({}, "", "/");
+    signInSocialMock.mockResolvedValue({ error: null });
     signUpEmailMock.mockImplementation(
       async (_credentials: unknown, callbacks: { onSuccess?: () => void }) => {
         callbacks.onSuccess?.();
@@ -67,6 +75,7 @@ describe("AuthDiptych", () => {
 
     expect(screen.getByText(/registro temporalmente no disponible/i)).toBeTruthy();
     expect(screen.queryByLabelText(/correo electrónico/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continuar con GitHub" })).toBeNull();
   });
 
   it("renders the sign-up form when the privacy notice is published", () => {
@@ -93,6 +102,27 @@ describe("AuthDiptych", () => {
     ).toBeTruthy();
     expect(signInEmailMock).not.toHaveBeenCalled();
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic sign-in error without exposing account details", async () => {
+    signInEmailMock.mockImplementation(
+      async (_credentials: unknown, callbacks: { onError?: () => void }) => {
+        callbacks.onError?.();
+      },
+    );
+    render(<AuthDiptych initialMode="sign-in" />);
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "No pudimos iniciar sesión. Revisa tu correo y contraseña e inténtalo de nuevo.",
+    );
   });
 
   it("sends the current terms version and continues to the invitation after signing in", async () => {
@@ -195,13 +225,81 @@ describe("AuthDiptych", () => {
     );
   });
 
-  it("shows fallback error when terms acceptance registration fails", async () => {
+  it("uses the current terms when continuing with GitHub and preserves the post-auth destination", async () => {
+    const next = "/join?token=github-invite";
+    window.history.replaceState({}, "", `/sign-in?next=${encodeURIComponent(next)}`);
+    render(<AuthDiptych initialMode="sign-in" next={next} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con GitHub" }));
+
+    await waitFor(() => expect(signInSocialMock).toHaveBeenCalledTimes(1));
+    expect(signInSocialMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "github",
+        callbackURL: next,
+        additionalData: { termsAcceptedVersion: CURRENT_TERMS_VERSION },
+        errorCallbackURL: expect.stringContaining("github=error"),
+      }),
+    );
+  });
+
+  it("requires current terms before starting GitHub authorization", async () => {
+    render(<AuthDiptych initialMode="sign-in" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con GitHub" }));
+
+    expect(
+      await screen.findByText(
+        "Debes aceptar los Términos y condiciones vigentes para continuar con GitHub.",
+      ),
+    ).toBeTruthy();
+    expect(signInSocialMock).not.toHaveBeenCalled();
+  });
+
+  it("offers GitHub during registration and includes accepted current terms", async () => {
+    render(<AuthDiptych initialMode="sign-up" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con GitHub" }));
+
+    await waitFor(() => expect(signInSocialMock).toHaveBeenCalledTimes(1));
+    expect(signInSocialMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "github",
+        callbackURL: "/dashboard",
+        additionalData: { termsAcceptedVersion: CURRENT_TERMS_VERSION },
+      }),
+    );
+  });
+
+  it("does not expose provider error details", async () => {
+    signInSocialMock.mockRejectedValue(new Error("provider response contained private details"));
+    render(<AuthDiptych initialMode="sign-in" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /términos y condiciones/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con GitHub" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "No pudimos completar el acceso con GitHub. Inténtalo nuevamente o usa correo y contraseña.",
+    );
+    expect(screen.queryByText(/private details/i)).toBeNull();
+  });
+
+  it("explains when GitHub did not return a confirmed email", () => {
+    window.history.replaceState({}, "", "/sign-in?github=error&error=email_not_found");
+    render(<AuthDiptych initialMode="sign-in" />);
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "GitHub no proporcionó un correo confirmado.",
+    );
+  });
+
+  it("shows a generic registration error without exposing server details", async () => {
     signUpEmailMock.mockImplementation(
       async (
         _credentials: unknown,
         callbacks: { onError?: (ctx: { error?: { message?: string } }) => void },
       ) => {
-        callbacks.onError?.({ error: undefined });
+        callbacks.onError?.({ error: { message: "internal auth details" } });
       },
     );
 
@@ -219,12 +317,11 @@ describe("AuthDiptych", () => {
     fireEvent.click(screen.getByRole("button", { name: /crear cuenta/i }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No pudimos registrar tu aceptación. Inténtalo nuevamente."),
-      ).toBeTruthy();
+      expect(screen.getByText("No pudimos crear tu cuenta. Inténtalo nuevamente.")).toBeTruthy();
     });
     expect(toastMock.error).toHaveBeenCalledWith(
-      "No pudimos registrar tu aceptación. Inténtalo nuevamente.",
+      "No pudimos crear tu cuenta. Inténtalo nuevamente.",
     );
+    expect(screen.queryByText(/internal auth details/i)).toBeNull();
   });
 });

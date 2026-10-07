@@ -15,6 +15,18 @@ import styles from "./auth-diptych.module.css";
 
 export type AuthMode = "sign-in" | "sign-up";
 
+const SOCIAL_ERROR_MESSAGE =
+  "No pudimos completar el acceso con GitHub. Inténtalo nuevamente o usa correo y contraseña.";
+const GITHUB_EMAIL_ERROR_MESSAGE =
+  "GitHub no proporcionó un correo confirmado. Intenta con otra cuenta de GitHub o usa correo y contraseña.";
+
+function getSocialErrorMessage() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("error") === "email_not_found") return GITHUB_EMAIL_ERROR_MESSAGE;
+  return params.has("github") ? SOCIAL_ERROR_MESSAGE : null;
+}
+
 interface AuthDiptychProps {
   initialMode: AuthMode;
   next?: string;
@@ -23,9 +35,39 @@ interface AuthDiptychProps {
 export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
   const router = useRouter();
   const mode = initialMode;
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(getSocialErrorMessage);
+  const [isSocialPending, setIsSocialPending] = useState(false);
   const { isPending: isSessionPending } = authClient.useSession();
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+
+  async function continueWithGitHub(acceptedTerms: boolean) {
+    if (!acceptedTerms) {
+      setSubmitError(
+        "Debes aceptar los Términos y condiciones vigentes para continuar con GitHub.",
+      );
+      return;
+    }
+
+    setSubmitError(null);
+    setIsSocialPending(true);
+    try {
+      const errorCallback = new URL(`/${mode}`, window.location.origin);
+      if (next) errorCallback.searchParams.set("next", next);
+      errorCallback.searchParams.set("github", "error");
+      const result = await authClient.signIn.social({
+        provider: "github",
+        callbackURL: getBrowserPostAuthRedirect(),
+        errorCallbackURL: errorCallback.toString(),
+        additionalData: { termsAcceptedVersion: CURRENT_TERMS_VERSION },
+      } as Parameters<typeof authClient.signIn.social>[0] & {
+        additionalData: { termsAcceptedVersion: string };
+      });
+      if (result.error) throw result.error;
+    } catch {
+      setSubmitError(SOCIAL_ERROR_MESSAGE);
+      setIsSocialPending(false);
+    }
+  }
 
   const signInForm = useForm({
     defaultValues: {
@@ -88,15 +130,13 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
             toast.success("Términos aceptados. Cuenta creada correctamente.");
           },
           onError: (ctx) => {
-            let message = "No pudimos registrar tu aceptación. Inténtalo nuevamente.";
+            let message = "No pudimos crear tu cuenta. Inténtalo nuevamente.";
             if (
               ctx.error?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" ||
               ctx.error?.message?.toLowerCase().includes("already exists")
             ) {
               message =
                 "Ya existe una cuenta con este correo electrónico. Inicia sesión en su lugar.";
-            } else if (ctx.error?.message) {
-              message = ctx.error.message;
             }
             setSubmitError(message);
             toast.error(message);
@@ -271,6 +311,10 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                 )}
               </signInForm.Field>
 
+              <Link href="/forgot-password" className={styles.linkButton}>
+                ¿Olvidaste tu contraseña?
+              </Link>
+
               <signInForm.Field name="acceptTerms">
                 {(field) => (
                   <div className={styles.fieldGroup}>
@@ -317,6 +361,22 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                       ↵
                     </span>
                   </button>
+                )}
+              </signInForm.Subscribe>
+
+              <signInForm.Subscribe>
+                {(state) => (
+                  <div className={styles.socialBlock}>
+                    <span className={styles.socialDivider}>o continúa con</span>
+                    <button
+                      type="button"
+                      className={styles.secondaryActionButton}
+                      disabled={state.isSubmitting || isSessionPending || isSocialPending}
+                      onClick={() => void continueWithGitHub(state.values.acceptTerms)}
+                    >
+                      {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
+                    </button>
+                  </div>
                 )}
               </signInForm.Subscribe>
 
@@ -523,6 +583,22 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                       ↵
                     </span>
                   </button>
+                )}
+              </signUpForm.Subscribe>
+
+              <signUpForm.Subscribe>
+                {(state) => (
+                  <div className={styles.socialBlock}>
+                    <span className={styles.socialDivider}>o continúa con</span>
+                    <button
+                      type="button"
+                      className={styles.secondaryActionButton}
+                      disabled={state.isSubmitting || isSessionPending || isSocialPending}
+                      onClick={() => void continueWithGitHub(state.values.acceptedTerms)}
+                    >
+                      {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
+                    </button>
+                  </div>
                 )}
               </signUpForm.Subscribe>
 
