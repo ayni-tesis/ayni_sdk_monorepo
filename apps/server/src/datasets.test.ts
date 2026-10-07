@@ -4,6 +4,7 @@ import type {
   DatasetDetailResponse,
   DatasetEvidence,
   DatasetItem,
+  DatasetItemFilters,
   DatasetListItem,
   DatasetListResponse,
   DatasetReviewResponse,
@@ -82,6 +83,10 @@ const datasetDetail: DatasetDetailResponse = {
   dataset: datasetListItem,
   items: [datasetItem],
   nextItemOffset: null,
+  filterOptions: {
+    workflows: [{ id: "workflow-1", name: "Inspección" }],
+    models: [{ id: "model-1", name: "Flores v1" }],
+  },
 };
 
 function makeApp({
@@ -96,6 +101,7 @@ function makeApp({
     _applicationId: string,
     _datasetId: string,
     _offset: number,
+    _filters: DatasetItemFilters,
   ): Promise<DatasetDetailResponse | null> => datasetDetail,
   listAvailableEvidence = async (
     _applicationId: string,
@@ -140,6 +146,7 @@ function makeApp({
     applicationId: string,
     datasetId: string,
     offset: number,
+    filters: DatasetItemFilters,
   ) => Promise<DatasetDetailResponse | null>;
   listAvailableEvidence?: (
     applicationId: string,
@@ -211,10 +218,10 @@ describe("application datasets", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(datasetDetail);
-    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1", 0);
+    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1", 0, {});
 
     await app.request("/applications/app-1/datasets/dataset-1?offset=50");
-    expect(getMock).toHaveBeenLastCalledWith("app-1", "dataset-1", 50);
+    expect(getMock).toHaveBeenLastCalledWith("app-1", "dataset-1", 50, {});
 
     const foreign = makeApp({ application: null });
     const hiddenApplication = await foreign.app.request("/applications/app-1/datasets/dataset-1");
@@ -234,7 +241,50 @@ describe("application datasets", () => {
       "/applications/app-1/datasets/dataset-1?offset=invalid",
     );
     expect(invalidPage.status).toBe(400);
+    expect(await invalidPage.json()).toEqual({
+      message: "El desplazamiento de página no es válido.",
+      code: "invalidDatasetPage",
+    });
     expect(invalidOffset.getMock).not.toHaveBeenCalled();
+  });
+
+  it("filters the requested dataset's evidence together with its page (US-083)", async () => {
+    const { app, getMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1?offset=50&status=approved&workflowId=workflow-1&modelId=model-1&capturedFrom=2026-10-01&capturedTo=2026-10-03&minConfidence=0.5&maxConfidence=0.9",
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(datasetDetail);
+    expect(getMock).toHaveBeenCalledWith("app-1", "dataset-1", 50, {
+      status: "approved",
+      workflowId: "workflow-1",
+      modelId: "model-1",
+      capturedFrom: "2026-10-01",
+      capturedTo: "2026-10-03",
+      minConfidence: 0.5,
+      maxConfidence: 0.9,
+    });
+  });
+
+  it("rejects an unknown or invalid filter without reading the dataset", async () => {
+    for (const query of [
+      "label=pino",
+      "status=archived",
+      "minConfidence=2",
+      "capturedFrom=2026-10-03&capturedTo=2026-10-01",
+      "applicationId=app-2",
+    ]) {
+      const { app, getMock } = makeApp({ membershipRole: "member" });
+      const response = await app.request(`/applications/app-1/datasets/dataset-1?${query}`);
+
+      expect(response.status, query).toBe(400);
+      expect(await response.json()).toEqual({
+        message: "No se pudo aplicar uno de los filtros.",
+        code: "invalidDatasetFilter",
+      });
+      expect(getMock).not.toHaveBeenCalled();
+    }
   });
 
   it("lists only an administrator's compatible evidence for an active dataset", async () => {

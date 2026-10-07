@@ -4,12 +4,14 @@ import {
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
   type DatasetExportListResponse,
+  type DatasetItemFilters,
   DatasetLabelRequestSchema,
   type DatasetListResponse,
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
   DatasetTaskTypeSchema,
   parseDatasetAnnotationsRequest,
+  parseDatasetItemsQuery,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
@@ -47,6 +49,7 @@ type Dependencies = {
       applicationId: string,
       datasetId: string,
       offset: number,
+      filters: DatasetItemFilters,
     ) => Promise<DatasetDetailResponse | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
     listExports?: (
@@ -212,19 +215,16 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       session.user.id,
     );
     if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
-    const query = DatasetPageQuerySchema.safeParse({ offset: c.req.query("offset") });
-    if (!query.success) {
-      return c.json(
-        { message: "El desplazamiento de página no es válido.", code: "invalidDatasetPage" },
-        400,
-      );
-    }
+    const query = parseDatasetItemsQuery(c.req.query());
+    if (!query.success) return c.json(query.error, 400);
 
     try {
+      const { offset, ...filters } = query.data;
       const response = await datasets.get(
         application.id,
         c.req.param("datasetId"),
-        query.data.offset,
+        offset,
+        filters,
       );
       if (!response) return c.json({ message: "No encontramos este dataset." }, 404);
       return c.json(response);

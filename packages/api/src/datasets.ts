@@ -117,11 +117,22 @@ export const DatasetItemSchema = z
     ),
   })
   .strict();
+const DatasetFilterOptionSchema = z.object({ id: z.string(), name: z.string() }).strict();
+export const DatasetFilterOptionsSchema = z
+  .object({
+    workflows: z.array(DatasetFilterOptionSchema),
+    models: z.array(DatasetFilterOptionSchema),
+  })
+  .strict()
+  .describe(
+    "Workflows y modelos de todas las evidencias del dataset, sin aplicar filtros, para elegir los filtros Workflow y Modelo.",
+  );
 export const DatasetDetailResponseSchema = z
   .object({
     dataset: DatasetListItemSchema,
     items: z.array(DatasetItemSchema),
     nextItemOffset: z.number().int().nonnegative().nullable(),
+    filterOptions: DatasetFilterOptionsSchema,
   })
   .strict();
 export const DatasetAvailableEvidenceResponseSchema = z
@@ -130,9 +141,59 @@ export const DatasetAvailableEvidenceResponseSchema = z
     nextOffset: z.number().int().nonnegative().nullable(),
   })
   .strict();
-export const DatasetPageQuerySchema = z
-  .object({ offset: z.coerce.number().int().nonnegative().max(1_000_000).default(0) })
-  .strict();
+const pageOffset = z.coerce.number().int().nonnegative().max(1_000_000).default(0);
+export const DatasetPageQuerySchema = z.object({ offset: pageOffset }).strict();
+
+export const DATASET_FILTER_ERROR_MESSAGE = "No se pudo aplicar uno de los filtros.";
+const DATASET_PAGE_ERROR_MESSAGE = "El desplazamiento de página no es válido.";
+const filterIdentifier = z.string().min(1).max(128);
+// A query string read as a number, so the document describes the number it must hold.
+const confidenceFilter = z
+  .string()
+  .trim()
+  .min(1)
+  .transform(Number)
+  .pipe(z.number().min(0).max(1))
+  .meta({ type: "number", minimum: 0, maximum: 1 });
+const CONFIDENCE_DESCRIPTION =
+  "la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza.";
+
+/**
+ * The query of a dataset detail page (US-083): its offset and the filters,
+ * which the server applies to the requested dataset before paginating, so
+ * `nextItemOffset` counts filtered items. Any other parameter is rejected.
+ */
+export const DatasetItemsQuerySchema = z
+  .object({
+    offset: pageOffset,
+    status: DatasetReviewStatusSchema.optional().describe("Estado de revisión de la evidencia."),
+    workflowId: filterIdentifier.optional().describe("Workflow que capturó la evidencia."),
+    modelId: filterIdentifier.optional().describe("Modelo que produjo la predicción original."),
+    capturedFrom: z.iso
+      .date()
+      .optional()
+      .describe("Primer día de captura (AAAA-MM-DD, UTC), incluido."),
+    capturedTo: z.iso
+      .date()
+      .optional()
+      .describe("Último día de captura (AAAA-MM-DD, UTC), incluido."),
+    minConfidence: confidenceFilter
+      .optional()
+      .describe(`Mínimo, incluido, de ${CONFIDENCE_DESCRIPTION}`),
+    maxConfidence: confidenceFilter
+      .optional()
+      .describe(`Máximo, incluido, de ${CONFIDENCE_DESCRIPTION}`),
+  })
+  .strict()
+  .refine(
+    ({ capturedFrom, capturedTo }) => !capturedFrom || !capturedTo || capturedFrom <= capturedTo,
+    { path: ["capturedTo"], error: "The end date must not be before the start date." },
+  )
+  .refine(
+    ({ minConfidence, maxConfidence }) =>
+      minConfidence === undefined || maxConfidence === undefined || minConfidence <= maxConfidence,
+    { path: ["maxConfidence"], error: "The minimum confidence must not exceed the maximum." },
+  );
 export const DatasetAddEvidenceRequestSchema = z
   .object({ evidenceIds: z.array(z.string().min(1)).min(1).max(500) })
   .strict();
@@ -190,6 +251,9 @@ export type DatasetListResponse = z.infer<typeof DatasetListResponseSchema>;
 export type DatasetItem = z.infer<typeof DatasetItemSchema>;
 export type DatasetEvidence = z.infer<typeof DatasetEvidenceSchema>;
 export type DatasetDetailResponse = z.infer<typeof DatasetDetailResponseSchema>;
+export type DatasetFilterOptions = z.infer<typeof DatasetFilterOptionsSchema>;
+export type DatasetItemsQuery = z.infer<typeof DatasetItemsQuerySchema>;
+export type DatasetItemFilters = Omit<DatasetItemsQuery, "offset">;
 export type DatasetAvailableEvidenceResponse = z.infer<
   typeof DatasetAvailableEvidenceResponseSchema
 >;
@@ -226,6 +290,30 @@ export function parseDatasetAnnotationsRequest(
   return { success: false, error: { code, message: DATASET_ANNOTATIONS_ERRORS[code] } };
 }
 
+/**
+ * Parses the query of a dataset detail page (US-083). A bad offset alone keeps
+ * its own error; any unknown or invalid filter returns the one filter error,
+ * so the server and the dashboard report the same message.
+ */
+export function parseDatasetItemsQuery(query: Record<string, string>):
+  | { success: true; data: DatasetItemsQuery }
+  | {
+      success: false;
+      error: { code: "invalidDatasetPage" | "invalidDatasetFilter"; message: string };
+    } {
+  const parsed = DatasetItemsQuerySchema.safeParse(query);
+  if (parsed.success) return parsed;
+  return parsed.error.issues.every((issue) => issue.path[0] === "offset")
+    ? {
+        success: false,
+        error: { code: "invalidDatasetPage", message: DATASET_PAGE_ERROR_MESSAGE },
+      }
+    : {
+        success: false,
+        error: { code: "invalidDatasetFilter", message: DATASET_FILTER_ERROR_MESSAGE },
+      };
+}
+
 function errorResponse(description: string) {
   return {
     description,
@@ -247,14 +335,15 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     tags: ["Datasets"],
     operationId: "obtener-detalle-dataset",
     summary: "Consultar el detalle de un dataset",
-    description: "Cualquier miembro del workspace puede consultar un dataset de la aplicación.",
+    description:
+      "Cualquier miembro del workspace puede consultar un dataset de la aplicación. Los filtros se combinan entre sí, se aplican solo a las evidencias de este dataset y antes de paginar, así que nextItemOffset cuenta evidencias filtradas.",
     security: [{ [userSession.name]: [] }],
     request: {
       params: z.object({
         applicationId: z.string().openapi({ example: "app-123" }),
         datasetId: z.string().openapi({ example: "dataset-123" }),
       }),
-      query: DatasetPageQuerySchema,
+      query: DatasetItemsQuerySchema,
     },
     responses: {
       "200": {
@@ -262,7 +351,9 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
         content: { "application/json": { schema: DatasetDetailResponseSchema } },
       },
       "401": errorResponse("La sesión no está autenticada."),
-      "400": errorResponse("El desplazamiento de página no es válido."),
+      "400": errorResponse(
+        `El desplazamiento de página no es válido (invalidDatasetPage), o un parámetro es desconocido o un filtro es inválido: «${DATASET_FILTER_ERROR_MESSAGE}» (invalidDatasetFilter), sin devolver evidencias.`,
+      ),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos cargar el dataset."),
     },
