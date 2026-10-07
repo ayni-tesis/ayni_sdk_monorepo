@@ -4238,7 +4238,7 @@
             }
           },
           "400": {
-            "description": "Ingresa una etiqueta para una evidencia aprobada.",
+            "description": "Ingresa una etiqueta para una evidencia aprobada (etiqueta vacía) o la etiqueta revisada no es válida (más de 160 caracteres).",
             "content": {
               "application/json": {
                 "schema": {

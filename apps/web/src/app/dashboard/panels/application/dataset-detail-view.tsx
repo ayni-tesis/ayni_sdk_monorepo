@@ -742,6 +742,10 @@ function ReviewedLabelPanel({
   const [error, setError] = useState("");
   const suggestions = predictedLabels(item.originalResult);
 
+  useEffect(() => {
+    setLabel(item.reviewedLabel ?? "");
+  }, [item.reviewedLabel]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) return;

@@ -260,7 +260,7 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
         session.user.id,
       );
       if (!application) {
-        return c.json({ message: "No encontramos esta evidencia del dataset." }, 404);
+        return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE }, 404);
       }
 
       const body: unknown = await c.req.json().catch(() => null);
@@ -281,10 +281,7 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       });
       if (result.ok) return c.json(result.value);
       if (result.reason === "notFound") {
-        return c.json(
-          { message: "No encontramos esta evidencia del dataset.", code: "notFound" },
-          404,
-        );
+        return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
       }
       return c.json(
         {

@@ -315,7 +315,9 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
         description: "Etiqueta revisada guardada.",
         content: { "application/json": { schema: DatasetLabelResponseSchema } },
       },
-      "400": errorResponse("Ingresa una etiqueta para una evidencia aprobada."),
+      "400": errorResponse(
+        "Ingresa una etiqueta para una evidencia aprobada (etiqueta vacía) o la etiqueta revisada no es válida (más de 160 caracteres).",
+      ),
       "401": errorResponse("La sesión no está autenticada."),
       "404": errorResponse("No encontramos esta evidencia del dataset."),
       "409": errorResponse("Esta evidencia no es de clasificación."),

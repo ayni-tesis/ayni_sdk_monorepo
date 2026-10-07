@@ -609,12 +609,13 @@ export async function saveDatasetItemLabel(
             ),
           )
           .where(itemCondition)
-          .limit(1)
-          .for("update")) as { id: string; taskType: DatasetTaskType }[];
+          .limit(1)) as { id: string; taskType: DatasetTaskType }[];
         const item = items[0];
         if (!item) return "notFound" as const;
         if (item.taskType !== "classification") return "notClassification" as const;
 
+        // The task type never changes, so no lock is needed: an item removed
+        // meanwhile simply updates no row.
         const reviewedLabel = input.label.trim();
         const updated = await tx
           .update(datasetItem)
