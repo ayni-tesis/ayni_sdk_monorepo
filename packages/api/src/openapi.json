@@ -3171,8 +3171,9 @@
           },
           {
             "schema": {
-              "type": "string",
-              "minLength": 1,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
               "description": "Mínimo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza."
             },
             "required": false,
@@ -3182,8 +3183,9 @@
           },
           {
             "schema": {
-              "type": "string",
-              "minLength": 1,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
               "description": "Máximo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza."
             },
             "required": false,

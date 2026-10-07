@@ -1108,6 +1108,100 @@ describe("DatasetDetailView", () => {
       );
     });
 
+    const secondApprovedItem = {
+      ...approvedItem,
+      id: "item-4",
+      evidenceId: "evidence-4",
+      originalResult: { type: "classification", label: "ciprés", confidence: 0.8 },
+    };
+
+    /** Clicks the button with this name in the first item, the one the review flow acts on. */
+    async function clickFirst(user: ReturnType<typeof userEvent.setup>, name: string) {
+      const [button] = screen.getAllByRole("button", { name });
+      if (!button) throw new Error(`Expected a "${name}" button`);
+      await user.click(button);
+    }
+
+    function mockFilteredApprovedPages() {
+      getMock.mockImplementation(
+        async (_url: string, options?: { params?: Record<string, unknown> }) => {
+          if (!options?.params?.status) {
+            return { data: { dataset, items: [item], nextItemOffset: null, filterOptions } };
+          }
+          return options.params.offset === undefined
+            ? {
+                data: {
+                  dataset,
+                  items: [approvedItem, secondApprovedItem],
+                  nextItemOffset: 2,
+                  filterOptions,
+                },
+              }
+            : {
+                data: { dataset, items: [laterApprovedItem], nextItemOffset: null, filterOptions },
+              };
+        },
+      );
+      patchMock.mockImplementation(async (_url: string, body: { status: string }) => ({
+        data: {
+          status: body.status,
+          reviewerName: "Diego",
+          reviewedAt: "2026-10-04T00:00:00.000Z",
+          reason: null,
+        },
+      }));
+    }
+
+    async function filterApprovedAndReject(user: ReturnType<typeof userEvent.setup>) {
+      await screen.findByText("Predicción original: pino (90%)");
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Aprobada");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+      await screen.findByText("Predicción original: cedro (70%)");
+      await clickFirst(user, "Rechazar");
+      await user.click(screen.getByRole("button", { name: "Rechazar evidencia" }));
+      expect(await screen.findByText("Evidencia rechazada.")).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(document.body).not.toHaveAttribute("data-scroll-locked"), {
+        timeout: 4_000,
+      });
+    }
+
+    it("counts an item again when a later review brings it back into the status filter", async () => {
+      mockFilteredApprovedPages();
+      const user = userEvent.setup();
+      renderDetail();
+      await filterApprovedAndReject(user);
+
+      await clickFirst(user, "Aprobar");
+      expect(await screen.findByText("Evidencia aprobada.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+      expect(screen.getAllByText("Predicción original: cedro (70%)")).toHaveLength(1);
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "approved", offset: 2 } }),
+      );
+    });
+
+    it("does not move the page back twice when retiring an item that already left the filter", async () => {
+      mockFilteredApprovedPages();
+      const user = userEvent.setup();
+      renderManagedDetail();
+      await filterApprovedAndReject(user);
+
+      await clickFirst(user, "Retirar del dataset");
+      await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+      expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "approved", offset: 1 } }),
+      );
+    });
+
     it("does not load another page of the previous filters while new filters load", async () => {
       getMock
         .mockResolvedValueOnce({

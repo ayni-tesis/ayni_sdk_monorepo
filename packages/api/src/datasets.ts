@@ -147,7 +147,14 @@ export const DatasetPageQuerySchema = z.object({ offset: pageOffset }).strict();
 export const DATASET_FILTER_ERROR_MESSAGE = "No se pudo aplicar uno de los filtros.";
 const DATASET_PAGE_ERROR_MESSAGE = "El desplazamiento de página no es válido.";
 const filterIdentifier = z.string().min(1).max(128);
-const confidenceFilter = z.string().trim().min(1).transform(Number).pipe(z.number().min(0).max(1));
+// A query string read as a number, so the document describes the number it must hold.
+const confidenceFilter = z
+  .string()
+  .trim()
+  .min(1)
+  .transform(Number)
+  .pipe(z.number().min(0).max(1))
+  .meta({ type: "number", minimum: 0, maximum: 1 });
 const CONFIDENCE_DESCRIPTION =
   "la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza.";
 

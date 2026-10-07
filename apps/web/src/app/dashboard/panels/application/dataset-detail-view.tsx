@@ -268,11 +268,14 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
     );
     retiredEvidenceIdsRef.current.add(itemId);
+    const filters = appliedFiltersRef.current;
     setDetail((current) => {
       if (!current) return current;
       const items = current.items.filter((item) => item.id !== itemId);
       if (items.length === current.items.length) return current;
       const removed = current.items.find((item) => item.id === itemId);
+      // Only an item the server still counts in the filtered pages moves them back.
+      const offsetChange = removed && countsInFilteredPages(removed.reviewStatus, filters) ? -1 : 0;
       return {
         ...current,
         dataset: {
@@ -284,8 +287,7 @@ export function DatasetDetailView({
           ),
         },
         items,
-        nextItemOffset:
-          current.nextItemOffset === null ? null : Math.max(0, current.nextItemOffset - 1),
+        nextItemOffset: shiftItemOffset(current.nextItemOffset, offsetChange),
       };
     });
     setNotice("Evidencia retirada del dataset.");
@@ -297,25 +299,22 @@ export function DatasetDetailView({
       { status, ...(reason ? { reason } : {}) },
     );
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
-    const statusFilter = appliedFiltersRef.current.status;
+    const filters = appliedFiltersRef.current;
     setDetail((current) => {
       if (!current) return current;
       const oldItem = current.items.find((item) => item.id === itemId);
       const countChange = oldItem
         ? Number(data.status === "approved") - Number(oldItem.reviewStatus === "approved")
         : 0;
-      // An item that leaves the status filter shifts the later filtered pages back by one.
-      const leftFilter =
-        oldItem !== undefined &&
-        statusFilter !== undefined &&
-        oldItem.reviewStatus === statusFilter &&
-        data.status !== statusFilter;
+      // An item leaving the status filter moves the later filtered pages back by one, and one
+      // coming back into it moves them forward again.
+      const offsetChange = oldItem
+        ? Number(countsInFilteredPages(data.status, filters)) -
+          Number(countsInFilteredPages(oldItem.reviewStatus, filters))
+        : 0;
       return {
         ...current,
-        nextItemOffset:
-          leftFilter && current.nextItemOffset !== null
-            ? Math.max(0, current.nextItemOffset - 1)
-            : current.nextItemOffset,
+        nextItemOffset: shiftItemOffset(current.nextItemOffset, offsetChange),
         dataset: {
           ...current.dataset,
           approvedCount: Math.max(0, current.dataset.approvedCount + countChange),
@@ -631,6 +630,22 @@ export function DatasetDetailView({
       </Tabs>
     </section>
   );
+}
+
+/**
+ * Whether the server counts a loaded item with this review status in the
+ * filtered pages, and so in `nextItemOffset`. Only the status filter can change
+ * after loading: the other filters read data a review never touches.
+ */
+function countsInFilteredPages(
+  status: DatasetDetailResponse["items"][number]["reviewStatus"],
+  filters: DatasetItemFilters,
+) {
+  return filters.status === undefined || status === filters.status;
+}
+
+function shiftItemOffset(offset: number | null, change: number) {
+  return offset === null ? null : Math.max(0, offset + change);
 }
 
 type FilterDraft = {

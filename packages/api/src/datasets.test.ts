@@ -187,8 +187,12 @@ describe("dataset creation contract", () => {
       "minConfidence",
       "maxConfidence",
     ]);
-    const minConfidence = parameters.find((parameter) => parameter.name === "minConfidence");
-    expect(JSON.stringify(minConfidence)).toContain("detección");
+    for (const name of ["minConfidence", "maxConfidence"]) {
+      const confidence = parameters.find((parameter) => parameter.name === name);
+      expect(JSON.stringify(confidence)).toContain("detección");
+      expect(confidence?.schema).toMatchObject({ type: "number", minimum: 0, maximum: 1 });
+      expect(confidence?.schema).not.toHaveProperty("minLength");
+    }
     expect(JSON.stringify(operation?.responses?.["400"])).toContain(
       "No se pudo aplicar uno de los filtros.",
     );
