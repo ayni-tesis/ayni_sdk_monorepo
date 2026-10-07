@@ -639,6 +639,9 @@ export function DatasetDetailView({
                         Clasificación (imágenes + CSV)
                       </DialogDescription>
                     </DialogHeader>
+                    <p className="text-muted-foreground text-sm">
+                      Tamaño total máximo de imágenes: 128 MiB.
+                    </p>
                     <dl className="rounded-md border p-3 text-sm">
                       <div className="flex justify-between gap-4">
                         <dt className="text-muted-foreground">Ítems aprobados</dt>

@@ -24,7 +24,7 @@ export const r2EvidenceStorage: EvidenceStorage = {
     return (await getFileMetadata(key))?.contentLength ?? null;
   },
   async read(key) {
-    return new Uint8Array(await downloadFileAsBuffer(key));
+    return downloadFileAsBuffer(key);
   },
   async write(key, bytes) {
     await uploadFile(key, bytes, { contentType: EVIDENCE_IMAGE_MEDIA_TYPE });

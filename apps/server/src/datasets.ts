@@ -177,6 +177,25 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
         409,
       );
     }
+    if (result.reason === "unsafeLabel") {
+      return c.json(
+        {
+          message:
+            "Una etiqueta revisada puede interpretarse como fórmula. Corrígela antes de exportar.",
+          code: "datasetExportFormulaLabel",
+        },
+        409,
+      );
+    }
+    if (result.reason === "tooLarge") {
+      return c.json(
+        {
+          message: "El tamaño total de las imágenes supera el límite de exportación de 128 MiB.",
+          code: "datasetExportTooLarge",
+        },
+        413,
+      );
+    }
     return c.json(
       { message: "No pudimos generar la exportación del dataset.", code: "datasetExportFailed" },
       500,

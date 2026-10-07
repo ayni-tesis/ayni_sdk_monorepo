@@ -3688,7 +3688,27 @@
             }
           },
           "409": {
-            "description": "El dataset no se puede exportar en su estado actual.",
+            "description": "El dataset no se puede exportar: la aplicación está archivada, faltan evidencias aprobadas o etiquetas revisadas, el tipo de tarea no es clasificación o una etiqueta puede interpretarse como fórmula.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "El tamaño total de las imágenes supera el límite de exportación de 128 MiB.",
             "content": {
               "application/json": {
                 "schema": {

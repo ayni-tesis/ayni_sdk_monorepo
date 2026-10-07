@@ -10,6 +10,8 @@ import { logger } from "./lib/logger";
 import { deleteFile, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
+const MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
+
 type DatasetExportQuery = Promise<Record<string, unknown>[]> & {
   innerJoin: (table: unknown, condition: unknown) => DatasetExportQuery;
   where: (condition: unknown) => DatasetExportQuery;
@@ -47,6 +49,7 @@ type ExportItem = {
   id: string;
   reviewedLabel: string | null;
   imageMediaType: string;
+  imageByteSize: number;
   storageKey: string;
 };
 
@@ -115,6 +118,8 @@ export type CreateDatasetExportResult =
         | "notClassification"
         | "noApprovedItems"
         | "missingLabel"
+        | "unsafeLabel"
+        | "tooLarge"
         | "failed";
     };
 
@@ -149,6 +154,7 @@ export async function createDatasetExport(
             id: datasetItem.id,
             reviewedLabel: datasetItem.reviewedLabel,
             imageMediaType: sdkEvidence.imageMediaType,
+            imageByteSize: sdkEvidence.imageByteSize,
             storageKey: sdkEvidence.storageKey,
           })
           .from(datasetItem)
@@ -172,6 +178,16 @@ export async function createDatasetExport(
         if (items.some(({ reviewedLabel }) => !reviewedLabel?.trim())) {
           return { kind: "error", reason: "missingLabel" } as const;
         }
+        if (items.some(({ reviewedLabel }) => /^[\s]*[=+@-]/u.test(reviewedLabel ?? ""))) {
+          return { kind: "error", reason: "unsafeLabel" } as const;
+        }
+        let imageBytes = 0;
+        for (const item of items) {
+          imageBytes += item.imageByteSize;
+          if (imageBytes > MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES) {
+            return { kind: "error", reason: "tooLarge" } as const;
+          }
+        }
         return { kind: "ready", items } as const;
       },
     );
@@ -192,7 +208,7 @@ export async function createDatasetExport(
       csvRows.push(`"${filename}","${label}"`);
     }
     files["labels.csv"] = new TextEncoder().encode(`${csvRows.join("\r\n")}\r\n`);
-    // ponytail: builds the ZIP in memory; use streaming and multipart upload when export size outgrows server memory.
+    // ponytail: caps image input at 128 MiB; use streaming ZIP upload when larger exports are needed.
     const artifact = zipSync(files, { level: 0 });
     const exportId = randomUUID();
     const artifactKey = `applications/${input.applicationId}/datasets/${input.datasetId}/exports/${exportId}.zip`;

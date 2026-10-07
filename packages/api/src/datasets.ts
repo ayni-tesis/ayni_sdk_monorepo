@@ -316,7 +316,12 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para exportar este dataset."),
       "404": errorResponse("No encontramos este dataset."),
-      "409": errorResponse("El dataset no se puede exportar en su estado actual."),
+      "409": errorResponse(
+        "El dataset no se puede exportar: la aplicación está archivada, faltan evidencias aprobadas o etiquetas revisadas, el tipo de tarea no es clasificación o una etiqueta puede interpretarse como fórmula.",
+      ),
+      "413": errorResponse(
+        "El tamaño total de las imágenes supera el límite de exportación de 128 MiB.",
+      ),
       "500": errorResponse("No pudimos generar la exportación del dataset."),
     },
   });
