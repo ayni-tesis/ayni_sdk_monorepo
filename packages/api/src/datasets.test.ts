@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DatasetAddEvidenceRequestSchema,
+  DatasetAnnotationsResponseSchema,
   DatasetAvailableEvidenceResponseSchema,
   DatasetCreateRequestSchema,
   DatasetDetailResponseSchema,
@@ -11,6 +12,7 @@ import {
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
   DatasetReviewResponseSchema,
+  parseDatasetAnnotationsRequest,
 } from "./datasets";
 import { createOpenApiDocument } from "./index";
 
@@ -151,6 +153,7 @@ describe("dataset creation contract", () => {
       reviewedAt: "2026-10-03T00:00:00.000Z",
       reviewReason: "Imagen borrosa",
       reviewedLabel: null,
+      reviewedAnnotations: null,
     };
     expect(DatasetItemSchema.safeParse(item).success).toBe(true);
     expect(
@@ -193,6 +196,7 @@ describe("dataset creation contract", () => {
       reviewedAt: "2026-10-03T00:00:00.000Z",
       reviewReason: null,
       reviewedLabel: "cedro",
+      reviewedAnnotations: null,
     };
     expect(DatasetItemSchema.safeParse(item).success).toBe(true);
     expect(DatasetItemSchema.safeParse({ ...item, reviewedLabel: null }).success).toBe(true);
@@ -205,6 +209,149 @@ describe("dataset creation contract", () => {
     const operation =
       createOpenApiDocument().paths?.[
         "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/label"
+      ]?.put;
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["400"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
+    expect(operation?.responses?.["409"]).toBeDefined();
+  });
+
+  it("keeps reviewed detection annotations, in image-relative coordinates, apart from the prediction", () => {
+    const annotation = { label: "gato", box: { xMin: 0, yMin: 0.25, xMax: 1, yMax: 0.75 } };
+    const item = {
+      id: "item-1",
+      evidenceId: "evidence-1",
+      modelId: "model-1",
+      modelVersion: "1.0.0",
+      taskType: "detection",
+      originalResult: {
+        type: "detection",
+        detections: [
+          { label: "perro", confidence: 0.8, box: { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 } },
+        ],
+      },
+      capturedAt: "2026-10-01T00:00:00.000Z",
+      addedAt: "2026-10-02T00:00:00.000Z",
+      imageUrl: "https://evidence.example/image",
+      imageWidth: 640,
+      imageHeight: 480,
+      reviewStatus: "pending",
+      reviewerName: null,
+      reviewedAt: null,
+      reviewReason: null,
+      reviewedLabel: null,
+      reviewedAnnotations: [annotation],
+    };
+    expect(DatasetItemSchema.safeParse(item).success).toBe(true);
+    expect(DatasetItemSchema.safeParse({ ...item, reviewedAnnotations: null }).success).toBe(true);
+    expect(DatasetItemSchema.safeParse({ ...item, reviewedAnnotations: undefined }).success).toBe(
+      false,
+    );
+    expect(
+      DatasetAnnotationsResponseSchema.safeParse({ reviewedAnnotations: [annotation] }).success,
+    ).toBe(true);
+
+    expect(
+      parseDatasetAnnotationsRequest({
+        annotations: [{ label: "  gato ", box: annotation.box }],
+      }),
+    ).toEqual({ success: true, data: { annotations: [annotation] } });
+    // Removing every box records that the image shows no object.
+    expect(parseDatasetAnnotationsRequest({ annotations: [] })).toEqual({
+      success: true,
+      data: { annotations: [] },
+    });
+  });
+
+  it.each([
+    [
+      "a box past the right edge",
+      [{ label: "gato", box: { xMin: 0.5, yMin: 0, xMax: 1.01, yMax: 1 } }],
+      "boxOutOfBounds",
+      "La caja debe permanecer dentro de la imagen.",
+    ],
+    [
+      "a box above the top edge",
+      [{ label: "gato", box: { xMin: 0, yMin: -0.1, xMax: 1, yMax: 1 } }],
+      "boxOutOfBounds",
+      "La caja debe permanecer dentro de la imagen.",
+    ],
+    [
+      "a box out of bounds next to a blank label",
+      [
+        { label: " ", box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 } },
+        { label: "gato", box: { xMin: 0, yMin: 0, xMax: 2, yMax: 1 } },
+      ],
+      "boxOutOfBounds",
+      "La caja debe permanecer dentro de la imagen.",
+    ],
+    [
+      "a box without width",
+      [{ label: "gato", box: { xMin: 0.5, yMin: 0, xMax: 0.5, yMax: 1 } }],
+      "emptyBox",
+      "La caja debe tener ancho y alto.",
+    ],
+    [
+      "an inverted box",
+      [{ label: "gato", box: { xMin: 0, yMin: 0.8, xMax: 1, yMax: 0.2 } }],
+      "emptyBox",
+      "La caja debe tener ancho y alto.",
+    ],
+    [
+      "a blank label",
+      [{ label: "  ", box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 } }],
+      "labelRequired",
+      "Ingresa una etiqueta para cada caja.",
+    ],
+    [
+      "a missing label",
+      [{ box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 } }],
+      "labelRequired",
+      "Ingresa una etiqueta para cada caja.",
+    ],
+    [
+      "a label longer than 160 characters",
+      [{ label: "a".repeat(161), box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 } }],
+      "invalidAnnotations",
+      "Las anotaciones revisadas no son válidas.",
+    ],
+    [
+      "a box missing a coordinate",
+      [{ label: "gato", box: { xMin: 0, yMin: 0, xMax: 1 } }],
+      "invalidAnnotations",
+      "Las anotaciones revisadas no son válidas.",
+    ],
+    [
+      "more than 100 boxes",
+      Array.from({ length: 101 }, () => ({
+        label: "gato",
+        box: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 },
+      })),
+      "invalidAnnotations",
+      "Las anotaciones revisadas no son válidas.",
+    ],
+  ])("rejects %s with a specific error", (_case, annotations, code, message) => {
+    expect(parseDatasetAnnotationsRequest({ annotations })).toEqual({
+      success: false,
+      error: { code, message },
+    });
+  });
+
+  it("rejects bodies without an annotation list and documents the annotations route", () => {
+    const invalid = {
+      code: "invalidAnnotations",
+      message: "Las anotaciones revisadas no son válidas.",
+    };
+    expect(parseDatasetAnnotationsRequest(null)).toEqual({ success: false, error: invalid });
+    expect(parseDatasetAnnotationsRequest({})).toEqual({ success: false, error: invalid });
+    expect(parseDatasetAnnotationsRequest({ annotations: [], extra: true })).toEqual({
+      success: false,
+      error: invalid,
+    });
+
+    const operation =
+      createOpenApiDocument().paths?.[
+        "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/annotations"
       ]?.put;
     expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["400"]).toBeDefined();

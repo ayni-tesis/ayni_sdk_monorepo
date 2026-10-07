@@ -34,6 +34,17 @@ export const datasetItem = pgTable(
      * untouched in `originalResult`. Null until someone assigns it.
      */
     reviewedLabel: text("reviewed_label"),
+    /**
+     * The detection boxes a person reviewed (US-082), each `{ label, box }` with
+     * `box` as `{ xMin, yMin, xMax, yMax }` relative to the evidence image's width
+     * and height (0 to 1), as in the SDK's prediction. Validation and exports
+     * read them instead of `originalResult`, which stays untouched. Null until
+     * someone saves them; an empty array means the image shows no object.
+     */
+    reviewedAnnotations:
+      jsonb("reviewed_annotations").$type<
+        { label: string; box: { xMin: number; yMin: number; xMax: number; yMax: number } }[]
+      >(),
   },
   (table) => [
     foreignKey({
@@ -71,6 +82,10 @@ export const datasetItem = pgTable(
     check(
       "dataset_item_reviewed_label_check",
       sql`${table.reviewedLabel} is null or char_length(btrim(${table.reviewedLabel})) between 1 and 160`,
+    ),
+    check(
+      "dataset_item_reviewed_annotations_check",
+      sql`${table.reviewedAnnotations} is null or jsonb_typeof(${table.reviewedAnnotations}) = 'array'`,
     ),
   ],
 );

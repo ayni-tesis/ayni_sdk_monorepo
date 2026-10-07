@@ -39,6 +39,7 @@ import {
   listDatasets,
   removeDatasetEvidence,
   reviewDatasetEvidence,
+  saveDatasetItemAnnotations,
   saveDatasetItemLabel,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
@@ -286,6 +287,9 @@ const datasets = {
   },
   saveLabel(input: Parameters<typeof saveDatasetItemLabel>[1]) {
     return saveDatasetItemLabel(db, input);
+  },
+  saveAnnotations(input: Parameters<typeof saveDatasetItemAnnotations>[1]) {
+    return saveDatasetItemAnnotations(db, input);
   },
 };
 

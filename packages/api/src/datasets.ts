@@ -40,6 +40,54 @@ export const DatasetEvidenceSchema = z
   })
   .strict();
 export const DatasetReviewStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export const DATASET_LABEL_MAX_LENGTH = 160;
+/** The most boxes a reviewed detection may hold. */
+export const DATASET_ANNOTATIONS_MAX = 100;
+
+/**
+ * The errors of a reviewed detection, by priority: an out-of-bounds box comes
+ * first, because it is the one a person can make by dragging past the image.
+ */
+export const DATASET_ANNOTATIONS_ERRORS = {
+  boxOutOfBounds: "La caja debe permanecer dentro de la imagen.",
+  emptyBox: "La caja debe tener ancho y alto.",
+  labelRequired: "Ingresa una etiqueta para cada caja.",
+  invalidAnnotations: "Las anotaciones revisadas no son válidas.",
+} as const;
+export type DatasetAnnotationsErrorCode = keyof typeof DATASET_ANNOTATIONS_ERRORS;
+
+const boxCoordinate = z
+  .number()
+  .min(0, DATASET_ANNOTATIONS_ERRORS.boxOutOfBounds)
+  .max(1, DATASET_ANNOTATIONS_ERRORS.boxOutOfBounds);
+/**
+ * A box in the convention of the SDK's detection results (`originalResult`):
+ * its edges relative to the image width (`x`) and height (`y`), from `0` (left
+ * or top) to `1` (right or bottom). Pixels are `x * imageWidth` and
+ * `y * imageHeight` of the item's image.
+ */
+export const DatasetBoxSchema = z
+  .object({
+    xMin: boxCoordinate.describe("Borde izquierdo, relativo al ancho de la imagen (0 a 1)."),
+    yMin: boxCoordinate.describe("Borde superior, relativo al alto de la imagen (0 a 1)."),
+    xMax: boxCoordinate.describe("Borde derecho, relativo al ancho de la imagen (0 a 1)."),
+    yMax: boxCoordinate.describe("Borde inferior, relativo al alto de la imagen (0 a 1)."),
+  })
+  .strict()
+  .refine(({ xMin, yMin, xMax, yMax }) => xMin < xMax && yMin < yMax, {
+    message: DATASET_ANNOTATIONS_ERRORS.emptyBox,
+  });
+export const DatasetAnnotationSchema = z
+  .object({
+    label: z
+      .string(DATASET_ANNOTATIONS_ERRORS.labelRequired)
+      .trim()
+      .min(1, DATASET_ANNOTATIONS_ERRORS.labelRequired)
+      .max(DATASET_LABEL_MAX_LENGTH, DATASET_ANNOTATIONS_ERRORS.invalidAnnotations),
+    box: DatasetBoxSchema,
+  })
+  .strict();
+const DatasetAnnotationsSchema = z.array(DatasetAnnotationSchema).max(DATASET_ANNOTATIONS_MAX);
 export const DatasetItemSchema = z
   .object({
     id: z.string(),
@@ -63,6 +111,9 @@ export const DatasetItemSchema = z
       .describe(
         "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult.",
       ),
+    reviewedAnnotations: DatasetAnnotationsSchema.nullable().describe(
+      "Cajas de detección revisadas por una persona, con coordenadas relativas a imageWidth e imageHeight (0 a 1); null mientras nadie las guarda y [] si la imagen no muestra objetos. Nunca reemplazan originalResult.",
+    ),
   })
   .strict();
 export const DatasetDetailResponseSchema = z
@@ -98,11 +149,16 @@ export const DatasetReviewResponseSchema = z
     reason: z.string().nullable(),
   })
   .strict();
-export const DATASET_LABEL_MAX_LENGTH = 160;
 export const DatasetLabelRequestSchema = z
   .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
   .strict();
 export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
+export const DatasetAnnotationsRequestSchema = z
+  .object({ annotations: DatasetAnnotationsSchema })
+  .strict();
+export const DatasetAnnotationsResponseSchema = z
+  .object({ reviewedAnnotations: DatasetAnnotationsSchema })
+  .strict();
 export const DatasetAddEvidenceResponseSchema = z
   .object({ items: z.array(DatasetItemSchema) })
   .strict();
@@ -126,6 +182,29 @@ export type DatasetReviewRequest = z.infer<typeof DatasetReviewRequestSchema>;
 export type DatasetReviewResponse = z.infer<typeof DatasetReviewResponseSchema>;
 export type DatasetLabelRequest = z.infer<typeof DatasetLabelRequestSchema>;
 export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
+export type DatasetBox = z.infer<typeof DatasetBoxSchema>;
+export type DatasetAnnotation = z.infer<typeof DatasetAnnotationSchema>;
+export type DatasetAnnotationsRequest = z.infer<typeof DatasetAnnotationsRequestSchema>;
+export type DatasetAnnotationsResponse = z.infer<typeof DatasetAnnotationsResponseSchema>;
+
+/**
+ * Parses the body of a reviewed detection (US-082), naming its most relevant
+ * error so the server and the dashboard report the same message.
+ */
+export function parseDatasetAnnotationsRequest(
+  body: unknown,
+):
+  | { success: true; data: DatasetAnnotationsRequest }
+  | { success: false; error: { code: DatasetAnnotationsErrorCode; message: string } } {
+  const parsed = DatasetAnnotationsRequestSchema.safeParse(body);
+  if (parsed.success) return parsed;
+  const messages = new Set(parsed.error.issues.map((issue) => issue.message));
+  const code =
+    (Object.keys(DATASET_ANNOTATIONS_ERRORS) as DatasetAnnotationsErrorCode[]).find((candidate) =>
+      messages.has(DATASET_ANNOTATIONS_ERRORS[candidate]),
+    ) ?? "invalidAnnotations";
+  return { success: false, error: { code, message: DATASET_ANNOTATIONS_ERRORS[code] } };
+}
 
 function errorResponse(description: string) {
   return {
@@ -322,6 +401,41 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos esta evidencia del dataset."),
       "409": errorResponse("Esta evidencia no es de clasificación."),
       "500": errorResponse("No pudimos guardar la etiqueta revisada."),
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/annotations",
+    tags: ["Datasets"],
+    operationId: "corregir-anotaciones-deteccion-dataset",
+    summary: "Corregir las anotaciones de detección de una evidencia",
+    description:
+      "Cualquier miembro del workspace puede reemplazar las cajas revisadas de una evidencia de detección. Cada caja lleva una etiqueta y sus bordes relativos al ancho y alto de la imagen (0 a 1). Una lista vacía indica que la imagen no muestra objetos. La predicción original no cambia.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        itemId: z.string().openapi({ example: "item-123" }),
+      }),
+      body: {
+        required: true,
+        content: { "application/json": { schema: DatasetAnnotationsRequestSchema } },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Anotaciones revisadas guardadas.",
+        content: { "application/json": { schema: DatasetAnnotationsResponseSchema } },
+      },
+      "400": errorResponse(
+        `La caja debe permanecer dentro de la imagen (boxOutOfBounds), la caja debe tener ancho y alto (emptyBox), falta una etiqueta (labelRequired) o las anotaciones no son válidas (invalidAnnotations: etiqueta de más de ${DATASET_LABEL_MAX_LENGTH} caracteres o más de ${DATASET_ANNOTATIONS_MAX} cajas).`,
+      ),
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos esta evidencia del dataset."),
+      "409": errorResponse("Esta evidencia no es de detección."),
+      "500": errorResponse("No pudimos guardar las anotaciones revisadas."),
     },
   });
 
