@@ -83,6 +83,10 @@ describe("account authentication guards", () => {
     });
   });
 
+  it("uses the web origin as the Better Auth base URL", () => {
+    expect(auth.options.baseURL).toBe("http://localhost:3001");
+  });
+
   it("rejects custom GitHub scopes that could request repository access", async () => {
     const response = await post("/sign-in/social", {
       provider: "github",

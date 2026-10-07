@@ -95,6 +95,7 @@ const socialProviders =
     : undefined;
 
 export const auth = betterAuth({
+  baseURL: env.CORS_ORIGIN,
   database: drizzleAdapter(db, {
     provider: "pg",
 

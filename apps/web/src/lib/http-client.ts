@@ -3,7 +3,9 @@ import axios from "axios";
 
 const serverBaseURL = env.NEXT_PUBLIC_SERVER_URL;
 
-export function createHttpClient(baseURL = serverBaseURL) {
+export function createHttpClient(
+  baseURL = typeof window === "undefined" ? serverBaseURL : window.location.origin,
+) {
   return axios.create({
     baseURL,
     headers: { "Content-Type": "application/json" },
