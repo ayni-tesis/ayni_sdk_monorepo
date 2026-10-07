@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Application } from "../types";
 import { WorkspaceHeader } from "./workspace-header";
 
-const { pushMock, signOutMock, useSessionMock } = vi.hoisted(() => {
+const { pushMock, signOutMock, toastErrorMock, useSessionMock } = vi.hoisted(() => {
   const sessionRef = {
     data: { user: { name: "Diego sesión", email: "diego@example.test" } },
     isPending: false,
@@ -14,11 +14,13 @@ const { pushMock, signOutMock, useSessionMock } = vi.hoisted(() => {
   return {
     pushMock: vi.fn(),
     signOutMock: vi.fn(),
+    toastErrorMock: vi.fn(),
     useSessionMock: vi.fn(() => sessionRef),
   };
 });
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+vi.mock("sonner", () => ({ toast: { error: toastErrorMock } }));
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     useSession: useSessionMock,
@@ -50,6 +52,7 @@ Object.defineProperty(window, "matchMedia", {
 describe("WorkspaceHeader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    signOutMock.mockResolvedValue({ error: null });
   });
 
   afterEach(() => {
@@ -196,18 +199,32 @@ describe("WorkspaceHeader", () => {
     expect(within(profile).queryByRole("textbox")).toBeNull();
   });
 
-  it("signs out through Better Auth and redirects only after success", async () => {
+  it("signs out through Better Auth and redirects after the server confirms", async () => {
     renderHeader();
     fireEvent.click(screen.getByRole("button", { name: "Diego" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Cerrar sesión" }));
 
     expect(signOutMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
+  });
+
+  it("keeps the current route after an error and lets the person retry", async () => {
+    signOutMock.mockResolvedValueOnce({ error: new Error("network error") });
+    renderHeader();
+
+    fireEvent.click(screen.getByRole("button", { name: "Diego" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Cerrar sesión" }));
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "No pudimos cerrar sesión. Inténtalo nuevamente.",
+      ),
+    );
     expect(pushMock).not.toHaveBeenCalled();
 
-    const callback = signOutMock.mock.calls[0]?.[0]?.fetchOptions?.onSuccess;
-    expect(callback).toBeTypeOf("function");
-    callback?.();
+    fireEvent.click(await screen.findByRole("button", { name: "Diego" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Cerrar sesión" }));
 
-    expect(pushMock).toHaveBeenCalledWith("/");
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"));
+    expect(signOutMock).toHaveBeenCalledTimes(2);
   });
 });

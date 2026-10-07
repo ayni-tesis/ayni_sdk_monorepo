@@ -1,7 +1,6 @@
 "use client";
 
 import { IconBook, IconChevronDown, IconHelpCircle } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DocsLink } from "@/components/docs-link";
 import {
@@ -30,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { useSignOut } from "@/lib/use-sign-out";
 import { type Application, DASHBOARD_VIEWS, type DashboardView } from "../types";
 
 export type WorkspaceHeaderProps = {
@@ -86,8 +86,8 @@ export function WorkspaceHeader({
   onSelectApplication,
   onNavigateHome,
 }: WorkspaceHeaderProps) {
-  const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
+  const { isPending: isSigningOut, signOut } = useSignOut();
 
   return (
     <header className="flex min-h-15 items-center justify-between gap-4 border-b px-4">
@@ -194,16 +194,8 @@ export function WorkspaceHeader({
           />
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setProfileOpen(true)}>Mi perfil</DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                authClient.signOut({
-                  fetchOptions: {
-                    onSuccess: () => router.push("/"),
-                  },
-                });
-              }}
-            >
-              Cerrar sesión
+            <DropdownMenuItem disabled={isSigningOut} onClick={signOut}>
+              {isSigningOut ? "Cerrando sesión..." : "Cerrar sesión"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
