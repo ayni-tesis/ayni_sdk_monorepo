@@ -69,6 +69,7 @@ describe("GitHub OAuth profile validation", () => {
         name: "Test User",
         email: "person@example.test",
         emailVerified: true,
+        termsAcceptedVersion: CURRENT_TERMS_VERSION,
       },
     });
     expect(fetch).toHaveBeenNthCalledWith(

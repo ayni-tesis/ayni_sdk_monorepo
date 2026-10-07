@@ -11,7 +11,13 @@ export async function getGitHubUserInfo(
   accessToken: string | undefined,
   termsAcceptedVersion: unknown,
 ) {
-  if (!accessToken || !hasAcceptedCurrentTerms(termsAcceptedVersion)) return null;
+  if (
+    !accessToken ||
+    typeof termsAcceptedVersion !== "string" ||
+    !hasAcceptedCurrentTerms(termsAcceptedVersion)
+  ) {
+    return null;
+  }
 
   try {
     const headers = githubApiHeaders(accessToken);
@@ -69,6 +75,7 @@ export async function getGitHubUserInfo(
       user: {
         id: String(githubProfile.id),
         name,
+        termsAcceptedVersion,
         ...(verifiedEmail ? { email: verifiedEmail.email as string } : {}),
         emailVerified: Boolean(verifiedEmail),
         ...(typeof githubProfile.avatar_url === "string"
