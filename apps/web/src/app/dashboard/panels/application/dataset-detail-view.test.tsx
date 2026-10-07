@@ -4,15 +4,23 @@ import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { deleteMock, getMock, patchMock, postMock, putMock } = vi.hoisted(() => ({
+const { deleteMock, exportGetMock, getMock, patchMock, postMock, putMock } = vi.hoisted(() => ({
   deleteMock: vi.fn(),
+  exportGetMock: vi.fn(),
   getMock: vi.fn(),
   patchMock: vi.fn(),
   postMock: vi.fn(),
   putMock: vi.fn(),
 }));
 vi.mock("@/lib/http-client", () => ({
-  httpClient: { delete: deleteMock, get: getMock, patch: patchMock, post: postMock, put: putMock },
+  httpClient: {
+    delete: deleteMock,
+    get: (url: string, ...args: unknown[]) =>
+      url.endsWith("/exports") ? exportGetMock(url, ...args) : getMock(url, ...args),
+    patch: patchMock,
+    post: postMock,
+    put: putMock,
+  },
 }));
 
 const { DatasetDetailView } = await import("./dataset-detail-view");
@@ -82,6 +90,7 @@ function renderManagedDetail() {
 
 describe("DatasetDetailView", () => {
   beforeEach(() => {
+    exportGetMock.mockReset().mockResolvedValue({ data: { exports: [] } });
     getMock
       .mockReset()
       .mockImplementation(async (url: string) =>
@@ -117,6 +126,10 @@ describe("DatasetDetailView", () => {
     expect(screen.getByText("Aún no hay exportaciones para este dataset.")).toBeInTheDocument();
     expect(getMock).toHaveBeenCalledWith(
       "/applications/app-1/datasets/dataset-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(exportGetMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1/exports",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });

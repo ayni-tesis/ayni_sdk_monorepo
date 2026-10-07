@@ -154,6 +154,22 @@ export const DatasetLabelRequestSchema = z
   .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
   .strict();
 export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
+export const DatasetExportFormatSchema = z.literal("classification_images_csv");
+export const DatasetExportSchema = z
+  .object({
+    id: z.string(),
+    datasetId: z.string(),
+    version: z.number().int().positive(),
+    format: DatasetExportFormatSchema,
+    status: z.literal("ready"),
+    generatedAt: z.string().datetime(),
+    itemCount: z.number().int().positive(),
+  })
+  .strict();
+export const DatasetExportListResponseSchema = z
+  .object({ exports: z.array(DatasetExportSchema) })
+  .strict();
+export const DatasetExportResponseSchema = z.object({ export: DatasetExportSchema }).strict();
 export const DatasetAnnotationsRequestSchema = z
   .object({ annotations: DatasetAnnotationsSchema })
   .strict();
@@ -183,6 +199,9 @@ export type DatasetReviewRequest = z.infer<typeof DatasetReviewRequestSchema>;
 export type DatasetReviewResponse = z.infer<typeof DatasetReviewResponseSchema>;
 export type DatasetLabelRequest = z.infer<typeof DatasetLabelRequestSchema>;
 export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
+export type DatasetExport = z.infer<typeof DatasetExportSchema>;
+export type DatasetExportListResponse = z.infer<typeof DatasetExportListResponseSchema>;
+export type DatasetExportResponse = z.infer<typeof DatasetExportResponseSchema>;
 export type DatasetBox = z.infer<typeof DatasetBoxSchema>;
 export type DatasetAnnotation = z.infer<typeof DatasetAnnotationSchema>;
 export type DatasetAnnotationsRequest = z.infer<typeof DatasetAnnotationsRequestSchema>;
@@ -246,6 +265,64 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "400": errorResponse("El desplazamiento de página no es válido."),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos cargar el dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}/exports",
+    tags: ["Datasets"],
+    operationId: "listar-exportaciones-dataset",
+    summary: "Listar exportaciones de un dataset",
+    description: "Cualquier miembro del workspace puede consultar las exportaciones del dataset.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Exportaciones generadas para el dataset.",
+        content: { "application/json": { schema: DatasetExportListResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos este dataset."),
+      "500": errorResponse("No pudimos cargar las exportaciones del dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/applications/{applicationId}/datasets/{datasetId}/exports",
+    tags: ["Datasets"],
+    operationId: "exportar-dataset-clasificacion",
+    summary: "Exportar un dataset de clasificación",
+    description:
+      "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable con las evidencias aprobadas y sus etiquetas revisadas.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+      }),
+    },
+    responses: {
+      "201": {
+        description: "Exportación de clasificación generada.",
+        content: { "application/json": { schema: DatasetExportResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "403": errorResponse("No tienes permiso para exportar este dataset."),
+      "404": errorResponse("No encontramos este dataset."),
+      "409": errorResponse(
+        "El dataset no se puede exportar: la aplicación está archivada, faltan evidencias aprobadas o etiquetas revisadas, el tipo de tarea no es clasificación o una etiqueta puede interpretarse como fórmula.",
+      ),
+      "413": errorResponse(
+        "El tamaño total de las imágenes supera el límite de exportación de 128 MiB.",
+      ),
+      "500": errorResponse("No pudimos generar la exportación del dataset."),
     },
   });
 
