@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -163,6 +163,98 @@ describe("DatasetDetailView", () => {
     expect(screen.getByText("Evidencia rechazada.")).toBeInTheDocument();
     expect(screen.getByText("Motivo: Imagen borrosa")).toBeInTheDocument();
     expect(screen.getByText(/Revisada por Diego/)).toBeInTheDocument();
+  });
+
+  it("shows labels and confidence from detection predictions", async () => {
+    const detectionItem = {
+      ...item,
+      taskType: "detection" as const,
+      result: {
+        type: "detection",
+        detections: [
+          {
+            label: "gato",
+            confidence: 0.914,
+            box: { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 },
+          },
+          {
+            label: "perro",
+            confidence: 0.718,
+            box: { xMin: 0.5, yMin: 0.4, xMax: 0.7, yMax: 0.9 },
+          },
+        ],
+      },
+      originalResult: {
+        type: "detection",
+        detections: [
+          {
+            label: "gato",
+            confidence: 0.914,
+            box: { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 },
+          },
+          {
+            label: "perro",
+            confidence: 0.718,
+            box: { xMin: 0.5, yMin: 0.4, xMax: 0.7, yMax: 0.9 },
+          },
+        ],
+      },
+    };
+    getMock.mockResolvedValue({
+      data: {
+        dataset: { ...dataset, taskType: "detection", evidenceCount: 1 },
+        items: [detectionItem],
+        nextItemOffset: null,
+      },
+    });
+    renderDetail();
+
+    expect(
+      await screen.findByText(
+        "Predicción original: 2 detecciones: gato (91%; caja x 10–50%, y 20–60%), perro (72%; caja x 50–70%, y 40–90%)",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show a stale review success after the item was retired", async () => {
+    getMock.mockResolvedValue({
+      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+    });
+    let resolveReview!: (response: {
+      data: {
+        status: "approved";
+        reviewerName: string;
+        reviewedAt: string;
+        reason: null;
+      };
+    }) => void;
+    patchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReview = resolve;
+        }),
+    );
+    renderManagedDetail();
+    const user = userEvent.setup();
+    expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aprobar" }));
+    await user.click(screen.getByRole("button", { name: "Retirar del dataset" }));
+    await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+    expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveReview({
+        data: {
+          status: "approved",
+          reviewerName: "Diego",
+          reviewedAt: "2026-10-03T00:00:00.000Z",
+          reason: null,
+        },
+      });
+    });
+
+    expect(screen.queryByText("Evidencia aprobada.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Predicción original: pino (90%)")).not.toBeInTheDocument();
   });
 
   it("does not duplicate newly added evidence when loading later dataset pages", async () => {

@@ -68,6 +68,7 @@ export function DatasetDetailView({
   const abortRef = useRef<AbortController | null>(null);
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
+  const retiredEvidenceIdsRef = useRef(new Set<string>());
 
   const loadDetail = useCallback(async () => {
     abortRef.current?.abort();
@@ -199,15 +200,21 @@ export function DatasetDetailView({
     await httpClient.delete(
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
     );
+    retiredEvidenceIdsRef.current.add(itemId);
     setDetail((current) => {
       if (!current) return current;
       const items = current.items.filter((item) => item.id !== itemId);
       if (items.length === current.items.length) return current;
+      const removed = current.items.find((item) => item.id === itemId);
       return {
         ...current,
         dataset: {
           ...current.dataset,
           evidenceCount: Math.max(0, current.dataset.evidenceCount - 1),
+          approvedCount: Math.max(
+            0,
+            current.dataset.approvedCount - Number(removed?.reviewStatus === "approved"),
+          ),
         },
         items,
         nextItemOffset:
@@ -222,11 +229,13 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/review`,
       { status, ...(reason ? { reason } : {}) },
     );
+    if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) => {
       if (!current) return current;
       const oldItem = current.items.find((item) => item.id === itemId);
-      const countChange =
-        Number(data.status === "approved") - Number(oldItem?.reviewStatus === "approved");
+      const countChange = oldItem
+        ? Number(data.status === "approved") - Number(oldItem.reviewStatus === "approved")
+        : 0;
       return {
         ...current,
         dataset: {
@@ -737,7 +746,39 @@ function resultSummary(result: Record<string, unknown>) {
     return `${result.label}${confidence}`;
   }
   if (result.type === "detection" && Array.isArray(result.detections)) {
-    return `${result.detections.length} detecciones`;
+    const predictions = result.detections.flatMap((detection) => {
+      if (typeof detection !== "object" || detection === null || !("label" in detection)) {
+        return [];
+      }
+      const label = detection.label;
+      if (typeof label !== "string") return [];
+      const details: string[] = [];
+      if ("confidence" in detection && typeof detection.confidence === "number") {
+        details.push(`${Math.round(detection.confidence * 100)}%`);
+      }
+      if (
+        "box" in detection &&
+        typeof detection.box === "object" &&
+        detection.box !== null &&
+        "xMin" in detection.box &&
+        typeof detection.box.xMin === "number" &&
+        "xMax" in detection.box &&
+        typeof detection.box.xMax === "number" &&
+        "yMin" in detection.box &&
+        typeof detection.box.yMin === "number" &&
+        "yMax" in detection.box &&
+        typeof detection.box.yMax === "number"
+      ) {
+        const { xMin, xMax, yMin, yMax } = detection.box;
+        details.push(
+          `caja x ${Math.round(xMin * 100)}–${Math.round(xMax * 100)}%, y ${Math.round(yMin * 100)}–${Math.round(yMax * 100)}%`,
+        );
+      }
+      return [`${label}${details.length ? ` (${details.join("; ")})` : ""}`];
+    });
+    return predictions.length
+      ? `${result.detections.length} detecciones: ${predictions.join(", ")}`
+      : `${result.detections.length} detecciones`;
   }
   return "Resultado guardado";
 }
