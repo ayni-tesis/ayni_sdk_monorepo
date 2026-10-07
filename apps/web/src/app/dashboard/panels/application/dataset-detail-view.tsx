@@ -7,8 +7,11 @@ import {
   type DatasetAvailableEvidenceResponse,
   type DatasetDetailResponse,
   type DatasetEvidence,
+  type DatasetFilterOptions,
+  type DatasetItemFilters,
   type DatasetLabelResponse,
   type DatasetReviewResponse,
+  parseDatasetItemsQuery,
 } from "@ayni/api/datasets";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
@@ -72,10 +75,15 @@ export function DatasetDetailView({
   const [availableError, setAvailableError] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState<DatasetItemFilters>({});
+  const [filtering, setFiltering] = useState(false);
+  const [filterError, setFilterError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
   const retiredEvidenceIdsRef = useRef(new Set<string>());
+  // The filters of the loaded items, which every later page and reload repeats.
+  const appliedFiltersRef = useRef<DatasetItemFilters>({});
 
   const loadDetail = useCallback(
     async (showLoading = true) => {
@@ -92,7 +100,7 @@ export function DatasetDetailView({
       try {
         const { data } = await httpClient.get<DatasetDetailResponse>(
           `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
-          { signal: controller.signal },
+          { params: appliedFiltersRef.current, signal: controller.signal },
         );
         if (!controller.signal.aborted) setDetail(data);
       } catch (loadError) {
@@ -121,7 +129,7 @@ export function DatasetDetailView({
     try {
       const { data } = await httpClient.get<DatasetDetailResponse>(
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
-        { params: { offset }, signal: controller.signal },
+        { params: { ...appliedFiltersRef.current, offset }, signal: controller.signal },
       );
       if (!controller.signal.aborted) {
         setDetail((current) =>
@@ -142,6 +150,51 @@ export function DatasetDetailView({
       if (!controller.signal.aborted) setItemsLoading(false);
     }
   }, [application.id, datasetId, detail?.nextItemOffset, itemsLoading]);
+
+  /**
+   * Loads the first page of the evidence that matches `filters`. A failure
+   * keeps the evidence and filters already shown and reports it in the filter
+   * bar.
+   */
+  async function loadFilteredItems(filters: DatasetItemFilters) {
+    abortRef.current?.abort();
+    itemsAbortRef.current?.abort();
+    setItemsLoading(false);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setFiltering(true);
+    setFilterError("");
+    setItemsError("");
+    try {
+      const { data } = await httpClient.get<DatasetDetailResponse>(
+        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
+        { params: filters, signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      appliedFiltersRef.current = filters;
+      setAppliedFilters(filters);
+      setDetail(data);
+    } catch (loadError) {
+      if (!controller.signal.aborted) setFilterError(errorMessage(loadError, LOAD_ERROR));
+    } finally {
+      if (!controller.signal.aborted) setFiltering(false);
+    }
+  }
+
+  function applyFilters(draft: FilterDraft) {
+    const parsed = parseDatasetItemsQuery(filterQuery(draft));
+    if (!parsed.success) {
+      setFilterError(parsed.error.message);
+      return;
+    }
+    const { offset: _offset, ...filters } = parsed.data;
+    void loadFilteredItems(filters);
+  }
+
+  function clearFilters() {
+    setFilterError("");
+    if (Object.keys(appliedFiltersRef.current).length > 0) void loadFilteredItems({});
+  }
 
   const loadAvailableEvidence = useCallback(
     async (offset = 0) => {
@@ -242,14 +295,25 @@ export function DatasetDetailView({
       { status, ...(reason ? { reason } : {}) },
     );
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
+    const statusFilter = appliedFiltersRef.current.status;
     setDetail((current) => {
       if (!current) return current;
       const oldItem = current.items.find((item) => item.id === itemId);
       const countChange = oldItem
         ? Number(data.status === "approved") - Number(oldItem.reviewStatus === "approved")
         : 0;
+      // An item that leaves the status filter shifts the later filtered pages back by one.
+      const leftFilter =
+        oldItem !== undefined &&
+        statusFilter !== undefined &&
+        oldItem.reviewStatus === statusFilter &&
+        data.status !== statusFilter;
       return {
         ...current,
+        nextItemOffset:
+          leftFilter && current.nextItemOffset !== null
+            ? Math.max(0, current.nextItemOffset - 1)
+            : current.nextItemOffset,
         dataset: {
           ...current.dataset,
           approvedCount: Math.max(0, current.dataset.approvedCount + countChange),
@@ -510,9 +574,20 @@ export function DatasetDetailView({
             {notice}
           </p>
         )}
-        <TabsContent value="evidences">
+        <TabsContent value="evidences" className="space-y-3">
+          <EvidenceFilterBar
+            options={detail.filterOptions}
+            busy={filtering}
+            error={filterError}
+            onApply={applyFilters}
+            onClear={clearFilters}
+          />
           {items.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Aún no hay evidencias en este dataset.</p>
+            <p className="text-muted-foreground text-sm">
+              {Object.keys(appliedFilters).length > 0
+                ? "No hay evidencias que coincidan con los filtros."
+                : "Aún no hay evidencias en este dataset."}
+            </p>
           ) : (
             <ul className="space-y-3">
               {items.map((item) => (
@@ -552,6 +627,167 @@ export function DatasetDetailView({
         </TabsContent>
       </Tabs>
     </section>
+  );
+}
+
+type FilterDraft = {
+  status: string;
+  workflowId: string;
+  modelId: string;
+  capturedFrom: string;
+  capturedTo: string;
+  minConfidence: string;
+  maxConfidence: string;
+};
+
+const EMPTY_FILTER_DRAFT: FilterDraft = {
+  status: "",
+  workflowId: "",
+  modelId: "",
+  capturedFrom: "",
+  capturedTo: "",
+  minConfidence: "",
+  maxConfidence: "",
+};
+
+/** The query of the filled filters; the bar shows confidences in percent and the API reads 0 to 1. */
+function filterQuery(draft: FilterDraft) {
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(draft)) {
+    if (!value.trim()) continue;
+    query[key] =
+      key === "minConfidence" || key === "maxConfidence" ? String(Number(value) / 100) : value;
+  }
+  return query;
+}
+
+function EvidenceFilterBar({
+  options,
+  busy,
+  error,
+  onApply,
+  onClear,
+}: {
+  options: DatasetFilterOptions;
+  busy: boolean;
+  error: string;
+  onApply: (draft: FilterDraft) => void;
+  onClear: () => void;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState(EMPTY_FILTER_DRAFT);
+  const field = (key: keyof FilterDraft) => ({
+    id: `${id}-${key}`,
+    value: draft[key],
+    disabled: busy,
+    onChange: (event: { target: { value: string } }) =>
+      setDraft((current) => ({ ...current, [key]: event.target.value })),
+    className: "h-9 w-full rounded-md border bg-background px-3 text-sm",
+  });
+
+  return (
+    <form
+      aria-labelledby={`${id}-title`}
+      noValidate
+      className="space-y-3 rounded-md border p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onApply(draft);
+      }}
+    >
+      <h3 id={`${id}-title`} className="font-medium text-sm">
+        Filtrar evidencias
+      </h3>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1 text-sm">
+          <label htmlFor={`${id}-status`}>Estado</label>
+          <select {...field("status")}>
+            <option value="">Todos</option>
+            <option value="pending">Pendiente</option>
+            <option value="approved">Aprobada</option>
+            <option value="rejected">Rechazada</option>
+          </select>
+        </div>
+        <div className="space-y-1 text-sm">
+          <label htmlFor={`${id}-workflowId`}>Workflow</label>
+          <select {...field("workflowId")}>
+            <option value="">Todos</option>
+            {options.workflows.map((workflow) => (
+              <option key={workflow.id} value={workflow.id}>
+                {workflow.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1 text-sm">
+          <label htmlFor={`${id}-modelId`}>Modelo</label>
+          <select {...field("modelId")}>
+            <option value="">Todos</option>
+            {options.models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <fieldset className="space-y-1 text-sm">
+          <legend>Fecha</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="text-muted-foreground text-xs">Desde</span>
+              <input type="date" {...field("capturedFrom")} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted-foreground text-xs">Hasta</span>
+              <input type="date" {...field("capturedTo")} />
+            </label>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Día de captura en UTC; incluye ambos días.
+          </p>
+        </fieldset>
+        <fieldset className="space-y-1 text-sm">
+          <legend>Confianza</legend>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="text-muted-foreground text-xs">Mínima (%)</span>
+              <input type="number" min={0} max={100} step="any" {...field("minConfidence")} />
+            </label>
+            <label className="space-y-1">
+              <span className="text-muted-foreground text-xs">Máxima (%)</span>
+              <input type="number" min={0} max={100} step="any" {...field("maxConfidence")} />
+            </label>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            En detección se usa la mayor confianza de sus detecciones.
+          </p>
+        </fieldset>
+      </div>
+      {error && (
+        <p role="alert" className="text-destructive text-sm">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => {
+            setDraft(EMPTY_FILTER_DRAFT);
+            onClear();
+          }}
+        >
+          Limpiar filtros
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? "Aplicando filtros…" : "Aplicar filtros"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

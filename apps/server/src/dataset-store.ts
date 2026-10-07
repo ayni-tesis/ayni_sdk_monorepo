@@ -6,7 +6,9 @@ import type {
   DatasetAvailableEvidenceResponse,
   DatasetDetailResponse,
   DatasetEvidence,
+  DatasetFilterOptions,
   DatasetItem,
+  DatasetItemFilters,
   DatasetLabelRequest,
   DatasetLabelResponse,
   DatasetListItem,
@@ -15,8 +17,8 @@ import type {
   DatasetReviewResponse,
   DatasetTaskType,
 } from "@ayni/api/datasets";
-import { dataset, datasetItem, sdkEvidence, user } from "@ayni/db/schema/index";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { dataset, datasetItem, model, sdkEvidence, user, workflow } from "@ayni/db/schema/index";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
   type ApplicationDatabase,
   executeApplicationAction,
@@ -87,6 +89,7 @@ type DatasetQuery = Promise<Record<string, unknown>[]> & {
   leftJoin: (table: unknown, condition: unknown) => DatasetQuery;
   innerJoin: (table: unknown, condition: unknown) => DatasetQuery;
   where: (condition: unknown) => DatasetQuery;
+  groupBy: (...columns: unknown[]) => DatasetQuery;
   orderBy: (...columns: unknown[]) => DatasetQuery;
   limit: (count: number) => DatasetQuery;
   offset: (count: number) => Promise<Record<string, unknown>[]>;
@@ -175,11 +178,90 @@ export async function listDatasets(
   });
 }
 
+/**
+ * The jsonpath to an item's prediction confidences (US-083): the predicted
+ * label's for classification, every detection's for detection, of which the
+ * filter compares the highest. A detection without boxes has none, so it
+ * matches no confidence filter.
+ */
+const PREDICTION_CONFIDENCE_PATHS: Record<DatasetTaskType, string> = {
+  classification: '$.confidence ? (@.type() == "number")',
+  detection: '$.detections[*].confidence ? (@.type() == "number")',
+};
+
+function predictionConfidence(taskType: DatasetTaskType) {
+  return sql`(select max(confidence::double precision) from jsonb_path_query(${datasetItem.originalResult}, ${PREDICTION_CONFIDENCE_PATHS[taskType]}::jsonpath) as confidence)`;
+}
+
+/** The conditions of the dataset evidence filters, whose dates are whole UTC days. */
+function datasetItemFilterCondition(taskType: DatasetTaskType, filters: DatasetItemFilters) {
+  const capturedFrom = filters.capturedFrom
+    ? new Date(`${filters.capturedFrom}T00:00:00.000Z`)
+    : undefined;
+  const capturedBefore = filters.capturedTo
+    ? new Date(`${filters.capturedTo}T00:00:00.000Z`)
+    : undefined;
+  capturedBefore?.setUTCDate(capturedBefore.getUTCDate() + 1);
+  return and(
+    filters.status ? eq(datasetItem.reviewStatus, filters.status) : undefined,
+    filters.workflowId ? eq(sdkEvidence.workflowId, filters.workflowId) : undefined,
+    filters.modelId ? eq(sdkEvidence.modelId, filters.modelId) : undefined,
+    capturedFrom ? gte(sdkEvidence.capturedAt, capturedFrom) : undefined,
+    capturedBefore ? lt(sdkEvidence.capturedAt, capturedBefore) : undefined,
+    filters.minConfidence === undefined
+      ? undefined
+      : sql`${predictionConfidence(taskType)} >= ${filters.minConfidence}`,
+    filters.maxConfidence === undefined
+      ? undefined
+      : sql`${predictionConfidence(taskType)} <= ${filters.maxConfidence}`,
+  );
+}
+
+const itemEvidenceJoin = and(
+  eq(sdkEvidence.applicationId, datasetItem.applicationId),
+  eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+);
+
+/** The workflows and models of every item in the dataset, unfiltered, for the filter choices. */
+async function getDatasetFilterOptions(
+  tx: DatasetReadExecutor,
+  datasetScope: ReturnType<typeof and>,
+): Promise<DatasetFilterOptions> {
+  const workflows = (await tx
+    .select({ id: sdkEvidence.workflowId, name: workflow.name })
+    .from(datasetItem)
+    .innerJoin(sdkEvidence, itemEvidenceJoin)
+    .innerJoin(workflow, eq(workflow.id, sdkEvidence.workflowId))
+    .where(datasetScope)
+    .groupBy(sdkEvidence.workflowId, workflow.name)
+    .orderBy(asc(workflow.name), asc(sdkEvidence.workflowId))) as { id: string; name: string }[];
+  // The model ID is a snapshot without a foreign key, so a deleted model keeps its ID as name.
+  const modelName = sql<string>`coalesce(${model.name}, ${sdkEvidence.modelId})`;
+  const models = (await tx
+    .select({ id: sdkEvidence.modelId, name: modelName })
+    .from(datasetItem)
+    .innerJoin(sdkEvidence, itemEvidenceJoin)
+    .leftJoin(
+      model,
+      and(eq(model.applicationId, sdkEvidence.applicationId), eq(model.id, sdkEvidence.modelId)),
+    )
+    .where(datasetScope)
+    .groupBy(sdkEvidence.modelId, model.name)
+    .orderBy(asc(modelName), asc(sdkEvidence.modelId))) as { id: string; name: string }[];
+  return { workflows, models };
+}
+
+/**
+ * A page of the dataset's items. The filters (US-083) apply only to this
+ * dataset's items and before paginating, so `offset` and `nextItemOffset`
+ * count filtered items; the dataset counts stay those of the whole dataset.
+ */
 export async function getDataset(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
   offset = 0,
+  filters: DatasetItemFilters = {},
 ): Promise<DatasetDetailResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetReadExecutor;
@@ -190,6 +272,10 @@ export async function getDataset(
       .limit(1)) as DatasetRow[];
     const row = rows[0];
     if (!row) return null;
+    const datasetScope = and(
+      eq(datasetItem.applicationId, applicationId),
+      eq(datasetItem.datasetId, datasetId),
+    );
     const items = (await tx
       .select({
         id: datasetItem.id,
@@ -211,17 +297,9 @@ export async function getDataset(
         reviewedAnnotations: datasetItem.reviewedAnnotations,
       })
       .from(datasetItem)
-      .innerJoin(
-        sdkEvidence,
-        and(
-          eq(sdkEvidence.applicationId, datasetItem.applicationId),
-          eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
-        ),
-      )
+      .innerJoin(sdkEvidence, itemEvidenceJoin)
       .leftJoin(user, eq(user.id, datasetItem.reviewedBy))
-      .where(
-        and(eq(datasetItem.applicationId, applicationId), eq(datasetItem.datasetId, datasetId)),
-      )
+      .where(and(datasetScope, datasetItemFilterCondition(row.taskType, filters)))
       .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))
       .limit(DATASET_EVIDENCE_PAGE_SIZE + 1)
       .offset(offset)) as DatasetItemRow[];
@@ -231,6 +309,7 @@ export async function getDataset(
       dataset: toDatasetListItem(row),
       items: await Promise.all(page.map(toDatasetItem)),
       nextItemOffset: hasMore ? offset + page.length : null,
+      filterOptions: await getDatasetFilterOptions(tx, datasetScope),
     };
   });
 }

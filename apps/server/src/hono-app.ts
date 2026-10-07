@@ -273,8 +273,13 @@ const datasets = {
   list(applicationId: string) {
     return listDatasets(db, applicationId);
   },
-  get(applicationId: string, datasetId: string, offset: number) {
-    return getDataset(db, applicationId, datasetId, offset);
+  get(
+    applicationId: string,
+    datasetId: string,
+    offset: number,
+    filters: Parameters<typeof getDataset>[4],
+  ) {
+    return getDataset(db, applicationId, datasetId, offset, filters);
   },
   listAvailableEvidence(applicationId: string, datasetId: string, offset: number) {
     return listAvailableDatasetEvidence(db, applicationId, datasetId, offset);

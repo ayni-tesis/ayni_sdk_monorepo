@@ -13,6 +13,7 @@ import {
   DatasetReviewRequestSchema,
   DatasetReviewResponseSchema,
   parseDatasetAnnotationsRequest,
+  parseDatasetItemsQuery,
 } from "./datasets";
 import { createOpenApiDocument } from "./index";
 
@@ -80,8 +81,19 @@ describe("dataset creation contract", () => {
       approvedCount: 0,
     };
     expect(
-      DatasetDetailResponseSchema.safeParse({ dataset, items: [], nextItemOffset: null }).success,
+      DatasetDetailResponseSchema.safeParse({
+        dataset,
+        items: [],
+        nextItemOffset: null,
+        filterOptions: {
+          workflows: [{ id: "workflow-1", name: "Inspección" }],
+          models: [{ id: "model-1", name: "Flores v1" }],
+        },
+      }).success,
     ).toBe(true);
+    expect(
+      DatasetDetailResponseSchema.safeParse({ dataset, items: [], nextItemOffset: null }).success,
+    ).toBe(false);
     expect(DatasetDetailResponseSchema.safeParse({ dataset: { id: "dataset-1" } }).success).toBe(
       false,
     );
@@ -95,6 +107,91 @@ describe("dataset creation contract", () => {
         (parameter) => "name" in parameter && parameter.name === "offset",
       ),
     ).toBe(true);
+  });
+
+  it("parses every dataset evidence filter together with the page offset (US-083)", () => {
+    expect(
+      parseDatasetItemsQuery({
+        offset: "50",
+        status: "pending",
+        workflowId: "workflow-1",
+        modelId: "model-1",
+        capturedFrom: "2026-10-01",
+        capturedTo: "2026-10-03",
+        minConfidence: "0.25",
+        maxConfidence: "0.9",
+      }),
+    ).toEqual({
+      success: true,
+      data: {
+        offset: 50,
+        status: "pending",
+        workflowId: "workflow-1",
+        modelId: "model-1",
+        capturedFrom: "2026-10-01",
+        capturedTo: "2026-10-03",
+        minConfidence: 0.25,
+        maxConfidence: 0.9,
+      },
+    });
+    expect(parseDatasetItemsQuery({})).toEqual({ success: true, data: { offset: 0 } });
+    expect(
+      parseDatasetItemsQuery({ capturedFrom: "2026-10-01", capturedTo: "2026-10-01" }).success,
+    ).toBe(true);
+    expect(parseDatasetItemsQuery({ minConfidence: "0", maxConfidence: "1" }).success).toBe(true);
+  });
+
+  it("rejects unknown and invalid filters with one message, apart from a bad page offset", () => {
+    const filterError = {
+      success: false,
+      error: { code: "invalidDatasetFilter", message: "No se pudo aplicar uno de los filtros." },
+    };
+    for (const query of [
+      { label: "pino" } as Record<string, string>,
+      { status: "archived" },
+      { workflowId: "" },
+      { modelId: "x".repeat(129) },
+      { capturedFrom: "2026-02-30" },
+      { capturedTo: "ayer" },
+      { capturedFrom: "2026-10-03", capturedTo: "2026-10-01" },
+      { minConfidence: "" },
+      { minConfidence: "-0.1" },
+      { maxConfidence: "1.5" },
+      { maxConfidence: "alta" },
+      { minConfidence: "0.8", maxConfidence: "0.2" },
+      { offset: "-1", status: "archived" },
+    ]) {
+      expect(parseDatasetItemsQuery(query), JSON.stringify(query)).toEqual(filterError);
+    }
+    expect(parseDatasetItemsQuery({ offset: "-1" })).toEqual({
+      success: false,
+      error: { code: "invalidDatasetPage", message: "El desplazamiento de página no es válido." },
+    });
+  });
+
+  it("documents the dataset evidence filters and their invalid-filter response", () => {
+    const operation =
+      createOpenApiDocument().paths?.["/applications/{applicationId}/datasets/{datasetId}"]?.get;
+    const parameters = (operation?.parameters ?? []).flatMap((parameter) =>
+      "name" in parameter ? [parameter] : [],
+    );
+    expect(parameters.map((parameter) => parameter.name)).toEqual([
+      "applicationId",
+      "datasetId",
+      "offset",
+      "status",
+      "workflowId",
+      "modelId",
+      "capturedFrom",
+      "capturedTo",
+      "minConfidence",
+      "maxConfidence",
+    ]);
+    const minConfidence = parameters.find((parameter) => parameter.name === "minConfidence");
+    expect(JSON.stringify(minConfidence)).toContain("detección");
+    expect(JSON.stringify(operation?.responses?.["400"])).toContain(
+      "No se pudo aplicar uno de los filtros.",
+    );
   });
 
   it("validates evidence selection and documents available and add routes", () => {
