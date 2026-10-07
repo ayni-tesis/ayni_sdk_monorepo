@@ -28,6 +28,12 @@ export const datasetItem = pgTable(
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at"),
     reviewReason: text("review_reason"),
+    /**
+     * The classification label a person assigned (US-081): the ground truth that
+     * validation and exports read instead of the model's prediction, which stays
+     * untouched in `originalResult`. Null until someone assigns it.
+     */
+    reviewedLabel: text("reviewed_label"),
   },
   (table) => [
     foreignKey({
@@ -61,6 +67,10 @@ export const datasetItem = pgTable(
     check(
       "dataset_item_review_reason_check",
       sql`(${table.reviewStatus} = 'rejected') or (${table.reviewReason} is null)`,
+    ),
+    check(
+      "dataset_item_reviewed_label_check",
+      sql`${table.reviewedLabel} is null or char_length(btrim(${table.reviewedLabel})) between 1 and 160`,
     ),
   ],
 );

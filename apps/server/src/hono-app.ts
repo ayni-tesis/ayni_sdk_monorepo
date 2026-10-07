@@ -39,6 +39,7 @@ import {
   listDatasets,
   removeDatasetEvidence,
   reviewDatasetEvidence,
+  saveDatasetItemLabel,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 import { r2EvidenceStorage } from "./evidence-storage";
@@ -282,6 +283,9 @@ const datasets = {
   },
   reviewEvidence(input: Parameters<typeof reviewDatasetEvidence>[1]) {
     return reviewDatasetEvidence(db, input);
+  },
+  saveLabel(input: Parameters<typeof saveDatasetItemLabel>[1]) {
+    return saveDatasetItemLabel(db, input);
   },
 };
 

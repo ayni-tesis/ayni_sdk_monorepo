@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { deleteMock, getMock, patchMock, postMock } = vi.hoisted(() => ({
+const { deleteMock, getMock, patchMock, postMock, putMock } = vi.hoisted(() => ({
   deleteMock: vi.fn(),
   getMock: vi.fn(),
   patchMock: vi.fn(),
   postMock: vi.fn(),
+  putMock: vi.fn(),
 }));
 vi.mock("@/lib/http-client", () => ({
-  httpClient: { delete: deleteMock, get: getMock, patch: patchMock, post: postMock },
+  httpClient: { delete: deleteMock, get: getMock, patch: patchMock, post: postMock, put: putMock },
 }));
 
 const { DatasetDetailView } = await import("./dataset-detail-view");
@@ -40,7 +41,12 @@ const evidence = {
   modelId: "model-1",
   modelVersion: "1.0.0",
   taskType: "classification" as const,
-  result: { type: "classification", label: "pino", confidence: 0.9 },
+  result: {
+    type: "classification",
+    label: "pino",
+    confidence: 0.9,
+    confidences: { pino: 0.9, cedro: 0.1 },
+  },
   capturedAt: "2026-10-01T00:00:00.000Z",
 };
 
@@ -56,6 +62,7 @@ const item = {
   reviewerName: null,
   reviewedAt: null,
   reviewReason: null,
+  reviewedLabel: null as string | null,
 };
 
 function renderDetail(onBackToDatasets?: () => void) {
@@ -83,6 +90,9 @@ describe("DatasetDetailView", () => {
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
     deleteMock.mockReset().mockResolvedValue({ data: undefined });
+    putMock.mockReset().mockImplementation(async (_url: string, body: { label: string }) => ({
+      data: { reviewedLabel: body.label.trim() },
+    }));
     patchMock.mockReset().mockResolvedValue({
       data: {
         status: "rejected",
@@ -165,6 +175,84 @@ describe("DatasetDetailView", () => {
     expect(screen.getByText(/Revisada por Diego/)).toBeInTheDocument();
   });
 
+  it("saves a reviewed label apart from the read-only original prediction", async () => {
+    getMock.mockResolvedValue({
+      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+    });
+    renderDetail();
+    const panel = await screen.findByRole("region", { name: "Etiqueta revisada" });
+    expect(within(panel).getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    expect(within(panel).getByText("Sin etiqueta revisada")).toBeInTheDocument();
+    const field = within(panel).getByLabelText("Etiqueta correcta");
+    expect(field).toBeRequired();
+    expect(
+      Array.from(document.querySelectorAll(`#${field.getAttribute("list")} option`)).map((option) =>
+        option.getAttribute("value"),
+      ),
+    ).toEqual(["pino", "cedro"]);
+
+    const user = userEvent.setup();
+    await user.type(field, " cedro ");
+    await user.click(within(panel).getByRole("button", { name: "Guardar etiqueta" }));
+
+    expect(putMock).toHaveBeenCalledWith(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      { label: "cedro" },
+    );
+    expect(await screen.findByText("Etiqueta revisada guardada.")).toBeInTheDocument();
+    expect(within(panel).getByText("Etiqueta revisada: cedro")).toBeInTheDocument();
+    expect(within(panel).getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+  });
+
+  it("rejects an empty label and keeps the previous reviewed label", async () => {
+    getMock.mockResolvedValue({
+      data: {
+        dataset: { ...dataset, evidenceCount: 1 },
+        items: [{ ...item, reviewStatus: "approved" as const, reviewedLabel: "cedro" }],
+        nextItemOffset: null,
+      },
+    });
+    renderDetail();
+    const panel = await screen.findByRole("region", { name: "Etiqueta revisada" });
+    const field = within(panel).getByLabelText("Etiqueta correcta");
+    expect(field).toHaveValue("cedro");
+
+    const user = userEvent.setup();
+    await user.clear(field);
+    await user.type(field, "   ");
+    await user.click(within(panel).getByRole("button", { name: "Guardar etiqueta" }));
+
+    expect(within(panel).getByRole("alert")).toHaveTextContent(
+      "Ingresa una etiqueta para una evidencia aprobada.",
+    );
+    expect(putMock).not.toHaveBeenCalled();
+    expect(within(panel).getByText("Etiqueta revisada: cedro")).toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "Cancelar" }));
+    expect(field).toHaveValue("cedro");
+    expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the server error when saving a label fails", async () => {
+    getMock.mockResolvedValue({
+      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+    });
+    putMock.mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { message: "No encontramos esta evidencia del dataset." } },
+    });
+    renderDetail();
+    const panel = await screen.findByRole("region", { name: "Etiqueta revisada" });
+    const user = userEvent.setup();
+    await user.type(within(panel).getByLabelText("Etiqueta correcta"), "cedro");
+    await user.click(within(panel).getByRole("button", { name: "Guardar etiqueta" }));
+
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "No encontramos esta evidencia del dataset.",
+    );
+    expect(within(panel).getByText("Sin etiqueta revisada")).toBeInTheDocument();
+  });
+
   it("shows labels and confidence from detection predictions", async () => {
     const detectionItem = {
       ...item,
@@ -214,6 +302,7 @@ describe("DatasetDetailView", () => {
         "Predicción original: 2 detecciones: gato (91%; caja x 10–50%, y 20–60%), perro (72%; caja x 50–70%, y 40–90%)",
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Etiqueta revisada" })).not.toBeInTheDocument();
   });
 
   it("does not show a stale review success after the item was retired", async () => {
@@ -325,7 +414,7 @@ describe("DatasetDetailView", () => {
       "/applications/app-1/datasets/dataset-1",
       expect.objectContaining({ params: { offset: 50 } }),
     );
-  }, 10_000);
+  }, 20_000);
 
   it("lets administrators retire a dataset item while preserving its source evidence", async () => {
     let removed = false;

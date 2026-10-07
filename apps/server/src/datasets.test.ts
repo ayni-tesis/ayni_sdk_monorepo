@@ -18,6 +18,8 @@ import type {
   RemoveDatasetEvidenceResult,
   ReviewDatasetEvidenceInput,
   ReviewDatasetEvidenceResult,
+  SaveDatasetItemLabelInput,
+  SaveDatasetItemLabelResult,
 } from "./dataset-store";
 import { createDatasetsApp } from "./datasets";
 
@@ -63,6 +65,7 @@ const datasetItem: DatasetItem = {
   reviewerName: null,
   reviewedAt: null,
   reviewReason: null,
+  reviewedLabel: null,
 };
 
 const reviewed: DatasetReviewResponse = {
@@ -109,6 +112,10 @@ function makeApp({
   reviewEvidence = async (
     _input: ReviewDatasetEvidenceInput,
   ): Promise<ReviewDatasetEvidenceResult> => ({ ok: true, value: reviewed }),
+  saveLabel = async (input: SaveDatasetItemLabelInput): Promise<SaveDatasetItemLabelResult> => ({
+    ok: true,
+    value: { reviewedLabel: input.label },
+  }),
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
@@ -133,6 +140,7 @@ function makeApp({
   addEvidence?: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
   removeEvidence?: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
   reviewEvidence?: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
+  saveLabel?: (input: SaveDatasetItemLabelInput) => Promise<SaveDatasetItemLabelResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
 } = {}) {
   const createMock = vi.fn(create);
@@ -141,6 +149,7 @@ function makeApp({
   const addEvidenceMock = vi.fn(addEvidence);
   const removeEvidenceMock = vi.fn(removeEvidence);
   const reviewEvidenceMock = vi.fn(reviewEvidence);
+  const saveLabelMock = vi.fn(saveLabel);
   const listMock = vi.fn(list);
   const app = createDatasetsApp({
     getSession: async () => session,
@@ -156,6 +165,7 @@ function makeApp({
       listAvailableEvidence: listAvailableEvidenceMock,
       removeEvidence: removeEvidenceMock,
       reviewEvidence: reviewEvidenceMock,
+      saveLabel: saveLabelMock,
     },
   });
   return {
@@ -167,6 +177,7 @@ function makeApp({
     listMock,
     removeEvidenceMock,
     reviewEvidenceMock,
+    saveLabelMock,
   };
 }
 
@@ -464,5 +475,87 @@ describe("application datasets", () => {
     );
     expect(rejected.status).toBe(400);
     expect(invalid.reviewEvidenceMock).not.toHaveBeenCalled();
+  });
+
+  it("lets any workspace member save a reviewed classification label", async () => {
+    const { app, saveLabelMock } = makeApp({
+      application: { ...activeApplication, status: "archived" },
+      membershipRole: "member",
+    });
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      jsonRequest({ label: "  cedro " }, "PUT"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ reviewedLabel: "cedro" });
+    expect(saveLabelMock).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      datasetId: "dataset-1",
+      itemId: "item-1",
+      userId: "admin",
+      label: "cedro",
+    });
+  });
+
+  it.each([
+    [{ label: "   " }, "Ingresa una etiqueta para una evidencia aprobada.", "labelRequired"],
+    [{}, "Ingresa una etiqueta para una evidencia aprobada.", "labelRequired"],
+    [{ label: "a".repeat(161) }, "La etiqueta revisada no es válida.", "invalidLabel"],
+    [{ label: "cedro", extra: true }, "La etiqueta revisada no es válida.", "invalidLabel"],
+  ])("rejects an empty or invalid label before writing", async (body, message, code) => {
+    const { app, saveLabelMock } = makeApp();
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      jsonRequest(body, "PUT"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ message, code });
+    expect(saveLabelMock).not.toHaveBeenCalled();
+  });
+
+  it("hides foreign evidence and reports detection items and save failures", async () => {
+    const foreign = makeApp({ application: null });
+    const hidden = await foreign.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      jsonRequest({ label: "cedro" }, "PUT"),
+    );
+    expect(hidden.status).toBe(404);
+    expect(foreign.saveLabelMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({ saveLabel: async () => ({ ok: false, reason: "notFound" }) });
+    const notFound = await missing.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/foreign-item/label",
+      jsonRequest({ label: "cedro" }, "PUT"),
+    );
+    expect(notFound.status).toBe(404);
+    expect(await notFound.json()).toMatchObject({
+      message: "No encontramos esta evidencia del dataset.",
+    });
+
+    const detection = makeApp({
+      saveLabel: async () => ({ ok: false, reason: "notClassification" }),
+    });
+    const conflict = await detection.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      jsonRequest({ label: "cedro" }, "PUT"),
+    );
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({
+      message: "Esta evidencia no es de clasificación.",
+      code: "datasetEvidenceNotClassification",
+    });
+
+    const failed = makeApp({ saveLabel: async () => ({ ok: false, reason: "databaseFailed" }) });
+    const unavailable = await failed.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/item-1/label",
+      jsonRequest({ label: "cedro" }, "PUT"),
+    );
+    expect(unavailable.status).toBe(500);
+    expect(await unavailable.json()).toEqual({
+      message: "No pudimos guardar la etiqueta revisada.",
+      code: "datasetLabelSaveFailed",
+    });
   });
 });

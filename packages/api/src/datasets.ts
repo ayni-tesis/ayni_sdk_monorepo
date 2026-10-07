@@ -57,6 +57,12 @@ export const DatasetItemSchema = z
     reviewerName: z.string().nullable(),
     reviewedAt: z.string().datetime().nullable(),
     reviewReason: z.string().nullable(),
+    reviewedLabel: z
+      .string()
+      .nullable()
+      .describe(
+        "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult.",
+      ),
   })
   .strict();
 export const DatasetDetailResponseSchema = z
@@ -92,6 +98,11 @@ export const DatasetReviewResponseSchema = z
     reason: z.string().nullable(),
   })
   .strict();
+export const DATASET_LABEL_MAX_LENGTH = 160;
+export const DatasetLabelRequestSchema = z
+  .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
+  .strict();
+export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
 export const DatasetAddEvidenceResponseSchema = z
   .object({ items: z.array(DatasetItemSchema) })
   .strict();
@@ -113,6 +124,8 @@ export type DatasetAddEvidenceRequest = z.infer<typeof DatasetAddEvidenceRequest
 export type DatasetAddEvidenceResponse = z.infer<typeof DatasetAddEvidenceResponseSchema>;
 export type DatasetReviewRequest = z.infer<typeof DatasetReviewRequestSchema>;
 export type DatasetReviewResponse = z.infer<typeof DatasetReviewResponseSchema>;
+export type DatasetLabelRequest = z.infer<typeof DatasetLabelRequestSchema>;
+export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
 
 function errorResponse(description: string) {
   return {
@@ -274,6 +287,41 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "401": errorResponse("La sesión no está autenticada."),
       "404": errorResponse("No encontramos esta evidencia del dataset."),
       "500": errorResponse("No pudimos revisar la evidencia del dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/label",
+    tags: ["Datasets"],
+    operationId: "corregir-etiqueta-clasificacion-dataset",
+    summary: "Corregir la etiqueta de clasificación de una evidencia",
+    description:
+      "Cualquier miembro del workspace puede guardar la etiqueta revisada de una evidencia de clasificación. La predicción original no cambia.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        itemId: z.string().openapi({ example: "item-123" }),
+      }),
+      body: {
+        required: true,
+        content: { "application/json": { schema: DatasetLabelRequestSchema } },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Etiqueta revisada guardada.",
+        content: { "application/json": { schema: DatasetLabelResponseSchema } },
+      },
+      "400": errorResponse(
+        "Ingresa una etiqueta para una evidencia aprobada (etiqueta vacía) o la etiqueta revisada no es válida (más de 160 caracteres).",
+      ),
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos esta evidencia del dataset."),
+      "409": errorResponse("Esta evidencia no es de clasificación."),
+      "500": errorResponse("No pudimos guardar la etiqueta revisada."),
     },
   });
 

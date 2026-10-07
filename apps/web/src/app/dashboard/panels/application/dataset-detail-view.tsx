@@ -1,15 +1,17 @@
 "use client";
 
-import type {
-  DatasetAvailableEvidenceResponse,
-  DatasetDetailResponse,
-  DatasetEvidence,
-  DatasetReviewResponse,
+import {
+  DATASET_LABEL_MAX_LENGTH,
+  type DatasetAvailableEvidenceResponse,
+  type DatasetDetailResponse,
+  type DatasetEvidence,
+  type DatasetLabelResponse,
+  type DatasetReviewResponse,
 } from "@ayni/api/datasets";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -27,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/api-error";
 import { formatLongDateEs } from "@/lib/format-date";
@@ -36,6 +39,7 @@ import type { Application } from "../../types";
 const NOT_FOUND = "No encontramos este dataset.";
 const LOAD_ERROR = "No pudimos cargar el dataset.";
 const MAX_EVIDENCE_PER_ADD = 500;
+const LABEL_REQUIRED = "Ingresa una etiqueta para una evidencia aprobada.";
 
 export type DatasetDetailViewProps = {
   application: Application;
@@ -263,6 +267,25 @@ export function DatasetDetailView({
     setNotice(status === "approved" ? "Evidencia aprobada." : "Evidencia rechazada.");
   }
 
+  async function saveLabel(itemId: string, label: string) {
+    const { data } = await httpClient.put<DatasetLabelResponse>(
+      `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/label`,
+      { label },
+    );
+    if (retiredEvidenceIdsRef.current.has(itemId)) return;
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.id === itemId ? { ...item, reviewedLabel: data.reviewedLabel } : item,
+            ),
+          }
+        : current,
+    );
+    setNotice("Etiqueta revisada guardada.");
+  }
+
   useEffect(() => {
     void loadDetail();
     return () => {
@@ -475,6 +498,7 @@ export function DatasetDetailView({
                   canRemove={canManage && application.status === "active"}
                   onRemove={removeEvidence}
                   onReview={reviewEvidence}
+                  onSaveLabel={saveLabel}
                 />
               ))}
             </ul>
@@ -511,11 +535,13 @@ function EvidenceItem({
   canRemove,
   onRemove,
   onReview,
+  onSaveLabel,
 }: {
   item: DatasetDetailResponse["items"][number];
   canRemove: boolean;
   onRemove: (itemId: string) => Promise<void>;
   onReview: (itemId: string, status: "approved" | "rejected", reason?: string) => Promise<void>;
+  onSaveLabel: (itemId: string, label: string) => Promise<void>;
 }) {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -570,7 +596,11 @@ function EvidenceItem({
         unoptimized
         className="mt-3 max-h-80 w-auto max-w-full rounded object-contain"
       />
-      <p className="mt-2 text-sm">Predicción original: {resultSummary(item.originalResult)}</p>
+      {item.taskType === "classification" ? (
+        <ReviewedLabelPanel item={item} onSave={onSaveLabel} />
+      ) : (
+        <p className="mt-2 text-sm">Predicción original: {resultSummary(item.originalResult)}</p>
+      )}
       <p className="mt-1 text-sm" data-testid={`dataset-evidence-review-status-${item.id}`}>
         Estado: {reviewStatusLabel(item.reviewStatus)}
       </p>
@@ -697,6 +727,109 @@ function EvidenceItem({
       )}
     </li>
   );
+}
+
+function ReviewedLabelPanel({
+  item,
+  onSave,
+}: {
+  item: DatasetDetailResponse["items"][number];
+  onSave: (itemId: string, label: string) => Promise<void>;
+}) {
+  const id = useId();
+  const [label, setLabel] = useState(item.reviewedLabel ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const suggestions = predictedLabels(item.originalResult);
+
+  useEffect(() => {
+    setLabel(item.reviewedLabel ?? "");
+  }, [item.reviewedLabel]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    const trimmed = label.trim();
+    if (!trimmed) {
+      setError(LABEL_REQUIRED);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(item.id, trimmed);
+      setLabel(trimmed);
+    } catch (saveError) {
+      setError(errorMessage(saveError, "No pudimos guardar la etiqueta revisada."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby={`${id}-title`} className="mt-3 space-y-2 rounded-md border p-3">
+      <h3 id={`${id}-title`} className="font-medium text-sm">
+        Etiqueta revisada
+      </h3>
+      <p className="text-sm">Predicción original: {resultSummary(item.originalResult)}</p>
+      <p className="text-muted-foreground text-sm">
+        {item.reviewedLabel === null
+          ? "Sin etiqueta revisada"
+          : `Etiqueta revisada: ${item.reviewedLabel}`}
+      </p>
+      <form noValidate className="space-y-2" onSubmit={(event) => void save(event)}>
+        <label htmlFor={`${id}-label`} className="block text-sm">
+          Etiqueta correcta
+        </label>
+        <Input
+          id={`${id}-label`}
+          value={label}
+          required
+          maxLength={DATASET_LABEL_MAX_LENGTH}
+          list={`${id}-suggestions`}
+          disabled={saving}
+          aria-invalid={error ? true : undefined}
+          onChange={(event) => setLabel(event.target.value)}
+        />
+        <datalist id={`${id}-suggestions`}>
+          {suggestions.map((suggestion) => (
+            <option key={suggestion} value={suggestion} />
+          ))}
+        </datalist>
+        {error && (
+          <p role="alert" className="text-destructive text-sm">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={saving}
+            onClick={() => {
+              setLabel(item.reviewedLabel ?? "");
+              setError("");
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? "Guardando etiqueta…" : "Guardar etiqueta"}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/** The labels a classification prediction names, offered as suggestions for the reviewed label. */
+function predictedLabels(result: Record<string, unknown>) {
+  const labels = typeof result.label === "string" ? [result.label] : [];
+  if (typeof result.confidences === "object" && result.confidences !== null) {
+    labels.push(...Object.keys(result.confidences));
+  }
+  return [...new Set(labels)];
 }
 
 function reviewStatusLabel(status: DatasetDetailResponse["items"][number]["reviewStatus"]) {
