@@ -16,6 +16,7 @@ import {
   listDatasets,
   removeDatasetEvidence,
   reviewDatasetEvidence,
+  saveDatasetItemLabel,
 } from "./dataset-store";
 import { logger } from "./lib/logger";
 
@@ -138,7 +139,7 @@ function makeDatabase({
         updatedValues.push(values);
         return {
           where: () => ({
-            returning: async () => [{ id: "item-1", reviewedAt: values.reviewedAt }],
+            returning: async () => [{ id: "item-1", ...values }],
           }),
         };
       },
@@ -366,5 +367,65 @@ describe("reviewDatasetEvidence", () => {
 
     expect(result).toMatchObject({ ok: true, value: { status: "approved", reason: null } });
     expect(updatedValues[0]?.reviewReason).toBeNull();
+  });
+});
+
+describe("saveDatasetItemLabel", () => {
+  const labelInput = {
+    applicationId: "app-1",
+    datasetId: "dataset-1",
+    itemId: "item-1",
+    userId: "member-1",
+    label: "cedro",
+  };
+
+  it("stores the reviewed label for any member without touching the original prediction", async () => {
+    const { database, updatedValues } = makeDatabase({
+      membershipRole: "member",
+      datasetItemRows: [{ id: "item-1", taskType: "classification" }],
+    });
+
+    expect(await saveDatasetItemLabel(database, labelInput)).toEqual({
+      ok: true,
+      value: { reviewedLabel: "cedro" },
+    });
+    expect(updatedValues).toEqual([{ reviewedLabel: "cedro" }]);
+  });
+
+  it("refuses detection items and items outside the dataset without writing", async () => {
+    const detection = makeDatabase({
+      datasetItemRows: [{ id: "item-1", taskType: "detection" }],
+    });
+    expect(await saveDatasetItemLabel(detection.database, labelInput)).toEqual({
+      ok: false,
+      reason: "notClassification",
+    });
+    expect(detection.updatedValues).toEqual([]);
+
+    const missing = makeDatabase();
+    expect(await saveDatasetItemLabel(missing.database, labelInput)).toEqual({
+      ok: false,
+      reason: "notFound",
+    });
+    expect(missing.updatedValues).toEqual([]);
+  });
+
+  it("logs transaction failures", async () => {
+    const failure = new Error("database unavailable");
+    const database = {
+      transaction: async () => {
+        throw failure;
+      },
+    } as unknown as ApplicationDatabase;
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    expect(await saveDatasetItemLabel(database, labelInput)).toEqual({
+      ok: false,
+      reason: "databaseFailed",
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      { err: failure, applicationId: "app-1", datasetId: "dataset-1", itemId: "item-1" },
+      "Failed to save dataset item label",
+    );
   });
 });

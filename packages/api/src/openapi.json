@@ -3219,6 +3219,10 @@
                           },
                           "reviewReason": {
                             "type": ["string", "null"]
+                          },
+                          "reviewedLabel": {
+                            "type": ["string", "null"],
+                            "description": "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult."
                           }
                         },
                         "required": [
@@ -3236,7 +3240,8 @@
                           "reviewStatus",
                           "reviewerName",
                           "reviewedAt",
-                          "reviewReason"
+                          "reviewReason",
+                          "reviewedLabel"
                         ],
                         "additionalProperties": false
                       }
@@ -3677,6 +3682,10 @@
                           },
                           "reviewReason": {
                             "type": ["string", "null"]
+                          },
+                          "reviewedLabel": {
+                            "type": ["string", "null"],
+                            "description": "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult."
                           }
                         },
                         "required": [
@@ -3694,7 +3703,8 @@
                           "reviewStatus",
                           "reviewerName",
                           "reviewedAt",
-                          "reviewReason"
+                          "reviewReason",
+                          "reviewedLabel"
                         ],
                         "additionalProperties": false
                       }
@@ -4129,6 +4139,186 @@
           },
           "500": {
             "description": "No pudimos revisar la evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/label": {
+      "put": {
+        "tags": ["Datasets"],
+        "operationId": "corregir-etiqueta-clasificacion-dataset",
+        "summary": "Corregir la etiqueta de clasificación de una evidencia",
+        "description": "Cualquier miembro del workspace puede guardar la etiqueta revisada de una evidencia de clasificación. La predicción original no cambia.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "item-123"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  }
+                },
+                "required": ["label"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Etiqueta revisada guardada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reviewedLabel": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["reviewedLabel"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ingresa una etiqueta para una evidencia aprobada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos esta evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Esta evidencia no es de clasificación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos guardar la etiqueta revisada.",
             "content": {
               "application/json": {
                 "schema": {

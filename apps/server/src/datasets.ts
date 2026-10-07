@@ -3,6 +3,7 @@ import {
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
+  DatasetLabelRequestSchema,
   type DatasetListResponse,
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
@@ -19,12 +20,16 @@ import type {
   RemoveDatasetEvidenceResult,
   ReviewDatasetEvidenceInput,
   ReviewDatasetEvidenceResult,
+  SaveDatasetItemLabelInput,
+  SaveDatasetItemLabelResult,
 } from "./dataset-store";
 
 const NAME_REQUIRED_MESSAGE = "Ingresa un nombre para el dataset.";
 const TASK_TYPE_REQUIRED_MESSAGE = "Selecciona el tipo de tarea.";
 const APPLICATION_NOT_FOUND_MESSAGE = "No encontramos esta aplicación.";
 const APPLICATION_ARCHIVED_MESSAGE = "No puedes modificar datasets de una aplicación archivada.";
+const LABEL_REQUIRED_MESSAGE = "Ingresa una etiqueta para una evidencia aprobada.";
+const DATASET_ITEM_NOT_FOUND_MESSAGE = "No encontramos esta evidencia del dataset.";
 
 type Dependencies = {
   getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -45,6 +50,7 @@ type Dependencies = {
     ) => Promise<DatasetAvailableEvidenceResponse | null>;
     removeEvidence: (input: RemoveDatasetEvidenceInput) => Promise<RemoveDatasetEvidenceResult>;
     reviewEvidence: (input: ReviewDatasetEvidenceInput) => Promise<ReviewDatasetEvidenceResult>;
+    saveLabel: (input: SaveDatasetItemLabelInput) => Promise<SaveDatasetItemLabelResult>;
   };
 };
 
@@ -289,6 +295,53 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       );
     },
   );
+
+  app.put("/applications/:applicationId/datasets/:datasetId/evidence/:itemId/label", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE }, 404);
+
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = DatasetLabelRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      const label =
+        typeof body === "object" && body !== null && "label" in body ? body.label : undefined;
+      return typeof label !== "string" || !label.trim()
+        ? c.json({ message: LABEL_REQUIRED_MESSAGE, code: "labelRequired" }, 400)
+        : c.json({ message: "La etiqueta revisada no es válida.", code: "invalidLabel" }, 400);
+    }
+
+    const result = await datasets.saveLabel({
+      applicationId: application.id,
+      datasetId: c.req.param("datasetId"),
+      itemId: c.req.param("itemId"),
+      userId: session.user.id,
+      ...parsed.data,
+    });
+    if (result.ok) return c.json(result.value);
+    if (result.reason === "notFound") {
+      return c.json({ message: DATASET_ITEM_NOT_FOUND_MESSAGE, code: "notFound" }, 404);
+    }
+    if (result.reason === "notClassification") {
+      return c.json(
+        {
+          message: "Esta evidencia no es de clasificación.",
+          code: "datasetEvidenceNotClassification",
+        },
+        409,
+      );
+    }
+    return c.json(
+      { message: "No pudimos guardar la etiqueta revisada.", code: "datasetLabelSaveFailed" },
+      500,
+    );
+  });
 
   app.get("/applications/:applicationId/datasets", async (c) => {
     const session = await getSession(c.req.raw.headers);

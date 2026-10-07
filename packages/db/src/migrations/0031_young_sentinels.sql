@@ -1,0 +1,2 @@
+ALTER TABLE "dataset_item" ADD COLUMN "reviewed_label" text;--> statement-breakpoint
+ALTER TABLE "dataset_item" ADD CONSTRAINT "dataset_item_reviewed_label_check" CHECK ("dataset_item"."reviewed_label" is null or char_length(btrim("dataset_item"."reviewed_label")) between 1 and 160);

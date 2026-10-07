@@ -5,6 +5,8 @@ import {
   DatasetCreateRequestSchema,
   DatasetDetailResponseSchema,
   DatasetItemSchema,
+  DatasetLabelRequestSchema,
+  DatasetLabelResponseSchema,
   DatasetListResponseSchema,
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
@@ -148,6 +150,7 @@ describe("dataset creation contract", () => {
       reviewerName: "Diego",
       reviewedAt: "2026-10-03T00:00:00.000Z",
       reviewReason: "Imagen borrosa",
+      reviewedLabel: null,
     };
     expect(DatasetItemSchema.safeParse(item).success).toBe(true);
     expect(
@@ -170,5 +173,42 @@ describe("dataset creation contract", () => {
       ]?.patch;
     expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
+  });
+
+  it("keeps the reviewed classification label apart from the original prediction", () => {
+    const item = {
+      id: "item-1",
+      evidenceId: "evidence-1",
+      modelId: "model-1",
+      modelVersion: "1.0.0",
+      taskType: "classification",
+      originalResult: { type: "classification", label: "pino", confidence: 0.9 },
+      capturedAt: "2026-10-01T00:00:00.000Z",
+      addedAt: "2026-10-02T00:00:00.000Z",
+      imageUrl: "https://evidence.example/image",
+      imageWidth: 640,
+      imageHeight: 480,
+      reviewStatus: "approved",
+      reviewerName: "Diego",
+      reviewedAt: "2026-10-03T00:00:00.000Z",
+      reviewReason: null,
+      reviewedLabel: "cedro",
+    };
+    expect(DatasetItemSchema.safeParse(item).success).toBe(true);
+    expect(DatasetItemSchema.safeParse({ ...item, reviewedLabel: null }).success).toBe(true);
+    expect(DatasetLabelRequestSchema.parse({ label: "  cedro " })).toEqual({ label: "cedro" });
+    expect(DatasetLabelRequestSchema.safeParse({ label: "   " }).success).toBe(false);
+    expect(DatasetLabelRequestSchema.safeParse({}).success).toBe(false);
+    expect(DatasetLabelRequestSchema.safeParse({ label: "a".repeat(161) }).success).toBe(false);
+    expect(DatasetLabelResponseSchema.safeParse({ reviewedLabel: "cedro" }).success).toBe(true);
+
+    const operation =
+      createOpenApiDocument().paths?.[
+        "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}/label"
+      ]?.put;
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["400"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
+    expect(operation?.responses?.["409"]).toBeDefined();
   });
 });

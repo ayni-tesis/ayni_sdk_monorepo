@@ -4,6 +4,8 @@ import type {
   DatasetDetailResponse,
   DatasetEvidence,
   DatasetItem,
+  DatasetLabelRequest,
+  DatasetLabelResponse,
   DatasetListItem,
   DatasetListResponse,
   DatasetReviewRequest,
@@ -58,6 +60,7 @@ type DatasetItemRow = {
   reviewerName: string | null;
   reviewedAt: Date | string | null;
   reviewReason: string | null;
+  reviewedLabel: string | null;
 };
 
 type DatasetEvidenceRow = {
@@ -200,6 +203,7 @@ export async function getDataset(
         reviewerName: user.name,
         reviewedAt: datasetItem.reviewedAt,
         reviewReason: datasetItem.reviewReason,
+        reviewedLabel: datasetItem.reviewedLabel,
       })
       .from(datasetItem)
       .innerJoin(
@@ -414,6 +418,7 @@ export async function addDatasetEvidence(
                 reviewerName: null,
                 reviewedAt: null,
                 reviewReason: null,
+                reviewedLabel: null,
               };
             }),
           ),
@@ -552,6 +557,86 @@ export async function reviewDatasetEvidence(
         itemId: input.itemId,
       },
       "Failed to review dataset evidence",
+    );
+    return { ok: false, reason: "databaseFailed" };
+  }
+}
+
+export type SaveDatasetItemLabelInput = {
+  applicationId: string;
+  datasetId: string;
+  itemId: string;
+  userId: string;
+} & DatasetLabelRequest;
+
+export type SaveDatasetItemLabelResult =
+  | { ok: true; value: DatasetLabelResponse }
+  | { ok: false; reason: "notFound" | "notClassification" | "databaseFailed" };
+
+/**
+ * Saves the reviewed classification label of a dataset item (US-081) in its
+ * own column, so `originalResult` keeps the model's prediction unchanged. Any
+ * workspace member may correct it, as with the review status.
+ */
+export async function saveDatasetItemLabel(
+  database: ApplicationDatabase,
+  input: SaveDatasetItemLabelInput,
+): Promise<SaveDatasetItemLabelResult> {
+  try {
+    const result = await executeApplicationAction(
+      database,
+      {
+        applicationId: input.applicationId,
+        userId: input.userId,
+        allowArchived: true,
+        requireAdmin: false,
+      },
+      async (transaction) => {
+        const tx = transaction as unknown as DatasetWriteExecutor;
+        const itemCondition = and(
+          eq(datasetItem.applicationId, input.applicationId),
+          eq(datasetItem.datasetId, input.datasetId),
+          eq(datasetItem.id, input.itemId),
+        );
+        const items = (await tx
+          .select({ id: datasetItem.id, taskType: dataset.taskType })
+          .from(datasetItem)
+          .innerJoin(
+            dataset,
+            and(
+              eq(dataset.applicationId, datasetItem.applicationId),
+              eq(dataset.id, datasetItem.datasetId),
+            ),
+          )
+          .where(itemCondition)
+          .limit(1)
+          .for("update")) as { id: string; taskType: DatasetTaskType }[];
+        const item = items[0];
+        if (!item) return "notFound" as const;
+        if (item.taskType !== "classification") return "notClassification" as const;
+
+        const reviewedLabel = input.label.trim();
+        const updated = await tx
+          .update(datasetItem)
+          .set({ reviewedLabel })
+          .where(itemCondition)
+          .returning({ id: datasetItem.id });
+        return updated.length ? { reviewedLabel } : ("notFound" as const);
+      },
+    );
+    if (!result.ok) return { ok: false, reason: "notFound" };
+    return typeof result.value === "string"
+      ? { ok: false, reason: result.value }
+      : { ok: true, value: result.value };
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        applicationId: input.applicationId,
+        datasetId: input.datasetId,
+        itemId: input.itemId,
+      },
+      "Failed to save dataset item label",
     );
     return { ok: false, reason: "databaseFailed" };
   }
