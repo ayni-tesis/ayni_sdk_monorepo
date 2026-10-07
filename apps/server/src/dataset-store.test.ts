@@ -400,9 +400,7 @@ describe("dataset evidence counts", () => {
     const itemsOfDataset =
       '"dataset_item"."application_id" = "dataset"."application_id" and "dataset_item"."dataset_id" = "dataset"."id"';
 
-    expect(sql).toContain(
-      `(select count(*)::int from "dataset_item" where ${itemsOfDataset})`,
-    );
+    expect(sql).toContain(`(select count(*)::int from "dataset_item" where ${itemsOfDataset})`);
     expect(sql).toContain(
       `(select count(*)::int from "dataset_item" where ${itemsOfDataset} and "dataset_item"."review_status" = 'approved')`,
     );
