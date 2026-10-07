@@ -87,16 +87,9 @@ describe("getApplicationTraceMetrics", () => {
       expect(query.sql).toContain("expires_at");
       expect(query.sql).not.toContain("'outputs'");
       expect(query.sql).not.toContain("'measurements'");
-      expect(
-        query.params.some(
-          (value) => value instanceof Date && value.toISOString() === "2026-10-01T00:00:00.000Z",
-        ),
-      ).toBe(true);
-      expect(
-        query.params.some(
-          (value) => value instanceof Date && value.toISOString() === "2026-10-03T00:00:00.000Z",
-        ),
-      ).toBe(true);
+      expect(query.params).toContain("2026-10-01T00:00:00.000Z");
+      expect(query.params).toContain("2026-10-03T00:00:00.000Z");
+      expect(query.params.some((value) => value instanceof Date)).toBe(false);
     }
     expect(memory.queries[1]?.sql).toContain("model_node.value ->> 'type'");
     expect(memory.queries[1]?.sql).toContain("model_node.value ->> 'status'");
