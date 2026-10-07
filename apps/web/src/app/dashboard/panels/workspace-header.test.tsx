@@ -301,7 +301,7 @@ describe("WorkspaceHeader", () => {
     await waitFor(() =>
       expect(sendVerificationEmailMock).toHaveBeenCalledWith({
         email: "diego@example.test",
-        callbackURL: `${window.location.origin}/verify-email`,
+        callbackURL: `${window.location.origin}/verify-email?verified=1`,
       }),
     );
     expect(

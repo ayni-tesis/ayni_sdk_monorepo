@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { isClaimedEmailVerificationTokenMock, storeEmailVerificationTokenMock } = vi.hoisted(() => ({
+  isClaimedEmailVerificationTokenMock: vi.fn(),
+  storeEmailVerificationTokenMock: vi.fn(),
+}));
+
 vi.mock("@ayni/db", () => ({ db: {} }));
+vi.mock("./verification", () => ({
+  EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: 60 * 60,
+  isClaimedEmailVerificationToken: isClaimedEmailVerificationTokenMock,
+  storeEmailVerificationToken: storeEmailVerificationTokenMock,
+}));
 vi.hoisted(() => {
   process.env.DATABASE_URL = "postgres://localhost/test";
   process.env.BETTER_AUTH_SECRET = "test-secret-with-at-least-thirty-two-characters";
@@ -111,8 +121,75 @@ describe("account authentication guards", () => {
     });
     expect(auth.options.emailVerification).toMatchObject({
       sendOnSignUp: true,
-      autoSignInAfterVerification: false,
+      autoSignInAfterVerification: true,
     });
+  });
+
+  it("requires a claimed token associated with the Better Auth user", async () => {
+    isClaimedEmailVerificationTokenMock.mockResolvedValue(false);
+    const beforeEmailVerification = auth.options.emailVerification.beforeEmailVerification;
+    const user = { id: "user-1" } as never;
+    const request = new Request(
+      "http://localhost/api/auth/verify-email?token=token&ayniClaimId=claim",
+    );
+
+    await expect(beforeEmailVerification?.(user, request)).rejects.toMatchObject({
+      status: "BAD_REQUEST",
+    });
+    expect(isClaimedEmailVerificationTokenMock).toHaveBeenCalledWith("token", "claim", "user-1");
+  });
+
+  it("redirects invalid verification links to the error screen so another link can be requested", async () => {
+    const callbackURL = "http://localhost:3001/verify-email?verified=1";
+    const response = await auth.handler(
+      new Request(
+        `http://localhost/api/auth/verify-email?token=invalid&callbackURL=${encodeURIComponent(callbackURL)}`,
+      ),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3001/verify-email?verified=1&error=INVALID_TOKEN",
+    );
+  });
+
+  it("redirects temporary verification failures to a retryable error state", async () => {
+    isClaimedEmailVerificationTokenMock.mockRejectedValue(new Error("database unavailable"));
+    const callbackURL = "http://localhost:3001/verify-email?verified=1";
+    const response = await auth.handler(
+      new Request(
+        `http://localhost/api/auth/verify-email?token=token&ayniClaimId=claim&callbackURL=${encodeURIComponent(callbackURL)}`,
+      ),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3001/verify-email?verified=1&error=FAILED_TO_VERIFY",
+    );
+  });
+
+  it("does not redirect invalid verification links to untrusted callback origins", async () => {
+    const callbackURL = "https://attacker.example/collect";
+    const response = await auth.handler(
+      new Request(
+        `http://localhost/api/auth/verify-email?token=invalid&callbackURL=${encodeURIComponent(callbackURL)}`,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.has("location")).toBe(false);
+  });
+
+  it("rejects a malformed verification callback URL", async () => {
+    isClaimedEmailVerificationTokenMock.mockResolvedValue(false);
+    const response = await auth.handler(
+      new Request(
+        "http://localhost/api/auth/verify-email?token=invalid&callbackURL=http%3A%2F%2F%5B",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.has("location")).toBe(false);
   });
 
   it("does not let the profile update route change terms acceptance", async () => {

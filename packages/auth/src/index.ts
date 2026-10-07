@@ -11,8 +11,8 @@ import { and, eq } from "drizzle-orm";
 import { sendAyniEmail } from "./email";
 import { getGitHubUserInfo } from "./github";
 import {
-  consumeEmailVerificationToken,
   EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
+  isClaimedEmailVerificationToken,
   storeEmailVerificationToken,
 } from "./verification";
 
@@ -122,7 +122,7 @@ export const auth = betterAuth({
   emailVerification: {
     sendOnSignUp: true,
     sendOnSignIn: true,
-    autoSignInAfterVerification: false,
+    autoSignInAfterVerification: true,
     expiresIn: EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
     sendVerificationEmail: async ({ user, url, token }) => {
       await storeEmailVerificationToken(user.id, token);
@@ -131,6 +131,16 @@ export const auth = betterAuth({
         "Verifica tu correo electrónico de Ayni",
         `<p>Confirma tu correo electrónico para continuar con tu cuenta de Ayni.</p><p><a href="${escapeHtml(url)}">Verificar correo electrónico</a></p>`,
       );
+    },
+    beforeEmailVerification: async (user, request) => {
+      const verificationURL = request ? new URL(request.url) : null;
+      const token = verificationURL?.searchParams.get("token");
+      const claimId = verificationURL?.searchParams.get("ayniClaimId");
+      if (!token || !claimId || !(await isClaimedEmailVerificationToken(token, claimId, user.id))) {
+        throw new APIError("BAD_REQUEST", {
+          message: "El enlace de verificación no es válido o ya expiró.",
+        });
+      }
     },
   },
   socialProviders,
@@ -198,7 +208,49 @@ export const auth = betterAuth({
       }
       if (ctx.path === "/verify-email") {
         const token = ctx.query?.token;
-        if (typeof token !== "string" || !(await consumeEmailVerificationToken(token))) {
+        const claimId = ctx.query?.ayniClaimId;
+        const callbackURL = ctx.query?.callbackURL;
+        let redirectURL: URL | undefined;
+        if (typeof callbackURL === "string") {
+          try {
+            redirectURL = new URL(callbackURL, ctx.context.baseURL);
+          } catch {
+            throw new APIError("BAD_REQUEST", {
+              message: "El destino del enlace de verificación no es válido.",
+            });
+          }
+          const trustedOrigins = [env.BETTER_AUTH_URL, env.CORS_ORIGIN].map(
+            (origin) => new URL(origin).origin,
+          );
+          if (!trustedOrigins.includes(redirectURL.origin)) {
+            throw new APIError("BAD_REQUEST", {
+              message: "El destino del enlace de verificación no es válido.",
+            });
+          }
+        }
+        let verificationError: "INVALID_TOKEN" | "FAILED_TO_VERIFY" | null = null;
+        if (typeof token !== "string" || typeof claimId !== "string") {
+          verificationError = "INVALID_TOKEN";
+        } else {
+          try {
+            if (!(await isClaimedEmailVerificationToken(token, claimId))) {
+              verificationError = "INVALID_TOKEN";
+            }
+          } catch (error) {
+            console.error("Ayni email verification token check failed.", error);
+            verificationError = "FAILED_TO_VERIFY";
+          }
+        }
+        if (verificationError) {
+          if (redirectURL) {
+            redirectURL.searchParams.set("error", verificationError);
+            throw ctx.redirect(redirectURL.toString());
+          }
+          if (verificationError === "FAILED_TO_VERIFY") {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+              message: "No pudimos verificar tu correo. Inténtalo nuevamente.",
+            });
+          }
           throw new APIError("BAD_REQUEST", {
             message: "El enlace de verificación no es válido o ya expiró.",
           });

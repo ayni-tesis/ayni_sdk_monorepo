@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   privacyNoticeMock,
+  webEnvMock,
   pushMock,
   signInEmailMock,
   signInSocialMock,
@@ -11,6 +12,7 @@ const {
   toastMock,
 } = vi.hoisted(() => ({
   privacyNoticeMock: { version: "1.0.1", status: "published" as "draft" | "published" },
+  webEnvMock: { NEXT_PUBLIC_GITHUB_AUTH_ENABLED: true },
   pushMock: vi.fn(),
   signInEmailMock: vi.fn(),
   signInSocialMock: vi.fn(),
@@ -19,6 +21,7 @@ const {
 }));
 
 vi.mock("@ayni/env/privacy-notice", () => ({ AYNI_PRIVACY_NOTICE: privacyNoticeMock }));
+vi.mock("@ayni/env/web", () => ({ env: webEnvMock }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("@/lib/auth-client", () => ({
@@ -36,6 +39,7 @@ describe("AuthDiptych", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     privacyNoticeMock.status = "published";
+    webEnvMock.NEXT_PUBLIC_GITHUB_AUTH_ENABLED = true;
     window.history.replaceState({}, "", "/");
     signInSocialMock.mockResolvedValue({ error: null });
     signUpEmailMock.mockImplementation(
@@ -75,6 +79,13 @@ describe("AuthDiptych", () => {
 
     expect(screen.getByText(/registro temporalmente no disponible/i)).toBeTruthy();
     expect(screen.queryByLabelText(/correo electrónico/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continuar con GitHub" })).toBeNull();
+  });
+
+  it("hides GitHub sign-in when the provider is not enabled", () => {
+    webEnvMock.NEXT_PUBLIC_GITHUB_AUTH_ENABLED = false;
+    render(<AuthDiptych initialMode="sign-in" />);
+
     expect(screen.queryByRole("button", { name: "Continuar con GitHub" })).toBeNull();
   });
 
@@ -270,6 +281,26 @@ describe("AuthDiptych", () => {
         additionalData: { termsAcceptedVersion: CURRENT_TERMS_VERSION },
       }),
     );
+  });
+
+  it("returns a verified signup link to the confirmation screen", async () => {
+    render(<AuthDiptych initialMode="sign-up" />);
+    fireEvent.change(screen.getByLabelText("Nombre completo"), {
+      target: { value: "Test User" },
+    });
+    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+      target: { value: "test@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /crear cuenta/i }));
+
+    await waitFor(() => expect(signUpEmailMock).toHaveBeenCalledTimes(1));
+    expect(signUpEmailMock.mock.calls[0]?.[0]).toMatchObject({
+      callbackURL: `${window.location.origin}/verify-email?verified=1`,
+    });
   });
 
   it("does not expose provider error details", async () => {

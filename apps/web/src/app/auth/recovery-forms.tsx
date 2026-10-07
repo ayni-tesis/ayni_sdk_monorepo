@@ -180,19 +180,24 @@ export function ResetPasswordForm({ token }: { token?: string }) {
   );
 }
 
-export function VerifyEmailStatus({ error }: { error?: string }) {
+export function VerifyEmailStatus({ error, verified }: { error?: string; verified?: boolean }) {
+  const { data: session, isPending } = authClient.useSession();
+  const invalidLink = error === "INVALID_TOKEN" || error === "TOKEN_EXPIRED";
+  const emailIsVerified = verified && session?.user.emailVerified === true;
   return (
     <div className={styles.formBody}>
       {error ? (
         <>
           <p className={styles.errorCallout} role="alert">
-            Este enlace ya no es válido. Solicita uno nuevo para verificar tu correo.
+            {invalidLink
+              ? "Este enlace ya no es válido. Solicita uno nuevo para verificar tu correo."
+              : "No pudimos verificar tu correo. Inténtalo nuevamente."}
           </p>
           <Link href="/dashboard" className={styles.linkButton}>
             Volver a mi perfil para solicitar otro enlace
           </Link>
         </>
-      ) : (
+      ) : emailIsVerified ? (
         <>
           <p className={styles.draftCardText} role="status">
             Correo verificado. Tu dirección se confirmó correctamente.
@@ -201,6 +206,12 @@ export function VerifyEmailStatus({ error }: { error?: string }) {
             Continuar al dashboard
           </Link>
         </>
+      ) : (
+        <p className={styles.draftCardText} role="status">
+          {isPending
+            ? "Confirmando el estado de tu correo…"
+            : "Abre el enlace de verificación que enviamos a tu correo. Si ya no lo encuentras, inicia sesión y solicita uno nuevo desde tu perfil."}
+        </p>
       )}
     </div>
   );

@@ -103,7 +103,7 @@ function WorkspaceProfileDialog({
     try {
       const result = await authClient.sendVerificationEmail({
         email: session.user.email,
-        callbackURL: `${window.location.origin}/verify-email`,
+        callbackURL: `${window.location.origin}/verify-email?verified=1`,
       });
       if (result.error) throw result.error;
       setVerificationMessage(`Enlace de verificación enviado a ${session.user.email}.`);

@@ -11,9 +11,10 @@ export const metadata: Metadata = {
 export default async function VerifyEmailPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; verified?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, verified: verifiedParam } = await searchParams;
+  const verified = !error && verifiedParam === "1";
   return (
     <main className={styles.authRoot}>
       <header className={styles.topBar}>
@@ -25,10 +26,10 @@ export default async function VerifyEmailPage({
         <div className={styles.consoleCard}>
           <div className={styles.consoleHeader}>
             <h1 className={styles.consoleTitle}>
-              {error ? "Enlace no válido" : "Correo verificado"}
+              {error ? "Enlace no válido" : "Verificación del correo"}
             </h1>
           </div>
-          <VerifyEmailStatus error={error} />
+          <VerifyEmailStatus error={error} verified={verified} />
         </div>
       </section>
     </main>

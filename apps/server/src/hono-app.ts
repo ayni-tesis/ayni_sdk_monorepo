@@ -3,6 +3,11 @@ import { createOpenApiDocument } from "@ayni/api";
 import type { SdkConsentReceipt } from "@ayni/api/sdk-consent";
 import type { SdkWorkflowTrace } from "@ayni/api/sdk-trace";
 import { auth } from "@ayni/auth";
+import {
+  claimEmailVerificationToken,
+  completeEmailVerificationToken,
+  releaseEmailVerificationToken,
+} from "@ayni/auth/verification";
 import { db } from "@ayni/db";
 import {
   application,
@@ -23,6 +28,7 @@ import { logger } from "hono/logger";
 import { getApplicationTraceMetrics } from "./application-trace-metrics-store";
 import { createApplicationTracesApp } from "./application-traces";
 import { type Application, createApp, toApplication } from "./applications";
+import { redirectAfterEmailVerificationFailure, verificationSucceeded } from "./auth-verification";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
 import {
@@ -777,7 +783,86 @@ app.use("/api/auth/*", async (c, next) => {
   }
   return next();
 });
-app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+app.on(["POST", "GET"], "/api/auth/*", async (c) => {
+  const request = c.req.raw;
+  const requestUrl = new URL(request.url);
+  const trustedOrigins = [env.BETTER_AUTH_URL, env.CORS_ORIGIN];
+  if (request.method !== "GET" || requestUrl.pathname !== "/api/auth/verify-email") {
+    return auth.handler(request);
+  }
+
+  const token = requestUrl.searchParams.get("token");
+  let claim: Awaited<ReturnType<typeof claimEmailVerificationToken>> = null;
+  if (token) {
+    try {
+      claim = await claimEmailVerificationToken(token);
+    } catch (error) {
+      console.error("Ayni email verification claim failed.", error);
+      return (
+        redirectAfterEmailVerificationFailure(request, 500, trustedOrigins) ??
+        new Response(null, { status: 500 })
+      );
+    }
+  }
+
+  const authUrl = new URL(request.url);
+  authUrl.searchParams.delete("ayniClaimId");
+  if (claim) authUrl.searchParams.set("ayniClaimId", claim.claimId);
+  const authRequest = new Request(authUrl.toString(), {
+    method: request.method,
+    headers: new Headers(request.headers),
+    redirect: request.redirect,
+  });
+
+  let response: Response;
+  try {
+    response = await auth.handler(authRequest);
+  } catch (error) {
+    if (token && claim) {
+      try {
+        await releaseEmailVerificationToken(token, claim.claimId);
+      } catch (releaseError) {
+        console.error("Ayni email verification claim release failed.", releaseError);
+      }
+    }
+    console.error("Ayni email verification failed.", error);
+    return (
+      redirectAfterEmailVerificationFailure(request, 500, trustedOrigins) ??
+      new Response(null, { status: 500 })
+    );
+  }
+
+  if (token && claim) {
+    try {
+      if (verificationSucceeded(response, authRequest)) {
+        const completed = await completeEmailVerificationToken(token, claim.claimId);
+        if (!verificationSucceeded(response, authRequest, completed)) {
+          return (
+            redirectAfterEmailVerificationFailure(request, 400, trustedOrigins) ??
+            new Response(null, { status: 400 })
+          );
+        }
+      } else {
+        await releaseEmailVerificationToken(token, claim.claimId);
+      }
+    } catch (error) {
+      console.error("Ayni email verification token finalization failed.", error);
+      try {
+        await releaseEmailVerificationToken(token, claim.claimId);
+      } catch (releaseError) {
+        console.error("Ayni email verification claim release failed.", releaseError);
+      }
+      return (
+        redirectAfterEmailVerificationFailure(request, 500, trustedOrigins) ??
+        new Response(null, { status: 500 })
+      );
+    }
+  }
+
+  return (
+    redirectAfterEmailVerificationFailure(request, response.status, trustedOrigins) ?? response
+  );
+});
 app.route(
   "/",
   createApp({

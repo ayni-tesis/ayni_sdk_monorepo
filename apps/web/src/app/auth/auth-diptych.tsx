@@ -2,6 +2,7 @@
 
 import { AYNI_PRIVACY_NOTICE } from "@ayni/env/privacy-notice";
 import { CURRENT_TERMS_VERSION } from "@ayni/env/terms";
+import { env } from "@ayni/env/web";
 import { useForm } from "@tanstack/react-form";
 import type { Route } from "next";
 import Link from "next/link";
@@ -122,6 +123,7 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
           email: value.email,
           password: value.password,
           name: value.name,
+          callbackURL: `${window.location.origin}/verify-email?verified=1`,
           termsAcceptedVersion: value.acceptedTerms ? CURRENT_TERMS_VERSION : "",
         } as Parameters<typeof authClient.signUp.email>[0] & { termsAcceptedVersion: string },
         {
@@ -364,21 +366,23 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                 )}
               </signInForm.Subscribe>
 
-              <signInForm.Subscribe>
-                {(state) => (
-                  <div className={styles.socialBlock}>
-                    <span className={styles.socialDivider}>o continúa con</span>
-                    <button
-                      type="button"
-                      className={styles.secondaryActionButton}
-                      disabled={state.isSubmitting || isSessionPending || isSocialPending}
-                      onClick={() => void continueWithGitHub(state.values.acceptTerms)}
-                    >
-                      {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
-                    </button>
-                  </div>
-                )}
-              </signInForm.Subscribe>
+              {env.NEXT_PUBLIC_GITHUB_AUTH_ENABLED && (
+                <signInForm.Subscribe>
+                  {(state) => (
+                    <div className={styles.socialBlock}>
+                      <span className={styles.socialDivider}>o continúa con</span>
+                      <button
+                        type="button"
+                        className={styles.secondaryActionButton}
+                        disabled={state.isSubmitting || isSessionPending || isSocialPending}
+                        onClick={() => void continueWithGitHub(state.values.acceptTerms)}
+                      >
+                        {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
+                      </button>
+                    </div>
+                  )}
+                </signInForm.Subscribe>
+              )}
 
               {submitError && (
                 <p className={styles.errorCallout} role="alert">
@@ -586,21 +590,23 @@ export function AuthDiptych({ initialMode, next }: AuthDiptychProps) {
                 )}
               </signUpForm.Subscribe>
 
-              <signUpForm.Subscribe>
-                {(state) => (
-                  <div className={styles.socialBlock}>
-                    <span className={styles.socialDivider}>o continúa con</span>
-                    <button
-                      type="button"
-                      className={styles.secondaryActionButton}
-                      disabled={state.isSubmitting || isSessionPending || isSocialPending}
-                      onClick={() => void continueWithGitHub(state.values.acceptedTerms)}
-                    >
-                      {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
-                    </button>
-                  </div>
-                )}
-              </signUpForm.Subscribe>
+              {env.NEXT_PUBLIC_GITHUB_AUTH_ENABLED && (
+                <signUpForm.Subscribe>
+                  {(state) => (
+                    <div className={styles.socialBlock}>
+                      <span className={styles.socialDivider}>o continúa con</span>
+                      <button
+                        type="button"
+                        className={styles.secondaryActionButton}
+                        disabled={state.isSubmitting || isSessionPending || isSocialPending}
+                        onClick={() => void continueWithGitHub(state.values.acceptedTerms)}
+                      >
+                        {isSocialPending ? "Conectando con GitHub…" : "Continuar con GitHub"}
+                      </button>
+                    </div>
+                  )}
+                </signUpForm.Subscribe>
+              )}
 
               {submitError && (
                 <p className={styles.errorCallout} role="alert">

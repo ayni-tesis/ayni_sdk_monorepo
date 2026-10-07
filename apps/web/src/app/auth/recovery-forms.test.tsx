@@ -2,15 +2,17 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requestPasswordResetMock, resetPasswordMock } = vi.hoisted(() => ({
+const { requestPasswordResetMock, resetPasswordMock, useSessionMock } = vi.hoisted(() => ({
   requestPasswordResetMock: vi.fn(),
   resetPasswordMock: vi.fn(),
+  useSessionMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-client", () => ({
   authClient: {
     requestPasswordReset: requestPasswordResetMock,
     resetPassword: resetPasswordMock,
+    useSession: useSessionMock,
   },
 }));
 
@@ -21,6 +23,7 @@ describe("account recovery forms", () => {
     vi.clearAllMocks();
     requestPasswordResetMock.mockResolvedValue({ error: null });
     resetPasswordMock.mockResolvedValue({ error: null });
+    useSessionMock.mockReturnValue({ data: null, isPending: false });
   });
 
   afterEach(cleanup);
@@ -113,13 +116,27 @@ describe("account recovery forms", () => {
     expect(screen.getByRole("link", { name: "Solicitar otro enlace" })).toBeTruthy();
   });
 
-  it("reports email verification success or an invalid link", () => {
+  it("reports email verification only after a verified session", () => {
     const { rerender } = render(<VerifyEmailStatus />);
+    expect(screen.getByRole("status").textContent).toContain("Abre el enlace de verificación");
+
+    rerender(<VerifyEmailStatus verified />);
+    expect(
+      screen.queryByText("Correo verificado. Tu dirección se confirmó correctamente."),
+    ).toBeNull();
+
+    useSessionMock.mockReturnValue({ data: { user: { emailVerified: true } }, isPending: false });
+    rerender(<VerifyEmailStatus verified />);
     expect(screen.getByRole("status").textContent).toContain("Correo verificado.");
 
     rerender(<VerifyEmailStatus error="INVALID_TOKEN" />);
     expect(screen.getByRole("alert").textContent).toContain(
       "Este enlace ya no es válido. Solicita uno nuevo para verificar tu correo.",
+    );
+
+    rerender(<VerifyEmailStatus error="FAILED_TO_VERIFY" />);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "No pudimos verificar tu correo. Inténtalo nuevamente.",
     );
   });
 });
