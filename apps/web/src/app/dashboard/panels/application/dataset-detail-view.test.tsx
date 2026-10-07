@@ -1108,6 +1108,68 @@ describe("DatasetDetailView", () => {
       );
     });
 
+    it("does not load another page of the previous filters while new filters load", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          data: { dataset, items: [item], nextItemOffset: 1, filterOptions },
+        })
+        .mockReturnValueOnce(new Promise(() => {}));
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Aprobada");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(filterBar().getByRole("button", { name: "Aplicando filtros…" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Cargar más evidencias del dataset" }),
+      ).toBeDisabled();
+    });
+
+    it("keeps showing the applied filters after the detail reloads from an error", async () => {
+      let detailCalls = 0;
+      getMock.mockImplementation(
+        async (url: string, options?: { params?: Record<string, unknown> }) => {
+          if (url.endsWith("/available-evidence")) {
+            return { data: { evidence: [evidence], nextOffset: null } };
+          }
+          detailCalls += 1;
+          if (detailCalls === 3) throw new Error("offline");
+          return {
+            data: {
+              dataset,
+              items: options?.params?.status ? [] : [item],
+              nextItemOffset: null,
+              filterOptions,
+            },
+          };
+        },
+      );
+      const user = userEvent.setup();
+      renderManagedDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Rechazada");
+      await user.type(filterBar().getByLabelText("Mínima (%)"), "29");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+      await screen.findByText("No hay evidencias que coincidan con los filtros.");
+
+      await user.click(screen.getByRole("button", { name: "Agregar evidencia" }));
+      await user.click(await screen.findByRole("checkbox"));
+      await user.click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+      await user.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+      expect(
+        await screen.findByText("No hay evidencias que coincidan con los filtros."),
+      ).toBeInTheDocument();
+      expect(filterBar().getByLabelText("Estado")).toHaveValue("rejected");
+      expect(filterBar().getByLabelText("Mínima (%)")).toHaveValue(29);
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "rejected", minConfidence: 0.29 } }),
+      );
+    }, 20_000);
+
     it("rejects an invalid filter without asking the server or changing the evidence shown", async () => {
       getMock.mockResolvedValue({
         data: { dataset, items: [item], nextItemOffset: null, filterOptions },

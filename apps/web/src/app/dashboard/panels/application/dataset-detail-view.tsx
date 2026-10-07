@@ -94,6 +94,8 @@ export function DatasetDetailView({
       if (showLoading) {
         setLoading(true);
       }
+      // A reload replaces any filter request still in flight; it keeps the applied filters.
+      setFiltering(false);
       setNotFound(false);
       setError("");
       setItemsError("");
@@ -182,7 +184,7 @@ export function DatasetDetailView({
   }
 
   function applyFilters(draft: FilterDraft) {
-    const parsed = parseDatasetItemsQuery(filterQuery(draft));
+    const parsed = parseDatasetItemsQuery(filterDraftQuery(draft));
     if (!parsed.success) {
       setFilterError(parsed.error.message);
       return;
@@ -577,6 +579,7 @@ export function DatasetDetailView({
         <TabsContent value="evidences" className="space-y-3">
           <EvidenceFilterBar
             options={detail.filterOptions}
+            applied={appliedFilters}
             busy={filtering}
             error={filterError}
             onApply={applyFilters}
@@ -613,7 +616,7 @@ export function DatasetDetailView({
               type="button"
               variant="outline"
               className="mt-3"
-              disabled={itemsLoading}
+              disabled={itemsLoading || filtering}
               onClick={() => void loadMoreDatasetItems()}
             >
               {itemsLoading ? "Cargando evidencias…" : "Cargar más evidencias del dataset"}
@@ -640,18 +643,26 @@ type FilterDraft = {
   maxConfidence: string;
 };
 
-const EMPTY_FILTER_DRAFT: FilterDraft = {
-  status: "",
-  workflowId: "",
-  modelId: "",
-  capturedFrom: "",
-  capturedTo: "",
-  minConfidence: "",
-  maxConfidence: "",
-};
+/** A confidence from 0 to 1 as the percent the bar shows, without floating-point noise. */
+function confidencePercent(confidence: number | undefined) {
+  return confidence === undefined ? "" : String(Math.round(confidence * 10_000) / 100);
+}
+
+/** The bar's fields for the applied filters, so a remounted bar shows what the list is filtered by. */
+function appliedFilterDraft(filters: DatasetItemFilters): FilterDraft {
+  return {
+    status: filters.status ?? "",
+    workflowId: filters.workflowId ?? "",
+    modelId: filters.modelId ?? "",
+    capturedFrom: filters.capturedFrom ?? "",
+    capturedTo: filters.capturedTo ?? "",
+    minConfidence: confidencePercent(filters.minConfidence),
+    maxConfidence: confidencePercent(filters.maxConfidence),
+  };
+}
 
 /** The query of the filled filters; the bar shows confidences in percent and the API reads 0 to 1. */
-function filterQuery(draft: FilterDraft) {
+function filterDraftQuery(draft: FilterDraft) {
   const query: Record<string, string> = {};
   for (const [key, value] of Object.entries(draft)) {
     if (!value.trim()) continue;
@@ -663,19 +674,21 @@ function filterQuery(draft: FilterDraft) {
 
 function EvidenceFilterBar({
   options,
+  applied,
   busy,
   error,
   onApply,
   onClear,
 }: {
   options: DatasetFilterOptions;
+  applied: DatasetItemFilters;
   busy: boolean;
   error: string;
   onApply: (draft: FilterDraft) => void;
   onClear: () => void;
 }) {
   const id = useId();
-  const [draft, setDraft] = useState(EMPTY_FILTER_DRAFT);
+  const [draft, setDraft] = useState(() => appliedFilterDraft(applied));
   const field = (key: keyof FilterDraft) => ({
     id: `${id}-${key}`,
     value: draft[key],
@@ -777,7 +790,7 @@ function EvidenceFilterBar({
           size="sm"
           disabled={busy}
           onClick={() => {
-            setDraft(EMPTY_FILTER_DRAFT);
+            setDraft(appliedFilterDraft({}));
             onClear();
           }}
         >
