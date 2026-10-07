@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@ayni/env/privacy-notice", () => ({
+  AYNI_PRIVACY_NOTICE: { version: "1.0.1", status: "published" },
+}));
 vi.mock("@/lib/auth-client", () => ({
   authClient: { useSession: () => ({ isPending: false }), signUp: { email: vi.fn() } },
 }));
