@@ -23,6 +23,7 @@ import {
   executeApplicationAction,
   type TransactionExecutor,
 } from "./application-actions";
+import { qualifiedColumn } from "./lib/sql";
 import { toIsoString } from "./model-store";
 
 export type { TransactionExecutor };
@@ -984,7 +985,7 @@ export async function listWorkflows(
         updatedAt: workflow.updatedAt,
         latestVersion: sql<
           string | null
-        >`(select ${workflowVersion.version} from ${workflowVersion} where ${workflowVersion.workflowId} = ${workflow.id} order by ${workflowVersion.createdAt} desc limit 1)`,
+        >`(select ${qualifiedColumn(workflowVersion, workflowVersion.version)} from ${workflowVersion} where ${qualifiedColumn(workflowVersion, workflowVersion.workflowId)} = ${qualifiedColumn(workflow, workflow.id)} order by ${qualifiedColumn(workflowVersion, workflowVersion.createdAt)} desc limit 1)`,
       })
       .from(workflow)
       .where(eq(workflow.applicationId, applicationId))

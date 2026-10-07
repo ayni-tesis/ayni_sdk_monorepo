@@ -5,7 +5,7 @@ import {
   workflow,
   workflowVersion,
 } from "@ayni/db/schema/index";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Application } from "./applications";
@@ -2693,10 +2693,12 @@ describe("listWorkflows", () => {
 
     await listWorkflows(transaction.db, "app-1");
 
-    expect(toQuery(transaction.selectedFields[0]?.latestVersion)).toEqual({
-      sql: '(select "workflow_version"."version" from "workflow_version" where "workflow_version"."workflow_id" = "workflow"."id" order by "workflow_version"."created_at" desc limit 1)',
-      params: [],
-    });
+    // Rendered as Postgres receives it: selecting from `workflow` alone, drizzle
+    // drops the table of the columns in SQL fields unless they name it.
+    const fields = transaction.selectedFields[0] as Parameters<QueryBuilder["select"]>[0];
+    expect(new QueryBuilder().select(fields).from(workflow).toSQL().sql).toContain(
+      '(select "workflow_version"."version" from "workflow_version" where "workflow_version"."workflow_id" = "workflow"."id" order by "workflow_version"."created_at" desc limit 1)',
+    );
   });
 
   it("scopes the query to the requested application only", async () => {

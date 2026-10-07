@@ -25,6 +25,7 @@ import {
   type TransactionExecutor,
 } from "./application-actions";
 import { logger } from "./lib/logger";
+import { qualifiedColumn } from "./lib/sql";
 import { getDownloadUrl } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
@@ -120,14 +121,18 @@ type DatasetWriteExecutor = DatasetReadExecutor & {
   };
 };
 
+// Both queries that select these fields read `dataset` alone, so the subqueries
+// name every column's table (see `qualifiedColumn`).
+const itemsOfDataset = sql`${qualifiedColumn(datasetItem, datasetItem.applicationId)} = ${qualifiedColumn(dataset, dataset.applicationId)} and ${qualifiedColumn(datasetItem, datasetItem.datasetId)} = ${qualifiedColumn(dataset, dataset.id)}`;
+
 const datasetFields = {
   id: dataset.id,
   applicationId: dataset.applicationId,
   name: dataset.name,
   taskType: dataset.taskType,
   createdAt: dataset.createdAt,
-  evidenceCount: sql<number>`(select count(*)::int from ${datasetItem} where ${datasetItem.applicationId} = ${dataset.applicationId} and ${datasetItem.datasetId} = ${dataset.id})`,
-  approvedCount: sql<number>`(select count(*)::int from ${datasetItem} where ${datasetItem.applicationId} = ${dataset.applicationId} and ${datasetItem.datasetId} = ${dataset.id} and ${datasetItem.reviewStatus} = 'approved')`,
+  evidenceCount: sql<number>`(select count(*)::int from ${datasetItem} where ${itemsOfDataset})`,
+  approvedCount: sql<number>`(select count(*)::int from ${datasetItem} where ${itemsOfDataset} and ${qualifiedColumn(datasetItem, datasetItem.reviewStatus)} = 'approved')`,
 };
 
 const DATASET_EVIDENCE_PAGE_SIZE = 50;

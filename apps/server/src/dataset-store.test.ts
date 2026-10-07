@@ -8,7 +8,7 @@ import {
   user,
 } from "@ayni/db/schema/index";
 import type { SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
 import {
@@ -362,6 +362,50 @@ function recordingDatabase(results: Record<string, unknown>[][]) {
   } as unknown as ApplicationDatabase;
   return { database, selects };
 }
+
+describe("dataset evidence counts", () => {
+  /**
+   * Renders the dataset query as Postgres runs it: selecting from `dataset`
+   * alone, so drizzle drops the table of every column in its SQL fields.
+   */
+  async function renderedDatasetQuery(read: (database: ApplicationDatabase) => Promise<unknown>) {
+    let fields: Record<string, unknown> | undefined;
+    const tx = {
+      select(selection: Record<string, unknown>) {
+        fields ??= selection;
+        const query = Object.assign(Promise.resolve([]), {
+          from: (): unknown => query,
+          where: (): unknown => query,
+          orderBy: (): unknown => query,
+          limit: (): unknown => query,
+        });
+        return query;
+      },
+    };
+    await read({
+      transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+    } as unknown as ApplicationDatabase);
+    if (!fields) throw new Error("The dataset was not selected");
+    return new QueryBuilder()
+      .select(fields as Parameters<QueryBuilder["select"]>[0])
+      .from(dataset)
+      .toSQL().sql;
+  }
+
+  it.each([
+    ["listDatasets", (database: ApplicationDatabase) => listDatasets(database, "app-1")],
+    ["getDataset", (database: ApplicationDatabase) => getDataset(database, "app-1", "dataset-1")],
+  ])("%s counts the items of each dataset, not of every item", async (_name, read) => {
+    const sql = await renderedDatasetQuery(read);
+    const itemsOfDataset =
+      '"dataset_item"."application_id" = "dataset"."application_id" and "dataset_item"."dataset_id" = "dataset"."id"';
+
+    expect(sql).toContain(`(select count(*)::int from "dataset_item" where ${itemsOfDataset})`);
+    expect(sql).toContain(
+      `(select count(*)::int from "dataset_item" where ${itemsOfDataset} and "dataset_item"."review_status" = 'approved')`,
+    );
+  });
+});
 
 describe("getDataset filters (US-083)", () => {
   const datasetRow = (taskType: DatasetTaskType) => ({
