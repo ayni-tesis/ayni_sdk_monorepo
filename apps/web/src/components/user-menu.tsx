@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,13 +9,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { useSignOut } from "@/lib/use-sign-out";
 
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
 export default function UserMenu() {
-  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
+  const { isPending: isSigningOut, signOut } = useSignOut();
 
   if (isPending) {
     return <Skeleton className="h-9 w-24" />;
@@ -26,7 +25,7 @@ export default function UserMenu() {
   if (!session) {
     return (
       <Link href="/sign-in">
-        <Button variant="outline">Sign In</Button>
+        <Button variant="outline">Iniciar sesión</Button>
       </Link>
     );
   }
@@ -38,22 +37,11 @@ export default function UserMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent className="bg-card">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuLabel>Mi cuenta</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem>{session.user.email}</DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => {
-              authClient.signOut({
-                fetchOptions: {
-                  onSuccess: () => {
-                    router.push("/");
-                  },
-                },
-              });
-            }}
-          >
-            Sign Out
+          <DropdownMenuItem variant="destructive" disabled={isSigningOut} onClick={signOut}>
+            {isSigningOut ? "Cerrando sesión..." : "Cerrar sesión"}
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

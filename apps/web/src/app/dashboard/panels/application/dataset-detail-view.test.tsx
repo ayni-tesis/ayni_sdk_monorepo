@@ -255,9 +255,11 @@ describe("DatasetDetailView", () => {
 
     expect(screen.queryByText("Evidencia aprobada.")).not.toBeInTheDocument();
     expect(screen.queryByText("Predicción original: pino (90%)")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
   it("does not duplicate newly added evidence when loading later dataset pages", async () => {
+    const user = userEvent.setup();
     const existingItems = Array.from({ length: 55 }, (_, index) => ({
       ...item,
       id: `item-${index}`,
@@ -303,24 +305,27 @@ describe("DatasetDetailView", () => {
     });
     renderManagedDetail();
     await screen.findByRole("heading", { name: "Flores" });
-    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar evidencia" }));
+    await user.click(screen.getByRole("button", { name: "Agregar evidencia" }));
     await screen.findByText("Predicción: pino (90%)");
-    await userEvent.setup().click(screen.getByRole("checkbox"));
-    await userEvent.setup().click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
 
     expect(await screen.findByText("Evidencia agregada al dataset.")).toBeInTheDocument();
     expect(screen.queryByText("Predicción original: nueva (90%)")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await userEvent
-      .setup()
-      .click(await screen.findByRole("button", { name: "Cargar más evidencias del dataset" }));
+    await waitFor(() => expect(document.body).not.toHaveAttribute("data-scroll-locked"), {
+      timeout: 4_000,
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Cargar más evidencias del dataset" }),
+    );
 
     expect(screen.getAllByText("Predicción original: nueva (90%)")).toHaveLength(1);
     expect(getMock).toHaveBeenCalledWith(
       "/applications/app-1/datasets/dataset-1",
       expect.objectContaining({ params: { offset: 50 } }),
     );
-  });
+  }, 10_000);
 
   it("lets administrators retire a dataset item while preserving its source evidence", async () => {
     let removed = false;
