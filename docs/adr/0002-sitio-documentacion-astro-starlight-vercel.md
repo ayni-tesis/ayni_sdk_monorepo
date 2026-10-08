@@ -198,3 +198,8 @@ Scalar que el servidor publica en `/docs`.
 Pendiente fuera del código: conectar el repositorio de GitHub al proyecto
 `ayni-docs` en Vercel, para que cada pull request tenga su vista previa y
 `main` publique en producción.
+
+Actualización (2026-10-08): el sitio se publica desde `main` en
+`https://ayni-sdk-monorepo-docs.vercel.app`, y `site` en `apps/docs/astro.config.mjs`
+apunta ahí. El proyecto `ayni-docs` ya no tiene despliegues y
+`https://ayni-docs.vercel.app` responde `DEPLOYMENT_NOT_FOUND`.

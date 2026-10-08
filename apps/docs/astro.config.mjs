@@ -26,7 +26,7 @@ const externalizeSatteri = {
 
 // Static output (Astro's default): Vercel serves `dist/` without an adapter (ADR 0002).
 export default defineConfig({
-  site: "https://ayni-docs.vercel.app",
+  site: "https://ayni-sdk-monorepo-docs.vercel.app",
   vite: { plugins: [externalizeSatteri] },
   integrations: [
     starlight({
