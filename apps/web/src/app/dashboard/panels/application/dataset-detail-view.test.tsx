@@ -44,6 +44,11 @@ const dataset = {
   approvedCount: 0,
 };
 
+const filterOptions = {
+  workflows: [{ id: "workflow-1", name: "Inspección" }],
+  models: [{ id: "model-1", name: "Flores v1" }],
+};
+
 const evidence = {
   evidenceId: "evidence-1",
   modelId: "model-1",
@@ -96,7 +101,7 @@ describe("DatasetDetailView", () => {
       .mockImplementation(async (url: string) =>
         url.endsWith("/available-evidence")
           ? { data: { evidence: [evidence], nextOffset: null } }
-          : { data: { dataset, items: [], nextItemOffset: null } },
+          : { data: { dataset, items: [], nextItemOffset: null, filterOptions } },
       );
     postMock.mockReset().mockResolvedValue({ data: { items: [item] } });
     deleteMock.mockReset().mockResolvedValue({ data: undefined });
@@ -141,8 +146,13 @@ describe("DatasetDetailView", () => {
         ? { data: { evidence: [evidence], nextOffset: null } }
         : {
             data: added
-              ? { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null }
-              : { dataset, items: [], nextItemOffset: null },
+              ? {
+                  dataset: { ...dataset, evidenceCount: 1 },
+                  items: [item],
+                  nextItemOffset: null,
+                  filterOptions,
+                }
+              : { dataset, items: [], nextItemOffset: null, filterOptions },
           },
     );
     postMock.mockImplementation(async () => {
@@ -165,7 +175,12 @@ describe("DatasetDetailView", () => {
 
   it("shows the image and lets a workspace member reject evidence with an optional reason", async () => {
     getMock.mockResolvedValue({
-      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+      data: {
+        dataset: { ...dataset, evidenceCount: 1 },
+        items: [item],
+        nextItemOffset: null,
+        filterOptions,
+      },
     });
     renderDetail();
     expect(await screen.findByRole("img", { name: "Evidencia evidence-1" })).toHaveAttribute(
@@ -191,7 +206,12 @@ describe("DatasetDetailView", () => {
 
   it("saves a reviewed label apart from the read-only original prediction", async () => {
     getMock.mockResolvedValue({
-      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+      data: {
+        dataset: { ...dataset, evidenceCount: 1 },
+        items: [item],
+        nextItemOffset: null,
+        filterOptions,
+      },
     });
     renderDetail();
     const panel = await screen.findByRole("region", { name: "Etiqueta revisada" });
@@ -225,6 +245,7 @@ describe("DatasetDetailView", () => {
         dataset: { ...dataset, evidenceCount: 1 },
         items: [{ ...item, reviewStatus: "approved" as const, reviewedLabel: "cedro" }],
         nextItemOffset: null,
+        filterOptions,
       },
     });
     renderDetail();
@@ -250,7 +271,12 @@ describe("DatasetDetailView", () => {
 
   it("shows the server error when saving a label fails", async () => {
     getMock.mockResolvedValue({
-      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+      data: {
+        dataset: { ...dataset, evidenceCount: 1 },
+        items: [item],
+        nextItemOffset: null,
+        filterOptions,
+      },
     });
     putMock.mockRejectedValue({
       isAxiosError: true,
@@ -308,6 +334,7 @@ describe("DatasetDetailView", () => {
         dataset: { ...dataset, taskType: "detection", evidenceCount: 1 },
         items: [detectionItem],
         nextItemOffset: null,
+        filterOptions,
       },
     });
     renderDetail();
@@ -344,6 +371,7 @@ describe("DatasetDetailView", () => {
           dataset: { ...dataset, taskType: "detection", evidenceCount: 1 },
           items: [{ ...detectionItem, reviewedAnnotations }],
           nextItemOffset: null,
+          filterOptions,
         },
       });
       putMock.mockImplementation(
@@ -546,6 +574,7 @@ describe("DatasetDetailView", () => {
             },
           ],
           nextItemOffset: null,
+          filterOptions,
         },
       });
       renderDetail();
@@ -582,6 +611,7 @@ describe("DatasetDetailView", () => {
                     ]
                   : [detectionItem],
                 nextItemOffset: null,
+                filterOptions,
               }),
             },
       );
@@ -612,7 +642,12 @@ describe("DatasetDetailView", () => {
 
   it("does not show a stale review success after the item was retired", async () => {
     getMock.mockResolvedValue({
-      data: { dataset: { ...dataset, evidenceCount: 1 }, items: [item], nextItemOffset: null },
+      data: {
+        dataset: { ...dataset, evidenceCount: 1 },
+        items: [item],
+        nextItemOffset: null,
+        filterOptions,
+      },
     });
     let resolveReview!: (response: {
       data: {
@@ -682,6 +717,7 @@ describe("DatasetDetailView", () => {
             dataset: updatedDataset,
             items: [...existingItems.slice(50), addedItem],
             nextItemOffset: null,
+            filterOptions,
           },
         };
       }
@@ -690,6 +726,7 @@ describe("DatasetDetailView", () => {
           dataset: added ? updatedDataset : { ...dataset, evidenceCount: 55 },
           items: existingItems.slice(0, 50),
           nextItemOffset: 50,
+          filterOptions,
         },
       };
     });
@@ -732,11 +769,13 @@ describe("DatasetDetailView", () => {
                   dataset: { ...dataset, evidenceCount: 0 },
                   items: [],
                   nextItemOffset: null,
+                  filterOptions,
                 }
               : {
                   dataset: { ...dataset, evidenceCount: 1 },
                   items: [item],
                   nextItemOffset: null,
+                  filterOptions,
                 },
           },
     );
@@ -787,6 +826,7 @@ describe("DatasetDetailView", () => {
             dataset: { ...dataset, evidenceCount: 2 },
             items: [laterItem],
             nextItemOffset: null,
+            filterOptions,
           },
         };
       }
@@ -796,11 +836,17 @@ describe("DatasetDetailView", () => {
             dataset: { ...dataset, evidenceCount: 3 },
             items: [olderItem],
             nextItemOffset: 2,
+            filterOptions,
           },
         };
       }
       return {
-        data: { dataset: { ...dataset, evidenceCount: 3 }, items: [item], nextItemOffset: 1 },
+        data: {
+          dataset: { ...dataset, evidenceCount: 3 },
+          items: [item],
+          nextItemOffset: 1,
+          filterOptions,
+        },
       };
     });
     deleteMock.mockImplementation(async () => {
@@ -836,7 +882,9 @@ describe("DatasetDetailView", () => {
   });
 
   it("keeps the dataset item and shows a missing-item error when retirement fails", async () => {
-    getMock.mockResolvedValue({ data: { dataset, items: [item], nextItemOffset: null } });
+    getMock.mockResolvedValue({
+      data: { dataset, items: [item], nextItemOffset: null, filterOptions },
+    });
     deleteMock.mockRejectedValue({
       isAxiosError: true,
       response: { data: { message: "No encontramos este ítem del dataset." } },
@@ -854,7 +902,9 @@ describe("DatasetDetailView", () => {
   });
 
   it("does not offer retirement to workspace members", async () => {
-    getMock.mockResolvedValue({ data: { dataset, items: [item], nextItemOffset: null } });
+    getMock.mockResolvedValue({
+      data: { dataset, items: [item], nextItemOffset: null, filterOptions },
+    });
     renderDetail();
 
     expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
@@ -873,7 +923,7 @@ describe("DatasetDetailView", () => {
           ? { data: { evidence: [olderEvidence], nextOffset: null } }
           : { data: { evidence: [evidence], nextOffset: 50 } };
       }
-      return { data: { dataset, items: [] } };
+      return { data: { dataset, items: [], filterOptions } };
     });
     renderManagedDetail();
     await screen.findByRole("heading", { name: "Flores" });
@@ -900,8 +950,8 @@ describe("DatasetDetailView", () => {
         return { data: { evidence: [evidence], nextOffset: null } };
       }
       return options?.params?.offset
-        ? { data: { dataset, items: [olderItem], nextItemOffset: null } }
-        : { data: { dataset, items: [item], nextItemOffset: 1 } };
+        ? { data: { dataset, items: [olderItem], nextItemOffset: null, filterOptions } }
+        : { data: { dataset, items: [item], nextItemOffset: 1, filterOptions } };
     });
     renderDetail();
 
@@ -931,9 +981,350 @@ describe("DatasetDetailView", () => {
     getMock.mockRejectedValueOnce(new Error("offline"));
     renderDetail();
     expect(await screen.findByText("No pudimos cargar el dataset.")).toBeInTheDocument();
-    getMock.mockResolvedValueOnce({ data: { dataset, items: [], nextItemOffset: null } });
+    getMock.mockResolvedValueOnce({
+      data: { dataset, items: [], nextItemOffset: null, filterOptions },
+    });
     await userEvent.setup().click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByRole("heading", { name: "Flores" })).toBeInTheDocument();
+  });
+
+  describe("Filtrar evidencias (US-083)", () => {
+    const approvedItem = {
+      ...item,
+      id: "item-2",
+      evidenceId: "evidence-2",
+      originalResult: { type: "classification", label: "cedro", confidence: 0.7 },
+      reviewStatus: "approved" as const,
+      reviewedAt: "2026-10-03T00:00:00.000Z",
+    };
+    const laterApprovedItem = {
+      ...approvedItem,
+      id: "item-3",
+      evidenceId: "evidence-3",
+      originalResult: { type: "classification", label: "roble", confidence: 0.6 },
+    };
+    const appliedFilters = {
+      status: "approved",
+      workflowId: "workflow-1",
+      modelId: "model-1",
+      capturedFrom: "2026-10-01",
+      capturedTo: "2026-10-03",
+      minConfidence: 0.5,
+      maxConfidence: 0.9,
+    };
+
+    function filterBar() {
+      return within(screen.getByRole("form", { name: "Filtrar evidencias" }));
+    }
+
+    it("asks the server for the filtered evidence and keeps the filters on later pages", async () => {
+      getMock.mockImplementation(
+        async (_url: string, options?: { params?: Record<string, unknown> }) => {
+          if (!options?.params?.status) {
+            return { data: { dataset, items: [item], nextItemOffset: null, filterOptions } };
+          }
+          return options.params.offset === 1
+            ? { data: { dataset, items: [laterApprovedItem], nextItemOffset: null, filterOptions } }
+            : { data: { dataset, items: [approvedItem], nextItemOffset: 1, filterOptions } };
+        },
+      );
+      const user = userEvent.setup();
+      renderDetail();
+      expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+
+      const bar = filterBar();
+      await user.selectOptions(bar.getByLabelText("Estado"), "Aprobada");
+      await user.selectOptions(bar.getByLabelText("Workflow"), "Inspección");
+      await user.selectOptions(bar.getByLabelText("Modelo"), "Flores v1");
+      const date = within(bar.getByRole("group", { name: "Fecha" }));
+      fireEvent.change(date.getByLabelText("Desde"), { target: { value: "2026-10-01" } });
+      fireEvent.change(date.getByLabelText("Hasta"), { target: { value: "2026-10-03" } });
+      const confidence = within(bar.getByRole("group", { name: "Confianza" }));
+      await user.type(confidence.getByLabelText("Mínima (%)"), "50");
+      await user.type(confidence.getByLabelText("Máxima (%)"), "90");
+      await user.click(bar.getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(await screen.findByText("Predicción original: cedro (70%)")).toBeInTheDocument();
+      expect(screen.queryByText("Predicción original: pino (90%)")).not.toBeInTheDocument();
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: appliedFilters }),
+      );
+
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { ...appliedFilters, offset: 1 } }),
+      );
+    });
+
+    it("says when no evidence matches and clears the filters", async () => {
+      getMock.mockImplementation(
+        async (_url: string, options?: { params?: { status?: string } }) =>
+          options?.params?.status
+            ? { data: { dataset, items: [], nextItemOffset: null, filterOptions } }
+            : { data: { dataset, items: [item], nextItemOffset: null, filterOptions } },
+      );
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Rechazada");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(
+        await screen.findByText("No hay evidencias que coincidan con los filtros."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Aún no hay evidencias en este dataset.")).not.toBeInTheDocument();
+
+      await user.click(filterBar().getByRole("button", { name: "Limpiar filtros" }));
+
+      expect(await screen.findByText("Predicción original: pino (90%)")).toBeInTheDocument();
+      expect(filterBar().getByLabelText("Estado")).toHaveValue("");
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: {} }),
+      );
+    });
+
+    it("does not skip filtered evidence after a review takes an item out of the status filter", async () => {
+      getMock.mockImplementation(
+        async (_url: string, options?: { params?: Record<string, unknown> }) =>
+          options?.params?.status && options.params.offset === undefined
+            ? { data: { dataset, items: [item], nextItemOffset: 1, filterOptions } }
+            : { data: { dataset, items: [], nextItemOffset: null, filterOptions } },
+      );
+      patchMock.mockResolvedValue({
+        data: {
+          status: "approved",
+          reviewerName: "Diego",
+          reviewedAt: "2026-10-03T00:00:00.000Z",
+          reason: null,
+        },
+      });
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByRole("heading", { name: "Flores" });
+
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Pendiente");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+      await screen.findByText("Predicción original: pino (90%)");
+      await user.click(screen.getByRole("button", { name: "Aprobar" }));
+      expect(await screen.findByText("Evidencia aprobada.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "pending", offset: 0 } }),
+      );
+    });
+
+    const secondApprovedItem = {
+      ...approvedItem,
+      id: "item-4",
+      evidenceId: "evidence-4",
+      originalResult: { type: "classification", label: "ciprés", confidence: 0.8 },
+    };
+
+    /** Clicks the button with this name in the first item, the one the review flow acts on. */
+    async function clickFirst(user: ReturnType<typeof userEvent.setup>, name: string) {
+      const [button] = screen.getAllByRole("button", { name });
+      if (!button) throw new Error(`Expected a "${name}" button`);
+      await user.click(button);
+    }
+
+    function mockFilteredApprovedPages() {
+      getMock.mockImplementation(
+        async (_url: string, options?: { params?: Record<string, unknown> }) => {
+          if (!options?.params?.status) {
+            return { data: { dataset, items: [item], nextItemOffset: null, filterOptions } };
+          }
+          return options.params.offset === undefined
+            ? {
+                data: {
+                  dataset,
+                  items: [approvedItem, secondApprovedItem],
+                  nextItemOffset: 2,
+                  filterOptions,
+                },
+              }
+            : {
+                data: { dataset, items: [laterApprovedItem], nextItemOffset: null, filterOptions },
+              };
+        },
+      );
+      patchMock.mockImplementation(async (_url: string, body: { status: string }) => ({
+        data: {
+          status: body.status,
+          reviewerName: "Diego",
+          reviewedAt: "2026-10-04T00:00:00.000Z",
+          reason: null,
+        },
+      }));
+    }
+
+    async function filterApprovedAndReject(user: ReturnType<typeof userEvent.setup>) {
+      await screen.findByText("Predicción original: pino (90%)");
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Aprobada");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+      await screen.findByText("Predicción original: cedro (70%)");
+      await clickFirst(user, "Rechazar");
+      await user.click(screen.getByRole("button", { name: "Rechazar evidencia" }));
+      expect(await screen.findByText("Evidencia rechazada.")).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(document.body).not.toHaveAttribute("data-scroll-locked"), {
+        timeout: 4_000,
+      });
+    }
+
+    it("counts an item again when a later review brings it back into the status filter", async () => {
+      mockFilteredApprovedPages();
+      const user = userEvent.setup();
+      renderDetail();
+      await filterApprovedAndReject(user);
+
+      await clickFirst(user, "Aprobar");
+      expect(await screen.findByText("Evidencia aprobada.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+      expect(screen.getAllByText("Predicción original: cedro (70%)")).toHaveLength(1);
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "approved", offset: 2 } }),
+      );
+    });
+
+    it("does not move the page back twice when retiring an item that already left the filter", async () => {
+      mockFilteredApprovedPages();
+      const user = userEvent.setup();
+      renderManagedDetail();
+      await filterApprovedAndReject(user);
+
+      await clickFirst(user, "Retirar del dataset");
+      await user.click(screen.getByRole("button", { name: "Retirar evidencia" }));
+      expect(await screen.findByText("Evidencia retirada del dataset.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+
+      expect(await screen.findByText("Predicción original: roble (60%)")).toBeInTheDocument();
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "approved", offset: 1 } }),
+      );
+    });
+
+    it("does not load another page of the previous filters while new filters load", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          data: { dataset, items: [item], nextItemOffset: 1, filterOptions },
+        })
+        .mockReturnValueOnce(new Promise(() => {}));
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Aprobada");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(filterBar().getByRole("button", { name: "Aplicando filtros…" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Cargar más evidencias del dataset" }),
+      ).toBeDisabled();
+    });
+
+    it("keeps showing the applied filters after the detail reloads from an error", async () => {
+      let detailCalls = 0;
+      getMock.mockImplementation(
+        async (url: string, options?: { params?: Record<string, unknown> }) => {
+          if (url.endsWith("/available-evidence")) {
+            return { data: { evidence: [evidence], nextOffset: null } };
+          }
+          detailCalls += 1;
+          if (detailCalls === 3) throw new Error("offline");
+          return {
+            data: {
+              dataset,
+              items: options?.params?.status ? [] : [item],
+              nextItemOffset: null,
+              filterOptions,
+            },
+          };
+        },
+      );
+      const user = userEvent.setup();
+      renderManagedDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+      await user.selectOptions(filterBar().getByLabelText("Estado"), "Rechazada");
+      await user.type(filterBar().getByLabelText("Mínima (%)"), "29");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+      await screen.findByText("No hay evidencias que coincidan con los filtros.");
+
+      await user.click(screen.getByRole("button", { name: "Agregar evidencia" }));
+      await user.click(await screen.findByRole("checkbox"));
+      await user.click(screen.getByRole("button", { name: "Agregar seleccionadas" }));
+      await user.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+      expect(
+        await screen.findByText("No hay evidencias que coincidan con los filtros."),
+      ).toBeInTheDocument();
+      expect(filterBar().getByLabelText("Estado")).toHaveValue("rejected");
+      expect(filterBar().getByLabelText("Mínima (%)")).toHaveValue(29);
+      expect(getMock).toHaveBeenLastCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "rejected", minConfidence: 0.29 } }),
+      );
+    }, 20_000);
+
+    it("rejects an invalid filter without asking the server or changing the evidence shown", async () => {
+      getMock.mockResolvedValue({
+        data: { dataset, items: [item], nextItemOffset: null, filterOptions },
+      });
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+      const confidence = within(filterBar().getByRole("group", { name: "Confianza" }));
+
+      await user.type(confidence.getByLabelText("Mínima (%)"), "90");
+      await user.type(confidence.getByLabelText("Máxima (%)"), "10");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(await filterBar().findByRole("alert")).toHaveTextContent(
+        "No se pudo aplicar uno de los filtros.",
+      );
+      expect(getMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+    });
+
+    it("keeps the evidence shown when the server rejects a filter", async () => {
+      getMock
+        .mockResolvedValueOnce({
+          data: { dataset, items: [item], nextItemOffset: null, filterOptions },
+        })
+        .mockRejectedValueOnce({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            data: {
+              message: "No se pudo aplicar uno de los filtros.",
+              code: "invalidDatasetFilter",
+            },
+          },
+        });
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByText("Predicción original: pino (90%)");
+
+      await user.selectOptions(filterBar().getByLabelText("Workflow"), "Inspección");
+      await user.click(filterBar().getByRole("button", { name: "Aplicar filtros" }));
+
+      expect(await filterBar().findByRole("alert")).toHaveTextContent(
+        "No se pudo aplicar uno de los filtros.",
+      );
+      expect(screen.getByText("Predicción original: pino (90%)")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Flores" })).toBeInTheDocument();
+    });
   });
 
   it("returns to the dataset list from the breadcrumb", async () => {

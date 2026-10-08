@@ -3076,7 +3076,7 @@
         "tags": ["Datasets"],
         "operationId": "obtener-detalle-dataset",
         "summary": "Consultar el detalle de un dataset",
-        "description": "Cualquier miembro del workspace puede consultar un dataset de la aplicación.",
+        "description": "Cualquier miembro del workspace puede consultar un dataset de la aplicación. Los filtros se combinan entre sí, se aplican solo a las evidencias de este dataset y antes de paginar, así que nextItemOffset cuenta evidencias filtradas.",
         "security": [
           {
             "datasetUserSession": []
@@ -3110,6 +3110,87 @@
             },
             "required": false,
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "approved", "rejected"],
+              "description": "Estado de revisión de la evidencia."
+            },
+            "required": false,
+            "description": "Estado de revisión de la evidencia.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Workflow que capturó la evidencia."
+            },
+            "required": false,
+            "description": "Workflow que capturó la evidencia.",
+            "name": "workflowId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Modelo que produjo la predicción original."
+            },
+            "required": false,
+            "description": "Modelo que produjo la predicción original.",
+            "name": "modelId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Primer día de captura (AAAA-MM-DD, UTC), incluido."
+            },
+            "required": false,
+            "description": "Primer día de captura (AAAA-MM-DD, UTC), incluido.",
+            "name": "capturedFrom",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "description": "Último día de captura (AAAA-MM-DD, UTC), incluido."
+            },
+            "required": false,
+            "description": "Último día de captura (AAAA-MM-DD, UTC), incluido.",
+            "name": "capturedTo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Mínimo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza."
+            },
+            "required": false,
+            "description": "Mínimo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza.",
+            "name": "minConfidence",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Máximo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza."
+            },
+            "required": false,
+            "description": "Máximo, incluido, de la confianza de la predicción original, de 0 a 1. En clasificación es la confianza de la etiqueta predicha; en detección es la mayor confianza entre sus detecciones, y una evidencia sin detecciones no coincide con ningún filtro de confianza.",
+            "name": "maxConfidence",
             "in": "query"
           }
         ],
@@ -3298,16 +3379,56 @@
                     "nextItemOffset": {
                       "type": ["integer", "null"],
                       "minimum": 0
+                    },
+                    "filterOptions": {
+                      "type": "object",
+                      "properties": {
+                        "workflows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["id", "name"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["id", "name"],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": ["workflows", "models"],
+                      "additionalProperties": false,
+                      "description": "Workflows y modelos de todas las evidencias del dataset, sin aplicar filtros, para elegir los filtros Workflow y Modelo."
                     }
                   },
-                  "required": ["dataset", "items", "nextItemOffset"],
+                  "required": ["dataset", "items", "nextItemOffset", "filterOptions"],
                   "additionalProperties": false
                 }
               }
             }
           },
           "400": {
-            "description": "El desplazamiento de página no es válido.",
+            "description": "El desplazamiento de página no es válido (invalidDatasetPage), o un parámetro es desconocido o un filtro es inválido: «No se pudo aplicar uno de los filtros.» (invalidDatasetFilter), sin devolver evidencias.",
             "content": {
               "application/json": {
                 "schema": {
