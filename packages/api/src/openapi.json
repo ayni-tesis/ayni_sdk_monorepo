@@ -3930,7 +3930,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Resultado de la validación: ready es true si el dataset puede exportarse; si no, problem o invalidItems indican la causa.",
+            "description": "Resultado de la validación, con los conteos de imágenes, anotaciones y categorías del dataset.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3941,6 +3941,14 @@
                       "description": "true si el dataset tiene evidencias aprobadas y todas pueden exportarse."
                     },
                     "approvedCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "annotationCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "categoryCount": {
                       "type": "integer",
                       "minimum": 0
                     },
@@ -4151,7 +4159,7 @@
                           },
                           "format": {
                             "type": "string",
-                            "enum": ["classification_images_csv"]
+                            "enum": ["classification_images_csv", "detection_coco"]
                           },
                           "status": {
                             "type": "string",
@@ -4249,9 +4257,9 @@
       },
       "post": {
         "tags": ["Datasets"],
-        "operationId": "exportar-dataset-clasificacion",
-        "summary": "Exportar un dataset de clasificación",
-        "description": "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable con las evidencias aprobadas y sus etiquetas revisadas.",
+        "operationId": "exportar-dataset",
+        "summary": "Exportar un dataset",
+        "description": "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable. Acepta clasificación en ZIP con imágenes y CSV o detección en formato COCO con anotaciones revisadas.",
         "security": [
           {
             "datasetUserSession": []
@@ -4277,9 +4285,26 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": ["classification_images_csv", "detection_coco"]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
-            "description": "Exportación de clasificación generada.",
+            "description": "Exportación de clasificación o detección generada.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4300,7 +4325,7 @@
                         },
                         "format": {
                           "type": "string",
-                          "enum": ["classification_images_csv"]
+                          "enum": ["classification_images_csv", "detection_coco"]
                         },
                         "status": {
                           "type": "string",
@@ -4394,7 +4419,7 @@
             }
           },
           "409": {
-            "description": "El dataset no se puede exportar: la aplicación está archivada, faltan evidencias aprobadas o etiquetas revisadas, el tipo de tarea no es clasificación o una etiqueta puede interpretarse como fórmula.",
+            "description": "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4405,6 +4430,46 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "invalidItemCount": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "invalidItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "itemId": {
+                            "type": "string"
+                          },
+                          "evidenceId": {
+                            "type": "string"
+                          },
+                          "cause": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "reviewedLabelRequired",
+                                  "formulaLabel",
+                                  "reviewedAnnotationsRequired",
+                                  "invalidAnnotations"
+                                ]
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["code", "message"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": ["itemId", "evidenceId", "cause"],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
                     }
                   },
                   "required": ["message"],
