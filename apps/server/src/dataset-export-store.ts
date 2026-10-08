@@ -251,8 +251,9 @@ export async function validateDatasetForExport(
   return {
     ok: true,
     value: {
-      valid: result.value.datasetIssue === null && items.length === 0,
+      valid: result.value.datasetIssue === null && result.value.totalIssueCount === 0,
       datasetIssue: result.value.datasetIssue,
+      totalIssueCount: result.value.totalIssueCount,
       items,
     },
   };
