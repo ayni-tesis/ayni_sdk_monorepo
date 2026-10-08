@@ -40,6 +40,7 @@ import {
   addDatasetEvidence,
   createDataset,
   getDataset,
+  getDatasetItem,
   listAvailableDatasetEvidence,
   listDatasets,
   removeDatasetEvidence,
@@ -289,6 +290,9 @@ const datasets = {
   },
   get(applicationId: string, datasetId: string, offset: number) {
     return getDataset(db, applicationId, datasetId, offset);
+  },
+  getItem(applicationId: string, datasetId: string, itemId: string) {
+    return getDatasetItem(db, applicationId, datasetId, itemId);
   },
   listAvailableEvidence(applicationId: string, datasetId: string, offset: number) {
     return listAvailableDatasetEvidence(db, applicationId, datasetId, offset);

@@ -437,6 +437,33 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}",
+    tags: ["Datasets"],
+    operationId: "obtener-evidencia-dataset",
+    summary: "Consultar una evidencia del dataset",
+    description:
+      "Cualquier miembro del workspace puede consultar una evidencia vinculada al dataset.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        itemId: z.string().openapi({ example: "item-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Evidencia del dataset.",
+        content: { "application/json": { schema: DatasetItemSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos este dataset."),
+      "500": errorResponse("No pudimos cargar la evidencia del dataset."),
+    },
+  });
+
+  registry.registerPath({
     method: "delete",
     path: "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}",
     tags: ["Datasets"],

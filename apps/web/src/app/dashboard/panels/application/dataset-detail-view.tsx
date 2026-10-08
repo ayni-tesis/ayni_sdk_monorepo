@@ -170,7 +170,12 @@ export function DatasetDetailView({
           current
             ? {
                 ...current,
-                items: [...current.items, ...data.items],
+                items: [
+                  ...current.items,
+                  ...data.items.filter(
+                    (item) => !current.items.some((existing) => existing.id === item.id),
+                  ),
+                ],
                 nextItemOffset: data.nextItemOffset,
               }
             : current,
@@ -295,35 +300,23 @@ export function DatasetDetailView({
   async function revealEvidence(itemId: string) {
     setActiveTab("evidences");
     setItemsError("");
-    let current = detail;
-    if (!current) return;
+    if (!detail) return;
     itemsAbortRef.current?.abort();
     const controller = new AbortController();
     itemsAbortRef.current = controller;
     setItemsLoading(true);
     try {
-      while (
-        !controller.signal.aborted &&
-        !current.items.some((item) => item.id === itemId) &&
-        current.nextItemOffset !== null
-      ) {
-        const { data } = await httpClient.get<DatasetDetailResponse>(
-          `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
-          { params: { offset: current.nextItemOffset }, signal: controller.signal },
-        );
-        current = {
-          ...current,
-          items: [...current.items, ...data.items],
-          nextItemOffset: data.nextItemOffset,
-        };
-        setDetail(current);
-      }
       if (controller.signal.aborted) return;
-      if (current.items.some((item) => item.id === itemId)) {
-        setFocusEvidenceId(itemId);
-      } else {
-        setItemsError("No encontramos esta evidencia del dataset.");
-      }
+      const { data } = await httpClient.get<DatasetDetailResponse["items"][number]>(
+        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      setDetail((current) => {
+        if (!current || current.items.some((item) => item.id === data.id)) return current;
+        return { ...current, items: [...current.items, data] };
+      });
+      setFocusEvidenceId(data.id);
     } catch (loadError) {
       if (!controller.signal.aborted) {
         setItemsError(errorMessage(loadError, "No pudimos cargar las evidencias del dataset."));
