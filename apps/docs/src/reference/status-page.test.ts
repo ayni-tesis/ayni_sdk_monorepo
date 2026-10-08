@@ -193,6 +193,7 @@ describe("Estados y errores (US-146)", () => {
       "invalidArtifact",
       "invalidArtifactContent",
       "traceNotFound",
+      "artifactNotFound",
       "artifactUploadExpired",
       "artifactUploadInProgress",
       "artifactUploadChanged",

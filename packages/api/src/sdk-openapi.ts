@@ -558,6 +558,12 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         "La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido.",
     },
     {
+      status: "404",
+      code: "artifactNotFound",
+      message: "No encontramos esta traza o artefacto.",
+      cause: "La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial.",
+    },
+    {
       status: "409",
       code: "artifactUploadExpired",
       message: "La carga del artefacto venció.",

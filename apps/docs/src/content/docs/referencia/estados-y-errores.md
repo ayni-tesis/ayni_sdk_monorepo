@@ -162,6 +162,7 @@ lo recibe: ve el resultado de la última columna.
 | `invalidArtifact` | `400`, `413` | La metadata no cumple el esquema o el cuerpo de confirmación supera su límite. | `upload_validation_artifact.dart` termina con el estado HTTP; no muestra el `code`. |
 | `invalidArtifactContent` | `400` | Los bytes no coinciden con el tamaño, SHA-256 o protobuf binario nativo de Perfetto declarados. | El uploader termina con el estado HTTP; no muestra el `code`. |
 | `traceNotFound` | `404` | La traza no existe, pertenece a otra aplicación o ya venció. | El uploader termina con el estado HTTP; no muestra el `code`. |
+| `artifactNotFound` | `404` | La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial. | El uploader termina con el estado HTTP; no muestra el `code`. |
 | `artifactUploadExpired` | `409` | La autorización de carga venció antes de confirmar el archivo. | El uploader termina con el estado HTTP; solicita otra carga. |
 | `artifactUploadInProgress` | `409` | Ya se está verificando la carga del artefacto. | El uploader termina con el estado HTTP; espera a que termine la verificación antes de reintentar. |
 | `artifactUploadChanged` | `409` | El objeto de staging cambió durante la verificación. | El uploader termina con el estado HTTP; solicita una nueva carga. |
