@@ -223,6 +223,10 @@ describe("Estados y errores (US-146)", () => {
     ];
     for (const row of rows) {
       const code = (row[0] ?? "").replace(/`/g, "");
+      if (code === "traceNotFound" || code.startsWith("artifact")) {
+        expect(row.at(-1), row[0]).toContain("upload_validation_artifact.dart");
+        continue;
+      }
       if (code.startsWith("dataset")) {
         expect(row.at(-1), row[0]).toContain("cliente de validación");
         continue;
