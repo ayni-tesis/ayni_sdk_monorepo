@@ -347,3 +347,4 @@ Keep AGENTS.md updated when:
 - Modifying build/dev workflows
 
 AI assistants should suggest updates to this file when they notice relevant changes.
+- US-086: administrators and owners of active applications export a detection dataset by sending `{ "format": "detection_coco" }` to `POST /applications/:applicationId/datasets/:datasetId/exports`. The ZIP contains approved images in `images/<itemId>.jpg` and a COCO document at `annotations/instances.json`; it uses only validated `reviewedAnnotations`, converts normalized boxes to image pixels, and assigns deterministic image, annotation, and category IDs. Invalid annotations return 409 with each affected item ID and cause before any artifact is uploaded. The dashboard offers `Detección (COCO)`, summarizes `Imágenes`, `Anotaciones` and `Categorías`, and reports `Exportación COCO lista.` on success.

@@ -1,0 +1,2 @@
+ALTER TABLE "dataset_export" DROP CONSTRAINT "dataset_export_format_check";--> statement-breakpoint
+ALTER TABLE "dataset_export" ADD CONSTRAINT "dataset_export_format_check" CHECK ("dataset_export"."format" in ('classification_images_csv', 'detection_coco'));

@@ -8,6 +8,9 @@ import {
   type DatasetDetailResponse,
   type DatasetEvidence,
   type DatasetExport,
+  type DatasetExportFormat,
+  type DatasetExportInvalidAnnotationsResponse,
+  type DatasetExportInvalidItem,
   type DatasetExportListResponse,
   type DatasetExportResponse,
   type DatasetFilterOptions,
@@ -88,6 +91,11 @@ export function DatasetDetailView({
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [exportSummaryLoading, setExportSummaryLoading] = useState(false);
+  const [exportSummaryError, setExportSummaryError] = useState("");
+  const [exportSummary, setExportSummary] = useState<DatasetValidationResponse | null>(null);
+  const [exportInvalidItems, setExportInvalidItems] = useState<DatasetExportInvalidItem[]>([]);
+  const [exportInvalidItemCount, setExportInvalidItemCount] = useState(0);
   const [tab, setTab] = useState("evidences");
   const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<DatasetValidationResponse | null>(null);
@@ -104,6 +112,7 @@ export function DatasetDetailView({
   const availableAbortRef = useRef<AbortController | null>(null);
   const exportsAbortRef = useRef<AbortController | null>(null);
   const validationAbortRef = useRef<AbortController | null>(null);
+  const exportSummaryAbortRef = useRef<AbortController | null>(null);
   // The closing dialog keeps its first handlers while it animates out, so they read this ref.
   const closingForReviewRef = useRef(false);
   const retiredEvidenceIdsRef = useRef(new Set<string>());
@@ -317,27 +326,82 @@ export function DatasetDetailView({
     }
   }
 
-  async function generateClassificationExport() {
+  async function loadExportSummary() {
+    if (detail?.dataset.taskType !== "detection") return;
+    exportSummaryAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportSummaryAbortRef.current = controller;
+    setExportSummary(null);
+    setExportSummaryLoading(true);
+    setExportSummaryError("");
+    try {
+      const { data } = await httpClient.get<DatasetValidationResponse>(
+        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/validation`,
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted) setExportSummary(data);
+    } catch (summaryError) {
+      if (!controller.signal.aborted) {
+        setExportSummaryError(
+          errorMessage(summaryError, "No pudimos cargar el resumen del dataset."),
+        );
+      }
+    } finally {
+      if (!controller.signal.aborted) setExportSummaryLoading(false);
+    }
+  }
+
+  function openExportDialog() {
+    setExportError("");
+    setExportInvalidItems([]);
+    setExportInvalidItemCount(0);
+    setExportSummaryError("");
+    setNotice("");
+    setExportOpen(true);
+    if (detail?.dataset.taskType === "detection") void loadExportSummary();
+  }
+
+  async function generateDatasetExport(format: DatasetExportFormat) {
     if (
       !canManage ||
       application.status !== "active" ||
-      detail?.dataset.taskType !== "classification" ||
+      detail?.dataset.taskType !== (format === "detection_coco" ? "detection" : "classification") ||
       exporting
     ) {
       return;
     }
     setExporting(true);
     setExportError("");
+    setExportInvalidItems([]);
+    setExportInvalidItemCount(0);
     setNotice("");
     try {
-      const { data } = await httpClient.post<DatasetExportResponse>(exportsUrl);
+      const { data } = await httpClient.post<DatasetExportResponse>(exportsUrl, { format });
       setExports((current) => [data.export, ...current]);
       setExportOpen(false);
-      setNotice("Exportación de clasificación lista.");
-    } catch (saveError) {
-      setExportError(
-        errorMessage(saveError, "No pudimos generar la exportación de clasificación."),
+      setNotice(
+        format === "detection_coco"
+          ? "Exportación COCO lista."
+          : "Exportación de clasificación lista.",
       );
+    } catch (saveError) {
+      if (
+        axios.isAxiosError<DatasetExportInvalidAnnotationsResponse>(saveError) &&
+        saveError.response?.data.code === "datasetExportInvalidAnnotations"
+      ) {
+        setExportError("Corrige las anotaciones indicadas antes de exportar.");
+        setExportInvalidItems(saveError.response.data.invalidItems);
+        setExportInvalidItemCount(saveError.response.data.invalidItemCount);
+      } else {
+        setExportError(
+          errorMessage(
+            saveError,
+            format === "detection_coco"
+              ? "No pudimos generar la exportación COCO."
+              : "No pudimos generar la exportación de clasificación.",
+          ),
+        );
+      }
     } finally {
       setExporting(false);
     }
@@ -558,6 +622,7 @@ export function DatasetDetailView({
       itemsAbortRef.current?.abort();
       exportsAbortRef.current?.abort();
       validationAbortRef.current?.abort();
+      exportSummaryAbortRef.current?.abort();
     };
   }, [loadDetail, loadExports]);
 
@@ -825,42 +890,114 @@ export function DatasetDetailView({
             </div>
             {canManage &&
               application.status === "active" &&
-              dataset.taskType === "classification" && (
+              (dataset.taskType === "classification" || dataset.taskType === "detection") && (
                 <Dialog
                   open={exportOpen}
                   onOpenChange={(open) => {
                     setExportOpen(open);
-                    if (!open) setExportError("");
+                    if (!open) {
+                      setExportError("");
+                      setExportInvalidItems([]);
+                      setExportInvalidItemCount(0);
+                    }
                   }}
                 >
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setExportError("");
-                      setNotice("");
-                      setExportOpen(true);
-                    }}
-                  >
+                  <Button type="button" onClick={openExportDialog}>
                     Nueva exportación
                   </Button>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Nueva exportación</DialogTitle>
-                      <DialogDescription>Clasificación (imágenes + CSV)</DialogDescription>
+                      <DialogDescription>
+                        {dataset.taskType === "detection"
+                          ? "Detección (COCO)"
+                          : "Clasificación (imágenes + CSV)"}
+                      </DialogDescription>
                     </DialogHeader>
-                    <p className="text-muted-foreground text-sm">
-                      Tamaño total máximo de imágenes: 128 MiB.
-                    </p>
-                    <dl className="rounded-md border p-3 text-sm">
-                      <div className="flex justify-between gap-4">
-                        <dt className="text-muted-foreground">Ítems aprobados</dt>
-                        <dd>{dataset.approvedCount}</dd>
-                      </div>
+                    {dataset.taskType === "classification" && (
+                      <p className="text-muted-foreground text-sm">
+                        Tamaño total máximo de imágenes: 128 MiB.
+                      </p>
+                    )}
+                    <dl className="grid gap-2 rounded-md border p-3 text-sm sm:grid-cols-3">
+                      {dataset.taskType === "detection" ? (
+                        <>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-muted-foreground">Imágenes</dt>
+                            <dd>{exportSummary?.approvedCount ?? dataset.approvedCount}</dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-muted-foreground">Anotaciones</dt>
+                            <dd>
+                              {exportSummaryLoading ? "…" : (exportSummary?.annotationCount ?? "—")}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-muted-foreground">Categorías</dt>
+                            <dd>
+                              {exportSummaryLoading ? "…" : (exportSummary?.categoryCount ?? "—")}
+                            </dd>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-muted-foreground">Ítems aprobados</dt>
+                          <dd>{dataset.approvedCount}</dd>
+                        </div>
+                      )}
                     </dl>
+                    {exportSummaryLoading && (
+                      <p role="status" className="text-muted-foreground text-sm">
+                        Cargando resumen…
+                      </p>
+                    )}
+                    {exportSummaryError && (
+                      <div role="alert" className="space-y-2">
+                        <p className="text-destructive text-sm">{exportSummaryError}</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void loadExportSummary()}
+                        >
+                          Reintentar resumen
+                        </Button>
+                      </div>
+                    )}
                     {exportError && (
                       <p role="alert" className="text-destructive text-sm">
                         {exportError}
                       </p>
+                    )}
+                    {exportInvalidItems.length > 0 && (
+                      <div className="space-y-2">
+                        {exportInvalidItemCount > exportInvalidItems.length && (
+                          <p className="text-muted-foreground text-sm">
+                            Se muestran los primeros {exportInvalidItems.length} de{" "}
+                            {exportInvalidItemCount} ítems.
+                          </p>
+                        )}
+                        <ul className="space-y-2">
+                          {exportInvalidItems.map((invalid) => (
+                            <li key={invalid.itemId} className="rounded-md border p-3 text-sm">
+                              <p>
+                                Ítem <code>{invalid.itemId}</code> · evidencia {invalid.evidenceId}
+                              </p>
+                              <p className="text-muted-foreground">{invalid.cause.message}</p>
+                              <a
+                                href={`#${datasetItemElementId(invalid.itemId)}`}
+                                className="text-primary underline-offset-4 hover:underline"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  setExportOpen(false);
+                                  void reviewInvalidItem(invalid.itemId);
+                                }}
+                              >
+                                Revisar evidencia
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     <DialogFooter>
                       <Button
@@ -873,10 +1010,20 @@ export function DatasetDetailView({
                       </Button>
                       <Button
                         type="button"
-                        disabled={exporting}
-                        onClick={() => void generateClassificationExport()}
+                        disabled={exporting || exportSummaryLoading}
+                        onClick={() =>
+                          void generateDatasetExport(
+                            dataset.taskType === "detection"
+                              ? "detection_coco"
+                              : "classification_images_csv",
+                          )
+                        }
                       >
-                        {exporting ? "Generando exportación…" : "Generar exportación"}
+                        {exporting
+                          ? "Generando exportación…"
+                          : dataset.taskType === "detection"
+                            ? "Generar exportación COCO"
+                            : "Generar exportación"}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -904,7 +1051,11 @@ export function DatasetDetailView({
                     <dl className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <dt className="text-muted-foreground">Formato</dt>
-                        <dd>Clasificación (imágenes + CSV)</dd>
+                        <dd>
+                          {datasetExport.format === "detection_coco"
+                            ? "Detección (COCO)"
+                            : "Clasificación (imágenes + CSV)"}
+                        </dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Versión del dataset</dt>

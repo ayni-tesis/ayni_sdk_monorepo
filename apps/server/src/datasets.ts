@@ -4,6 +4,7 @@ import {
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
   type DatasetExportListResponse,
+  DatasetExportRequestSchema,
   type DatasetItem,
   type DatasetItemFilters,
   DatasetLabelRequestSchema,
@@ -169,10 +170,27 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       );
     }
 
+    const hasBody = c.req.raw.body !== null;
+    const body: unknown = await c.req.json().catch(() => undefined);
+    if (body === undefined && hasBody) {
+      return c.json(
+        { message: "El formato de exportación no es válido.", code: "invalidDatasetExportFormat" },
+        400,
+      );
+    }
+    const parsed = DatasetExportRequestSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      return c.json(
+        { message: "El formato de exportación no es válido.", code: "invalidDatasetExportFormat" },
+        400,
+      );
+    }
+
     const result = await datasets.createExport({
       applicationId: application.id,
       datasetId: c.req.param("datasetId"),
       userId: session.user.id,
+      format: parsed.data.format ?? "classification_images_csv",
     });
     if (result.ok) return c.json({ export: result.value }, 201);
     if (result.reason === "forbidden") {
@@ -192,6 +210,26 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
         {
           message: "Solo se pueden exportar datasets de clasificación.",
           code: "datasetNotClassification",
+        },
+        409,
+      );
+    }
+    if (result.reason === "notDetection") {
+      return c.json(
+        {
+          message: "Solo se pueden exportar datasets de detección en formato COCO.",
+          code: "datasetNotDetection",
+        },
+        409,
+      );
+    }
+    if (result.reason === "invalidAnnotations") {
+      return c.json(
+        {
+          message: "Corrige las anotaciones indicadas antes de exportar.",
+          code: "datasetExportInvalidAnnotations",
+          invalidItemCount: result.invalidItemCount,
+          invalidItems: result.invalidItems,
         },
         409,
       );
