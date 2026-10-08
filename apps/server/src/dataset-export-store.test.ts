@@ -120,6 +120,8 @@ describe("validateDatasetForExport (US-084)", () => {
     expect(await validateDatasetForExport(database, "app-1", "dataset-1")).toEqual({
       ready: true,
       approvedCount: 2,
+      annotationCount: 0,
+      categoryCount: 0,
       problem: null,
       invalidItemCount: 0,
       invalidItems: [],
@@ -145,6 +147,8 @@ describe("validateDatasetForExport (US-084)", () => {
     expect(await validateDatasetForExport(database, "app-1", "dataset-1")).toEqual({
       ready: false,
       approvedCount: 2,
+      annotationCount: 0,
+      categoryCount: 0,
       problem: null,
       invalidItemCount: 1,
       invalidItems: [
@@ -182,6 +186,8 @@ describe("validateDatasetForExport (US-084)", () => {
     expect(await validateDatasetForExport(database, "app-1", "dataset-1")).toEqual({
       ready: false,
       approvedCount: 0,
+      annotationCount: 0,
+      categoryCount: 0,
       problem: {
         code: "noApprovedItems",
         message: "El dataset no tiene evidencias aprobadas para exportar.",
