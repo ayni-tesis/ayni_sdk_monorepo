@@ -1327,6 +1327,190 @@ describe("DatasetDetailView", () => {
     });
   });
 
+  describe("Validar dataset (US-084)", () => {
+    const validationUrl = "/applications/app-1/datasets/dataset-1/validation";
+    const approvedItem = {
+      ...item,
+      reviewStatus: "approved" as const,
+      reviewedAt: "2026-10-03T00:00:00.000Z",
+      reviewedLabel: "pino",
+    };
+    const unlabeledItem = {
+      ...approvedItem,
+      id: "item-2",
+      evidenceId: "evidence-2",
+      reviewedLabel: null,
+    };
+    const invalidValidation = {
+      ready: false,
+      approvedCount: 2,
+      problem: null,
+      invalidItemCount: 1,
+      invalidItems: [
+        {
+          itemId: "item-2",
+          evidenceId: "evidence-2",
+          imageUrl: "https://evidence.example/image-2",
+          imageWidth: 640,
+          imageHeight: 480,
+          cause: {
+            code: "reviewedLabelRequired",
+            message: "La evidencia aprobada no tiene etiqueta revisada.",
+          },
+        },
+      ],
+    };
+
+    /** Answers the detail with `pages` (by filter status and offset) and the validation with `validation`. */
+    function serve(
+      validation: () => Promise<unknown>,
+      pages: Record<string, { items: unknown[]; nextItemOffset: number | null }> = {
+        "": { items: [approvedItem], nextItemOffset: null },
+      },
+    ) {
+      getMock.mockImplementation(
+        async (url: string, options?: { params?: { status?: string; offset?: number } }) => {
+          if (url === validationUrl) return { data: await validation() };
+          const key = `${options?.params?.status ?? ""}${options?.params?.offset ?? ""}`;
+          const page = pages[key] ?? { items: [], nextItemOffset: null };
+          return { data: { dataset, filterOptions, ...page } };
+        },
+      );
+    }
+
+    async function validate() {
+      const user = userEvent.setup();
+      renderDetail();
+      await screen.findByRole("heading", { name: "Flores" });
+      await user.click(screen.getByRole("tab", { name: "Exportaciones" }));
+      await user.click(screen.getByRole("button", { name: "Validar dataset" }));
+      return user;
+    }
+
+    it("lets any member confirm that the dataset is ready to export", async () => {
+      let resolve: (value: unknown) => void = () => {};
+      serve(() => new Promise((done) => (resolve = done)));
+      await validate();
+
+      expect(screen.getByRole("button", { name: "Validando dataset…" })).toBeDisabled();
+      resolve({
+        ready: true,
+        approvedCount: 1,
+        problem: null,
+        invalidItemCount: 0,
+        invalidItems: [],
+      });
+
+      expect(await screen.findByText("El dataset está listo para exportarse.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Validar dataset" })).toBeEnabled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(getMock).toHaveBeenCalledWith(
+        validationUrl,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it("lists each item that requires review with its image and cause", async () => {
+      serve(async () => invalidValidation);
+      await validate();
+
+      const dialog = within(
+        await screen.findByRole("dialog", { name: "Ítems que requieren revisión" }),
+      );
+      expect(dialog.getByRole("img", { name: "Evidencia evidence-2" })).toHaveAttribute(
+        "src",
+        "https://evidence.example/image-2",
+      );
+      expect(
+        dialog.getByText("La evidencia aprobada no tiene etiqueta revisada."),
+      ).toBeInTheDocument();
+      expect(dialog.getByRole("link", { name: "Revisar evidencia" })).toBeInTheDocument();
+      expect(screen.queryByText("El dataset está listo para exportarse.")).not.toBeInTheDocument();
+    });
+
+    it("says how many of the items it lists", async () => {
+      serve(async () => ({ ...invalidValidation, invalidItemCount: 120 }));
+      await validate();
+
+      expect(
+        await screen.findByText("Se muestran los primeros 1 de 120 ítems que requieren revisión."),
+      ).toBeInTheDocument();
+    });
+
+    it("reports a dataset without approved items", async () => {
+      serve(async () => ({
+        ready: false,
+        approvedCount: 0,
+        problem: {
+          code: "noApprovedItems",
+          message: "El dataset no tiene evidencias aprobadas para exportar.",
+        },
+        invalidItemCount: 0,
+        invalidItems: [],
+      }));
+      await validate();
+
+      const dialog = within(
+        await screen.findByRole("dialog", { name: "Ítems que requieren revisión" }),
+      );
+      expect(
+        dialog.getByText("El dataset no tiene evidencias aprobadas para exportar."),
+      ).toBeInTheDocument();
+    });
+
+    it("reports a failed validation", async () => {
+      serve(async () => {
+        throw new Error("network");
+      });
+      await validate();
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("No pudimos validar el dataset.");
+    });
+
+    it("takes the reviewer to an item already loaded in Evidencias", async () => {
+      serve(async () => invalidValidation, {
+        "": { items: [approvedItem, unlabeledItem], nextItemOffset: null },
+      });
+      const user = await validate();
+
+      await user.click(await screen.findByRole("link", { name: "Revisar evidencia" }));
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(document.getElementById("dataset-item-item-2")),
+      );
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Evidencias" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        within(document.activeElement as HTMLElement).getByText("evidence-2"),
+      ).toBeInTheDocument();
+    });
+
+    it("loads approved evidence pages until it reaches the item to review", async () => {
+      serve(async () => invalidValidation, {
+        "": { items: [approvedItem], nextItemOffset: null },
+        approved: { items: [approvedItem], nextItemOffset: 1 },
+        approved1: { items: [unlabeledItem], nextItemOffset: null },
+      });
+      const user = await validate();
+
+      await user.click(await screen.findByRole("link", { name: "Revisar evidencia" }));
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(document.getElementById("dataset-item-item-2")),
+      );
+      expect(getMock).toHaveBeenCalledWith(
+        "/applications/app-1/datasets/dataset-1",
+        expect.objectContaining({ params: { status: "approved", offset: 1 } }),
+      );
+      expect(
+        within(screen.getByRole("form", { name: "Filtrar evidencias" })).getByLabelText("Estado"),
+      ).toHaveValue("approved");
+    });
+  });
+
   it("returns to the dataset list from the breadcrumb", async () => {
     const onBackToDatasets = vi.fn();
     renderDetail(onBackToDatasets);
