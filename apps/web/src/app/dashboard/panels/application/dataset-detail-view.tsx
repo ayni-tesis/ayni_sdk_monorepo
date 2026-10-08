@@ -53,6 +53,35 @@ const NOT_FOUND = "No encontramos este dataset.";
 const LOAD_ERROR = "No pudimos cargar el dataset.";
 const MAX_EVIDENCE_PER_ADD = 500;
 const LABEL_REQUIRED = "Ingresa una etiqueta para una evidencia aprobada.";
+const EXPORT_FORMAT_COPY: Record<
+  DatasetExportFormat,
+  { label: string; success: string; failure: string; shortName: string }
+> = {
+  classification_images_csv: {
+    label: "Clasificación (imágenes + CSV)",
+    success: "Exportación de clasificación lista.",
+    failure: "No pudimos generar la exportación de clasificación.",
+    shortName: "",
+  },
+  detection_coco: {
+    label: "Detección (COCO)",
+    success: "Exportación COCO lista.",
+    failure: "No pudimos generar la exportación COCO.",
+    shortName: "COCO",
+  },
+  detection_yolo: {
+    label: "Detección (YOLO)",
+    success: "Exportación YOLO lista.",
+    failure: "No pudimos generar la exportación YOLO.",
+    shortName: "YOLO",
+  },
+};
+const YOLO_EXPORT_ERRORS = {
+  datasetExportNeedsTwoItems:
+    "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+  datasetExportNoYoloClasses:
+    "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
+} as const;
 
 export type DatasetDetailViewProps = {
   application: Application;
@@ -329,7 +358,7 @@ export function DatasetDetailView({
     }
   }
 
-  async function loadExportSummary() {
+  async function loadExportSummary(format: DatasetExportFormat = exportFormat) {
     if (detail?.dataset.taskType !== "detection") return;
     exportSummaryAbortRef.current?.abort();
     const controller = new AbortController();
@@ -340,7 +369,7 @@ export function DatasetDetailView({
     try {
       const { data } = await httpClient.get<DatasetValidationResponse>(
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/validation`,
-        { signal: controller.signal },
+        { params: { format }, signal: controller.signal },
       );
       if (!controller.signal.aborted) setExportSummary(data);
     } catch (summaryError) {
@@ -360,11 +389,11 @@ export function DatasetDetailView({
     setExportInvalidItemCount(0);
     setExportSummaryError("");
     setNotice("");
-    setExportFormat(
-      detail?.dataset.taskType === "detection" ? "detection_coco" : "classification_images_csv",
-    );
+    const format =
+      detail?.dataset.taskType === "detection" ? "detection_coco" : "classification_images_csv";
+    setExportFormat(format);
     setExportOpen(true);
-    if (detail?.dataset.taskType === "detection") void loadExportSummary();
+    if (detail?.dataset.taskType === "detection") void loadExportSummary(format);
   }
 
   async function generateDatasetExport(format: DatasetExportFormat) {
@@ -386,32 +415,26 @@ export function DatasetDetailView({
       const { data } = await httpClient.post<DatasetExportResponse>(exportsUrl, { format });
       setExports((current) => [data.export, ...current]);
       setExportOpen(false);
-      setNotice(
-        format === "detection_yolo"
-          ? "Exportación YOLO lista."
-          : format === "detection_coco"
-            ? "Exportación COCO lista."
-            : "Exportación de clasificación lista.",
-      );
+      setNotice(EXPORT_FORMAT_COPY[format].success);
     } catch (saveError) {
-      if (
-        axios.isAxiosError<DatasetExportInvalidAnnotationsResponse>(saveError) &&
-        saveError.response?.data.code === "datasetExportInvalidAnnotations"
-      ) {
+      const responseData = axios.isAxiosError<{
+        code?: string;
+        invalidItems?: DatasetExportInvalidAnnotationsResponse["invalidItems"];
+        invalidItemCount?: number;
+      }>(saveError)
+        ? saveError.response?.data
+        : undefined;
+      if (responseData?.code === "datasetExportInvalidAnnotations") {
         setExportError("Corrige las anotaciones indicadas antes de exportar.");
-        setExportInvalidItems(saveError.response.data.invalidItems);
-        setExportInvalidItemCount(saveError.response.data.invalidItemCount);
+        setExportInvalidItems(responseData.invalidItems ?? []);
+        setExportInvalidItemCount(responseData.invalidItemCount ?? 0);
+      } else if (
+        responseData?.code === "datasetExportNeedsTwoItems" ||
+        responseData?.code === "datasetExportNoYoloClasses"
+      ) {
+        setExportError(YOLO_EXPORT_ERRORS[responseData.code]);
       } else {
-        setExportError(
-          errorMessage(
-            saveError,
-            format === "detection_yolo"
-              ? "No pudimos generar la exportación YOLO."
-              : format === "detection_coco"
-                ? "No pudimos generar la exportación COCO."
-                : "No pudimos generar la exportación de clasificación.",
-          ),
-        );
+        setExportError(errorMessage(saveError, EXPORT_FORMAT_COPY[format].failure));
       }
     } finally {
       setExporting(false);
@@ -430,10 +453,16 @@ export function DatasetDetailView({
     setValidating(true);
     setValidation(null);
     setValidationError("");
+    const format =
+      detail?.dataset.taskType === "detection"
+        ? exportFormat === "detection_yolo"
+          ? exportFormat
+          : "detection_coco"
+        : "classification_images_csv";
     try {
       const { data } = await httpClient.get<DatasetValidationResponse>(
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/validation`,
-        { signal: controller.signal },
+        { params: { format }, signal: controller.signal },
       );
       if (controller.signal.aborted) return;
       setValidation(data);
@@ -920,11 +949,7 @@ export function DatasetDetailView({
                     <DialogHeader>
                       <DialogTitle>Nueva exportación</DialogTitle>
                       <DialogDescription>
-                        {dataset.taskType === "detection"
-                          ? exportFormat === "detection_yolo"
-                            ? "Detección (YOLO)"
-                            : "Detección (COCO)"
-                          : "Clasificación (imágenes + CSV)"}
+                        {EXPORT_FORMAT_COPY[exportFormat].label}
                       </DialogDescription>
                     </DialogHeader>
                     {dataset.taskType === "detection" && (
@@ -935,7 +960,10 @@ export function DatasetDetailView({
                           variant={exportFormat === "detection_coco" ? "default" : "outline"}
                           aria-pressed={exportFormat === "detection_coco"}
                           disabled={exporting}
-                          onClick={() => setExportFormat("detection_coco")}
+                          onClick={() => {
+                            setExportFormat("detection_coco");
+                            void loadExportSummary("detection_coco");
+                          }}
                         >
                           Detección (COCO)
                         </Button>
@@ -944,7 +972,10 @@ export function DatasetDetailView({
                           variant={exportFormat === "detection_yolo" ? "default" : "outline"}
                           aria-pressed={exportFormat === "detection_yolo"}
                           disabled={exporting}
-                          onClick={() => setExportFormat("detection_yolo")}
+                          onClick={() => {
+                            setExportFormat("detection_yolo");
+                            void loadExportSummary("detection_yolo");
+                          }}
                         >
                           Detección (YOLO)
                         </Button>
@@ -1062,9 +1093,7 @@ export function DatasetDetailView({
                         {exporting
                           ? "Generando exportación…"
                           : dataset.taskType === "detection"
-                            ? `Generar exportación ${
-                                exportFormat === "detection_yolo" ? "YOLO" : "COCO"
-                              }`
+                            ? `Generar exportación ${EXPORT_FORMAT_COPY[exportFormat].shortName}`
                             : "Generar exportación"}
                       </Button>
                     </DialogFooter>
@@ -1093,13 +1122,7 @@ export function DatasetDetailView({
                     <dl className="grid gap-2 sm:grid-cols-2">
                       <div>
                         <dt className="text-muted-foreground">Formato</dt>
-                        <dd>
-                          {datasetExport.format === "detection_yolo"
-                            ? "Detección (YOLO)"
-                            : datasetExport.format === "detection_coco"
-                              ? "Detección (COCO)"
-                              : "Clasificación (imágenes + CSV)"}
-                        </dd>
+                        <dd>{EXPORT_FORMAT_COPY[datasetExport.format].label}</dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Versión del dataset</dt>

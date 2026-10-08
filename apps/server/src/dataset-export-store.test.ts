@@ -1,13 +1,14 @@
 import { application, dataset, datasetExport, datasetItem, member } from "@ayni/db/schema/index";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationDatabase } from "./application-actions";
 import { createDatasetExport, validateDatasetForExport } from "./dataset-export-store";
 
 const { readEvidenceMock, uploadFileMock } = vi.hoisted(() => ({
   readEvidenceMock: vi.fn(async (_key: string) => new Uint8Array([0xff, 0xd8])),
-  uploadFileMock: vi.fn(async () => undefined),
+  uploadFileMock: vi.fn(async (..._args: unknown[]) => undefined),
 }));
 vi.mock("./lib/storage", () => ({
   getDownloadUrl: vi.fn(async (key: string) => `https://evidence.example/${key}`),
@@ -204,6 +205,46 @@ describe("validateDatasetForExport (US-084)", () => {
     expect(selects.map(({ table }) => table)).toEqual([dataset]);
     expect(selects[0]?.where?.params).toEqual(["app-2", "dataset-1"]);
   });
+
+  it("applies YOLO-only readiness rules and keeps the legacy detection default", async () => {
+    const oneImage = itemRow("item-1", {
+      reviewedAnnotations: [
+        { label: "gato", box: { xMin: 0.25, yMin: 0.25, xMax: 0.75, yMax: 0.75 } },
+      ],
+    });
+    const single = fakeDatabase({ taskType: "detection", items: [oneImage] });
+
+    expect(
+      await validateDatasetForExport(single.database, "app-1", "dataset-1", "detection_yolo"),
+    ).toMatchObject({
+      ready: false,
+      problem: {
+        code: "requiresMultipleItems",
+        message: "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+      },
+    });
+    expect(await validateDatasetForExport(single.database, "app-1", "dataset-1")).toMatchObject({
+      ready: true,
+      problem: null,
+    });
+
+    const noClasses = fakeDatabase({
+      taskType: "detection",
+      items: [
+        itemRow("item-1", { reviewedAnnotations: [] }),
+        itemRow("item-2", { reviewedAnnotations: [] }),
+      ],
+    });
+    expect(
+      await validateDatasetForExport(noClasses.database, "app-1", "dataset-1", "detection_yolo"),
+    ).toMatchObject({
+      ready: false,
+      problem: {
+        code: "noYoloClasses",
+        message: "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
+      },
+    });
+  });
 });
 
 describe("createDatasetExport checks (US-084, US-085)", () => {
@@ -245,5 +286,88 @@ describe("createDatasetExport checks (US-084, US-085)", () => {
       "apps/app-1/evidence/item-2.jpg",
     ]);
     expect(inserted).toHaveLength(1);
+  });
+
+  it("writes a deterministic 80/20 YOLO archive with Spanish-sorted, escaped classes", async () => {
+    const box = { xMin: 0.25, yMin: 0.25, xMax: 0.75, yMax: 0.75 };
+    const items = [
+      itemRow("item-5", { reviewedAnnotations: [] }),
+      itemRow("item-4", { reviewedAnnotations: [{ label: "zapato", box }] }),
+      itemRow("item-3", { reviewedAnnotations: [{ label: "ñandú", box }] }),
+      itemRow("item-2", { reviewedAnnotations: [{ label: "árbol", box }] }),
+      itemRow("item-1", { reviewedAnnotations: [{ label: 'a: "b"', box }] }),
+    ];
+    const { database } = fakeDatabase({ taskType: "detection", items });
+
+    const result = await createDatasetExport(database, {
+      ...input,
+      format: "detection_yolo",
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { itemCount: 5, format: "detection_yolo" } });
+    const archive = uploadFileMock.mock.calls[0]?.[1] as Uint8Array;
+    const files = unzipSync(archive);
+    const decode = (path: string) => new TextDecoder().decode(files[path]);
+
+    expect(Object.keys(files).sort()).toEqual([
+      "data.yaml",
+      "images/train/item-1.jpg",
+      "images/train/item-2.jpg",
+      "images/train/item-3.jpg",
+      "images/train/item-4.jpg",
+      "images/val/item-5.jpg",
+      "labels/train/item-1.txt",
+      "labels/train/item-2.txt",
+      "labels/train/item-3.txt",
+      "labels/train/item-4.txt",
+      "labels/val/item-5.txt",
+    ]);
+    expect(decode("data.yaml")).toBe(
+      [
+        "train: images/train",
+        "val: images/val",
+        "names:",
+        `  0: ${JSON.stringify('a: "b"')}`,
+        `  1: ${JSON.stringify("árbol")}`,
+        `  2: ${JSON.stringify("ñandú")}`,
+        `  3: ${JSON.stringify("zapato")}`,
+        "",
+      ].join("\n"),
+    );
+    expect(decode("data.yaml")).not.toContain("path:");
+    expect(decode("labels/train/item-1.txt")).toBe("0 0.5 0.5 0.5 0.5\n");
+    expect(decode("labels/val/item-5.txt")).toBe("");
+  });
+
+  it.each([
+    [
+      "requiresMultipleItems",
+      [
+        itemRow("item-1", {
+          reviewedAnnotations: [
+            { label: "gato", box: { xMin: 0.25, yMin: 0.25, xMax: 0.75, yMax: 0.75 } },
+          ],
+        }),
+      ],
+    ],
+    [
+      "noYoloClasses",
+      [
+        itemRow("item-1", { reviewedAnnotations: [] }),
+        itemRow("item-2", { reviewedAnnotations: [] }),
+      ],
+    ],
+  ] as const)("rejects YOLO export with %s before storing an artifact", async (reason, items) => {
+    const { database, inserted } = fakeDatabase({ taskType: "detection", items: [...items] });
+    const yoloInput = { ...input, format: "detection_yolo" as const };
+
+    expect(
+      await validateDatasetForExport(database, "app-1", "dataset-1", yoloInput.format),
+    ).toMatchObject({
+      ready: false,
+    });
+    expect(await createDatasetExport(database, yoloInput)).toEqual({ ok: false, reason });
+    expect(uploadFileMock).not.toHaveBeenCalled();
+    expect(inserted).toEqual([]);
   });
 });

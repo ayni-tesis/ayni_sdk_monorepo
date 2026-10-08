@@ -165,6 +165,7 @@ export async function validateDatasetForExport(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
+  format?: DatasetExportFormat,
 ): Promise<DatasetValidationResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetExportReadExecutor;
@@ -176,9 +177,13 @@ export async function validateDatasetForExport(
     const foundDataset = datasets[0];
     if (!foundDataset) return null;
 
+    const effectiveFormat =
+      format ??
+      (foundDataset.taskType === "detection" ? "detection_coco" : "classification_images_csv");
     const check = checkDatasetForExport(
       foundDataset.taskType,
       await selectApprovedItems(tx, applicationId, datasetId),
+      effectiveFormat,
     );
     const summary = check.approvedItems.reduce(
       (result, item) => {
@@ -303,9 +308,10 @@ function createCocoDocument(items: ExportItem[]) {
 }
 
 function createYoloFiles(items: ExportItem[]) {
-  const { prepared: detectedItems, labels } = prepareDetectionItems(items);
+  const { prepared, labels: detectedLabels } = prepareDetectionItems(items);
+  const labels = [...detectedLabels].sort((left, right) => left.localeCompare(right, "es"));
   if (labels.length === 0) return null;
-  const prepared = detectedItems.sort((left, right) => left.item.id.localeCompare(right.item.id));
+  prepared.sort((left, right) => left.item.id.localeCompare(right.item.id));
   const classIds = new Map(labels.map((label, index) => [label, index]));
   const validationCount = Math.min(
     prepared.length - 1,
@@ -337,7 +343,6 @@ function createYoloFiles(items: ExportItem[]) {
 
   files["data.yaml"] = encoder.encode(
     [
-      "path: .",
       "train: images/train",
       "val: images/val",
       "names:",
@@ -390,8 +395,9 @@ export async function createDatasetExport(
         const check = checkDatasetForExport(
           taskType,
           await selectApprovedItems(tx, input.applicationId, input.datasetId),
+          format,
         );
-        if (check.problem) return { kind: "error", reason: "noApprovedItems" } as const;
+        if (check.problem) return { kind: "error", reason: check.problem.code } as const;
         if (taskType === "detection" && check.invalidItems.length > 0) {
           return {
             kind: "invalidAnnotations",
@@ -411,9 +417,6 @@ export async function createDatasetExport(
         }
         if (causes.has("formulaLabel")) return { kind: "error", reason: "unsafeLabel" } as const;
         const items = check.approvedItems;
-        if (format === "detection_yolo" && items.length < 2) {
-          return { kind: "error", reason: "requiresMultipleItems" } as const;
-        }
         let imageBytes = 0;
         for (const item of items) {
           imageBytes += item.imageByteSize;

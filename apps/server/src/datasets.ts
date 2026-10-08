@@ -3,6 +3,7 @@ import {
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
+  type DatasetExportFormat,
   type DatasetExportListResponse,
   DatasetExportRequestSchema,
   type DatasetItem,
@@ -15,6 +16,7 @@ import {
   type DatasetValidationResponse,
   parseDatasetAnnotationsRequest,
   parseDatasetItemsQuery,
+  parseDatasetValidationQuery,
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
@@ -78,6 +80,7 @@ type Dependencies = {
     validate: (
       applicationId: string,
       datasetId: string,
+      format?: DatasetExportFormat,
     ) => Promise<DatasetValidationResponse | null>;
   };
 };
@@ -97,8 +100,17 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
     );
     if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
 
+    const parsedQuery = parseDatasetValidationQuery(c.req.query());
+    if (!parsedQuery.success) {
+      return c.json(parsedQuery.error, 400);
+    }
+
     try {
-      const validation = await datasets.validate(application.id, c.req.param("datasetId"));
+      const validation = await datasets.validate(
+        application.id,
+        c.req.param("datasetId"),
+        parsedQuery.data.format,
+      );
       if (!validation) return c.json({ message: "No encontramos este dataset." }, 404);
       return c.json(validation);
     } catch {

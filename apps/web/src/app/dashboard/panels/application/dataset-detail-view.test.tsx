@@ -1389,6 +1389,32 @@ describe("DatasetDetailView", () => {
       return user;
     }
 
+    async function openDetectionExportDialog() {
+      const detectionDataset = { ...dataset, taskType: "detection" as const };
+      getMock.mockImplementation(async (url: string) =>
+        url === validationUrl
+          ? {
+              data: {
+                ready: true,
+                approvedCount: 2,
+                annotationCount: 1,
+                categoryCount: 1,
+                problem: null,
+                invalidItemCount: 0,
+                invalidItems: [],
+              },
+            }
+          : { data: { dataset: detectionDataset, items: [], nextItemOffset: null, filterOptions } },
+      );
+      const user = userEvent.setup();
+      renderManagedDetail();
+      await screen.findByRole("heading", { name: "Flores" });
+      await user.click(screen.getByRole("tab", { name: "Exportaciones" }));
+      await user.click(screen.getByRole("button", { name: "Nueva exportación" }));
+      await screen.findByRole("dialog", { name: "Nueva exportación" });
+      return user;
+    }
+
     it("lets any member confirm that the dataset is ready to export", async () => {
       let resolve: (value: unknown) => void = () => {};
       serve(() => new Promise((done) => (resolve = done)));
@@ -1408,8 +1434,64 @@ describe("DatasetDetailView", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(getMock).toHaveBeenCalledWith(
         validationUrl,
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.objectContaining({
+          params: { format: "classification_images_csv" },
+          signal: expect.any(AbortSignal),
+        }),
       );
+    });
+
+    it("validates the selected YOLO format in the summary and validation request", async () => {
+      const user = await openDetectionExportDialog();
+
+      await user.click(screen.getByRole("button", { name: "Detección (YOLO)" }));
+      await waitFor(() =>
+        expect(getMock).toHaveBeenLastCalledWith(
+          validationUrl,
+          expect.objectContaining({ params: { format: "detection_yolo" } }),
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(document.body).not.toHaveAttribute("data-scroll-locked"), {
+        timeout: 4_000,
+      });
+      await user.click(screen.getByRole("button", { name: "Validar dataset" }));
+
+      expect(await screen.findByText("El dataset está listo para exportarse.")).toBeInTheDocument();
+      expect(getMock).toHaveBeenLastCalledWith(
+        validationUrl,
+        expect.objectContaining({
+          params: { format: "detection_yolo" },
+          signal: expect.any(AbortSignal),
+        }),
+      );
+    });
+
+    it.each([
+      [
+        "datasetExportNeedsTwoItems",
+        "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+      ],
+      [
+        "datasetExportNoYoloClasses",
+        "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
+      ],
+      ["datasetExportInvalidAnnotations", "Corrige las anotaciones indicadas antes de exportar."],
+    ])("shows the specific YOLO export error %s", async (code, message) => {
+      postMock.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: { data: { code, invalidItemCount: 0, invalidItems: [] } },
+      });
+      const user = await openDetectionExportDialog();
+      await user.click(screen.getByRole("button", { name: "Detección (YOLO)" }));
+      const generateButton = await screen.findByRole("button", {
+        name: "Generar exportación YOLO",
+      });
+      await waitFor(() => expect(generateButton).toBeEnabled());
+      await user.click(generateButton);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
     });
 
     it("lists each item that requires review with its image and cause", async () => {

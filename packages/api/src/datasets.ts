@@ -220,6 +220,9 @@ export const DatasetExportFormatSchema = z.enum([
   "detection_coco",
   "detection_yolo",
 ]);
+export const DatasetValidationQuerySchema = z
+  .object({ format: DatasetExportFormatSchema.optional() })
+  .strict();
 export const DatasetExportRequestSchema = z
   .object({ format: DatasetExportFormatSchema.optional() })
   .strict();
@@ -248,6 +251,13 @@ export const DatasetItemCauseCodeSchema = z.enum([
 ]);
 /** The most invalid items a dataset validation lists; `invalidItemCount` counts them all. */
 export const DATASET_VALIDATION_ITEMS_MAX = 100;
+export const DATASET_VALIDATION_QUERY_ERROR_MESSAGE = "El formato de validación no es válido.";
+export const DatasetValidationProblemSchema = z
+  .object({
+    code: z.enum(["noApprovedItems", "requiresMultipleItems", "noYoloClasses"]),
+    message: z.string(),
+  })
+  .strict();
 export const DatasetValidationItemSchema = z
   .object({
     itemId: z.string(),
@@ -266,11 +276,9 @@ export const DatasetValidationResponseSchema = z
     approvedCount: z.number().int().nonnegative(),
     annotationCount: z.number().int().nonnegative().optional(),
     categoryCount: z.number().int().nonnegative().optional(),
-    problem: z
-      .object({ code: z.literal("noApprovedItems"), message: z.string() })
-      .strict()
-      .nullable()
-      .describe("Causa que impide exportar el dataset completo; null si no hay ninguna."),
+    problem: DatasetValidationProblemSchema.nullable().describe(
+      "Causa que impide exportar el dataset completo en el formato solicitado.",
+    ),
     invalidItemCount: z.number().int().nonnegative(),
     invalidItems: z
       .array(DatasetValidationItemSchema)
@@ -316,6 +324,7 @@ export type DatasetEvidence = z.infer<typeof DatasetEvidenceSchema>;
 export type DatasetDetailResponse = z.infer<typeof DatasetDetailResponseSchema>;
 export type DatasetFilterOptions = z.infer<typeof DatasetFilterOptionsSchema>;
 export type DatasetItemsQuery = z.infer<typeof DatasetItemsQuerySchema>;
+export type DatasetValidationQuery = z.infer<typeof DatasetValidationQuerySchema>;
 export type DatasetItemFilters = Omit<DatasetItemsQuery, "offset">;
 export type DatasetAvailableEvidenceResponse = z.infer<
   typeof DatasetAvailableEvidenceResponseSchema
@@ -391,12 +400,32 @@ export function parseDatasetItemsQuery(query: Record<string, string>):
       };
 }
 
+/** Parses the optional format selector used to validate its format-specific export rules. */
+export function parseDatasetValidationQuery(
+  query: Record<string, string>,
+):
+  | { success: true; data: DatasetValidationQuery }
+  | { success: false; error: { code: "invalidDatasetValidationQuery"; message: string } } {
+  const parsed = DatasetValidationQuerySchema.safeParse(query);
+  return parsed.success
+    ? parsed
+    : {
+        success: false,
+        error: {
+          code: "invalidDatasetValidationQuery",
+          message: DATASET_VALIDATION_QUERY_ERROR_MESSAGE,
+        },
+      };
+}
+
 /**
  * Why a dataset or one of its approved items cannot be exported (US-084).
  * `noApprovedItems` is about the whole dataset; the others name one item.
  */
 export const DATASET_EXPORT_CHECK_CAUSES = {
   noApprovedItems: "El dataset no tiene evidencias aprobadas para exportar.",
+  requiresMultipleItems: "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+  noYoloClasses: "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
   reviewedLabelRequired: "La evidencia aprobada no tiene etiqueta revisada.",
   formulaLabel: "La etiqueta revisada puede interpretarse como fórmula.",
   reviewedAnnotationsRequired: "La evidencia aprobada no tiene anotaciones revisadas.",
@@ -404,10 +433,7 @@ export const DATASET_EXPORT_CHECK_CAUSES = {
 } as const;
 export type DatasetItemCauseCode = z.infer<typeof DatasetItemCauseCodeSchema>;
 export type DatasetItemCause = { code: DatasetItemCauseCode; message: string };
-export type DatasetExportProblem = {
-  code: "noApprovedItems";
-  message: (typeof DATASET_EXPORT_CHECK_CAUSES)["noApprovedItems"];
-};
+export type DatasetExportProblem = z.infer<typeof DatasetValidationProblemSchema>;
 
 /** A label a spreadsheet would run as a formula once written to a CSV cell. */
 const FORMULA_LABEL = /^\s*[=+@-]/u;
@@ -448,6 +474,7 @@ function cause(code: Exclude<DatasetItemCauseCode, "invalidAnnotations">): Datas
 export function checkDatasetForExport<Item extends DatasetExportCandidate>(
   taskType: DatasetTaskType,
   items: readonly Item[],
+  format?: DatasetExportFormat,
 ): {
   approvedItems: Item[];
   problem: DatasetExportProblem | null;
@@ -458,12 +485,27 @@ export function checkDatasetForExport<Item extends DatasetExportCandidate>(
     const found = itemCause(taskType, item);
     return found ? [{ item, cause: found }] : [];
   });
+  let problem: DatasetExportProblem | null = null;
+  if (approvedItems.length === 0) {
+    problem = { code: "noApprovedItems", message: DATASET_EXPORT_CHECK_CAUSES.noApprovedItems };
+  } else if (format === "detection_yolo" && taskType === "detection" && invalidItems.length === 0) {
+    if (approvedItems.length < 2) {
+      problem = {
+        code: "requiresMultipleItems",
+        message: DATASET_EXPORT_CHECK_CAUSES.requiresMultipleItems,
+      };
+    } else if (
+      !approvedItems.some(
+        ({ reviewedAnnotations }) =>
+          Array.isArray(reviewedAnnotations) && reviewedAnnotations.length > 0,
+      )
+    ) {
+      problem = { code: "noYoloClasses", message: DATASET_EXPORT_CHECK_CAUSES.noYoloClasses };
+    }
+  }
   return {
     approvedItems,
-    problem:
-      approvedItems.length === 0
-        ? { code: "noApprovedItems", message: DATASET_EXPORT_CHECK_CAUSES.noApprovedItems }
-        : null,
+    problem,
     invalidItems,
   };
 }
@@ -547,13 +589,14 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     operationId: "validar-dataset-exportacion",
     summary: "Validar un dataset para exportación",
     description:
-      "Cualquier miembro del workspace puede validar un dataset, también en una aplicación archivada. Revisa solo las evidencias aprobadas con las mismas reglas que la exportación: en clasificación, una etiqueta revisada que no esté vacía ni pueda interpretarse como fórmula; en detección, anotaciones revisadas con cajas válidas (una lista vacía es válida). Solo lee: no modifica el dataset ni sus evidencias.",
+      "Cualquier miembro del workspace puede validar un dataset, también en una aplicación archivada. El parámetro opcional format selecciona el formato; si se omite, se usan las reglas actuales de clasificación o COCO. Revisa solo las evidencias aprobadas con las mismas reglas que la exportación: en clasificación, una etiqueta revisada que no esté vacía ni pueda interpretarse como fórmula; en detección, anotaciones revisadas con cajas válidas (una lista vacía es válida). Para YOLO requiere al menos dos imágenes aprobadas y una clase revisada. Solo lee: no modifica el dataset ni sus evidencias.",
     security: [{ [userSession.name]: [] }],
     request: {
       params: z.object({
         applicationId: z.string().openapi({ example: "app-123" }),
         datasetId: z.string().openapi({ example: "dataset-123" }),
       }),
+      query: DatasetValidationQuerySchema,
     },
     responses: {
       "200": {
@@ -562,6 +605,7 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
         content: { "application/json": { schema: DatasetValidationResponseSchema } },
       },
       "401": errorResponse("La sesión no está autenticada."),
+      "400": errorResponse(DATASET_VALIDATION_QUERY_ERROR_MESSAGE),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos validar el dataset."),
     },
