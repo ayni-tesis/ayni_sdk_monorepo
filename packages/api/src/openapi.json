@@ -4554,6 +4554,132 @@
         }
       }
     },
+    "/applications/{applicationId}/datasets/{datasetId}/exports/{exportId}/download": {
+      "get": {
+        "tags": ["Datasets"],
+        "operationId": "descargar-exportacion-dataset",
+        "summary": "Preparar la descarga de una exportación",
+        "description": "Cualquier miembro del workspace puede obtener un enlace temporal para descargar una exportación lista, también en una aplicación archivada. El enlace dura cinco minutos y la respuesta usa `Cache-Control: private, no-store`.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "export-123"
+            },
+            "required": true,
+            "name": "exportId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enlace temporal a la exportación, con fecha de vencimiento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "downloadUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": ["downloadUrl", "expiresAt"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos esta exportación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos preparar la descarga de la exportación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{applicationId}/datasets/{datasetId}/available-evidence": {
       "get": {
         "tags": ["Datasets"],

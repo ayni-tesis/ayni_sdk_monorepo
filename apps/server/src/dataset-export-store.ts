@@ -3,6 +3,7 @@ import {
   checkDatasetForExport,
   DATASET_VALIDATION_ITEMS_MAX,
   type DatasetExport,
+  type DatasetExportDownloadResponse,
   type DatasetExportFormat,
   type DatasetExportInvalidItem,
   type DatasetValidationResponse,
@@ -19,6 +20,7 @@ import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
 const MAX_DATASET_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
+const DATASET_EXPORT_DOWNLOAD_TTL_SECONDS = 300;
 
 type DatasetExportQuery = Promise<Record<string, unknown>[]> & {
   innerJoin: (table: unknown, condition: unknown) => DatasetExportQuery;
@@ -112,6 +114,41 @@ export async function listDatasetExports(
       .orderBy(desc(datasetExport.version))) as DatasetExportRow[];
     return { exports: rows.map(toDatasetExport) };
   });
+}
+
+export async function createDatasetExportDownload(
+  database: ApplicationDatabase,
+  applicationId: string,
+  datasetId: string,
+  exportId: string,
+): Promise<DatasetExportDownloadResponse | null> {
+  const row = await database.transaction(async (transaction) => {
+    const tx = transaction as DatasetExportReadExecutor;
+    const rows = (await tx
+      .select(datasetExportFields)
+      .from(datasetExport)
+      .where(
+        and(
+          eq(datasetExport.applicationId, applicationId),
+          eq(datasetExport.datasetId, datasetId),
+          eq(datasetExport.id, exportId),
+          eq(datasetExport.status, "ready"),
+        ),
+      )
+      .limit(1)) as DatasetExportRow[];
+    return rows[0] ?? null;
+  });
+  if (!row) return null;
+
+  const expiresAt = new Date(Date.now() + DATASET_EXPORT_DOWNLOAD_TTL_SECONDS * 1000);
+  const filename = `dataset-export_${row.format}_v${row.version}_${toIsoString(row.generatedAt).slice(0, 10)}.zip`;
+  return {
+    downloadUrl: await getDownloadUrl(row.storageKey, {
+      expiresIn: DATASET_EXPORT_DOWNLOAD_TTL_SECONDS,
+      responseContentDisposition: `attachment; filename="${filename}"`,
+    }),
+    expiresAt: expiresAt.toISOString(),
+  };
 }
 
 /**
