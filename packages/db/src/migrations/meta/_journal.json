@@ -239,6 +239,13 @@
       "when": 1791395314524,
       "tag": "0033_burly_gravity",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791437262395,
+      "tag": "0034_detection_coco_export",
+      "breakpoints": true
     }
   ]
 }

@@ -215,7 +215,13 @@ export const DatasetLabelRequestSchema = z
   .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
   .strict();
 export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
-export const DatasetExportFormatSchema = z.literal("classification_images_csv");
+export const DatasetExportFormatSchema = z.enum([
+  "classification_images_csv",
+  "detection_coco",
+]);
+export const DatasetExportRequestSchema = z
+  .object({ format: DatasetExportFormatSchema.optional() })
+  .strict();
 export const DatasetExportSchema = z
   .object({
     id: z.string(),
