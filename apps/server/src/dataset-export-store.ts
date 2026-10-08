@@ -242,11 +242,15 @@ export async function validateDatasetForExport(
   if (!result.ok) return { ok: false, reason: result.reason };
   if (result.value.kind === "notFound") return { ok: false, reason: "notFound" };
   const items = await Promise.all(
-    result.value.items.map(async ({ id: itemId, storageKey, ...item }) => ({
-      ...item,
-      itemId,
-      imageUrl: await getDownloadUrl(storageKey),
-    })),
+    result.value.items.map(
+      async ({ id: itemId, storageKey, imageWidth, imageHeight, message }) => ({
+        itemId,
+        imageUrl: await getDownloadUrl(storageKey),
+        imageWidth,
+        imageHeight,
+        message,
+      }),
+    ),
   );
   return {
     ok: true,
