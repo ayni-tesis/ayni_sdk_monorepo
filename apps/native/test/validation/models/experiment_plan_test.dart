@@ -329,7 +329,7 @@ void main() {
           plan.resourceProfiles
               .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          containsAll(['S1', 'S2', 'SEG-01']),
+          containsAll(['S1', 'S2']),
         );
         final runnable = plan.scenarios
             .where(
@@ -371,7 +371,7 @@ void main() {
           plan.resourceProfiles
               .where((profile) => profile.isPending)
               .map((profile) => profile.id),
-          ['S1', 'S2', 'SEG-01'],
+          ['S1', 'S2'],
         );
       },
     );
@@ -812,7 +812,7 @@ void main() {
     );
 
     test(
-      'the bundled plan declares SEG-01 as pending with the three phases',
+      'the bundled plan pins SEG-01 resources and declares its three phases',
       () async {
         final source = await rootBundle.loadString(ExperimentPlan.assetPath);
         final plan = ExperimentPlan.fromJson(
@@ -822,7 +822,50 @@ void main() {
         final profile = plan.resourceProfiles.singleWhere(
           (item) => item.id == 'SEG-01',
         );
-        expect(profile.isPending, isTrue);
+        expect(profile.isReady, isTrue);
+        expect(profile.datasetId, '15020d08-b6d3-4987-9780-0d9ced099ed3');
+        expect(
+          profile.datasetVersionId,
+          '3884c740-1d6a-437e-896b-ec4ae9710e44',
+        );
+        expect(profile.datasetPartition, 'test');
+        expect(
+          profile.datasetSha256,
+          '5a2a2a9c001c4e01fb2448c0ee2157605636af1e3bf4f423cc32c7ffb8641b66',
+        );
+        expect(profile.workflowId, '8d0640b8-9f4a-4caa-b8ac-1f944eb7ff41');
+        expect(
+          profile.workflowVersionId,
+          '737c1036-2757-4473-98ac-e795df4d84af',
+        );
+        expect(profile.workflowVersion, '1.0.0');
+        expect(profile.modelRequirements, hasLength(1));
+        final model = profile.modelRequirements.single;
+        expect(model.nodeId, '39c8ea84-66e8-4031-a28c-b85005cbfcbb');
+        expect(model.modelVersionId, 'c3313d30-fb1a-4bab-a47b-897bc606c8b1');
+        expect(
+          model.sha256,
+          'ff36e24d40547fe9e645e2f4e8745d1876d6e38b332d39a82f0bf0f5d1d561b3',
+        );
+        expect(model.inputContract.width, 257);
+        expect(model.inputContract.height, 257);
+        expect(model.inputContract.channels, 3);
+        expect(model.inputContract.normalization, 'minus_one_to_one');
+        expect(
+          model.modelOutputContract.resultType,
+          ValidationResultType.segmentation,
+        );
+        expect(
+          model.modelOutputContract.labels,
+          profile.outputContract.first.labels,
+        );
+        expect(model.modelOutputContract.scoreType, 'logits');
+        expect(profile.outputContract.map((output) => output.resultType), [
+          ValidationResultType.segmentation,
+          ValidationResultType.boolean,
+        ]);
+        expect(profile.outputContract.first.name, 'Segmentación');
+        expect(profile.outputContract.last.name, 'Presencia de persona');
         expect(
           plan.scenarios
               .where((scenario) => scenario.resourceProfileId == 'SEG-01')
@@ -836,11 +879,11 @@ void main() {
             ('SEG-01-PERF-04', ValidationPhase.stress, 1024),
           ],
         );
-                final stressScenario = plan.scenarios.singleWhere(
-                  (scenario) => scenario.id == 'SEG-01-PERF-04',
-                );
-                expect(stressScenario.caseIds, hasLength(300));
-                expect(stressScenario.caseIds.toSet(), hasLength(300));
+        final stressScenario = plan.scenarios.singleWhere(
+          (scenario) => scenario.id == 'SEG-01-PERF-04',
+        );
+        expect(stressScenario.caseIds, hasLength(300));
+        expect(stressScenario.caseIds.toSet(), hasLength(300));
       },
     );
   });

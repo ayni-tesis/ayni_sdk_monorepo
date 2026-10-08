@@ -1,10 +1,10 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.4.0**, publicado en pub.dev, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
+`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.4.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de los perfiles listos, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
-El plan contiene cinco perfiles positivos: `INT-01` (Coffee EfficientNetB0 y BRACOL), `S1` (Coffee MobileNetV2 sobre el mismo BRACOL), `REU-01` (clasificador de tomate de diez etiquetas y PlantVillage), `S2` (workflow completo de café con clasificador, detector, condición `sana >= 0.8` y salidas tipadas) y `SEG-01` (segmentación semántica, ver abajo). Hoy `INT-01` y `REU-01` tienen recursos publicados; `S1`, `S2` y `SEG-01` siguen `pending`. El botón **Iniciar validación** se habilita con que haya al menos un perfil listo: la suite ejecuta solo los perfiles listos y omite los `pending`. Un recurso ausente o inválido de un perfil listo bloquea la suite completa.
+El plan contiene cinco perfiles positivos: `INT-01` (Coffee EfficientNetB0 y BRACOL), `S1` (Coffee MobileNetV2 sobre el mismo BRACOL), `REU-01` (clasificador de tomate de diez etiquetas y PlantVillage), `S2` (workflow completo de café con clasificador, detector, condición `sana >= 0.8` y salidas tipadas) y `SEG-01` (segmentación semántica, ver abajo). `INT-01`, `REU-01` y `SEG-01` tienen sus versiones publicadas fijadas; `S1` y `S2` siguen `pending`. El botón **Iniciar validación** se habilita con que haya al menos un perfil listo: la suite ejecuta solo los perfiles listos y omite los `pending`. Un recurso ausente o inválido de un perfil listo bloquea la suite completa.
 
 Provisiona los perfiles en este orden:
 
@@ -15,65 +15,22 @@ Provisiona los perfiles en este orden:
 5. Solo después de publicar y verificar los recursos, reemplaza el perfil correspondiente en `assets/validation/experiment_plan.json` con los IDs reales y SHA-256 del dataset y de cada modelo, el ID/versión del workflow y sus contratos. No copies IDs de ejemplo del ZIP ni incluyas una SDK Key.
 6. Ejecuta `flutter test test/validation/models/experiment_plan_test.dart`, `flutter test`, `flutter analyze` y `flutter build apk --debug`; luego genera el APK selector siguiendo las instrucciones de abajo.
 
-La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica todos los modelos y la definición publicada de cada workflow. Antes de escribir JSONL, comprueba todos los perfiles, ambas condiciones y todas las imágenes seleccionadas; un recurso ausente o inválido bloquea la suite completa. El lote automático incluye 15 filas de fase/escenario, 6 720 intentos por condición y 13 440 intentos en total cuando los cinco perfiles están listos (cada perfil listo aporta 3 filas y 1 344 intentos por condición). Tras medir, vuelve a sincronizar el SDK para intentar despachar las trazas autorizadas.
+La app conserva el dataset en almacenamiento privado. Lo descarga mediante el manifiesto autenticado y una URL temporal de R2; verifica el hash del ZIP, las rutas y los hashes de las imágenes antes de instalarlas. También verifica todos los modelos y la definición publicada de cada workflow. Antes de escribir JSONL, comprueba todos los perfiles listos, ambas condiciones y todas las imágenes seleccionadas; un recurso ausente o inválido bloquea la suite completa. Con el plan actual hay 9 filas de fase/escenario y 4 032 intentos por condición (8 064 en total) para `INT-01`, `REU-01` y `SEG-01`. Si los cinco perfiles llegan a estar listos, serían 15 filas, 6 720 intentos por condición y 13 440 en total. Tras medir, vuelve a sincronizar el SDK para intentar despachar las trazas autorizadas.
 
 La URL de producción (`https://ayni-sdk-monorepo-server.vercel.app/`) está fijada en la app. La SDK Key se guarda con `flutter_secure_storage`; debe estar activa y corresponder a la aplicación. El APK no contiene la credencial.
 
 ## Perfil SEG-01: segmentación semántica
 
-`SEG-01` mide si `ayni_sdk` 0.4.0 conserva la máscara de un modelo de segmentación y cuánto tarda, frente a la integración directa con TFLite sobre los mismos bytes. Usa las mismas fases (`SEG-01-PERF-02-WARMUP` de 20 intentos, `SEG-01-PERF-02` de 300 y `SEG-01-PERF-04` de 1 024) y el mismo botón. Sigue `pending`: no se activa hasta que existan el modelo registrado, el workflow publicado con esquema `4` y un dataset con licencia que permita guardarlo en el almacenamiento privado.
+`SEG-01` compara la máscara y latencia de `ayni_sdk` con la integración directa TFLite, sobre la misma versión del modelo y los mismos bytes. El perfil ya está `ready` y fija los IDs/versiones y hashes publicados en `assets/validation/experiment_plan.json`. Usa 20 calentamientos, 300 medidas y 1 024 intentos de estrés sobre 300 imágenes de la partición `test`; en estrés se reutilizan casos. Ejecuta las tres fases con **Iniciar validación**.
 
-- **Modelo previsto:** DeepLabV3 genérico de MediaPipe (float32), entrada `[1, 257, 257, 3]` con `minus_one_to_one`, 21 etiquetas VOC y `scoreType` `logits`.
+- **Modelo:** DeepLabV3 genérico de MediaPipe (float32), entrada `[1, 257, 257, 3]` con `minus_one_to_one`, 21 etiquetas VOC y `scoreType` `logits`.
 - **Workflow:** una salida de segmentación y la condición `person gte 0.1`, con una salida booleana cuyas `sources` son los puertos `true` y `false`. La integración directa evalúa la condición con su propio código sobre `areaFractions[label]` (operadores `gte`, `gt`, `lte`, `lt`, umbral en [0, 1]).
 - **Versión del SDK:** la app compara la versión con SemVer, no con una igualdad fija: detección exige al menos 0.3.1 y segmentación al menos 0.4.0. Si el SDK es anterior, la preparación se detiene con `sdkSegmentationUnsupported` («La segmentación requiere ayni_sdk 0.4.0 o posterior.») antes de inicializarlo. Una versión `-dev` vale menos que la estable.
 - **Registro:** cada fila exitosa de segmentación guarda `width`, `height`, `areaFractions`, `confidence`, `maskSha256` y la máscara en RLE fila por fila (`maskRle`: una lista de pares `[índice de etiqueta, longitud]` por fila, cuyas longitudes suman el ancho). La fila `treatment` exitosa agrega `segmentationAgreement` (`pixelAgreement`, `meanIou`, `maxAbsAreaFractionDelta`, `absConfidenceDelta`, `dimensionsMatch`), calculado en el dispositivo al emparejarla con la fila `control` de la misma repetición, caso y SHA-256 de entrada. Si una fila `treatment` exitosa con segmentación no recibe acuerdo, lleva `segmentationAgreementUnavailable` con el motivo: `controlMissing` (no hay fila `control` exitosa de la misma repetición y caso) o `invalid` (no se pudieron comparar las segmentaciones). Los registros de clasificación y detección no cambian y no llevan ninguno de los dos campos.
 - **`maskSha256`:** es el SHA-256 del contenido de la máscara, es decir los bytes de los índices de etiqueta fila por fila. No incluye las dimensiones, que van aparte en `width` y `height`: dos máscaras de otro tamaño pueden compartir el hash.
 - **Latencia de SEG-01:** el cronómetro de ambas condiciones incluye la inferencia y la decodificación de la salida (argmax y softmax en el control; la del SDK ocurre dentro de `run()`), y excluye por igual el RLE y el SHA-256 de la máscara, que se calculan después de detener el cronómetro. Para clasificación y detección el cronómetro no cambió.
 
-Plantilla para reemplazar el perfil pendiente cuando existan los recursos (los valores entre `<>` son los reales de cada publicación; no se inventan):
-
-```json
-{
-  "id": "SEG-01",
-  "status": "ready",
-  "datasetId": "<id>",
-  "datasetVersionId": "<id>",
-  "datasetPartition": "test",
-  "datasetSha256": "<sha256 del ZIP>",
-  "workflowId": "<id>",
-  "workflowVersionId": "<id>",
-  "workflowVersion": "1.0.0",
-  "modelRequirements": [
-    {
-      "nodeId": "<id del nodo model.tflite>",
-      "modelVersionId": "<id>",
-      "sha256": "<sha256 del modelo>",
-      "inputContract": {
-        "width": 257,
-        "height": 257,
-        "channels": 3,
-        "normalization": "minus_one_to_one"
-      },
-      "modelOutputContract": {
-        "type": "segmentation",
-        "labels": ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "dining table", "dog", "horse", "motorbike", "person", "potted plant", "sheep", "sofa", "train", "tv"],
-        "scoreType": "logits"
-      }
-    }
-  ],
-  "outputContract": [
-    {
-      "name": "<nombre de la salida de segmentación>",
-      "resultType": "segmentation",
-      "labels": ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "dining table", "dog", "horse", "motorbike", "person", "potted plant", "sheep", "sofa", "train", "tv"],
-      "scoreType": "logits"
-    },
-    { "name": "<nombre de la salida booleana>", "resultType": "boolean", "labels": [] }
-  ]
-}
-```
-
-Agrega también los tres escenarios que ya tiene el plan. La exactitud frente a máscaras de referencia (mIoU frente a PASCAL VOC) es opcional, se calcula fuera del teléfono y depende de la licencia de las imágenes.
+El dataset es Oxford-IIIT Pet. Su ZIP incluye imágenes y máscaras trimap de referencia, pero el arnés no compara la máscara del modelo con esas anotaciones. `segmentationAgreement.meanIou` mide concordancia entre las máscaras de `control` y `treatment`, no precisión del modelo contra ground truth. Por ello SEG-01 valida compatibilidad y paridad del SDK/integración directa, además de latencia; por sí solo no produce una métrica de calidad de segmentación para la tesis. El dataset declara CC BY-SA 4.0 para uso de investigación, mientras el copyright de las fotografías sigue perteneciendo a sus autores originales; véanse [términos oficiales de Oxford VGG](https://www.robots.ox.ac.uk/~vgg/data/pets/).
 
 ## Ejecutar en desarrollo
 
@@ -90,7 +47,7 @@ flutter run -d <id-android>
 
 El emulador sirve para una prueba funcional; para resultados de medición de la tesis usa los dispositivos físicos definidos en el Plan.
 
-La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. Cuando los cinco perfiles estén listos, la app ejecuta `PERF-02-WARMUP`, `PERF-02` y `PERF-04` para cada perfil y ambas condiciones: 6 720 intentos por condición, 13 440 en total. El porcentaje y la actividad muestran el avance del lote completo. Los perfiles `pending` (hoy `S1`, `S2` y `SEG-01`) se omiten. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
+La ejecución de desarrollo usa por defecto `VALIDATION_CONDITION=selector`. Ingresa la SDK Key y pulsa **Iniciar validación**. Los tres perfiles listos (`INT-01`, `REU-01` y `SEG-01`) se ejecutan para ambas condiciones; `S1` y `S2` se omiten mientras sigan `pending`. La inferencia corre localmente; la preparación y las sincronizaciones requieren conexión.
 
 ### Diagnóstico: “No se completó la acción”
 
@@ -109,14 +66,13 @@ flutter doctor --android-licenses
 flutter doctor -v
 ```
 
-Conecta el teléfono con opciones de desarrollador y depuración USB activadas; `flutter devices` debe mostrarlo antes de instalar el APK. En este host, las pruebas y `flutter analyze` pasan, pero Windows Application Control bloquea `gen_snapshot.exe` y `font-subset.exe` al compilar en modo release. Solicita al administrador que permita los binarios oficiales de Flutter desde el SDK de confianza; no desactives ni eludas la política. Hasta entonces no hay APK release local para instalar.
+Conecta el teléfono con opciones de desarrollador y depuración USB activadas; `flutter devices` debe mostrarlo antes de instalar el APK. El APK release se compila localmente y se firma con la clave debug para instalación de pruebas internas.
 
-Construye el APK selector una vez que el host permita los binarios de Flutter. Flutter reutiliza la misma ruta de salida:
+Construye y copia el APK selector:
 
 ```powershell
 New-Item -ItemType Directory -Force artifacts | Out-Null
 flutter build apk --release --dart-define=VALIDATION_CONDITION=selector
-New-Item -ItemType Directory -Force artifacts | Out-Null
 Copy-Item build/app/outputs/flutter-apk/app-release.apk artifacts/ayni-validation-selector.apk
 Get-Item artifacts/ayni-validation-selector.apk | Select-Object Name, Length
 Get-FileHash artifacts/ayni-validation-selector.apk -Algorithm SHA256
@@ -126,9 +82,11 @@ El APK selector incluye ambas condiciones; los valores de tamaño y SHA-256 se r
 
 La primera distribución del selector es [Ayni Validation App 1.0.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.0.0): `ayni-validation-app-v1.0.0.apk`, versión Android `1.0.0+1`, tamaño 75 981 319 bytes, SHA-256 `059E8A7A0E97FFC0618D4ACEBA06EF651987DAA0817CF4A1822ACD98C679C2DD`.
 
+La compilación con SEG-01 listo es Ayni Validation App 1.1.0, versión Android `1.1.0+2`, con `ayni_sdk` 0.4.0. El APK se firma con Android Debug para pruebas internas, no para Google Play. SHA-256: `B9FFE64560C53B255AC8DED66D0D6C308FF0575AE5638D0B62DA1E207DCE1A46` (76 097 575 bytes). Release: [Ayni Validation App 1.1.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.1.0).
+
 ## Medir PERF-01 en el dispositivo físico
 
-Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique los recursos del perfil que se mida. Para el perfil actual `INT-01`, la Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
+Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique los recursos del perfil que se mida. `PERF-01` usa el perfil listo `SEG-01`; la Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
 
 El módulo lanza 30 arranques en frío para `control` y 30 para `treatment`. Guarda una fila `PERF-01-001` a `PERF-01-030` por condición en `validation/runs.jsonl`; un identificador pareado nuevo distingue ejecuciones repetidas del benchmark. AndroidX registra `StartupTimingMetric`, el intervalo desde el inicio del proceso hasta terminar la primera inferencia y la sección `runCase` por separado. El intervalo completo incluye la preparación de recursos y la sincronización SDK; `runCase` excluye esa preparación y la escritura JSONL. Mantén la misma red durante las corridas. Conserva los JSON y archivos Perfetto generados por el test junto con el JSONL exportado desde la app.
 
@@ -158,7 +116,7 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 .\gradlew.bat :macrobenchmark:connectedBenchmarkAndroidTest
 ```
 
-No declares la medición completa hasta revisar las 60 filas, las salidas JSON de ambas condiciones y sus trazas Perfetto. Este host detecta un Samsung SM-A556E por ADB; la ejecución aún depende de que Application Control permita los binarios AOT oficiales de Flutter.
+No declares la medición completa hasta revisar las 60 filas, las salidas JSON de ambas condiciones y sus trazas Perfetto. El build de Macrobenchmark se ensambla localmente, pero todavía no se ha ejecutado en el teléfono. La compilación release de la app de validación no sustituye esa medición física.
 
 ## Cómo se validarán F1–F6
 
@@ -187,4 +145,4 @@ Todas las filas nuevas, también las de `S1`, `S2`, `INT-01` y `REU-01`, llevan 
 - El SDK 0.4.0 y el arnés admiten workflows de detección S2 con `tensorIndices` (desde 0.3.1) y de segmentación SEG-01 (desde 0.4.0). El perfil S2 sigue pendiente hasta registrar y verificar sus versiones de dataset, modelos y workflow en `experiment_plan.json`.
 - La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
 - La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.
-- El piloto físico queda pendiente hasta instalar el APK en los dispositivos y completar las corridas de conectividad, cancelación, revocación de trazas y exportación.
+- Las corridas físicas de SEG-01 quedan pendientes de instalación del APK y ejecución por el operador. F1–F6, PERF-01 y la validación de ground truth también permanecen fuera de la ejecución automática de SEG-01.
