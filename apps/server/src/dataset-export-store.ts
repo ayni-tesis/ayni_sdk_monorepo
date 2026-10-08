@@ -3,6 +3,7 @@ import {
   checkDatasetForExport,
   DATASET_VALIDATION_ITEMS_MAX,
   type DatasetExport,
+  type DatasetExportDownloadResponse,
   type DatasetExportFormat,
   type DatasetExportInvalidItem,
   type DatasetValidationResponse,
@@ -120,7 +121,7 @@ export async function createDatasetExportDownload(
   applicationId: string,
   datasetId: string,
   exportId: string,
-): Promise<{ downloadUrl: string; expiresAt: string } | null> {
+): Promise<DatasetExportDownloadResponse | null> {
   const row = await database.transaction(async (transaction) => {
     const tx = transaction as DatasetExportReadExecutor;
     const rows = (await tx

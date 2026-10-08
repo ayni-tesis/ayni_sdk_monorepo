@@ -1046,10 +1046,16 @@ export function DatasetDetailView({
                         </Button>
                       </div>
                     )}
-                    {exportError && (
-                      <p role="alert" className="text-destructive text-sm">
-                        {exportError}
+                    {exporting && (
+                      <p role="status" className="text-sm">
+                        Estado: Generando
                       </p>
+                    )}
+                    {exportError && (
+                      <div role="alert" className="space-y-1">
+                        <p className="font-medium">Estado: Fallida</p>
+                        <p className="text-destructive text-sm">{exportError}</p>
+                      </div>
                     )}
                     {exportInvalidItems.length > 0 && (
                       <div className="space-y-2">
