@@ -8,6 +8,7 @@ import {
   type DatasetDetailResponse,
   type DatasetEvidence,
   type DatasetExport,
+  type DatasetExportDownloadResponse,
   type DatasetExportFormat,
   type DatasetExportInvalidAnnotationsResponse,
   type DatasetExportInvalidItem,
@@ -55,23 +56,20 @@ const MAX_EVIDENCE_PER_ADD = 500;
 const LABEL_REQUIRED = "Ingresa una etiqueta para una evidencia aprobada.";
 const EXPORT_FORMAT_COPY: Record<
   DatasetExportFormat,
-  { label: string; success: string; failure: string; shortName: string }
+  { label: string; failure: string; shortName: string }
 > = {
   classification_images_csv: {
     label: "Clasificación (imágenes + CSV)",
-    success: "Exportación de clasificación lista.",
     failure: "No pudimos generar la exportación de clasificación.",
     shortName: "",
   },
   detection_coco: {
     label: "Detección (COCO)",
-    success: "Exportación COCO lista.",
     failure: "No pudimos generar la exportación COCO.",
     shortName: "COCO",
   },
   detection_yolo: {
     label: "Detección (YOLO)",
-    success: "Exportación YOLO lista.",
     failure: "No pudimos generar la exportación YOLO.",
     shortName: "YOLO",
   },
@@ -111,6 +109,8 @@ export function DatasetDetailView({
   const [exports, setExports] = useState<DatasetExport[]>([]);
   const [exportsLoading, setExportsLoading] = useState(true);
   const [exportsError, setExportsError] = useState("");
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<DatasetExportFormat>(
     "classification_images_csv",
@@ -409,7 +409,7 @@ export function DatasetDetailView({
       const { data } = await httpClient.post<DatasetExportResponse>(exportsUrl, { format });
       setExports((current) => [data.export, ...current]);
       setExportOpen(false);
-      setNotice(EXPORT_FORMAT_COPY[format].success);
+      setNotice("Tu exportación está lista para descargarse.");
     } catch (saveError) {
       const responseData = axios.isAxiosError<{
         code?: string;
@@ -432,6 +432,24 @@ export function DatasetDetailView({
       }
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function downloadDatasetExport(exportId: string) {
+    if (downloadingExportId) return;
+    setDownloadingExportId(exportId);
+    setDownloadError("");
+    try {
+      const { data } = await httpClient.get<DatasetExportDownloadResponse>(
+        `${exportsUrl}/${encodeURIComponent(exportId)}/download`,
+      );
+      window.location.assign(data.downloadUrl);
+    } catch (error) {
+      setDownloadError(
+        errorMessage(error, "No pudimos preparar la descarga de la exportación."),
+      );
+    } finally {
+      setDownloadingExportId(null);
     }
   }
 
@@ -1094,6 +1112,11 @@ export function DatasetDetailView({
                   </DialogContent>
                 </Dialog>
               )}
+            {downloadError && (
+              <p role="alert" className="text-destructive text-sm">
+                {downloadError}
+              </p>
+            )}
             {exportsLoading ? (
               <p role="status" className="text-muted-foreground text-sm">
                 Cargando exportaciones…
@@ -1135,6 +1158,18 @@ export function DatasetDetailView({
                         <dd>{datasetExport.itemCount}</dd>
                       </div>
                     </dl>
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={downloadingExportId !== null}
+                        onClick={() => void downloadDatasetExport(datasetExport.id)}
+                      >
+                        {downloadingExportId === datasetExport.id
+                          ? "Preparando descarga…"
+                          : "Descargar"}
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>

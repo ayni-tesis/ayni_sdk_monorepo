@@ -33,6 +33,7 @@ import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
 import {
   createDatasetExport,
+  createDatasetExportDownload,
   listDatasetExports,
   validateDatasetForExport,
 } from "./dataset-export-store";
@@ -284,6 +285,9 @@ const datasets = {
   },
   listExports(applicationId: string, datasetId: string) {
     return listDatasetExports(db, applicationId, datasetId);
+  },
+  downloadExport(applicationId: string, datasetId: string, exportId: string) {
+    return createDatasetExportDownload(db, applicationId, datasetId, exportId);
   },
   get(
     applicationId: string,

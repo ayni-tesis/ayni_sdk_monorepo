@@ -3,6 +3,7 @@ import {
   type DatasetAvailableEvidenceResponse,
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
+  type DatasetExportDownloadResponse,
   type DatasetExportFormat,
   type DatasetExportListResponse,
   DatasetExportRequestSchema,
@@ -49,6 +50,11 @@ type Dependencies = {
   datasets: {
     addEvidence: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
     createExport?: (input: CreateDatasetExportInput) => Promise<CreateDatasetExportResult>;
+    downloadExport?: (
+      applicationId: string,
+      datasetId: string,
+      exportId: string,
+    ) => Promise<DatasetExportDownloadResponse | null>;
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
     get: (
       applicationId: string,
@@ -155,6 +161,48 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       );
     }
   });
+
+  app.get(
+    "/applications/:applicationId/datasets/:datasetId/exports/:exportId/download",
+    async (c) => {
+      const session = await getSession(c.req.raw.headers);
+      if (!session) return c.json({ message: "Authentication required" }, 401);
+
+      const application = await getApplicationForMember(
+        applications,
+        c.req.param("applicationId"),
+        session.user.id,
+      );
+      if (!application) return c.json({ message: "No encontramos esta exportación." }, 404);
+      if (!datasets.downloadExport) {
+        return c.json(
+          {
+            message: "No pudimos preparar la descarga de la exportación.",
+            code: "datasetExportDownloadFailed",
+          },
+          500,
+        );
+      }
+
+      try {
+        const response = await datasets.downloadExport(
+          application.id,
+          c.req.param("datasetId"),
+          c.req.param("exportId"),
+        );
+        if (!response) return c.json({ message: "No encontramos esta exportación." }, 404);
+        return c.json(response, 200, { "Cache-Control": "private, no-store" });
+      } catch {
+        return c.json(
+          {
+            message: "No pudimos preparar la descarga de la exportación.",
+            code: "datasetExportDownloadFailed",
+          },
+          500,
+        );
+      }
+    },
+  );
 
   app.post("/applications/:applicationId/datasets/:datasetId/exports", async (c) => {
     const session = await getSession(c.req.raw.headers);

@@ -242,6 +242,10 @@ export const DatasetExportListResponseSchema = z
   .object({ exports: z.array(DatasetExportSchema) })
   .strict();
 export const DatasetExportResponseSchema = z.object({ export: DatasetExportSchema }).strict();
+export const DatasetExportDownloadResponseSchema = z
+  .object({ downloadUrl: z.string().url(), expiresAt: z.string().datetime() })
+  .strict();
+export type DatasetExportDownloadResponse = z.infer<typeof DatasetExportDownloadResponseSchema>;
 /** Why an approved item cannot be exported (US-084); see `checkDatasetForExport`. */
 export const DatasetItemCauseCodeSchema = z.enum([
   "reviewedLabelRequired",
@@ -633,6 +637,33 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "401": errorResponse("La sesión no está autenticada."),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos cargar las exportaciones del dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}/exports/{exportId}/download",
+    tags: ["Datasets"],
+    operationId: "descargar-exportacion-dataset",
+    summary: "Preparar la descarga de una exportación",
+    description:
+      "Cualquier miembro del workspace puede obtener un enlace temporal para descargar una exportación lista, también en una aplicación archivada. El enlace dura cinco minutos y la respuesta usa `Cache-Control: private, no-store`.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+        exportId: z.string().openapi({ example: "export-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Enlace temporal a la exportación, con fecha de vencimiento.",
+        content: { "application/json": { schema: DatasetExportDownloadResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos esta exportación."),
+      "500": errorResponse("No pudimos preparar la descarga de la exportación."),
     },
   });
 
