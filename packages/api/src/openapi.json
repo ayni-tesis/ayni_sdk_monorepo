@@ -4603,10 +4603,7 @@
                     },
                     "taskType": {
                       "type": "string",
-                      "enum": [
-                        "classification",
-                        "detection"
-                      ]
+                      "enum": ["classification", "detection"]
                     },
                     "originalResult": {
                       "type": "object",
@@ -4634,43 +4631,24 @@
                     },
                     "reviewStatus": {
                       "type": "string",
-                      "enum": [
-                        "pending",
-                        "approved",
-                        "rejected"
-                      ]
+                      "enum": ["pending", "approved", "rejected"]
                     },
                     "reviewerName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "reviewedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "format": "date-time"
                     },
                     "reviewReason": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "reviewedLabel": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": ["string", "null"],
                       "description": "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult."
                     },
                     "reviewedAnnotations": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
+                      "type": ["array", "null"],
                       "items": {
                         "type": "object",
                         "properties": {
@@ -4707,19 +4685,11 @@
                                 "description": "Borde inferior, relativo al alto de la imagen (0 a 1)."
                               }
                             },
-                            "required": [
-                              "xMin",
-                              "yMin",
-                              "xMax",
-                              "yMax"
-                            ],
+                            "required": ["xMin", "yMin", "xMax", "yMax"],
                             "additionalProperties": false
                           }
                         },
-                        "required": [
-                          "label",
-                          "box"
-                        ],
+                        "required": ["label", "box"],
                         "additionalProperties": false
                       },
                       "maxItems": 100,

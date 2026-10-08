@@ -519,7 +519,7 @@ export function DatasetDetailView({
     item.scrollIntoView({ behavior: "smooth", block: "center" });
     item.focus({ preventScroll: true });
     setFocusEvidenceId(null);
-  }, [activeTab, detail?.items, focusEvidenceId]);
+  }, [activeTab, focusEvidenceId]);
 
   if (loading) {
     return (
@@ -763,11 +763,7 @@ export function DatasetDetailView({
         <TabsContent value="exports">
           <div className="space-y-4">
             {canManage && application.status === "active" && (
-              <Button
-                type="button"
-                disabled={validating}
-                onClick={() => void validateDataset()}
-              >
+              <Button type="button" disabled={validating} onClick={() => void validateDataset()}>
                 {validating ? "Validando dataset…" : "Validar dataset"}
               </Button>
             )}
