@@ -9,6 +9,7 @@ import {
 import { type Context, Hono } from "hono";
 import type { SdkTraceArtifactMetadata } from "@ayni/api/sdk-trace-artifact";
 import { type Application, getApplicationForMember } from "./applications";
+import { isUuid } from "./lib/uuid";
 import {
   type ApplicationTracePage,
   type ApplicationTraceRecordPage,
@@ -50,7 +51,6 @@ type Dependencies = {
 const BAD_QUERY = "La consulta de trazas no es válida.";
 const NOT_FOUND = "No encontramos esta aplicación o traza.";
 const EXPORT_PAGE_SIZE = 10;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function artifactDisposition(logicalName: string) {
   const safeName =
@@ -134,8 +134,7 @@ export function createApplicationTracesApp({ getSession, applications, traces }:
     if ("response" in access) return access.response;
     const traceId = c.req.param("traceId");
     const artifactId = c.req.param("artifactId");
-    if (!UUID_PATTERN.test(traceId) || !UUID_PATTERN.test(artifactId))
-      return c.json({ message: BAD_QUERY }, 400);
+    if (!isUuid(traceId) || !isUuid(artifactId)) return c.json({ message: BAD_QUERY }, 400);
     const found = await traces.getArtifact?.(access.application.id, traceId, artifactId);
     if (!found) return c.json({ message: NOT_FOUND }, 404);
     return new Response(found.body, {
@@ -153,7 +152,7 @@ export function createApplicationTracesApp({ getSession, applications, traces }:
     const access = await authorize(c);
     if ("response" in access) return access.response;
     const traceId = c.req.param("traceId");
-    if (!UUID_PATTERN.test(traceId)) {
+    if (!isUuid(traceId)) {
       return c.json({ message: BAD_QUERY }, 400);
     }
     const record = await traces.get(access.application.id, traceId);

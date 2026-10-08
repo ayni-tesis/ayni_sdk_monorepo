@@ -7,6 +7,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { INVALID_CREDENTIAL_MESSAGE, type VerifySdkCredentialResult } from "./sdk-credential-store";
 import type { CompleteSdkTraceArtifactResult } from "./sdk-trace-artifact-store";
+import { isUuid } from "./lib/uuid";
 import type { TelemetryPolicy } from "./telemetry-policy-store";
 
 type Dependencies = {
@@ -37,8 +38,6 @@ type Dependencies = {
   };
 };
 
-const TRACE_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BAD_REQUEST = "La solicitud del artefacto no es válida.";
 const NOT_FOUND = "No encontramos esta traza o artefacto.";
 
@@ -75,8 +74,7 @@ export function createSdkTraceArtifactsApp({ credentials, policies, artifacts }:
       if ("response" in access) return access.response;
 
       const traceId = c.req.param("traceId");
-      if (!TRACE_ID_PATTERN.test(traceId))
-        return c.json({ message: BAD_REQUEST, code: "invalidArtifact" }, 400);
+      if (!isUuid(traceId)) return c.json({ message: BAD_REQUEST, code: "invalidArtifact" }, 400);
       let rawBody: unknown;
       try {
         rawBody = await c.req.json();
@@ -132,7 +130,7 @@ export function createSdkTraceArtifactsApp({ credentials, policies, artifacts }:
 
       const traceId = c.req.param("traceId");
       const artifactId = c.req.param("artifactId");
-      if (!TRACE_ID_PATTERN.test(traceId) || !TRACE_ID_PATTERN.test(artifactId))
+      if (!isUuid(traceId) || !isUuid(artifactId))
         return c.json({ message: BAD_REQUEST, code: "invalidArtifact" }, 400);
       const result = await artifacts.complete(
         { applicationId: access.applicationId, traceId, artifactId },

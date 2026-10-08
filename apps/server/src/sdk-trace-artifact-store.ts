@@ -98,22 +98,127 @@ function immutableKey(applicationId: string, traceId: string, artifactId: string
 
 class InvalidArtifactContentError extends Error {}
 
-/** Checks the outer Perfetto Trace protobuf stream while skipping packet bodies. */
+/** Validates a protobuf message without buffering length-delimited fields. */
+class TracePacketProtoValidator {
+  private state: "tag" | "value" | "length" | "skip" = "tag";
+  private varint = 0n;
+  private varintBytes = 0;
+  private fieldNumber = 0;
+  private skipRemaining = 0;
+  private bytesConsumed = 0;
+  private readonly groupFieldNumbers: number[] = [];
+
+  constructor(private readonly byteLength: number) {}
+
+  feed(bytes: Uint8Array) {
+    let index = 0;
+    while (index < bytes.length) {
+      if (this.state === "skip") {
+        const skipped = Math.min(this.skipRemaining, bytes.length - index);
+        this.skipRemaining -= skipped;
+        this.bytesConsumed += skipped;
+        index += skipped;
+        if (this.skipRemaining === 0) this.state = "tag";
+        continue;
+      }
+      if (this.bytesConsumed >= this.byteLength) throw new InvalidArtifactContentError();
+
+      const byte = bytes[index++]!;
+      this.bytesConsumed += 1;
+      this.varintBytes += 1;
+      if (this.varintBytes > 10 || (this.varintBytes === 10 && (byte & 0xfe) !== 0)) {
+        throw new InvalidArtifactContentError();
+      }
+      this.varint |= BigInt(byte & 0x7f) << BigInt((this.varintBytes - 1) * 7);
+      if ((byte & 0x80) !== 0) continue;
+
+      const value = this.varint;
+      const completedState = this.state;
+      this.varint = 0n;
+      this.varintBytes = 0;
+      if (completedState === "tag") this.readTag(value);
+      else if (completedState === "length") this.readLength(value);
+      else this.state = "tag";
+    }
+  }
+
+  get isComplete() {
+    return (
+      this.bytesConsumed === this.byteLength &&
+      this.state === "tag" &&
+      this.varintBytes === 0 &&
+      this.groupFieldNumbers.length === 0
+    );
+  }
+
+  private readTag(tag: bigint) {
+    if (tag === 0n || tag > 0xffff_ffffn) throw new InvalidArtifactContentError();
+    this.fieldNumber = Number(tag >> 3n);
+    if (this.fieldNumber === 0) throw new InvalidArtifactContentError();
+
+    switch (Number(tag & 7n)) {
+      case 0:
+        this.state = "value";
+        break;
+      case 1:
+        this.skip(8);
+        break;
+      case 2:
+        this.state = "length";
+        break;
+      case 3:
+        if (this.groupFieldNumbers.length >= 100) throw new InvalidArtifactContentError();
+        this.groupFieldNumbers.push(this.fieldNumber);
+        break;
+      case 4:
+        if (this.groupFieldNumbers.pop() !== this.fieldNumber)
+          throw new InvalidArtifactContentError();
+        break;
+      case 5:
+        this.skip(4);
+        break;
+      default:
+        throw new InvalidArtifactContentError();
+    }
+  }
+
+  private readLength(length: bigint) {
+    const remaining = BigInt(this.byteLength - this.bytesConsumed);
+    if (length > remaining || length > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new InvalidArtifactContentError();
+    this.skip(Number(length));
+  }
+
+  private skip(length: number) {
+    const remaining = this.byteLength - this.bytesConsumed;
+    if (length > remaining) throw new InvalidArtifactContentError();
+    this.skipRemaining = length;
+    this.state = length > 0 ? "skip" : "tag";
+  }
+}
+
+/** Checks the outer Perfetto Trace protobuf stream and every packet body. */
 class PerfettoTraceProtoSniffer {
   private state: "tag" | "length" | "body" = "tag";
   private varint = 0;
   private shift = 0;
   private bodyRemaining = 0;
   private packetCount = 0;
+  private packetValidator: TracePacketProtoValidator | undefined;
 
   feed(bytes: Uint8Array) {
     let index = 0;
     while (index < bytes.length) {
       if (this.state === "body") {
         const skipped = Math.min(this.bodyRemaining, bytes.length - index);
+        this.packetValidator!.feed(bytes.subarray(index, index + skipped));
         this.bodyRemaining -= skipped;
         index += skipped;
-        if (this.bodyRemaining === 0) this.state = "tag";
+        if (this.bodyRemaining === 0) {
+          if (!this.packetValidator!.isComplete) throw new InvalidArtifactContentError();
+          this.packetValidator = undefined;
+          this.state = "tag";
+        }
         continue;
       }
 
@@ -143,6 +248,7 @@ class PerfettoTraceProtoSniffer {
       }
       this.packetCount += 1;
       this.bodyRemaining = this.varint;
+      this.packetValidator = new TracePacketProtoValidator(this.varint);
       this.state = "body";
     }
   }
