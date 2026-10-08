@@ -82,7 +82,7 @@ El APK selector incluye ambas condiciones; los valores de tamaño y SHA-256 se r
 
 La primera distribución del selector es [Ayni Validation App 1.0.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.0.0): `ayni-validation-app-v1.0.0.apk`, versión Android `1.0.0+1`, tamaño 75 981 319 bytes, SHA-256 `059E8A7A0E97FFC0618D4ACEBA06EF651987DAA0817CF4A1822ACD98C679C2DD`.
 
-La compilación con SEG-01 listo es Ayni Validation App 1.1.0, versión Android `1.1.0+2`, con `ayni_sdk` 0.4.0. El APK se firma con Android Debug para pruebas internas, no para Google Play. SHA-256: `B9FFE64560C53B255AC8DED66D0D6C308FF0575AE5638D0B62DA1E207DCE1A46` (76 097 575 bytes). Release: [Ayni Validation App 1.1.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.1.0).
+La compilación con SEG-01 listo es Ayni Validation App 1.1.0, versión Android `1.1.0+2`, con `ayni_sdk` 0.4.0. El APK se firma con Android Debug para pruebas internas, no para Google Play. SHA-256: `ED5AA597D30E289770AD5DE51F3CAFD7CECAFBC5635523F492F80853B419B2E9` (76 097 619 bytes). Release: [Ayni Validation App 1.1.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.1.0).
 
 ## Medir PERF-01 en el dispositivo físico
 
