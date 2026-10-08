@@ -217,8 +217,17 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
     if (result.reason === "notDetection") {
       return c.json(
         {
-          message: "Solo se pueden exportar datasets de detección en formato COCO.",
+          message: "Solo se pueden exportar datasets de detección.",
           code: "datasetNotDetection",
+        },
+        409,
+      );
+    }
+    if (result.reason === "requiresMultipleItems") {
+      return c.json(
+        {
+          message: "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+          code: "datasetExportNeedsTwoItems",
         },
         409,
       );

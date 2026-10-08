@@ -215,7 +215,11 @@ export const DatasetLabelRequestSchema = z
   .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
   .strict();
 export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
-export const DatasetExportFormatSchema = z.enum(["classification_images_csv", "detection_coco"]);
+export const DatasetExportFormatSchema = z.enum([
+  "classification_images_csv",
+  "detection_coco",
+  "detection_yolo",
+]);
 export const DatasetExportRequestSchema = z
   .object({ format: DatasetExportFormatSchema.optional() })
   .strict();
@@ -595,7 +599,7 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     operationId: "exportar-dataset",
     summary: "Exportar un dataset",
     description:
-      "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable. Acepta clasificación en ZIP con imágenes y CSV o detección en formato COCO con anotaciones revisadas.",
+      "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable. Acepta clasificación en ZIP con imágenes y CSV, detección en formato COCO, o detección en formato YOLO con anotaciones revisadas. YOLO divide determinísticamente las imágenes aprobadas entre train y val sin solapamiento y requiere al menos dos imágenes aprobadas.",
     security: [{ [userSession.name]: [] }],
     request: {
       params: z.object({
@@ -617,7 +621,7 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos este dataset."),
       "409": {
         description:
-          "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa.",
+          "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa; una exportación YOLO requiere al menos dos imágenes aprobadas.",
         content: {
           "application/json": {
             schema: DatasetExportErrorResponseSchema,

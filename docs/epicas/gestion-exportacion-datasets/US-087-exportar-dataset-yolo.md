@@ -31,6 +31,12 @@ Scenario: Exportar una caja inválida
 
 ## Criterios de aceptación
 
-- Las cajas se exportan con la convención YOLO documentada.
+- Las cajas se exportan en el formato Ultralytics: cada línea tiene `class_id x_center y_center width height`, con coordenadas `xywh` normalizadas entre 0 y 1 y clases numeradas desde 0.
 - Solo incluye ítems aprobados y anotaciones validadas.
-- La definición de clases corresponde a las etiquetas revisadas exportadas.
+- `data.yaml` define las rutas `images/train` y `images/val` y las clases como `names` con nombres YAML escapados.
+- Los ítems aprobados se ordenan por ID y se distribuyen determinísticamente en proporción 80/20, sin solapamiento; cada imagen aparece una vez. Se requiere al menos una imagen por partición.
+- La definición de clases corresponde a las etiquetas revisadas de las anotaciones exportadas, ordenadas alfabéticamente.
+- Cada imagen tiene su archivo `labels/<partición>/<itemId>.txt`; una imagen sin cajas tiene un archivo vacío.
+- Una anotación inválida rechaza la exportación antes de subir el ZIP.
+
+El ZIP incluye las imágenes en `images/train|val`, las etiquetas en `labels/train|val` y `data.yaml` en la raíz. Para admitir ambas particiones sin duplicar datos, un dataset con menos de dos imágenes aprobadas no se puede exportar en YOLO.
