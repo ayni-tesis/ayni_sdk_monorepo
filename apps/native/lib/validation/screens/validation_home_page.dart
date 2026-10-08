@@ -648,9 +648,8 @@ class _ValidationHomePageState extends State<ValidationHomePage> {
     final profiles =
         _plan?.resourceProfiles ?? const <ValidationResourceProfile>[];
     return profiles
-            .where((profile) => profile.id == 'INT-01' && profile.isConfigured)
-            .firstOrNull ??
-        profiles.where((profile) => profile.isConfigured).firstOrNull;
+        .where((profile) => profile.id == 'SEG-01' && profile.isConfigured)
+        .firstOrNull;
   }
 
   List<ValidationCondition> get _conditions => switch (_buildMode) {

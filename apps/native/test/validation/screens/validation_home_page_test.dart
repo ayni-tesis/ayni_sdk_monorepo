@@ -102,11 +102,14 @@ void main() {
       'INT-01:treatment',
       'REU-01:control',
       'REU-01:treatment',
+      'SEG-01:control',
+      'SEG-01:treatment',
     ]);
     expect(runtime.runSuiteCalls, 1);
     expect(runtime.runCalls.any((call) => call.contains(':S1-')), isFalse);
     expect(runtime.runCalls.any((call) => call.contains(':S2-')), isFalse);
     expect(runtime.runCalls.any((call) => call.contains(':REU-01-')), isTrue);
+    expect(runtime.runCalls.any((call) => call.contains(':SEG-01-')), isTrue);
     await _scrollToFinder(tester, find.byKey(const ValueKey('status-text')));
     expect(find.textContaining('Validación parcial terminada'), findsWidgets);
   });
@@ -123,13 +126,13 @@ void main() {
     await tester.pump();
 
     expect(_button(tester, 'quick-run-validation').onPressed, isNotNull);
-    expect(find.textContaining('1.076'), findsOneWidget);
+    expect(find.textContaining('1.614'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('quick-run-validation')));
     await tester.pumpAndSettle();
 
     expect(runtime.lastQuickRun, isTrue);
     expect(runtime.pairRunIds.single, startsWith('quick-'));
-    expect(runtime.lastSuiteRunCount, 1076);
+    expect(runtime.lastSuiteRunCount, 1614);
     await _scrollToFinder(tester, find.byKey(const ValueKey('status-text')));
     expect(find.textContaining('Prueba rápida terminada'), findsWidgets);
     await _scrollToFinder(tester, find.byKey(const ValueKey('share-jsonl')));
@@ -230,6 +233,7 @@ void main() {
   testWidgets('PERF-01 lab launch runs one direct cold-start attempt', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     await tester.pumpWidget(
       MaterialApp(
         home: ValidationHomePage(
@@ -244,7 +248,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(runtime.preparedConditions, [ValidationCondition.control]);
+    expect(runtime.preparedProfileConditions, ['SEG-01:control']);
     expect(runtime.runCalls, ['control:PERF-01:false']);
     expect(runtime.coldStartRunLabels, ['PERF-01-007']);
     expect(runtime.syncVerificationCalls, isEmpty);
@@ -258,6 +262,7 @@ void main() {
   testWidgets('PERF-01 lab launch prepares only the SDK condition', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     await tester.pumpWidget(
       MaterialApp(
         home: ValidationHomePage(
@@ -272,10 +277,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(runtime.preparedConditions, [ValidationCondition.treatment]);
+    expect(runtime.preparedProfileConditions, ['SEG-01:treatment']);
     expect(runtime.runCalls, ['treatment:PERF-01:false']);
     expect(runtime.coldStartRunLabels, ['PERF-01-030']);
     expect(runtime.syncVerificationCalls, [true]);
+    expect(runtime.syncProfileIds, ['SEG-01']);
     await _scrollToFinder(
       tester,
       find.byKey(const ValueKey('validation-events')),

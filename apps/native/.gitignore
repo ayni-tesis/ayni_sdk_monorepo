@@ -3,6 +3,7 @@
 .flutter-plugins-dependencies
 .packages
 build/
+artifacts/
 *.iml
 .idea/
 android/.gradle/
