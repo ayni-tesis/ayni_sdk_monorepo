@@ -160,13 +160,13 @@ lo recibe: ve el resultado de la última columna.
 | `traceConflict` | `409` | El mismo ID de traza de esta aplicación ya se confirmó con otros datos. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `traceTooLarge` | `413` | El cuerpo de `POST /sdk/traces` supera 2 MiB. | `sync()` conserva la traza en la outbox; el envío opcional no impide sincronizar workflows y modelos. |
 | `invalidArtifact` | `400`, `413` | La metadata no cumple el esquema o el cuerpo de confirmación supera su límite. | `upload_validation_artifact.dart` termina con el estado HTTP; no muestra el `code`. |
-| `invalidArtifactContent` | `400` | Los bytes no coinciden con el tamaño, SHA-256 o protobuf binario nativo de Perfetto declarados. | El uploader termina con el estado HTTP; no muestra el `code`. |
 | `traceNotFound` | `404` | La traza no existe, pertenece a otra aplicación o ya venció. | El uploader termina con el estado HTTP; no muestra el `code`. |
+| `artifactTooLarge` | `413` | El artefacto supera el máximo de 4.995 GiB por carga directa. | El uploader rechaza localmente archivos mayores; si el servidor detecta el exceso, termina con HTTP 413. |
+| `invalidArtifactContent` | `400` | Los bytes no coinciden con el tamaño, SHA-256 o protobuf binario nativo de Perfetto declarados. | El uploader termina con el estado HTTP; no muestra el `code`. |
 | `artifactNotFound` | `404` | La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial. | El uploader termina con el estado HTTP; no muestra el `code`. |
 | `artifactUploadExpired` | `409` | La autorización de carga venció antes de confirmar el archivo. | El uploader termina con el estado HTTP; solicita otra carga. |
 | `artifactUploadInProgress` | `409` | Ya se está verificando la carga del artefacto. | El uploader termina con el estado HTTP; espera a que termine la verificación antes de reintentar. |
 | `artifactUploadChanged` | `409` | El objeto de staging cambió durante la verificación. | El uploader termina con el estado HTTP; solicita una nueva carga. |
-| `artifactTooLarge` | `413` | El artefacto supera el máximo de 4.995 GiB por carga directa. | El uploader rechaza localmente archivos mayores; si el servidor detecta el exceso, termina con HTTP 413. |
 | `invalidEvidence` | `400` | Los datos enviados a `POST /sdk/evidence` no cumplen el esquema de la evidencia. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, cuenta un intento de esa evidencia y sigue con la siguiente. |
 | `collectionDisabled` | `403` | La política de recolección de la aplicación está deshabilitada en el servidor. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, cuenta un intento de esa evidencia y no sube otra en ese `sync()`. |
 | `evidenceSourceNotFound` | `404` | La versión de workflow, el nodo `dataset.capture` o la versión de modelo de la evidencia no son de la aplicación de la credencial o no coinciden entre sí. | `sync()` llama a `onEvidence` con `evidenceUploadFailed`, cuenta un intento de esa evidencia y sigue con la siguiente. |

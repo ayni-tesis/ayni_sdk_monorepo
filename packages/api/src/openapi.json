@@ -1861,7 +1861,7 @@
         "tags": ["Endpoints"],
         "operationId": "iniciar-carga-de-artefacto-de-traza",
         "summary": "Solicitar una carga directa de artefacto de validación",
-        "description": "Crea una carga privada de un archivo fuente vinculado a una traza vigente. El servidor fija el tamaño, el SHA-256 y el nombre lógico declarados y devuelve una URL de R2 de una hora para un único PUT de `application/octet-stream`. El cliente no debe reenviar `Authorization` al almacenamiento ni seguir redirecciones a otro origen. Al completar, el servidor verifica bytes, hash y estructura protobuf nativa de Perfetto. Se aceptan hasta 4.995 GiB por PUT directo; cargas mayores requieren multipart y no están habilitadas.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidArtifact` | La solicitud del artefacto no es válida. | Se requiere un nombre lógico, tamaño y SHA-256 válidos. |\n| `400` | `invalidArtifactContent` | El archivo no coincide con el tamaño, SHA-256 o formato permitidos. | Solo se aceptan trazas nativas de Perfetto en formato protobuf binario. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La política debe seguir habilitada al crear y completar la carga. |\n| `404` | `traceNotFound` | No encontramos esta traza o artefacto. | La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido. |\n| `404` | `artifactNotFound` | No encontramos esta traza o artefacto. | La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial. |\n| `409` | `artifactUploadExpired` | La carga del artefacto venció. | La URL firmada tiene una vigencia limitada. |\n| `409` | `artifactUploadInProgress` | La carga del artefacto aún se está verificando. | Solo una verificación por artefacto se ejecuta a la vez; vuelve a intentar cuando termine. |\n| `409` | `artifactUploadChanged` | El archivo cambió durante la verificación. | El objeto de staging se reemplazó durante la comprobación; solicita otra carga. |\n| `413` | `artifactTooLarge` | El artefacto supera el tamaño máximo permitido. | La carga directa de una sola operación admite hasta 5363340410 bytes (4.995 GiB). |\n| `413` | `invalidArtifact` | La solicitud del artefacto no es válida. | El cuerpo del endpoint de confirmación supera el límite permitido. |",
+        "description": "Crea una carga privada de un archivo fuente vinculado a una traza vigente. El servidor fija el tamaño, el SHA-256 y el nombre lógico declarados y devuelve una URL de R2 de una hora para un único PUT de `application/octet-stream`. El cliente no debe reenviar `Authorization` al almacenamiento ni seguir redirecciones a otro origen. Al completar, el servidor verifica bytes, hash y estructura protobuf nativa de Perfetto. Se aceptan hasta 4.995 GiB por PUT directo; cargas mayores requieren multipart y no están habilitadas.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidArtifact` | La solicitud del artefacto no es válida. | Se requiere un nombre lógico, tamaño y SHA-256 válidos. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La política debe seguir habilitada al crear y completar la carga. |\n| `404` | `traceNotFound` | No encontramos esta traza o artefacto. | La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido. |\n| `413` | `artifactTooLarge` | El artefacto supera el tamaño máximo permitido. | La carga directa de una sola operación admite hasta 5363340410 bytes (4.995 GiB). |",
         "security": [
           {
             "sdkCredential": []
@@ -1912,7 +1912,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": ["invalidArtifact", "invalidArtifactContent"],
+                      "enum": ["invalidArtifact"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
@@ -1924,13 +1924,6 @@
                     "value": {
                       "message": "La solicitud del artefacto no es válida.",
                       "code": "invalidArtifact"
-                    }
-                  },
-                  "invalidArtifactContent": {
-                    "description": "Solo se aceptan trazas nativas de Perfetto en formato protobuf binario.",
-                    "value": {
-                      "message": "El archivo no coincide con el tamaño, SHA-256 o formato permitidos.",
-                      "code": "invalidArtifactContent"
                     }
                   }
                 }
@@ -2019,7 +2012,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": ["traceNotFound", "artifactNotFound"],
+                      "enum": ["traceNotFound"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
@@ -2031,62 +2024,6 @@
                     "value": {
                       "message": "No encontramos esta traza o artefacto.",
                       "code": "traceNotFound"
-                    }
-                  },
-                  "artifactNotFound": {
-                    "description": "La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial.",
-                    "value": {
-                      "message": "No encontramos esta traza o artefacto.",
-                      "code": "artifactNotFound"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "El identificador ya se usó con otros datos.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "description": "Mensaje en español para mostrar o registrar."
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "artifactUploadExpired",
-                        "artifactUploadInProgress",
-                        "artifactUploadChanged"
-                      ],
-                      "description": "Código estable para decidir qué hacer."
-                    }
-                  },
-                  "required": ["message", "code"]
-                },
-                "examples": {
-                  "artifactUploadExpired": {
-                    "description": "La URL firmada tiene una vigencia limitada.",
-                    "value": {
-                      "message": "La carga del artefacto venció.",
-                      "code": "artifactUploadExpired"
-                    }
-                  },
-                  "artifactUploadInProgress": {
-                    "description": "Solo una verificación por artefacto se ejecuta a la vez; vuelve a intentar cuando termine.",
-                    "value": {
-                      "message": "La carga del artefacto aún se está verificando.",
-                      "code": "artifactUploadInProgress"
-                    }
-                  },
-                  "artifactUploadChanged": {
-                    "description": "El objeto de staging se reemplazó durante la comprobación; solicita otra carga.",
-                    "value": {
-                      "message": "El archivo cambió durante la verificación.",
-                      "code": "artifactUploadChanged"
                     }
                   }
                 }
@@ -2106,7 +2043,7 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": ["artifactTooLarge", "invalidArtifact"],
+                      "enum": ["artifactTooLarge"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
@@ -2118,13 +2055,6 @@
                     "value": {
                       "message": "El artefacto supera el tamaño máximo permitido.",
                       "code": "artifactTooLarge"
-                    }
-                  },
-                  "invalidArtifact": {
-                    "description": "El cuerpo del endpoint de confirmación supera el límite permitido.",
-                    "value": {
-                      "message": "La solicitud del artefacto no es válida.",
-                      "code": "invalidArtifact"
                     }
                   }
                 }
@@ -2139,7 +2069,7 @@
         "tags": ["Endpoints"],
         "operationId": "confirmar-artefacto-de-traza",
         "summary": "Verificar y confirmar un artefacto cargado",
-        "description": "Lee el objeto de staging en streaming, vuelve a comprobar la política de telemetría y la vigencia de la traza, calcula tamaño y SHA-256, valida la estructura protobuf de Perfetto y lo copia a una clave privada que el cliente no puede modificar.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidArtifact` | La solicitud del artefacto no es válida. | Se requiere un nombre lógico, tamaño y SHA-256 válidos. |\n| `400` | `invalidArtifactContent` | El archivo no coincide con el tamaño, SHA-256 o formato permitidos. | Solo se aceptan trazas nativas de Perfetto en formato protobuf binario. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La política debe seguir habilitada al crear y completar la carga. |\n| `404` | `traceNotFound` | No encontramos esta traza o artefacto. | La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido. |\n| `404` | `artifactNotFound` | No encontramos esta traza o artefacto. | La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial. |\n| `409` | `artifactUploadExpired` | La carga del artefacto venció. | La URL firmada tiene una vigencia limitada. |\n| `409` | `artifactUploadInProgress` | La carga del artefacto aún se está verificando. | Solo una verificación por artefacto se ejecuta a la vez; vuelve a intentar cuando termine. |\n| `409` | `artifactUploadChanged` | El archivo cambió durante la verificación. | El objeto de staging se reemplazó durante la comprobación; solicita otra carga. |\n| `413` | `artifactTooLarge` | El artefacto supera el tamaño máximo permitido. | La carga directa de una sola operación admite hasta 5363340410 bytes (4.995 GiB). |\n| `413` | `invalidArtifact` | La solicitud del artefacto no es válida. | El cuerpo del endpoint de confirmación supera el límite permitido. |",
+        "description": "Lee el objeto de staging en streaming, vuelve a comprobar la política de telemetría y la vigencia de la traza, calcula tamaño y SHA-256, valida la estructura protobuf de Perfetto y lo copia a una clave privada que el cliente no puede modificar.\n\n## Errores\n\n| Estado | `code` | `message` | Cuándo ocurre |\n| --- | --- | --- | --- |\n| `401` | `invalidCredential` | La credencial no es válida. | Falta el encabezado `Authorization`, el secreto no tiene el formato `ayni_sk_…`, no corresponde a ninguna credencial o la aplicación de la credencial está archivada. |\n| `401` | `credentialRevoked` | La credencial fue revocada. Genera una nueva credencial para continuar. | Un administrador revocó o regeneró la credencial. |\n| `400` | `invalidArtifact` | La solicitud del artefacto no es válida. | Se requiere un nombre lógico, tamaño y SHA-256 válidos. |\n| `403` | `telemetryDisabled` | La política de telemetría de esta aplicación está deshabilitada. | La política debe seguir habilitada al crear y completar la carga. |\n| `400` | `invalidArtifactContent` | El archivo no coincide con el tamaño, SHA-256 o formato permitidos. | Solo se aceptan trazas nativas de Perfetto en formato protobuf binario. |\n| `404` | `artifactNotFound` | No encontramos esta traza o artefacto. | La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial. |\n| `409` | `artifactUploadExpired` | La carga del artefacto venció. | La URL firmada tiene una vigencia limitada. |\n| `409` | `artifactUploadInProgress` | La carga del artefacto aún se está verificando. | Solo una verificación por artefacto se ejecuta a la vez; vuelve a intentar cuando termine. |\n| `409` | `artifactUploadChanged` | El archivo cambió durante la verificación. | El objeto de staging se reemplazó durante la comprobación; solicita otra carga. |\n| `413` | `invalidArtifact` | La solicitud del artefacto no es válida. | El cuerpo del endpoint de confirmación supera el límite permitido. |",
         "security": [
           {
             "sdkCredential": []
@@ -2296,20 +2226,13 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": ["traceNotFound", "artifactNotFound"],
+                      "enum": ["artifactNotFound"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
                   "required": ["message", "code"]
                 },
                 "examples": {
-                  "traceNotFound": {
-                    "description": "La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido.",
-                    "value": {
-                      "message": "No encontramos esta traza o artefacto.",
-                      "code": "traceNotFound"
-                    }
-                  },
                   "artifactNotFound": {
                     "description": "La traza o el artefacto no existen o no pertenecen a la aplicación de la credencial.",
                     "value": {
@@ -2383,20 +2306,13 @@
                     },
                     "code": {
                       "type": "string",
-                      "enum": ["artifactTooLarge", "invalidArtifact"],
+                      "enum": ["invalidArtifact"],
                       "description": "Código estable para decidir qué hacer."
                     }
                   },
                   "required": ["message", "code"]
                 },
                 "examples": {
-                  "artifactTooLarge": {
-                    "description": "La carga directa de una sola operación admite hasta 5363340410 bytes (4.995 GiB).",
-                    "value": {
-                      "message": "El artefacto supera el tamaño máximo permitido.",
-                      "code": "artifactTooLarge"
-                    }
-                  },
                   "invalidArtifact": {
                     "description": "El cuerpo del endpoint de confirmación supera el límite permitido.",
                     "value": {

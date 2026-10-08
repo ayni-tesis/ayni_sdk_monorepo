@@ -530,7 +530,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     },
   });
 
-  const traceArtifactErrors: SdkError[] = [
+  const traceArtifactCommonErrors: SdkError[] = [
     ...credentialErrors(revokedMessage),
     {
       status: "400",
@@ -539,23 +539,35 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
       cause: "Se requiere un nombre lógico, tamaño y SHA-256 válidos.",
     },
     {
-      status: "400",
-      code: "invalidArtifactContent",
-      message: "El archivo no coincide con el tamaño, SHA-256 o formato permitidos.",
-      cause: "Solo se aceptan trazas nativas de Perfetto en formato protobuf binario.",
-    },
-    {
       status: "403",
       code: "telemetryDisabled",
       message: "La política de telemetría de esta aplicación está deshabilitada.",
       cause: "La política debe seguir habilitada al crear y completar la carga.",
     },
+  ];
+  const traceArtifactIntentErrors: SdkError[] = [
+    ...traceArtifactCommonErrors,
     {
       status: "404",
       code: "traceNotFound",
       message: "No encontramos esta traza o artefacto.",
       cause:
         "La traza debe existir, pertenecer a la aplicación de la credencial y no haber vencido.",
+    },
+    {
+      status: "413",
+      code: "artifactTooLarge",
+      message: "El artefacto supera el tamaño máximo permitido.",
+      cause: `La carga directa de una sola operación admite hasta ${SDK_TRACE_ARTIFACT_MAX_BYTES} bytes (4.995 GiB).`,
+    },
+  ];
+  const traceArtifactCompletionErrors: SdkError[] = [
+    ...traceArtifactCommonErrors,
+    {
+      status: "400",
+      code: "invalidArtifactContent",
+      message: "El archivo no coincide con el tamaño, SHA-256 o formato permitidos.",
+      cause: "Solo se aceptan trazas nativas de Perfetto en formato protobuf binario.",
     },
     {
       status: "404",
@@ -584,12 +596,6 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     },
     {
       status: "413",
-      code: "artifactTooLarge",
-      message: "El artefacto supera el tamaño máximo permitido.",
-      cause: `La carga directa de una sola operación admite hasta ${SDK_TRACE_ARTIFACT_MAX_BYTES} bytes (4.995 GiB).`,
-    },
-    {
-      status: "413",
       code: "invalidArtifact",
       message: "La solicitud del artefacto no es válida.",
       cause: "El cuerpo del endpoint de confirmación supera el límite permitido.",
@@ -603,7 +609,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     summary: "Solicitar una carga directa de artefacto de validación",
     description: describeWithErrors(
       "Crea una carga privada de un archivo fuente vinculado a una traza vigente. El servidor fija el tamaño, el SHA-256 y el nombre lógico declarados y devuelve una URL de R2 de una hora para un único PUT de `application/octet-stream`. El cliente no debe reenviar `Authorization` al almacenamiento ni seguir redirecciones a otro origen. Al completar, el servidor verifica bytes, hash y estructura protobuf nativa de Perfetto. Se aceptan hasta 4.995 GiB por PUT directo; cargas mayores requieren multipart y no están habilitadas.",
-      traceArtifactErrors,
+      traceArtifactIntentErrors,
     ),
     security,
     request: {
@@ -618,7 +624,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         description: "Carga directa autorizada; usa solo los encabezados devueltos en el PUT a R2.",
         content: { "application/json": { schema: SdkTraceArtifactUploadIntentSchema } },
       },
-      ...errorResponses(traceArtifactErrors),
+      ...errorResponses(traceArtifactIntentErrors),
     },
   });
   registry.registerPath({
@@ -629,7 +635,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
     summary: "Verificar y confirmar un artefacto cargado",
     description: describeWithErrors(
       "Lee el objeto de staging en streaming, vuelve a comprobar la política de telemetría y la vigencia de la traza, calcula tamaño y SHA-256, valida la estructura protobuf de Perfetto y lo copia a una clave privada que el cliente no puede modificar.",
-      traceArtifactErrors,
+      traceArtifactCompletionErrors,
     ),
     security,
     request: { params: z.object({ traceId: z.uuid(), artifactId: z.uuid() }) },
@@ -638,7 +644,7 @@ export function registerSdkRoutes(registry: OpenAPIRegistry) {
         description: "Metadatos del artefacto verificado.",
         content: { "application/json": { schema: SdkTraceArtifactCompletionSchema } },
       },
-      ...errorResponses(traceArtifactErrors),
+      ...errorResponses(traceArtifactCompletionErrors),
     },
   });
 
