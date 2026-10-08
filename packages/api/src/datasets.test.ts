@@ -16,6 +16,7 @@ import {
   DatasetValidationResponseSchema,
   parseDatasetAnnotationsRequest,
   parseDatasetItemsQuery,
+  parseDatasetValidationQuery,
 } from "./datasets";
 import { createOpenApiDocument } from "./index";
 
@@ -597,6 +598,24 @@ describe("dataset export check (US-084)", () => {
     },
   );
 
+  it("checks YOLO image and class requirements alongside item validation", () => {
+    const reviewed = { label: "gato", box: { ...box } };
+    expect(
+      checkDatasetForExport(
+        "detection",
+        [item("item-1", { reviewedAnnotations: [reviewed] })],
+        "detection_yolo",
+      ).problem?.code,
+    ).toBe("requiresMultipleItems");
+    expect(
+      checkDatasetForExport(
+        "detection",
+        [item("item-1", { reviewedAnnotations: [] }), item("item-2", { reviewedAnnotations: [] })],
+        "detection_yolo",
+      ).problem?.code,
+    ).toBe("noYoloClasses");
+  });
+
   it("documents the read-only validation route and its response", () => {
     const operation =
       createOpenApiDocument().paths?.[
@@ -604,8 +623,12 @@ describe("dataset export check (US-084)", () => {
       ]?.get;
     expect(operation?.responses?.["200"]).toBeDefined();
     expect(operation?.responses?.["401"]).toBeDefined();
+    expect(operation?.responses?.["400"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
     expect(operation?.responses?.["500"]).toBeDefined();
+    expect(operation?.parameters).toContainEqual(
+      expect.objectContaining({ name: "format", in: "query", required: false }),
+    );
 
     const invalidItem = {
       itemId: "item-1",
@@ -629,8 +652,33 @@ describe("dataset export check (US-084)", () => {
     expect(
       DatasetValidationResponseSchema.safeParse({
         ...response,
+        problem: {
+          code: "requiresMultipleItems",
+          message: "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      DatasetValidationResponseSchema.safeParse({
+        ...response,
         invalidItems: Array.from({ length: 101 }, () => invalidItem),
       }).success,
     ).toBe(false);
+  });
+
+  it("parses only the optional supported export format for validation", () => {
+    expect(parseDatasetValidationQuery({})).toEqual({ success: true, data: {} });
+    expect(parseDatasetValidationQuery({ format: "detection_yolo" })).toEqual({
+      success: true,
+      data: { format: "detection_yolo" },
+    });
+    expect(parseDatasetValidationQuery({ format: "invalid" })).toMatchObject({
+      success: false,
+      error: {
+        code: "invalidDatasetValidationQuery",
+        message: "El formato de validación no es válido.",
+      },
+    });
+    expect(parseDatasetValidationQuery({ extra: "value" }).success).toBe(false);
   });
 });

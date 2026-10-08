@@ -165,6 +165,7 @@ export async function validateDatasetForExport(
   database: ApplicationDatabase,
   applicationId: string,
   datasetId: string,
+  format?: DatasetExportFormat,
 ): Promise<DatasetValidationResponse | null> {
   return database.transaction(async (transaction) => {
     const tx = transaction as DatasetExportReadExecutor;
@@ -176,9 +177,13 @@ export async function validateDatasetForExport(
     const foundDataset = datasets[0];
     if (!foundDataset) return null;
 
+    const effectiveFormat =
+      format ??
+      (foundDataset.taskType === "detection" ? "detection_coco" : "classification_images_csv");
     const check = checkDatasetForExport(
       foundDataset.taskType,
       await selectApprovedItems(tx, applicationId, datasetId),
+      effectiveFormat,
     );
     const summary = check.approvedItems.reduce(
       (result, item) => {
@@ -246,13 +251,15 @@ export type CreateDatasetExportResult =
         | "notClassification"
         | "notDetection"
         | "noApprovedItems"
+        | "requiresMultipleItems"
+        | "noYoloClasses"
         | "missingLabel"
         | "unsafeLabel"
         | "tooLarge"
         | "failed";
     };
 
-function createCocoDocument(items: ExportItem[]) {
+function prepareDetectionItems(items: ExportItem[]) {
   const prepared = items.map((item) => {
     const parsed = parseDatasetAnnotationsRequest({ annotations: item.reviewedAnnotations });
     if (!parsed.success) throw new Error("Approved detection item has invalid annotations");
@@ -261,6 +268,11 @@ function createCocoDocument(items: ExportItem[]) {
   const labels = [
     ...new Set(prepared.flatMap(({ annotations }) => annotations.map(({ label }) => label))),
   ].sort();
+  return { prepared, labels };
+}
+
+function createCocoDocument(items: ExportItem[]) {
+  const { prepared, labels } = prepareDetectionItems(items);
   const categoryIds = new Map(labels.map((label, index) => [label, index + 1]));
   let annotationId = 0;
   return {
@@ -295,6 +307,52 @@ function createCocoDocument(items: ExportItem[]) {
   };
 }
 
+function createYoloFiles(items: ExportItem[]) {
+  const { prepared, labels: detectedLabels } = prepareDetectionItems(items);
+  const labels = [...detectedLabels].sort((left, right) => left.localeCompare(right, "es"));
+  if (labels.length === 0) return null;
+  prepared.sort((left, right) => left.item.id.localeCompare(right.item.id));
+  const classIds = new Map(labels.map((label, index) => [label, index]));
+  const validationCount = Math.min(
+    prepared.length - 1,
+    Math.max(1, Math.round(prepared.length * 0.2)),
+  );
+  const validationStart = prepared.length - validationCount;
+  const files: Record<string, Uint8Array> = Object.create(null);
+  const imagePaths = new Map<string, string>();
+  const encoder = new TextEncoder();
+
+  prepared.forEach(({ item, annotations }, index) => {
+    const split = index < validationStart ? "train" : "val";
+    const imagePath = `images/${split}/${item.id}.jpg`;
+    imagePaths.set(item.id, imagePath);
+    files[`labels/${split}/${item.id}.txt`] = encoder.encode(
+      annotations
+        .map(({ label, box }) => {
+          const classId = classIds.get(label);
+          if (classId === undefined) throw new Error("Reviewed label has no YOLO class");
+          const xCenter = (box.xMin + box.xMax) / 2;
+          const yCenter = (box.yMin + box.yMax) / 2;
+          const width = box.xMax - box.xMin;
+          const height = box.yMax - box.yMin;
+          return `${classId} ${xCenter} ${yCenter} ${width} ${height}`;
+        })
+        .join("\n") + (annotations.length > 0 ? "\n" : ""),
+    );
+  });
+
+  files["data.yaml"] = encoder.encode(
+    [
+      "train: images/train",
+      "val: images/val",
+      "names:",
+      ...labels.map((label, index) => `  ${index}: ${JSON.stringify(label)}`),
+      "",
+    ].join("\n"),
+  );
+  return { files, imagePaths };
+}
+
 function getDatasetTaskTypeMismatchReason(
   actualTaskType: string,
   expectedTaskType: "classification" | "detection",
@@ -308,7 +366,8 @@ export async function createDatasetExport(
   input: CreateDatasetExportInput,
 ): Promise<CreateDatasetExportResult> {
   const format = input.format ?? "classification_images_csv";
-  const taskType = format === "detection_coco" ? "detection" : "classification";
+  const taskType =
+    format === "detection_coco" || format === "detection_yolo" ? "detection" : "classification";
   let storageKey: string | null = null;
   let artifactStored = false;
 
@@ -336,8 +395,9 @@ export async function createDatasetExport(
         const check = checkDatasetForExport(
           taskType,
           await selectApprovedItems(tx, input.applicationId, input.datasetId),
+          format,
         );
-        if (check.problem) return { kind: "error", reason: "noApprovedItems" } as const;
+        if (check.problem) return { kind: "error", reason: check.problem.code } as const;
         if (taskType === "detection" && check.invalidItems.length > 0) {
           return {
             kind: "invalidAnnotations",
@@ -382,11 +442,16 @@ export async function createDatasetExport(
 
     const files: Record<string, Uint8Array> = Object.create(null);
     const csvRows = ["filename,label"];
+    const yolo = format === "detection_yolo" ? createYoloFiles(exportItems) : null;
+    if (format === "detection_yolo" && !yolo) {
+      return { ok: false, reason: "noYoloClasses" };
+    }
+    if (yolo) Object.assign(files, yolo.files);
     for (const item of exportItems) {
       if (item.imageMediaType !== EVIDENCE_IMAGE_MEDIA_TYPE) {
         throw new Error("Unsupported dataset evidence image media type");
       }
-      const filename = `images/${item.id}.jpg`;
+      const filename = yolo?.imagePaths.get(item.id) ?? `images/${item.id}.jpg`;
       files[filename] = await r2EvidenceStorage.read(item.storageKey);
       if (format === "classification_images_csv") {
         const reviewedLabel = item.reviewedLabel?.trim();
@@ -397,7 +462,7 @@ export async function createDatasetExport(
     }
     if (format === "classification_images_csv") {
       files["labels.csv"] = new TextEncoder().encode(`${csvRows.join("\r\n")}\r\n`);
-    } else {
+    } else if (format === "detection_coco") {
       files["annotations/instances.json"] = new TextEncoder().encode(
         JSON.stringify(createCocoDocument(exportItems)),
       );

@@ -18,7 +18,9 @@ export const datasetExport = pgTable(
     applicationId: text("application_id").notNull(),
     datasetId: text("dataset_id").notNull(),
     version: integer("version").notNull(),
-    format: text("format", { enum: ["classification_images_csv", "detection_coco"] }).notNull(),
+    format: text("format", {
+      enum: ["classification_images_csv", "detection_coco", "detection_yolo"],
+    }).notNull(),
     status: text("status", { enum: ["ready"] }).notNull(),
     generatedAt: timestamp("generated_at").defaultNow().notNull(),
     itemCount: integer("item_count").notNull(),
@@ -38,7 +40,7 @@ export const datasetExport = pgTable(
     check("dataset_export_version_check", sql`${table.version} > 0`),
     check(
       "dataset_export_format_check",
-      sql`${table.format} in ('classification_images_csv', 'detection_coco')`,
+      sql`${table.format} in ('classification_images_csv', 'detection_coco', 'detection_yolo')`,
     ),
     check("dataset_export_status_check", sql`${table.status} = 'ready'`),
     check("dataset_export_item_count_check", sql`${table.itemCount} > 0`),

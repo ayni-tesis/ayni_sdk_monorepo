@@ -3,6 +3,7 @@ import type {
   DatasetAvailableEvidenceResponse,
   DatasetDetailResponse,
   DatasetEvidence,
+  DatasetExportFormat,
   DatasetItem,
   DatasetItemFilters,
   DatasetListItem,
@@ -163,6 +164,7 @@ function makeApp({
   validate = async (
     _applicationId: string,
     _datasetId: string,
+    _format?: DatasetExportFormat,
   ): Promise<DatasetValidationResponse | null> => invalidValidation,
 }: {
   session?: { user: { id: string } } | null;
@@ -199,6 +201,7 @@ function makeApp({
   validate?: (
     applicationId: string,
     datasetId: string,
+    format?: DatasetExportFormat,
   ) => Promise<DatasetValidationResponse | null>;
 } = {}) {
   const createMock = vi.fn(create);
@@ -263,7 +266,7 @@ describe("application datasets", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(invalidValidation);
-    expect(validateMock).toHaveBeenCalledWith("app-1", "dataset-1");
+    expect(validateMock).toHaveBeenCalledWith("app-1", "dataset-1", undefined);
 
     const archived = makeApp({
       membershipRole: "member",
@@ -273,6 +276,26 @@ describe("application datasets", () => {
       "/applications/app-1/datasets/dataset-1/validation",
     );
     expect(archivedResponse.status).toBe(200);
+  });
+
+  it("passes the selected format to validation and rejects unknown formats", async () => {
+    const { app, validateMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request(
+      "/applications/app-1/datasets/dataset-1/validation?format=detection_yolo",
+    );
+
+    expect(response.status).toBe(200);
+    expect(validateMock).toHaveBeenCalledWith("app-1", "dataset-1", "detection_yolo");
+
+    const invalid = await app.request(
+      "/applications/app-1/datasets/dataset-1/validation?format=other",
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({
+      code: "invalidDatasetValidationQuery",
+      message: "El formato de validación no es válido.",
+    });
+    expect(validateMock).toHaveBeenCalledTimes(1);
   });
 
   it("hides foreign or missing datasets from validation and reports failures", async () => {
