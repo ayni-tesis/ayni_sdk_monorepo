@@ -87,7 +87,8 @@ base de servicio aplicable para la validación y enviarlo solo cuando la persona
 lo haya autorizado, según corresponda. `sdkImprovement` trata la mejora del
 SDK y no autoriza la validación; tampoco se agrega un control de consentimiento
 de Ayni para estos artefactos. Los archivos temporales de una carga no
-confirmada se limpian cuando vence su URL.
+confirmada se eliminan en la siguiente purga tras vencer su URL; la purga corre
+al ingresar otra traza y, si `CRON_SECRET` está configurado, en la tarea diaria.
 
 ### Descarga del dataset de validación
 

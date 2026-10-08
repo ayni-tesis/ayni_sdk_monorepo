@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+// ponytail: Mirrors `SDK_TRACE_ARTIFACT_MAX_BYTES` in
+// `packages/api/src/sdk-trace-artifact.ts`. Replace if this CLI goes external
+// or a shared generated contract is introduced.
 const _maxArtifactBytes = 5363340410;
 const _sdkCredentialPattern = r'^ayni_sk_[A-Za-z0-9_-]+$';
 
