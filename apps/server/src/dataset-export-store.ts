@@ -141,8 +141,7 @@ export async function createDatasetExportDownload(
   if (!row) return null;
 
   const expiresAt = new Date(Date.now() + DATASET_EXPORT_DOWNLOAD_TTL_SECONDS * 1000);
-  const filename =
-    `dataset-export_${row.format}_v${row.version}_${toIsoString(row.generatedAt).slice(0, 10)}.zip`;
+  const filename = `dataset-export_${row.format}_v${row.version}_${toIsoString(row.generatedAt).slice(0, 10)}.zip`;
   return {
     downloadUrl: await getDownloadUrl(row.storageKey, {
       expiresIn: DATASET_EXPORT_DOWNLOAD_TTL_SECONDS,

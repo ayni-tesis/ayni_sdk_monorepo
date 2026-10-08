@@ -445,9 +445,7 @@ export function DatasetDetailView({
       );
       window.location.assign(data.downloadUrl);
     } catch (error) {
-      setDownloadError(
-        errorMessage(error, "No pudimos preparar la descarga de la exportación."),
-      );
+      setDownloadError(errorMessage(error, "No pudimos preparar la descarga de la exportación."));
     } finally {
       setDownloadingExportId(null);
     }
