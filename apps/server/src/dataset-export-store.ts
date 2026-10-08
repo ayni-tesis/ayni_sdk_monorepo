@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  checkDatasetForExport,
+  DATASET_VALIDATION_ITEMS_MAX,
   type DatasetExport,
   type DatasetValidationResponse,
-  parseDatasetAnnotationsRequest,
 } from "@ayni/api/datasets";
 import { EVIDENCE_IMAGE_MEDIA_TYPE } from "@ayni/api/sdk-evidence";
 import { dataset, datasetExport, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
@@ -15,15 +16,12 @@ import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
 const MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
-const DATASET_VALIDATION_BATCH_SIZE = 50;
-const DATASET_VALIDATION_MAX_ISSUES = 50;
 
 type DatasetExportQuery = Promise<Record<string, unknown>[]> & {
   innerJoin: (table: unknown, condition: unknown) => DatasetExportQuery;
   where: (condition: unknown) => DatasetExportQuery;
   orderBy: (...columns: unknown[]) => DatasetExportQuery;
   limit: (count: number) => DatasetExportQuery;
-  offset: (count: number) => DatasetExportQuery;
   for: (lock: "update") => Promise<Record<string, unknown>[]>;
 };
 
@@ -54,20 +52,15 @@ type DatasetExportRow = {
 
 type ExportItem = {
   id: string;
-  reviewedLabel: string | null;
-  imageMediaType: string;
-  imageByteSize: number;
-  storageKey: string;
-};
-
-type DatasetValidationRow = {
-  id: string;
+  evidenceId: string;
+  reviewStatus: "pending" | "approved" | "rejected";
   reviewedLabel: string | null;
   reviewedAnnotations: unknown;
-  storageKey: string;
+  imageMediaType: string;
+  imageByteSize: number;
   imageWidth: number;
   imageHeight: number;
-  imageByteSize: number;
+  storageKey: string;
 };
 
 const datasetExportFields = {
@@ -118,150 +111,96 @@ export async function listDatasetExports(
   });
 }
 
+/**
+ * The approved items of a dataset whose evidence image was received, in the
+ * dataset's order: what validation checks and an export contains.
+ */
+async function selectApprovedItems(
+  tx: DatasetExportReadExecutor,
+  applicationId: string,
+  datasetId: string,
+): Promise<ExportItem[]> {
+  return (await tx
+    .select({
+      id: datasetItem.id,
+      evidenceId: datasetItem.evidenceId,
+      reviewStatus: datasetItem.reviewStatus,
+      reviewedLabel: datasetItem.reviewedLabel,
+      reviewedAnnotations: datasetItem.reviewedAnnotations,
+      imageMediaType: sdkEvidence.imageMediaType,
+      imageByteSize: sdkEvidence.imageByteSize,
+      imageWidth: sdkEvidence.imageWidth,
+      imageHeight: sdkEvidence.imageHeight,
+      storageKey: sdkEvidence.storageKey,
+    })
+    .from(datasetItem)
+    .innerJoin(
+      sdkEvidence,
+      and(
+        eq(sdkEvidence.applicationId, datasetItem.applicationId),
+        eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+      ),
+    )
+    .where(
+      and(
+        eq(datasetItem.applicationId, applicationId),
+        eq(datasetItem.datasetId, datasetId),
+        eq(datasetItem.reviewStatus, "approved"),
+        eq(sdkEvidence.status, "received"),
+      ),
+    )
+    .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as ExportItem[];
+}
+
+/**
+ * Validates a dataset for export (US-084) with the rules every export applies
+ * (`checkDatasetForExport`), so a dataset it confirms passes those checks. It
+ * only reads: the dataset and its items stay as they are. Returns null for a
+ * dataset outside the application.
+ */
+export async function validateDatasetForExport(
+  database: ApplicationDatabase,
+  applicationId: string,
+  datasetId: string,
+): Promise<DatasetValidationResponse | null> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as DatasetExportReadExecutor;
+    const datasets = (await tx
+      .select({ taskType: dataset.taskType })
+      .from(dataset)
+      .where(and(eq(dataset.applicationId, applicationId), eq(dataset.id, datasetId)))
+      .limit(1)) as { taskType: "classification" | "detection" }[];
+    const foundDataset = datasets[0];
+    if (!foundDataset) return null;
+
+    const check = checkDatasetForExport(
+      foundDataset.taskType,
+      await selectApprovedItems(tx, applicationId, datasetId),
+    );
+    return {
+      ready: check.problem === null && check.invalidItems.length === 0,
+      approvedCount: check.approvedItems.length,
+      problem: check.problem,
+      invalidItemCount: check.invalidItems.length,
+      invalidItems: await Promise.all(
+        check.invalidItems.slice(0, DATASET_VALIDATION_ITEMS_MAX).map(async ({ item, cause }) => ({
+          itemId: item.id,
+          evidenceId: item.evidenceId,
+          imageUrl: await getDownloadUrl(item.storageKey),
+          imageWidth: item.imageWidth,
+          imageHeight: item.imageHeight,
+          cause,
+        })),
+      ),
+    };
+  });
+}
+
 export type CreateDatasetExportInput = {
   applicationId: string;
   datasetId: string;
   userId: string;
 };
-
-export type ValidateDatasetForExportResult =
-  | { ok: true; value: DatasetValidationResponse }
-  | { ok: false; reason: "forbidden" | "archived" | "notFound" };
-
-function reviewedLabelError(label: string | null): "missingLabel" | "unsafeLabel" | null {
-  if (!label?.trim()) return "missingLabel";
-  return /^[\s]*[=+@-]/u.test(label) ? "unsafeLabel" : null;
-}
-
-export async function validateDatasetForExport(
-  database: ApplicationDatabase,
-  input: CreateDatasetExportInput,
-): Promise<ValidateDatasetForExportResult> {
-  const result = await executeApplicationAction(
-    database,
-    { applicationId: input.applicationId, userId: input.userId },
-    async (transaction) => {
-      const tx = transaction as unknown as DatasetExportReadExecutor;
-      const datasets = (await tx
-        .select({ taskType: dataset.taskType })
-        .from(dataset)
-        .where(and(eq(dataset.applicationId, input.applicationId), eq(dataset.id, input.datasetId)))
-        .limit(1)) as { taskType: string }[];
-      const foundDataset = datasets[0];
-      if (!foundDataset) return { kind: "notFound" } as const;
-
-      let approvedItemCount = 0;
-      let imageBytes = 0;
-      let totalIssueCount = 0;
-      let offset = 0;
-      const invalidItems: (DatasetValidationRow & { message: string })[] = [];
-      while (true) {
-        const items = (await tx
-          .select({
-            id: datasetItem.id,
-            reviewedLabel: datasetItem.reviewedLabel,
-            reviewedAnnotations: datasetItem.reviewedAnnotations,
-            storageKey: sdkEvidence.storageKey,
-            imageWidth: sdkEvidence.imageWidth,
-            imageHeight: sdkEvidence.imageHeight,
-            imageByteSize: sdkEvidence.imageByteSize,
-          })
-          .from(datasetItem)
-          .innerJoin(
-            sdkEvidence,
-            and(
-              eq(sdkEvidence.applicationId, datasetItem.applicationId),
-              eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
-            ),
-          )
-          .where(
-            and(
-              eq(datasetItem.applicationId, input.applicationId),
-              eq(datasetItem.datasetId, input.datasetId),
-              eq(datasetItem.reviewStatus, "approved"),
-              eq(sdkEvidence.status, "received"),
-            ),
-          )
-          .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))
-          .limit(DATASET_VALIDATION_BATCH_SIZE)
-          .offset(offset)) as DatasetValidationRow[];
-        if (items.length === 0) break;
-
-        offset += items.length;
-        approvedItemCount += items.length;
-        imageBytes += items.reduce((total, item) => total + item.imageByteSize, 0);
-        for (const item of items) {
-          let message: string | null = null;
-          if (foundDataset.taskType === "classification") {
-            const labelError = reviewedLabelError(item.reviewedLabel);
-            if (labelError === "missingLabel") {
-              message = "La evidencia aprobada no tiene una etiqueta revisada.";
-            } else if (labelError === "unsafeLabel") {
-              message =
-                "Una etiqueta revisada puede interpretarse como fórmula. Corrígela antes de exportar.";
-            }
-          } else if (item.reviewedAnnotations === null) {
-            message = "Guarda las anotaciones revisadas antes de exportar.";
-          } else {
-            const annotations = parseDatasetAnnotationsRequest({
-              annotations: item.reviewedAnnotations,
-            });
-            if (!annotations.success) message = annotations.error.message;
-          }
-
-          if (message) {
-            totalIssueCount += 1;
-            if (invalidItems.length < DATASET_VALIDATION_MAX_ISSUES) {
-              invalidItems.push({ ...item, message });
-            }
-          }
-        }
-      }
-
-      if (approvedItemCount === 0) {
-        return {
-          kind: "validated" as const,
-          datasetIssue: "El dataset no tiene evidencias aprobadas para exportar.",
-          totalIssueCount,
-          items: [],
-        };
-      }
-      return {
-        kind: "validated" as const,
-        datasetIssue:
-          foundDataset.taskType === "classification" &&
-          imageBytes > MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES
-            ? "El tamaño total de las imágenes supera el límite de exportación de 128 MiB."
-            : null,
-        totalIssueCount,
-        items: invalidItems,
-      };
-    },
-  );
-
-  if (!result.ok) return { ok: false, reason: result.reason };
-  if (result.value.kind === "notFound") return { ok: false, reason: "notFound" };
-  const items = await Promise.all(
-    result.value.items.map(
-      async ({ id: itemId, storageKey, imageWidth, imageHeight, message }) => ({
-        itemId,
-        imageUrl: await getDownloadUrl(storageKey),
-        imageWidth,
-        imageHeight,
-        message,
-      }),
-    ),
-  );
-  return {
-    ok: true,
-    value: {
-      valid: result.value.datasetIssue === null && result.value.totalIssueCount === 0,
-      datasetIssue: result.value.datasetIssue,
-      totalIssueCount: result.value.totalIssueCount,
-      items,
-    },
-  };
-}
 
 export type CreateDatasetExportResult =
   | { ok: true; value: DatasetExport }
@@ -305,42 +244,18 @@ export async function createDatasetExport(
           return { kind: "error", reason: "notClassification" } as const;
         }
 
-        const items = (await tx
-          .select({
-            id: datasetItem.id,
-            reviewedLabel: datasetItem.reviewedLabel,
-            imageMediaType: sdkEvidence.imageMediaType,
-            imageByteSize: sdkEvidence.imageByteSize,
-            storageKey: sdkEvidence.storageKey,
-          })
-          .from(datasetItem)
-          .innerJoin(
-            sdkEvidence,
-            and(
-              eq(sdkEvidence.applicationId, datasetItem.applicationId),
-              eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
-            ),
-          )
-          .where(
-            and(
-              eq(datasetItem.applicationId, input.applicationId),
-              eq(datasetItem.datasetId, input.datasetId),
-              eq(datasetItem.reviewStatus, "approved"),
-              eq(sdkEvidence.status, "received"),
-            ),
-          )
-          .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as ExportItem[];
-        if (items.length === 0) return { kind: "error", reason: "noApprovedItems" } as const;
-        if (
-          items.some(({ reviewedLabel }) => reviewedLabelError(reviewedLabel) === "missingLabel")
-        ) {
+        // The same rules as dataset validation (US-084), so they cannot disagree.
+        const check = checkDatasetForExport(
+          "classification",
+          await selectApprovedItems(tx, input.applicationId, input.datasetId),
+        );
+        if (check.problem) return { kind: "error", reason: "noApprovedItems" } as const;
+        const causes = new Set(check.invalidItems.map(({ cause }) => cause.code));
+        if (causes.has("reviewedLabelRequired")) {
           return { kind: "error", reason: "missingLabel" } as const;
         }
-        if (
-          items.some(({ reviewedLabel }) => reviewedLabelError(reviewedLabel) === "unsafeLabel")
-        ) {
-          return { kind: "error", reason: "unsafeLabel" } as const;
-        }
+        if (causes.has("formulaLabel")) return { kind: "error", reason: "unsafeLabel" } as const;
+        const items = check.approvedItems;
         let imageBytes = 0;
         for (const item of items) {
           imageBytes += item.imageByteSize;

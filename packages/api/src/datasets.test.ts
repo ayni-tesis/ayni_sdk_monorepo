@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  checkDatasetForExport,
   DatasetAddEvidenceRequestSchema,
   DatasetAnnotationsResponseSchema,
   DatasetAvailableEvidenceResponseSchema,
@@ -12,6 +13,7 @@ import {
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
   DatasetReviewResponseSchema,
+  DatasetValidationResponseSchema,
   parseDatasetAnnotationsRequest,
   parseDatasetItemsQuery,
 } from "./datasets";
@@ -458,5 +460,177 @@ describe("dataset creation contract", () => {
     expect(operation?.responses?.["400"]).toBeDefined();
     expect(operation?.responses?.["404"]).toBeDefined();
     expect(operation?.responses?.["409"]).toBeDefined();
+  });
+});
+
+describe("dataset export check (US-084)", () => {
+  const box = { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.6 };
+  const item = (
+    id: string,
+    fields: {
+      reviewStatus?: "pending" | "approved" | "rejected";
+      reviewedLabel?: string | null;
+      reviewedAnnotations?: unknown;
+    } = {},
+  ) => ({
+    id,
+    evidenceId: `evidence-${id}`,
+    reviewStatus: "approved" as const,
+    reviewedLabel: null,
+    reviewedAnnotations: null,
+    ...fields,
+  });
+
+  it("confirms a classification dataset whose approved items all have a reviewed label", () => {
+    const check = checkDatasetForExport("classification", [
+      item("item-1", { reviewedLabel: "pino" }),
+      item("item-2", { reviewStatus: "pending" }),
+      item("item-3", { reviewStatus: "rejected", reviewedLabel: "=cmd" }),
+    ]);
+
+    expect(check.problem).toBeNull();
+    expect(check.invalidItems).toEqual([]);
+    expect(check.approvedItems.map(({ id }) => id)).toEqual(["item-1"]);
+  });
+
+  it("identifies approved classification items without a usable reviewed label", () => {
+    const check = checkDatasetForExport("classification", [
+      item("item-1", { reviewedLabel: null }),
+      item("item-2", { reviewedLabel: "   " }),
+      item("item-3", { reviewedLabel: "=HYPERLINK()" }),
+      item("item-4", { reviewedLabel: "pino" }),
+      item("item-5", { reviewedLabel: "-1", reviewedAnnotations: [] }),
+    ]);
+
+    expect(check.problem).toBeNull();
+    expect(
+      check.invalidItems.map(({ item: invalid, cause }) => [
+        invalid.id,
+        invalid.evidenceId,
+        cause.code,
+        cause.message,
+      ]),
+    ).toEqual([
+      [
+        "item-1",
+        "evidence-item-1",
+        "reviewedLabelRequired",
+        "La evidencia aprobada no tiene etiqueta revisada.",
+      ],
+      [
+        "item-2",
+        "evidence-item-2",
+        "reviewedLabelRequired",
+        "La evidencia aprobada no tiene etiqueta revisada.",
+      ],
+      [
+        "item-3",
+        "evidence-item-3",
+        "formulaLabel",
+        "La etiqueta revisada puede interpretarse como fórmula.",
+      ],
+      [
+        "item-5",
+        "evidence-item-5",
+        "formulaLabel",
+        "La etiqueta revisada puede interpretarse como fórmula.",
+      ],
+    ]);
+  });
+
+  it("confirms a detection dataset whose approved items have valid reviewed boxes or none", () => {
+    const check = checkDatasetForExport("detection", [
+      item("item-1", { reviewedAnnotations: [{ label: "gato", box }] }),
+      item("item-2", { reviewedAnnotations: [] }),
+      item("item-3", { reviewStatus: "pending" }),
+    ]);
+
+    expect(check.problem).toBeNull();
+    expect(check.invalidItems).toEqual([]);
+    expect(check.approvedItems.map(({ id }) => id)).toEqual(["item-1", "item-2"]);
+  });
+
+  it("identifies approved detection items without reviewed boxes or with invalid ones", () => {
+    const check = checkDatasetForExport("detection", [
+      item("item-1", { reviewedLabel: "gato" }),
+      item("item-2", { reviewedAnnotations: [{ label: "gato", box: { ...box, xMax: 1.2 } }] }),
+      item("item-3", { reviewedAnnotations: [{ label: "gato", box: { ...box, xMax: 0.1 } }] }),
+      item("item-4", { reviewedAnnotations: [{ label: " ", box }] }),
+      item("item-5", { reviewedAnnotations: "gato" }),
+    ]);
+
+    expect(check.invalidItems.map(({ item: invalid, cause }) => [invalid.id, cause])).toEqual([
+      [
+        "item-1",
+        {
+          code: "reviewedAnnotationsRequired",
+          message: "La evidencia aprobada no tiene anotaciones revisadas.",
+        },
+      ],
+      [
+        "item-2",
+        { code: "invalidAnnotations", message: "La caja debe permanecer dentro de la imagen." },
+      ],
+      ["item-3", { code: "invalidAnnotations", message: "La caja debe tener ancho y alto." }],
+      ["item-4", { code: "invalidAnnotations", message: "Ingresa una etiqueta para cada caja." }],
+      [
+        "item-5",
+        { code: "invalidAnnotations", message: "Las anotaciones revisadas no son válidas." },
+      ],
+    ]);
+  });
+
+  it.each(["classification", "detection"] as const)(
+    "reports a %s dataset without approved items",
+    (taskType) => {
+      const check = checkDatasetForExport(taskType, [
+        item("item-1", { reviewStatus: "pending" }),
+        item("item-2", { reviewStatus: "rejected" }),
+      ]);
+
+      expect(check.problem).toEqual({
+        code: "noApprovedItems",
+        message: "El dataset no tiene evidencias aprobadas para exportar.",
+      });
+      expect(check.approvedItems).toEqual([]);
+      expect(check.invalidItems).toEqual([]);
+    },
+  );
+
+  it("documents the read-only validation route and its response", () => {
+    const operation =
+      createOpenApiDocument().paths?.[
+        "/applications/{applicationId}/datasets/{datasetId}/validation"
+      ]?.get;
+    expect(operation?.responses?.["200"]).toBeDefined();
+    expect(operation?.responses?.["401"]).toBeDefined();
+    expect(operation?.responses?.["404"]).toBeDefined();
+    expect(operation?.responses?.["500"]).toBeDefined();
+
+    const invalidItem = {
+      itemId: "item-1",
+      evidenceId: "evidence-1",
+      imageUrl: "https://evidence.example/image",
+      imageWidth: 640,
+      imageHeight: 480,
+      cause: {
+        code: "formulaLabel",
+        message: "La etiqueta revisada puede interpretarse como fórmula.",
+      },
+    };
+    const response = {
+      ready: false,
+      approvedCount: 1,
+      problem: null,
+      invalidItemCount: 1,
+      invalidItems: [invalidItem],
+    };
+    expect(DatasetValidationResponseSchema.safeParse(response).success).toBe(true);
+    expect(
+      DatasetValidationResponseSchema.safeParse({
+        ...response,
+        invalidItems: Array.from({ length: 101 }, () => invalidItem),
+      }).success,
+    ).toBe(false);
   });
 });

@@ -273,9 +273,6 @@ const datasets = {
   createExport(input: Parameters<typeof createDatasetExport>[1]) {
     return createDatasetExport(db, input);
   },
-  validateForExport(input: Parameters<typeof validateDatasetForExport>[1]) {
-    return validateDatasetForExport(db, input);
-  },
   addEvidence(input: Parameters<typeof addDatasetEvidence>[1]) {
     return addDatasetEvidence(db, input);
   },
@@ -313,6 +310,9 @@ const datasets = {
   },
   saveAnnotations(input: Parameters<typeof saveDatasetItemAnnotations>[1]) {
     return saveDatasetItemAnnotations(db, input);
+  },
+  validate(applicationId: string, datasetId: string) {
+    return validateDatasetForExport(db, applicationId, datasetId);
   },
 };
 

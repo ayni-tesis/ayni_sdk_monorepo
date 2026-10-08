@@ -88,15 +88,24 @@ export function DatasetDetailView({
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [tab, setTab] = useState("evidences");
   const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState<DatasetValidationResponse | null>(null);
+  const [validation, setValidation] = useState<DatasetValidationResponse | null>(null);
+  const [validationOpen, setValidationOpen] = useState(false);
   const [validationError, setValidationError] = useState("");
-  const [activeTab, setActiveTab] = useState("evidences");
-  const [focusEvidenceId, setFocusEvidenceId] = useState<string | null>(null);
+  // The item "Revisar evidencia" brings into view once it is rendered.
+  const [revealItemId, setRevealItemId] = useState<string | null>(null);
+  // True until the dialog "Revisar evidencia" closes gives up focus, which would undo the reveal.
+  const [closingForReview, setClosingForReview] = useState(false);
+  // Remounts the filter bar so it shows filters applied from outside it.
+  const [filterBarKey, setFilterBarKey] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
   const exportsAbortRef = useRef<AbortController | null>(null);
+  const validationAbortRef = useRef<AbortController | null>(null);
+  // The closing dialog keeps its first handlers while it animates out, so they read this ref.
+  const closingForReviewRef = useRef(false);
   const retiredEvidenceIdsRef = useRef(new Set<string>());
   // The filters of the loaded items, which every later page and reload repeats.
   const appliedFiltersRef = useRef<DatasetItemFilters>({});
@@ -183,7 +192,7 @@ export function DatasetDetailView({
                 items: [
                   ...current.items,
                   ...data.items.filter(
-                    (item) => !current.items.some((existing) => existing.id === item.id),
+                    (item) => !current.items.some((loaded) => loaded.id === item.id),
                   ),
                 ],
                 nextItemOffset: data.nextItemOffset,
@@ -297,7 +306,6 @@ export function DatasetDetailView({
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence`,
         { evidenceIds: selectedIds },
       );
-      setValidationResult(null);
       setAddOpen(false);
       setSelectedIds([]);
       await loadDetail(false);
@@ -335,51 +343,98 @@ export function DatasetDetailView({
     }
   }
 
+  /** Validates the dataset for export with the rules every export applies (US-084); it changes nothing. */
   async function validateDataset() {
-    if (!canManage || application.status !== "active" || validating) return;
-    setValidating(true);
-    setValidationResult(null);
-    setValidationError("");
-    setNotice("");
-    try {
-      const { data } = await httpClient.get<DatasetValidationResponse>(`${exportsUrl}/validation`);
-      setValidationResult(data);
-      if (data.valid) setNotice("El dataset está listo para exportarse.");
-    } catch (validationError) {
-      setValidationError(errorMessage(validationError, "No pudimos validar el dataset."));
-    } finally {
-      setValidating(false);
-    }
-  }
-
-  async function revealEvidence(itemId: string) {
-    setActiveTab("evidences");
-    setItemsError("");
-    if (!detail) return;
-    itemsAbortRef.current?.abort();
+    if (validating) return;
+    validationAbortRef.current?.abort();
     const controller = new AbortController();
-    itemsAbortRef.current = controller;
-    setItemsLoading(true);
+    validationAbortRef.current = controller;
+    // A dialog replaced before it finished closing never gives focus back, so start clean.
+    closingForReviewRef.current = false;
+    setClosingForReview(false);
+    setValidating(true);
+    setValidation(null);
+    setValidationError("");
     try {
-      if (controller.signal.aborted) return;
-      const { data } = await httpClient.get<DatasetDetailResponse["items"][number]>(
-        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
+      const { data } = await httpClient.get<DatasetValidationResponse>(
+        `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/validation`,
         { signal: controller.signal },
       );
       if (controller.signal.aborted) return;
-      setDetail((current) => {
-        if (!current || current.items.some((item) => item.id === data.id)) return current;
-        return { ...current, items: [...current.items, data] };
-      });
-      setFocusEvidenceId(data.id);
-    } catch (loadError) {
+      setValidation(data);
+      setValidationOpen(!data.ready);
+    } catch (validateError) {
       if (!controller.signal.aborted) {
-        setItemsError(errorMessage(loadError, "No pudimos cargar las evidencias del dataset."));
+        setValidationError(errorMessage(validateError, "No pudimos validar el dataset."));
       }
     } finally {
-      if (!controller.signal.aborted) setItemsLoading(false);
+      if (!controller.signal.aborted) setValidating(false);
     }
   }
+
+  /**
+   * Takes the reviewer to an item that requires review in `Evidencias`. An
+   * item not loaded yet is approved, so it is fetched directly; that filter
+   * stays applied, as the bar shows.
+   */
+  async function reviewInvalidItem(itemId: string) {
+    closingForReviewRef.current = true;
+    setClosingForReview(true);
+    setValidationOpen(false);
+    setTab("evidences");
+    if (detail?.items.some((item) => item.id === itemId)) {
+      setRevealItemId(itemId);
+      return;
+    }
+    abortRef.current?.abort();
+    itemsAbortRef.current?.abort();
+    setItemsLoading(false);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const filters: DatasetItemFilters = { status: "approved" };
+    const url = `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`;
+    setFiltering(true);
+    setFilterError("");
+    setItemsError("");
+    try {
+      const { data: page } = await httpClient.get<DatasetDetailResponse>(url, {
+        params: filters,
+        signal: controller.signal,
+      });
+      let items = page.items;
+      if (!items.some((item) => item.id === itemId)) {
+        try {
+          const { data: item } = await httpClient.get<DatasetDetailResponse["items"][number]>(
+            `${url}/evidence/${encodeURIComponent(itemId)}`,
+            { signal: controller.signal },
+          );
+          items = [...items, item];
+        } catch (itemError) {
+          // The item may have been retired after validation; the approved page is still useful.
+          if (!axios.isAxiosError(itemError) || itemError.response?.status !== 404) throw itemError;
+        }
+      }
+      if (controller.signal.aborted) return;
+      appliedFiltersRef.current = filters;
+      setAppliedFilters(filters);
+      setFilterBarKey((key) => key + 1);
+      setDetail({ ...page, items });
+      if (items.some((item) => item.id === itemId)) setRevealItemId(itemId);
+    } catch (loadError) {
+      if (!controller.signal.aborted) setFilterError(errorMessage(loadError, LOAD_ERROR));
+    } finally {
+      if (!controller.signal.aborted) setFiltering(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!revealItemId || tab !== "evidences" || closingForReview) return;
+    const element = document.getElementById(datasetItemElementId(revealItemId));
+    if (!element) return;
+    element.scrollIntoView?.({ block: "center" });
+    element.focus();
+    setRevealItemId(null);
+  }, [closingForReview, revealItemId, tab]);
 
   async function removeEvidence(itemId: string) {
     if (!canManage || application.status !== "active") return;
@@ -387,7 +442,6 @@ export function DatasetDetailView({
     await httpClient.delete(
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
     );
-    setValidationResult(null);
     retiredEvidenceIdsRef.current.add(itemId);
     const filters = appliedFiltersRef.current;
     setDetail((current) => {
@@ -419,7 +473,6 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/review`,
       { status, ...(reason ? { reason } : {}) },
     );
-    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     const filters = appliedFiltersRef.current;
     setDetail((current) => {
@@ -462,7 +515,6 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/label`,
       { label },
     );
-    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) =>
       current
@@ -482,7 +534,6 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/annotations`,
       { annotations },
     );
-    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) =>
       current
@@ -502,24 +553,13 @@ export function DatasetDetailView({
   useEffect(() => {
     void loadDetail();
     void loadExports();
-    setValidationResult(null);
-    setValidationError("");
-    setFocusEvidenceId(null);
     return () => {
       abortRef.current?.abort();
       itemsAbortRef.current?.abort();
       exportsAbortRef.current?.abort();
+      validationAbortRef.current?.abort();
     };
   }, [loadDetail, loadExports]);
-
-  useEffect(() => {
-    if (activeTab !== "evidences" || !focusEvidenceId) return;
-    const item = document.getElementById(`dataset-item-${focusEvidenceId}`);
-    if (!item) return;
-    item.scrollIntoView({ behavior: "smooth", block: "center" });
-    item.focus({ preventScroll: true });
-    setFocusEvidenceId(null);
-  }, [activeTab, focusEvidenceId]);
 
   if (loading) {
     return (
@@ -603,7 +643,7 @@ export function DatasetDetailView({
         </dl>
       </header>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={tab} onValueChange={setTab}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="evidences">Evidencias</TabsTrigger>
@@ -715,6 +755,7 @@ export function DatasetDetailView({
         )}
         <TabsContent value="evidences" className="space-y-3">
           <EvidenceFilterBar
+            key={filterBarKey}
             options={detail.filterOptions}
             applied={appliedFilters}
             busy={filtering}
@@ -762,64 +803,26 @@ export function DatasetDetailView({
         </TabsContent>
         <TabsContent value="exports">
           <div className="space-y-4">
-            {canManage && application.status === "active" && (
-              <Button type="button" disabled={validating} onClick={() => void validateDataset()}>
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={validating}
+                onClick={() => void validateDataset()}
+              >
                 {validating ? "Validando dataset…" : "Validar dataset"}
               </Button>
-            )}
-            {validationError && (
-              <p role="alert" className="text-destructive text-sm">
-                {validationError}
-              </p>
-            )}
-            {validationResult && !validationResult.valid && (
-              <section className="space-y-3 rounded-md border p-4" role="alert">
-                <h3 className="font-semibold" id="dataset-validation-errors-title">
-                  Ítems que requieren revisión
-                </h3>
-                {validationResult.datasetIssue && (
-                  <p className="text-sm">{validationResult.datasetIssue}</p>
-                )}
-                {validationResult.totalIssueCount > 50 && (
-                  <p className="text-sm">
-                    Se muestran los primeros 50 de {validationResult.totalIssueCount} ítems. Corrige
-                    esos ítems y vuelve a validar para ver los siguientes.
-                  </p>
-                )}
-                {validationResult.items.length > 0 && (
-                  <ul className="space-y-3">
-                    {validationResult.items.map((issue) => (
-                      <li
-                        key={issue.itemId}
-                        className="flex flex-wrap items-start gap-3 rounded-md border p-3"
-                      >
-                        <Image
-                          src={issue.imageUrl}
-                          alt="Evidencia que requiere revisión"
-                          width={issue.imageWidth}
-                          height={issue.imageHeight}
-                          unoptimized
-                          className="max-h-32 w-auto max-w-48 rounded object-contain"
-                        />
-                        <div className="space-y-2 text-sm">
-                          <p>{issue.message}</p>
-                          <a
-                            href={`#dataset-item-${issue.itemId}`}
-                            className="font-medium text-primary underline underline-offset-4"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              void revealEvidence(issue.itemId);
-                            }}
-                          >
-                            Revisar evidencia
-                          </a>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            )}
+              {validation?.ready && (
+                <p role="status" className="text-sm">
+                  El dataset está listo para exportarse.
+                </p>
+              )}
+              {validationError && (
+                <p role="alert" className="text-destructive text-sm">
+                  {validationError}
+                </p>
+              )}
+            </div>
             {canManage &&
               application.status === "active" &&
               dataset.taskType === "classification" && (
@@ -927,8 +930,68 @@ export function DatasetDetailView({
           </div>
         </TabsContent>
       </Tabs>
+      {validation && !validation.ready && (
+        <Dialog open={validationOpen} onOpenChange={setValidationOpen}>
+          <DialogContent
+            className="max-h-[85vh] overflow-y-auto"
+            onCloseAutoFocus={(event) => {
+              if (!closingForReviewRef.current) return;
+              event.preventDefault();
+              closingForReviewRef.current = false;
+              setClosingForReview(false);
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Ítems que requieren revisión</DialogTitle>
+              <DialogDescription>
+                Corrige estas evidencias aprobadas antes de exportar el dataset.
+              </DialogDescription>
+            </DialogHeader>
+            {validation.problem && <p className="text-sm">{validation.problem.message}</p>}
+            {validation.invalidItemCount > validation.invalidItems.length && (
+              <p className="text-muted-foreground text-sm">
+                Se muestran los primeros {validation.invalidItems.length} de{" "}
+                {validation.invalidItemCount} ítems que requieren revisión.
+              </p>
+            )}
+            <ul className="space-y-3">
+              {validation.invalidItems.map((invalid) => (
+                <li key={invalid.itemId} className="flex gap-3 rounded-md border p-3">
+                  <Image
+                    src={invalid.imageUrl}
+                    alt={`Evidencia ${invalid.evidenceId}`}
+                    width={invalid.imageWidth}
+                    height={invalid.imageHeight}
+                    unoptimized
+                    className="h-20 w-auto max-w-28 rounded object-contain"
+                  />
+                  <div className="min-w-0 space-y-1 text-sm">
+                    <code className="block truncate text-xs">{invalid.evidenceId}</code>
+                    <p>{invalid.cause.message}</p>
+                    <a
+                      href={`#${datasetItemElementId(invalid.itemId)}`}
+                      className="text-primary underline-offset-4 hover:underline"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void reviewInvalidItem(invalid.itemId);
+                      }}
+                    >
+                      Revisar evidencia
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </DialogContent>
+        </Dialog>
+      )}
     </section>
   );
+}
+
+/** The element of a dataset item in `Evidencias`, which "Revisar evidencia" links to. */
+function datasetItemElementId(itemId: string) {
+  return `dataset-item-${itemId}`;
 }
 
 /**
@@ -1171,7 +1234,7 @@ function EvidenceItem({
   }
 
   return (
-    <li id={`dataset-item-${item.id}`} tabIndex={-1} className="rounded-lg border p-4">
+    <li id={datasetItemElementId(item.id)} tabIndex={-1} className="rounded-lg border p-4">
       <div className="flex flex-wrap justify-between gap-2">
         <code className="text-sm">{item.evidenceId}</code>
         <time className="text-muted-foreground text-sm" dateTime={item.capturedAt}>
