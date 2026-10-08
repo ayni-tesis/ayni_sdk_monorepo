@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final projectDirectory = Directory.current;
 
-  test('resolves ayni_sdk from the local monorepo package', () {
+  test('resolves ayni_sdk from the hosted package, not a local override', () {
     final overrides = File('${projectDirectory.path}/pubspec_overrides.yaml');
     final lockfile = File('${projectDirectory.path}/pubspec.lock');
     final lockContents = lockfile.readAsStringSync();
@@ -28,7 +28,8 @@ void main() {
 
     expect(overrides.existsSync(), isFalse);
     expect(packageStart, greaterThanOrEqualTo(0));
-    expect(packageLines, contains('source: path'));
-    expect(packageLines, contains('path: "../../packages/sdk_flutter"'));
+    expect(packageLines, contains('source: hosted'));
+    expect(packageLines, contains('url: "https://pub.dev"'));
+    expect(packageLines, contains('version: "0.4.0"'));
   });
 }

@@ -1,6 +1,6 @@
 # App móvil de validación de Ayni
 
-`apps/native` es el arnés Android de la tesis. Usa el SDK local `ayni_sdk` **0.4.0**, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
+`apps/native` es el arnés Android de la tesis. Usa `ayni_sdk` **0.4.0**, publicado en pub.dev, Android API 26 o posterior y CPU. En el APK selector, el operador ingresa la SDK Key y pulsa **Iniciar validación**. La app prepara los recursos de todos los perfiles, sincroniza cada workflow, verifica la suite completa y ejecuta las fases automáticas para integración directa y `ayni_sdk`.
 
 ## Antes de crear el APK
 
@@ -165,7 +165,7 @@ Todas las filas nuevas, también las de `S1`, `S2`, `INT-01` y `REU-01`, llevan 
 
 ## Requisitos de validación
 
-- La app no importa APIs internas del SDK; depende del paquete local `../../packages/sdk_flutter` (`ayni_sdk 0.4.0`).
+- La app no importa APIs internas del SDK; depende del paquete hospedado `ayni_sdk: 0.4.0`.
 - El SDK 0.4.0 y el arnés admiten workflows de detección S2 con `tensorIndices` (desde 0.3.1) y de segmentación SEG-01 (desde 0.4.0). El perfil S2 sigue pendiente hasta registrar y verificar sus versiones de dataset, modelos y workflow en `experiment_plan.json`.
 - La inferencia de cada lote no accede a la red. La preparación y las sincronizaciones se realizan automáticamente antes y después de las corridas.
 - La app no implementa la medición de arranque en frío, la desconexión de red del dispositivo ni la inyección de fallos del Plan; no sube el JSONL.

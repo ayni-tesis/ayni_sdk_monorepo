@@ -7,8 +7,7 @@ environment:
   sdk: ">=3.8.0 <4.0.0"
 
 dependencies:
-  ayni_sdk:
-    path: ../../packages/sdk_flutter
+  ayni_sdk: 0.4.0
   archive: ^4.3.0
   crypto: ^3.0.7
   flutter:

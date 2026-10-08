@@ -6,13 +6,13 @@ import 'package:better_fullstack_app/validation/validation_run_metadata_reader.d
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('pins the local SDK and Android API floor for the thesis harness', () {
+  test('pins the hosted SDK and Android API floor for the thesis harness', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final android = File('android/app/build.gradle.kts').readAsStringSync();
 
     expect(
       pubspec.replaceAll('\r\n', '\n'),
-      contains('  ayni_sdk:\n    path: ../../packages/sdk_flutter'),
+      matches(RegExp(r'^  ayni_sdk: 0\.4\.0$', multiLine: true)),
     );
     expect(validationSdkVersion, '0.4.0');
     expect(android, contains('compileSdk = 36'));
