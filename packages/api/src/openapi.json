@@ -4159,7 +4159,11 @@
                           },
                           "format": {
                             "type": "string",
-                            "enum": ["classification_images_csv", "detection_coco", "detection_yolo"]
+                            "enum": [
+                              "classification_images_csv",
+                              "detection_coco",
+                              "detection_yolo"
+                            ]
                           },
                           "status": {
                             "type": "string",
