@@ -227,7 +227,7 @@ void main() {
     expect(find.byKey(const ValueKey('validation-error-card')), findsOneWidget);
   });
 
-  testWidgets('PERF-01 lab launch runs one direct cold-start attempt', (
+  testWidgets('PERF-01 waits for SEG-01 instead of using another profile', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -244,7 +244,29 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(runtime.preparedConditions, [ValidationCondition.control]);
+    expect(runtime.preparedProfileConditions, isEmpty);
+    expect(runtime.runCalls, isEmpty);
+  });
+
+  testWidgets('PERF-01 lab launch runs one direct cold-start attempt', (
+    tester,
+  ) async {
+    runtime.allProfilesReady = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValidationHomePage(
+          runtime: runtime,
+          performanceTrace: const ValidationPerformanceTrace(enabled: false),
+          labLaunch: const ValidationLabLaunch(
+            condition: ValidationCondition.control,
+            runLabel: 'PERF-01-007',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(runtime.preparedProfileConditions, ['SEG-01:control']);
     expect(runtime.runCalls, ['control:PERF-01:false']);
     expect(runtime.coldStartRunLabels, ['PERF-01-007']);
     expect(runtime.syncVerificationCalls, isEmpty);
@@ -258,6 +280,7 @@ void main() {
   testWidgets('PERF-01 lab launch prepares only the SDK condition', (
     tester,
   ) async {
+    runtime.allProfilesReady = true;
     await tester.pumpWidget(
       MaterialApp(
         home: ValidationHomePage(
@@ -272,10 +295,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(runtime.preparedConditions, [ValidationCondition.treatment]);
+    expect(runtime.preparedProfileConditions, ['SEG-01:treatment']);
     expect(runtime.runCalls, ['treatment:PERF-01:false']);
     expect(runtime.coldStartRunLabels, ['PERF-01-030']);
     expect(runtime.syncVerificationCalls, [true]);
+    expect(runtime.syncProfileIds, ['SEG-01']);
     await _scrollToFinder(
       tester,
       find.byKey(const ValueKey('validation-events')),

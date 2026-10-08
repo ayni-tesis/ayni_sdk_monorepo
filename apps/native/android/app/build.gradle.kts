@@ -45,6 +45,8 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

@@ -836,6 +836,11 @@ void main() {
             ('SEG-01-PERF-04', ValidationPhase.stress, 1024),
           ],
         );
+                final stressScenario = plan.scenarios.singleWhere(
+                  (scenario) => scenario.id == 'SEG-01-PERF-04',
+                );
+                expect(stressScenario.caseIds, hasLength(300));
+                expect(stressScenario.caseIds.toSet(), hasLength(300));
       },
     );
   });
