@@ -63,6 +63,33 @@ y solo la cuenta como enviada cuando el servidor confirma que la recibió.
 | Solo la imagen JPEG optimizada de esa evidencia, sin credencial | Justo después, si el servidor responde que todavía no la tiene. | `PUT <uploadUrl>`: la URL firmada del almacenamiento de objetos que indica el servidor, un host distinto del servidor, que vence 15 minutos después. | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
 | La credencial del SDK, en el encabezado `Authorization`, y el ID de la evidencia, en la ruta | Después de subir la imagen, para que el servidor la compruebe y confirme la recepción. | `POST /sdk/evidence/<evidenceId>/complete`, en el servidor de Ayni (`serverUrl`). | Sí, solo la evidencia creada con `evidenceConsent: true` y con la política de recolección habilitada |
 
+### Artefactos fuente de validación
+
+El cliente anfitrión puede adjuntar a una traza recibida un archivo binario
+fuente de Macrobenchmark o Perfetto. Esta carga usa la credencial SDK solo en
+las solicitudes autenticadas al servidor de Ayni; el cliente envía el archivo
+directamente a una URL temporal de R2 sin reenviar esa credencial y detiene la
+carga ante cualquier redirección. La URL firmada y sus parámetros no se guardan
+en la traza ni se muestran en registros.
+
+El servidor admite únicamente una traza nativa de Perfetto en protobuf binario
+(`.perfetto-trace` o `.pftrace`), identificada por su contenido. No acepta el
+JSON de métricas de Macrobenchmark, HTML de Systrace, SVG, JavaScript ni otros
+formatos ejecutables. Registra el formato verificado, tamaño, SHA-256, nombre
+lógico y, si se informan, herramienta y versión productoras. El objeto y su
+clave permanecen privados. El límite de un PUT directo es 4.995 GiB; cargas
+multipart no están habilitadas.
+
+El archivo se adjunta solo a una traza vigente de la aplicación de la
+credencial, mientras la política de telemetría está habilitada al iniciar y
+confirmar la carga. La app anfitriona debe tener por separado el permiso o la
+base de servicio aplicable para la validación y enviarlo solo cuando la persona
+lo haya autorizado, según corresponda. `sdkImprovement` trata la mejora del
+SDK y no autoriza la validación; tampoco se agrega un control de consentimiento
+de Ayni para estos artefactos. Los archivos temporales de una carga no
+confirmada se eliminan en la siguiente purga tras vencer su URL; la purga corre
+al ingresar otra traza y, si `CRON_SECRET` está configurado, en la tarea diaria.
+
 ### Descarga del dataset de validación
 
 `ayni_sdk.sync()` no descarga datasets. Para repetir las corridas de validación,
@@ -96,7 +123,8 @@ las trazas ya guardadas, contado desde su recepción: al acortarlo, las que lo
 superan vencen en ese momento; al alargarlo, una traza ya vencida no vuelve.
 
 Una traza vencida deja de aparecer en la lista, los filtros, el detalle, la
-exportación JSONL y las métricas de trazas del dashboard. El servidor la elimina
+exportación JSONL y las métricas de trazas del dashboard. El servidor elimina
+también sus artefactos confirmados y los objetos de carga temporal, y elimina la traza
 al recibir otra traza y en una tarea diaria, que solo se ejecuta si el
 despliegue del servidor configura `CRON_SECRET` con al menos 16 caracteres (un
 valor más corto impide que el servidor arranque); sin ese secreto, la traza

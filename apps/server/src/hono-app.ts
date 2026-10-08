@@ -106,6 +106,9 @@ import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
+import { r2SdkTraceArtifactStorage } from "./sdk-trace-artifact-storage";
+import { createSdkTraceArtifactStore } from "./sdk-trace-artifact-store";
+import { createSdkTraceArtifactsApp } from "./sdk-trace-artifacts";
 import {
   getApplicationTrace,
   listApplicationTraceRecords,
@@ -481,13 +484,15 @@ const sdkEvidenceService = createSdkEvidenceService({
   storage: r2EvidenceStorage,
 });
 
+const sdkTraceArtifacts = createSdkTraceArtifactStore(db, r2SdkTraceArtifactStorage);
+
 const sdkTraces = {
   verify(secret: string) {
     return useSdkCredential(db, secret);
   },
   get: (applicationId: string) => getTelemetryPolicy(db, applicationId),
   store: (applicationId: string, trace: SdkWorkflowTrace, retentionDays: 7 | 30 | 90) =>
-    storeSdkTrace(db, { applicationId, trace, retentionDays }),
+    storeSdkTrace(db, { applicationId, trace, retentionDays }, sdkTraceArtifacts),
 };
 
 const workspaces = {
@@ -1081,14 +1086,25 @@ app.route(
 );
 app.route(
   "/",
+  createSdkTraceArtifactsApp({
+    credentials: sdkTraces,
+    policies: sdkTraces,
+    artifacts: sdkTraceArtifacts,
+  }),
+);
+app.route(
+  "/",
   createApplicationTracesApp({
     getSession: getCurrentTermsSession,
     applications,
     traces: {
       getMetrics: (query) => getApplicationTraceMetrics(db, query),
       list: (query) => listApplicationTraceSummaries(db, query),
-      get: (applicationId, traceId) => getApplicationTrace(db, applicationId, traceId),
-      listRecords: (query) => listApplicationTraceRecords(db, query),
+      get: (applicationId, traceId) =>
+        getApplicationTrace(db, applicationId, traceId, sdkTraceArtifacts),
+      listRecords: (query) => listApplicationTraceRecords(db, query, sdkTraceArtifacts),
+      getArtifact: (applicationId, traceId, artifactId) =>
+        sdkTraceArtifacts.getCompletedArtifact(applicationId, traceId, artifactId),
     },
   }),
 );
@@ -1096,7 +1112,7 @@ app.route(
   "/",
   createTelemetryRetentionApp({
     cronSecret: env.CRON_SECRET,
-    traces: { purgeExpired: () => purgeExpiredSdkTraces(db) },
+    traces: { purgeExpired: () => purgeExpiredSdkTraces(db, new Date(), sdkTraceArtifacts) },
   }),
 );
 

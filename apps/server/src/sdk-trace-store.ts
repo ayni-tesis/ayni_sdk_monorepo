@@ -20,6 +20,7 @@ import {
 import { and, desc, eq, gt, gte, inArray, lt, lte, ne, or, type SQL, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
+import type { SdkTraceArtifactReader } from "./sdk-trace-artifact-store";
 
 export type SdkTraceDatabase = PostgresJsDatabase<typeof schema>;
 
@@ -172,6 +173,7 @@ export async function storeSdkTrace(
     trace,
     retentionDays,
   }: { applicationId: string; trace: SdkWorkflowTrace; retentionDays: TelemetryRetentionDays },
+  artifactRetention?: { purgeExpired: (now?: Date) => Promise<{ deletedTraces: number }> },
 ): Promise<StoreSdkTraceResult> {
   const now = new Date();
   const contentSha256 = createHash("sha256").update(canonicalJson(trace)).digest("hex");
@@ -196,7 +198,7 @@ export async function storeSdkTrace(
   });
 
   // The daily retention task (US-112) also purges applications that stop sending traces.
-  await purgeExpiredSdkTraces(database, now);
+  await purgeExpiredSdkTraces(database, now, artifactRetention);
 
   // A retention change (US-112) locks the application FOR UPDATE, then the
   // policy. Locking the application first, FOR KEY SHARE as the foreign key
@@ -248,7 +250,9 @@ export async function storeSdkTrace(
 export async function purgeExpiredSdkTraces(
   database: Pick<SdkTraceDatabase, "delete">,
   now = new Date(),
-): Promise<{ deletedTraces: number }> {
+  artifactRetention?: { purgeExpired: (now?: Date) => Promise<{ deletedTraces: number }> },
+): Promise<{ deletedTraces: number; deletedArtifacts?: number; deletedPendingUploads?: number }> {
+  if (artifactRetention) return artifactRetention.purgeExpired(now);
   const deleted = await database.delete(sdkTrace).where(lte(sdkTrace.expiresAt, now));
   return { deletedTraces: deleted.count };
 }
@@ -336,6 +340,7 @@ export async function getApplicationTrace(
   database: SdkTraceDatabase,
   applicationId: string,
   traceId: string,
+  artifacts?: SdkTraceArtifactReader,
 ): Promise<ApplicationTraceRecord | undefined> {
   const [row] = await database
     .select({
@@ -355,11 +360,14 @@ export async function getApplicationTrace(
     .limit(1);
   if (!row) return;
 
+  const artifactMap = await artifacts?.listCompletedArtifacts(applicationId, [traceId]);
+
   const parsed = applicationTraceRecordSchema.safeParse({
     source: row.source,
     receivedAt: iso(row.receivedAt),
     expiresAt: iso(row.expiresAt),
     trace: row.trace,
+    artifacts: artifactMap?.get(traceId) ?? [],
   });
   return parsed.success ? parsed.data : undefined;
 }
@@ -372,6 +380,7 @@ export async function listApplicationTraceRecords(
     limit,
     ...filters
   }: ApplicationTracePageQuery & { applicationId: string },
+  artifacts?: SdkTraceArtifactReader,
 ): Promise<ApplicationTraceRecordPage> {
   const rows = await database
     .select({
@@ -387,12 +396,17 @@ export async function listApplicationTraceRecords(
     .limit(limit + 1);
 
   const { pageRows, nextCursor } = tracePage(rows, limit);
+  const artifactMap = await artifacts?.listCompletedArtifacts(
+    applicationId,
+    pageRows.map((row) => row.traceId),
+  );
   const records = pageRows.flatMap((row) => {
     const parsed = applicationTraceRecordSchema.safeParse({
       source: row.source,
       receivedAt: iso(row.receivedAt),
       expiresAt: iso(row.expiresAt),
       trace: row.trace,
+      artifacts: artifactMap?.get(row.traceId) ?? [],
     });
     return parsed.success ? [parsed.data] : [];
   });

@@ -10,6 +10,8 @@ describe("sdkContract", () => {
     expect(Object.keys(sdkContract(document).paths)).toEqual([
       "/sdk/consents",
       "/sdk/traces",
+      "/sdk/traces/{traceId}/artifacts",
+      "/sdk/traces/{traceId}/artifacts/{artifactId}/complete",
       "/sdk/telemetry-policy",
       "/sdk/collection-policy",
       "/sdk/evidence",

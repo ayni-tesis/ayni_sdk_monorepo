@@ -190,6 +190,14 @@ describe("Estados y errores (US-146)", () => {
       "telemetryDisabled",
       "traceConflict",
       "traceTooLarge",
+      "invalidArtifact",
+      "traceNotFound",
+      "artifactTooLarge",
+      "invalidArtifactContent",
+      "artifactNotFound",
+      "artifactUploadExpired",
+      "artifactUploadInProgress",
+      "artifactUploadChanged",
       "invalidEvidence",
       "collectionDisabled",
       "evidenceSourceNotFound",
@@ -215,6 +223,14 @@ describe("Estados y errores (US-146)", () => {
     ];
     for (const row of rows) {
       const code = (row[0] ?? "").replace(/`/g, "");
+      if (
+        code === "traceNotFound" ||
+        code.startsWith("artifact") ||
+        code.startsWith("invalidArtifact")
+      ) {
+        expect(row.at(-1), row[0]).toContain("upload_validation_artifact.dart");
+        continue;
+      }
       if (code.startsWith("dataset")) {
         expect(row.at(-1), row[0]).toContain("cliente de validación");
         continue;

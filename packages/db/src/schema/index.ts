@@ -14,6 +14,7 @@ export * from "./sdk-consent-receipt";
 export * from "./sdk-credential";
 export * from "./sdk-evidence";
 export * from "./sdk-trace";
+export * from "./sdk-trace-artifact";
 export * from "./task";
 export * from "./telemetry-policy";
 export * from "./workflow";

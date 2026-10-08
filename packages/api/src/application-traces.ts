@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { safeTraceVersionSchema, sdkTraceSchema } from "./sdk-trace";
+import { sdkTraceArtifactMetadataSchema } from "./sdk-trace-artifact";
 
 export const APPLICATION_TRACE_PAGE_SIZE = 50;
 export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;
@@ -107,6 +108,7 @@ export const applicationTraceRecordSchema = z.strictObject({
   receivedAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   trace: sdkTraceSchema,
+  artifacts: z.array(sdkTraceArtifactMetadataSchema).optional(),
 });
 
 export const applicationTraceListResponseSchema = z.strictObject({

@@ -74,6 +74,7 @@ export async function downloadFile(key: string): Promise<{
   body: ReadableStream | null;
   contentType?: string;
   contentLength?: number;
+  etag?: string;
   metadata?: Record<string, string>;
 }> {
   const input: GetObjectCommandInput = {
@@ -88,6 +89,7 @@ export async function downloadFile(key: string): Promise<{
     body: response.Body?.transformToWebStream() ?? null,
     contentType: response.ContentType,
     contentLength: response.ContentLength,
+    etag: response.ETag,
     metadata: response.Metadata,
   };
 }
@@ -219,11 +221,13 @@ export async function getFileMetadata(key: string): Promise<{
 export async function copyFile(
   sourceKey: string,
   destinationKey: string,
+  options?: { sourceETag?: string },
 ): Promise<{ key: string; etag?: string }> {
   const command = new CopyObjectCommand({
     Bucket: BUCKET_NAME,
     CopySource: `${BUCKET_NAME}/${sourceKey}`,
     Key: destinationKey,
+    CopySourceIfMatch: options?.sourceETag,
   });
 
   const response = await r2Client.send(command);

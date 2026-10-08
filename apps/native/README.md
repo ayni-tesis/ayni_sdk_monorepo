@@ -132,6 +132,24 @@ Primero instala y abre el APK selector. Configura la SDK Key y deja que descargu
 
 El módulo lanza 30 arranques en frío para `control` y 30 para `treatment`. Guarda una fila `PERF-01-001` a `PERF-01-030` por condición en `validation/runs.jsonl`; un identificador pareado nuevo distingue ejecuciones repetidas del benchmark. AndroidX registra `StartupTimingMetric`, el intervalo desde el inicio del proceso hasta terminar la primera inferencia y la sección `runCase` por separado. El intervalo completo incluye la preparación de recursos y la sincronización SDK; `runCase` excluye esa preparación y la escritura JSONL. Mantén la misma red durante las corridas. Conserva los JSON y archivos Perfetto generados por el test junto con el JSONL exportado desde la app.
 
+Para adjuntar el archivo fuente, usa el `.perfetto-trace` o `.pftrace` que generó Macrobenchmark, identifica el UUID de la traza recibida en el dashboard y ejecuta el uploader desde `apps/native`. Configura `AYNI_SDK_CREDENTIAL` en el entorno del proceso con una credencial activa; no la pases como argumento ni la guardes en el benchmark, sus intents o archivos de salida. El cliente lee el archivo por streaming, calcula su SHA-256 y carga el binario sin credencial a la URL firmada; no sigue redirecciones. El servidor vuelve a comprobar tamaño, hash y formato antes de vincularlo. Solo se admite el PUT directo de hasta 4.995 GiB.
+
+```powershell
+dart run bin/upload_validation_artifact.dart `
+  --server-url https://ayni-sdk-monorepo-server.vercel.app `
+  --trace-id <uuid-de-la-traza> `
+  --file <ruta-al-archivo.perfetto-trace> `
+  --logical-name PERF-01-control.perfetto-trace `
+  --producer-tool Macrobenchmark
+```
+
+La traza debe pertenecer a la aplicación de esa credencial, estar vigente y
+tener la política de telemetría habilitada. El permiso de validación se gestiona
+por separado en la app anfitriona; la decisión `sdkImprovement` no autoriza
+estos archivos. El dashboard sirve las descargas como adjuntos a miembros de la
+aplicación, y conserva los archivos el mismo periodo que la traza (7, 30 o 90
+días). No adjuntes los JSON de métricas de Macrobenchmark.
+
 Desde `apps/native/android` en PowerShell, con el JDK de Android Studio disponible y el teléfono visible en `adb devices`, ejecuta:
 
 ```powershell

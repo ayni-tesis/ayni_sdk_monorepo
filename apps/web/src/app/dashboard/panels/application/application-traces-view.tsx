@@ -57,6 +57,7 @@ export function ApplicationTracesView({ application }: { application: Applicatio
   const [record, setRecord] = useState<ApplicationTraceRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [downloadingArtifactId, setDownloadingArtifactId] = useState<string | null>(null);
   const detailController = useRef<AbortController | null>(null);
 
   const cursor = cursorHistory[pageIndex];
@@ -130,6 +131,29 @@ export function ApplicationTracesView({ application }: { application: Applicatio
       setError(errorMessage(exportError, "No pudimos exportar las trazas."));
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function downloadArtifact(
+    traceId: string,
+    artifact: NonNullable<ApplicationTraceRecord["artifacts"]>[number],
+  ) {
+    setDownloadingArtifactId(artifact.artifactId);
+    try {
+      const { data } = await httpClient.get<Blob>(
+        `/applications/${application.id}/traces/${traceId}/artifacts/${artifact.artifactId}`,
+        { responseType: "blob" },
+      );
+      const url = URL.createObjectURL(data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = artifact.logicalName;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (downloadError) {
+      setDetailError(errorMessage(downloadError, "No pudimos descargar el artefacto."));
+    } finally {
+      setDownloadingArtifactId(null);
     }
   }
 
@@ -430,6 +454,51 @@ export function ApplicationTracesView({ application }: { application: Applicatio
           {detailLoading && <p role="status">Cargando registro…</p>}
           {detailError && <p role="alert">{detailError}</p>}
           {record && <TraceErrorSection record={record} />}
+          {record && (
+            <section aria-labelledby="trace-artifacts-title" className="space-y-3">
+              <h4 id="trace-artifacts-title" className="font-semibold">
+                Artefactos de validación
+              </h4>
+              {(record.artifacts ?? []).length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  Esta traza no tiene artefactos adjuntos.
+                </p>
+              ) : (
+                <ul className="divide-y rounded-md border" aria-label="Artefactos de la traza">
+                  {(record.artifacts ?? []).map((artifact) => (
+                    <li
+                      key={artifact.artifactId}
+                      className="flex flex-wrap items-center justify-between gap-3 p-3"
+                    >
+                      <div className="min-w-0 space-y-1 text-sm">
+                        <p className="break-all font-medium">{artifact.logicalName}</p>
+                        <p className="text-muted-foreground">
+                          Perfetto · {new Intl.NumberFormat("es").format(artifact.byteLength)} bytes
+                          · SHA-256 {artifact.sha256}
+                        </p>
+                        {(artifact.producerTool || artifact.producerVersion) && (
+                          <p className="text-muted-foreground">
+                            {artifact.producerTool ?? "Herramienta"}
+                            {artifact.producerVersion ? ` ${artifact.producerVersion}` : ""}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={downloadingArtifactId !== null}
+                        onClick={() => void downloadArtifact(record.trace.traceId, artifact)}
+                      >
+                        {downloadingArtifactId === artifact.artifactId
+                          ? "Descargando…"
+                          : "Descargar"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           {record && (
             <dl className="grid gap-2 text-sm sm:grid-cols-2">
               <div>
