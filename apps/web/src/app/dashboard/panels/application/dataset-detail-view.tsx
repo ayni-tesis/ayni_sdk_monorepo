@@ -76,12 +76,6 @@ const EXPORT_FORMAT_COPY: Record<
     shortName: "YOLO",
   },
 };
-const YOLO_EXPORT_ERRORS = {
-  datasetExportNeedsTwoItems:
-    "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
-  datasetExportNoYoloClasses:
-    "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
-} as const;
 
 export type DatasetDetailViewProps = {
   application: Application;
@@ -432,7 +426,7 @@ export function DatasetDetailView({
         responseData?.code === "datasetExportNeedsTwoItems" ||
         responseData?.code === "datasetExportNoYoloClasses"
       ) {
-        setExportError(YOLO_EXPORT_ERRORS[responseData.code]);
+        setExportError("Corrige las anotaciones indicadas antes de exportar.");
       } else {
         setExportError(errorMessage(saveError, EXPORT_FORMAT_COPY[format].failure));
       }

@@ -1469,16 +1469,10 @@ describe("DatasetDetailView", () => {
     });
 
     it.each([
-      [
-        "datasetExportNeedsTwoItems",
-        "Se necesitan al menos dos imágenes aprobadas para separar train y val.",
-      ],
-      [
-        "datasetExportNoYoloClasses",
-        "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
-      ],
+      ["datasetExportNeedsTwoItems", "Corrige las anotaciones indicadas antes de exportar."],
+      ["datasetExportNoYoloClasses", "Corrige las anotaciones indicadas antes de exportar."],
       ["datasetExportInvalidAnnotations", "Corrige las anotaciones indicadas antes de exportar."],
-    ])("shows the specific YOLO export error %s", async (code, message) => {
+    ])("shows the specified YOLO export guidance for %s", async (code, message) => {
       postMock.mockRejectedValueOnce({
         isAxiosError: true,
         response: { data: { code, invalidItemCount: 0, invalidItems: [] } },
