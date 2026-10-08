@@ -22,7 +22,7 @@ This file provides context about the project for AI assistants.
 
 ### Documentation site
 
-- `apps/docs`: Astro 7 + Starlight, static output deployed on Vercel (project `ayni-docs`, root `apps/docs`) without an adapter; see `docs/adr/0002-sitio-documentacion-astro-starlight-vercel.md`
+- `apps/docs`: Astro 7 + Starlight, static output deployed on Vercel at `https://ayni-sdk-monorepo-docs.vercel.app` (root `apps/docs`, the `site` in `astro.config.mjs`) without an adapter; see `docs/adr/0002-sitio-documentacion-astro-starlight-vercel.md`
 - Sidebar groups live in `apps/docs/src/navigation.ts` and autogenerate from `src/content/docs/<group>/`; UI string overrides in `src/content/i18n/es.json`; theme tokens in `src/styles/theme.css` (contrast checked by `src/theme.test.ts`)
 - Pages document only shipped behavior (epic rule, `docs/epicas/documentacion-sdk/README.md`)
 - Dart snippets are never written in a page: they live between `// #region <name>` markers in `packages/sdk_flutter/example/*.dart` (checked by the SDK CI job's `dart analyze`), `src/examples/` exposes them through `exampleRegion`, and `.mdx` pages render them with Starlight's `<Code>` (US-139 quick start)

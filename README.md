@@ -52,7 +52,7 @@ The SDK documentation site (Astro + Starlight) runs on port 3002. Search only wo
 bun run --filter docs dev
 ```
 
-The landing and the dashboard link to it through `NEXT_PUBLIC_DOCS_URL` (default `http://localhost:3002`). Set it to the published site's URL when deploying `apps/web`. The linked pages and anchors live in `apps/web/src/lib/docs-pages.ts`, and the docs build fails when one of them no longer exists.
+The landing and the dashboard link to it through `NEXT_PUBLIC_DOCS_URL` (default `http://localhost:3002`). Set it to the published site's URL (`https://ayni-sdk-monorepo-docs.vercel.app`) for every `apps/web` deployment; as a `NEXT_PUBLIC_*` variable it is inlined at build time, so a change needs a redeploy. The linked pages and anchors live in `apps/web/src/lib/docs-pages.ts`, and the docs build fails when one of them no longer exists.
 
 `bun run verify` in `apps/docs` runs every documentation check of CI's `Verificar documentación` step (Dart examples, contracts, OpenAPI, internal links and anchors, and a non-blocking check of external links); see `apps/docs/README.md`.
 
