@@ -8,6 +8,7 @@ import type {
   DatasetListItem,
   DatasetListResponse,
   DatasetReviewResponse,
+  DatasetValidationResponse,
 } from "@ayni/api/datasets";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -79,6 +80,26 @@ const reviewed: DatasetReviewResponse = {
   reason: "Imagen borrosa",
 };
 
+const invalidValidation: DatasetValidationResponse = {
+  ready: false,
+  approvedCount: 1,
+  problem: null,
+  invalidItemCount: 1,
+  invalidItems: [
+    {
+      itemId: "item-1",
+      evidenceId: "evidence-1",
+      imageUrl: "https://evidence.example/image",
+      imageWidth: 640,
+      imageHeight: 480,
+      cause: {
+        code: "reviewedLabelRequired",
+        message: "La evidencia aprobada no tiene etiqueta revisada.",
+      },
+    },
+  ],
+};
+
 const datasetDetail: DatasetDetailResponse = {
   dataset: datasetListItem,
   items: [datasetItem],
@@ -134,6 +155,10 @@ function makeApp({
   list = async (_applicationId: string): Promise<DatasetListResponse> => ({
     datasets: [datasetListItem],
   }),
+  validate = async (
+    _applicationId: string,
+    _datasetId: string,
+  ): Promise<DatasetValidationResponse | null> => invalidValidation,
 }: {
   session?: { user: { id: string } } | null;
   application?:
@@ -161,6 +186,10 @@ function makeApp({
     input: SaveDatasetItemAnnotationsInput,
   ) => Promise<SaveDatasetItemAnnotationsResult>;
   list?: (applicationId: string) => Promise<DatasetListResponse>;
+  validate?: (
+    applicationId: string,
+    datasetId: string,
+  ) => Promise<DatasetValidationResponse | null>;
 } = {}) {
   const createMock = vi.fn(create);
   const getMock = vi.fn(get);
@@ -171,6 +200,7 @@ function makeApp({
   const saveLabelMock = vi.fn(saveLabel);
   const saveAnnotationsMock = vi.fn(saveAnnotations);
   const listMock = vi.fn(list);
+  const validateMock = vi.fn(validate);
   const app = createDatasetsApp({
     getSession: async () => session,
     applications: {
@@ -187,6 +217,7 @@ function makeApp({
       reviewEvidence: reviewEvidenceMock,
       saveLabel: saveLabelMock,
       saveAnnotations: saveAnnotationsMock,
+      validate: validateMock,
     },
   });
   return {
@@ -200,6 +231,7 @@ function makeApp({
     reviewEvidenceMock,
     saveAnnotationsMock,
     saveLabelMock,
+    validateMock,
   };
 }
 
@@ -212,6 +244,62 @@ function jsonRequest(body: unknown, method = "POST") {
 }
 
 describe("application datasets", () => {
+  it("lets any member validate a dataset for export, including in archived applications", async () => {
+    const { app, validateMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request("/applications/app-1/datasets/dataset-1/validation");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(invalidValidation);
+    expect(validateMock).toHaveBeenCalledWith("app-1", "dataset-1");
+
+    const archived = makeApp({
+      membershipRole: "member",
+      application: { ...activeApplication, status: "archived" },
+    });
+    const archivedResponse = await archived.app.request(
+      "/applications/app-1/datasets/dataset-1/validation",
+    );
+    expect(archivedResponse.status).toBe(200);
+  });
+
+  it("hides foreign or missing datasets from validation and reports failures", async () => {
+    const unauthenticated = makeApp({ session: null });
+    expect(
+      (await unauthenticated.app.request("/applications/app-1/datasets/dataset-1/validation"))
+        .status,
+    ).toBe(401);
+    expect(unauthenticated.validateMock).not.toHaveBeenCalled();
+
+    const foreign = makeApp({ application: null });
+    const hiddenApplication = await foreign.app.request(
+      "/applications/app-1/datasets/dataset-1/validation",
+    );
+    expect(hiddenApplication.status).toBe(404);
+    expect(await hiddenApplication.json()).toMatchObject({
+      message: "No encontramos este dataset.",
+    });
+    expect(foreign.validateMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({ validate: async () => null });
+    const hiddenDataset = await missing.app.request(
+      "/applications/app-1/datasets/foreign-id/validation",
+    );
+    expect(hiddenDataset.status).toBe(404);
+    expect(await hiddenDataset.json()).toMatchObject({ message: "No encontramos este dataset." });
+
+    const failing = makeApp({
+      validate: async () => {
+        throw new Error("database down");
+      },
+    });
+    const failed = await failing.app.request("/applications/app-1/datasets/dataset-1/validation");
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toEqual({
+      message: "No pudimos validar el dataset.",
+      code: "datasetValidationFailed",
+    });
+  });
+
   it("returns a dataset detail only to members of its owning application", async () => {
     const { app, getMock } = makeApp({ membershipRole: "member" });
     const response = await app.request("/applications/app-1/datasets/dataset-1");

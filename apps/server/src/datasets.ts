@@ -10,6 +10,7 @@ import {
   DatasetPageQuerySchema,
   DatasetReviewRequestSchema,
   DatasetTaskTypeSchema,
+  type DatasetValidationResponse,
   parseDatasetAnnotationsRequest,
   parseDatasetItemsQuery,
 } from "@ayni/api/datasets";
@@ -67,11 +68,39 @@ type Dependencies = {
     saveAnnotations: (
       input: SaveDatasetItemAnnotationsInput,
     ) => Promise<SaveDatasetItemAnnotationsResult>;
+    validate: (
+      applicationId: string,
+      datasetId: string,
+    ) => Promise<DatasetValidationResponse | null>;
   };
 };
 
 export function createDatasetsApp({ getSession, applications, datasets }: Dependencies) {
   const app = new Hono();
+
+  // Validation only reads, so any member can run it, as reviewing is open to every member (US-084).
+  app.get("/applications/:applicationId/datasets/:datasetId/validation", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+
+    try {
+      const validation = await datasets.validate(application.id, c.req.param("datasetId"));
+      if (!validation) return c.json({ message: "No encontramos este dataset." }, 404);
+      return c.json(validation);
+    } catch {
+      return c.json(
+        { message: "No pudimos validar el dataset.", code: "datasetValidationFailed" },
+        500,
+      );
+    }
+  });
 
   app.get("/applications/:applicationId/datasets/:datasetId/exports", async (c) => {
     const session = await getSession(c.req.raw.headers);

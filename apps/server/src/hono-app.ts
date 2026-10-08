@@ -31,7 +31,11 @@ import { type Application, createApp, toApplication } from "./applications";
 import { redirectAfterEmailVerificationFailure, verificationSucceeded } from "./auth-verification";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
-import { createDatasetExport, listDatasetExports } from "./dataset-export-store";
+import {
+  createDatasetExport,
+  listDatasetExports,
+  validateDatasetForExport,
+} from "./dataset-export-store";
 import {
   addDatasetEvidence,
   createDataset,
@@ -302,6 +306,9 @@ const datasets = {
   },
   saveAnnotations(input: Parameters<typeof saveDatasetItemAnnotations>[1]) {
     return saveDatasetItemAnnotations(db, input);
+  },
+  validate(applicationId: string, datasetId: string) {
+    return validateDatasetForExport(db, applicationId, datasetId);
   },
 };
 

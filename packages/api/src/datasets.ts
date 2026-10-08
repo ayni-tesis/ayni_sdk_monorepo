@@ -231,6 +231,45 @@ export const DatasetExportListResponseSchema = z
   .object({ exports: z.array(DatasetExportSchema) })
   .strict();
 export const DatasetExportResponseSchema = z.object({ export: DatasetExportSchema }).strict();
+/** Why an approved item cannot be exported (US-084); see `checkDatasetForExport`. */
+export const DatasetItemCauseCodeSchema = z.enum([
+  "reviewedLabelRequired",
+  "formulaLabel",
+  "reviewedAnnotationsRequired",
+  "invalidAnnotations",
+]);
+/** The most invalid items a dataset validation lists; `invalidItemCount` counts them all. */
+export const DATASET_VALIDATION_ITEMS_MAX = 100;
+export const DatasetValidationItemSchema = z
+  .object({
+    itemId: z.string(),
+    evidenceId: z.string(),
+    imageUrl: z.string().url(),
+    imageWidth: z.number().int().positive(),
+    imageHeight: z.number().int().positive(),
+    cause: z.object({ code: DatasetItemCauseCodeSchema, message: z.string() }).strict(),
+  })
+  .strict();
+export const DatasetValidationResponseSchema = z
+  .object({
+    ready: z
+      .boolean()
+      .describe("true si el dataset tiene evidencias aprobadas y todas pueden exportarse."),
+    approvedCount: z.number().int().nonnegative(),
+    problem: z
+      .object({ code: z.literal("noApprovedItems"), message: z.string() })
+      .strict()
+      .nullable()
+      .describe("Causa que impide exportar el dataset completo; null si no hay ninguna."),
+    invalidItemCount: z.number().int().nonnegative(),
+    invalidItems: z
+      .array(DatasetValidationItemSchema)
+      .max(DATASET_VALIDATION_ITEMS_MAX)
+      .describe(
+        `Los primeros ${DATASET_VALIDATION_ITEMS_MAX} ítems aprobados que requieren revisión, en el orden del dataset, con la causa de cada uno.`,
+      ),
+  })
+  .strict();
 export const DatasetAnnotationsRequestSchema = z
   .object({ annotations: DatasetAnnotationsSchema })
   .strict();
@@ -266,6 +305,8 @@ export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
 export type DatasetExport = z.infer<typeof DatasetExportSchema>;
 export type DatasetExportListResponse = z.infer<typeof DatasetExportListResponseSchema>;
 export type DatasetExportResponse = z.infer<typeof DatasetExportResponseSchema>;
+export type DatasetValidationItem = z.infer<typeof DatasetValidationItemSchema>;
+export type DatasetValidationResponse = z.infer<typeof DatasetValidationResponseSchema>;
 export type DatasetBox = z.infer<typeof DatasetBoxSchema>;
 export type DatasetAnnotation = z.infer<typeof DatasetAnnotationSchema>;
 export type DatasetAnnotationsRequest = z.infer<typeof DatasetAnnotationsRequestSchema>;
@@ -314,6 +355,82 @@ export function parseDatasetItemsQuery(query: Record<string, string>):
       };
 }
 
+/**
+ * Why a dataset or one of its approved items cannot be exported (US-084).
+ * `noApprovedItems` is about the whole dataset; the others name one item.
+ */
+export const DATASET_EXPORT_CHECK_CAUSES = {
+  noApprovedItems: "El dataset no tiene evidencias aprobadas para exportar.",
+  reviewedLabelRequired: "La evidencia aprobada no tiene etiqueta revisada.",
+  formulaLabel: "La etiqueta revisada puede interpretarse como fórmula.",
+  reviewedAnnotationsRequired: "La evidencia aprobada no tiene anotaciones revisadas.",
+  invalidAnnotations: DATASET_ANNOTATIONS_ERRORS.invalidAnnotations,
+} as const;
+export type DatasetItemCauseCode = z.infer<typeof DatasetItemCauseCodeSchema>;
+export type DatasetItemCause = { code: DatasetItemCauseCode; message: string };
+export type DatasetExportProblem = {
+  code: "noApprovedItems";
+  message: (typeof DATASET_EXPORT_CHECK_CAUSES)["noApprovedItems"];
+};
+
+/** A label a spreadsheet would run as a formula once written to a CSV cell. */
+const FORMULA_LABEL = /^\s*[=+@-]/u;
+
+/** The fields of a dataset item that decide whether it can be exported. */
+export type DatasetExportCandidate = {
+  reviewStatus: z.infer<typeof DatasetReviewStatusSchema>;
+  reviewedLabel: string | null;
+  reviewedAnnotations: unknown;
+};
+
+function itemCause(taskType: DatasetTaskType, item: DatasetExportCandidate) {
+  if (taskType === "classification") {
+    if (!item.reviewedLabel?.trim()) return cause("reviewedLabelRequired");
+    if (FORMULA_LABEL.test(item.reviewedLabel)) return cause("formulaLabel");
+    return null;
+  }
+  if (item.reviewedAnnotations === null) return cause("reviewedAnnotationsRequired");
+  const parsed = parseDatasetAnnotationsRequest({ annotations: item.reviewedAnnotations });
+  return parsed.success
+    ? null
+    : { code: "invalidAnnotations" as const, message: parsed.error.message };
+}
+
+function cause(code: Exclude<DatasetItemCauseCode, "invalidAnnotations">): DatasetItemCause {
+  return { code, message: DATASET_EXPORT_CHECK_CAUSES[code] };
+}
+
+/**
+ * Checks a dataset's items against what an export needs (US-084), reading only
+ * the approved ones and only their reviewed ground truth, never the
+ * prediction: a classification needs a nonblank `reviewedLabel` that is not a
+ * formula, and a detection needs `reviewedAnnotations` whose every box is
+ * valid (`[]`, an image without objects, is valid). Validation and every export
+ * use it, so they cannot disagree. It reads its input and changes nothing.
+ */
+export function checkDatasetForExport<Item extends DatasetExportCandidate>(
+  taskType: DatasetTaskType,
+  items: readonly Item[],
+): {
+  approvedItems: Item[];
+  problem: DatasetExportProblem | null;
+  invalidItems: { item: Item; cause: DatasetItemCause }[];
+} {
+  const approvedItems = items.filter(({ reviewStatus }) => reviewStatus === "approved");
+  const invalidItems = approvedItems.flatMap((item) => {
+    const found = itemCause(taskType, item);
+    return found ? [{ item, cause: found }] : [];
+  });
+  return {
+    approvedItems,
+    problem:
+      approvedItems.length === 0
+        ? { code: "noApprovedItems", message: DATASET_EXPORT_CHECK_CAUSES.noApprovedItems }
+        : null,
+    invalidItems,
+  };
+}
+
 function errorResponse(description: string) {
   return {
     description,
@@ -356,6 +473,33 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       ),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos cargar el dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}/validation",
+    tags: ["Datasets"],
+    operationId: "validar-dataset-exportacion",
+    summary: "Validar un dataset para exportación",
+    description:
+      "Cualquier miembro del workspace puede validar un dataset, también en una aplicación archivada. Revisa solo las evidencias aprobadas con las mismas reglas que la exportación: en clasificación, una etiqueta revisada que no esté vacía ni pueda interpretarse como fórmula; en detección, anotaciones revisadas con cajas válidas (una lista vacía es válida). Solo lee: no modifica el dataset ni sus evidencias.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description:
+          "Resultado de la validación: ready es true si el dataset puede exportarse; si no, problem o invalidItems indican la causa.",
+        content: { "application/json": { schema: DatasetValidationResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "404": errorResponse("No encontramos este dataset."),
+      "500": errorResponse("No pudimos validar el dataset."),
     },
   });
 
