@@ -215,13 +215,11 @@ export const DatasetLabelRequestSchema = z
   .object({ label: z.string().trim().min(1).max(DATASET_LABEL_MAX_LENGTH) })
   .strict();
 export const DatasetLabelResponseSchema = z.object({ reviewedLabel: z.string() }).strict();
-export const DatasetExportFormatSchema = z.enum([
-  "classification_images_csv",
-  "detection_coco",
-]);
+export const DatasetExportFormatSchema = z.enum(["classification_images_csv", "detection_coco"]);
 export const DatasetExportRequestSchema = z
   .object({ format: DatasetExportFormatSchema.optional() })
   .strict();
+export type DatasetExportFormat = z.infer<typeof DatasetExportFormatSchema>;
 export const DatasetExportSchema = z
   .object({
     id: z.string(),
@@ -262,6 +260,8 @@ export const DatasetValidationResponseSchema = z
       .boolean()
       .describe("true si el dataset tiene evidencias aprobadas y todas pueden exportarse."),
     approvedCount: z.number().int().nonnegative(),
+    annotationCount: z.number().int().nonnegative().optional(),
+    categoryCount: z.number().int().nonnegative().optional(),
     problem: z
       .object({ code: z.literal("noApprovedItems"), message: z.string() })
       .strict()
@@ -288,6 +288,20 @@ export const DatasetAddEvidenceResponseSchema = z
 export const DatasetApiErrorSchema = z
   .object({ message: z.string(), code: z.string().optional() })
   .strict();
+export const DatasetExportInvalidItemSchema = z
+  .object({
+    itemId: z.string(),
+    evidenceId: z.string(),
+    cause: z.object({ code: DatasetItemCauseCodeSchema, message: z.string() }).strict(),
+  })
+  .strict();
+export const DatasetExportErrorResponseSchema = DatasetApiErrorSchema.extend({
+  invalidItemCount: z.number().int().positive().optional(),
+  invalidItems: z
+    .array(DatasetExportInvalidItemSchema)
+    .max(DATASET_VALIDATION_ITEMS_MAX)
+    .optional(),
+}).strict();
 
 export type DatasetTaskType = z.infer<typeof DatasetTaskTypeSchema>;
 export type Dataset = z.infer<typeof DatasetSchema>;
@@ -309,8 +323,20 @@ export type DatasetReviewResponse = z.infer<typeof DatasetReviewResponseSchema>;
 export type DatasetLabelRequest = z.infer<typeof DatasetLabelRequestSchema>;
 export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
 export type DatasetExport = z.infer<typeof DatasetExportSchema>;
+export const DatasetExportInvalidAnnotationsResponseSchema = z
+  .object({
+    message: z.literal("Corrige las anotaciones indicadas antes de exportar."),
+    code: z.literal("datasetExportInvalidAnnotations"),
+    invalidItemCount: z.number().int().positive(),
+    invalidItems: z.array(DatasetExportInvalidItemSchema).max(DATASET_VALIDATION_ITEMS_MAX),
+  })
+  .strict();
+export type DatasetExportInvalidItem = z.infer<typeof DatasetExportInvalidItemSchema>;
 export type DatasetExportListResponse = z.infer<typeof DatasetExportListResponseSchema>;
 export type DatasetExportResponse = z.infer<typeof DatasetExportResponseSchema>;
+export type DatasetExportInvalidAnnotationsResponse = z.infer<
+  typeof DatasetExportInvalidAnnotationsResponseSchema
+>;
 export type DatasetValidationItem = z.infer<typeof DatasetValidationItemSchema>;
 export type DatasetValidationResponse = z.infer<typeof DatasetValidationResponseSchema>;
 export type DatasetBox = z.infer<typeof DatasetBoxSchema>;
@@ -528,7 +554,7 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     responses: {
       "200": {
         description:
-          "Resultado de la validación: ready es true si el dataset puede exportarse; si no, problem o invalidItems indican la causa.",
+          "Resultado de la validación, con los conteos de imágenes, anotaciones y categorías del dataset.",
         content: { "application/json": { schema: DatasetValidationResponseSchema } },
       },
       "401": errorResponse("La sesión no está autenticada."),
@@ -566,28 +592,38 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
     method: "post",
     path: "/applications/{applicationId}/datasets/{datasetId}/exports",
     tags: ["Datasets"],
-    operationId: "exportar-dataset-clasificacion",
-    summary: "Exportar un dataset de clasificación",
+    operationId: "exportar-dataset",
+    summary: "Exportar un dataset",
     description:
-      "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable con las evidencias aprobadas y sus etiquetas revisadas.",
+      "Solo administradores y propietarios de una aplicación activa pueden crear una exportación inmutable. Acepta clasificación en ZIP con imágenes y CSV o detección en formato COCO con anotaciones revisadas.",
     security: [{ [userSession.name]: [] }],
     request: {
       params: z.object({
         applicationId: z.string().openapi({ example: "app-123" }),
         datasetId: z.string().openapi({ example: "dataset-123" }),
       }),
+      body: {
+        required: false,
+        content: { "application/json": { schema: DatasetExportRequestSchema } },
+      },
     },
     responses: {
       "201": {
-        description: "Exportación de clasificación generada.",
+        description: "Exportación de clasificación o detección generada.",
         content: { "application/json": { schema: DatasetExportResponseSchema } },
       },
       "401": errorResponse("La sesión no está autenticada."),
       "403": errorResponse("No tienes permiso para exportar este dataset."),
       "404": errorResponse("No encontramos este dataset."),
-      "409": errorResponse(
-        "El dataset no se puede exportar: la aplicación está archivada, faltan evidencias aprobadas o etiquetas revisadas, el tipo de tarea no es clasificación o una etiqueta puede interpretarse como fórmula.",
-      ),
+      "409": {
+        description:
+          "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa.",
+        content: {
+          "application/json": {
+            schema: DatasetExportErrorResponseSchema,
+          },
+        },
+      },
       "413": errorResponse(
         "El tamaño total de las imágenes supera el límite de exportación de 128 MiB.",
       ),

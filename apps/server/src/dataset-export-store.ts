@@ -3,7 +3,10 @@ import {
   checkDatasetForExport,
   DATASET_VALIDATION_ITEMS_MAX,
   type DatasetExport,
+  type DatasetExportFormat,
+  type DatasetExportInvalidItem,
   type DatasetValidationResponse,
+  parseDatasetAnnotationsRequest,
 } from "@ayni/api/datasets";
 import { EVIDENCE_IMAGE_MEDIA_TYPE } from "@ayni/api/sdk-evidence";
 import { dataset, datasetExport, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
@@ -15,7 +18,7 @@ import { logger } from "./lib/logger";
 import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
-const MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
+const MAX_DATASET_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
 
 type DatasetExportQuery = Promise<Record<string, unknown>[]> & {
   innerJoin: (table: unknown, condition: unknown) => DatasetExportQuery;
@@ -43,7 +46,7 @@ type DatasetExportRow = {
   id: string;
   datasetId: string;
   version: number;
-  format: "classification_images_csv";
+  format: DatasetExportFormat;
   status: "ready";
   generatedAt: Date | string;
   itemCount: number;
@@ -177,9 +180,30 @@ export async function validateDatasetForExport(
       foundDataset.taskType,
       await selectApprovedItems(tx, applicationId, datasetId),
     );
+    const summary = check.approvedItems.reduce(
+      (result, item) => {
+        const annotations = Array.isArray(item.reviewedAnnotations) ? item.reviewedAnnotations : [];
+        result.annotationCount += annotations.length;
+        for (const annotation of annotations) {
+          if (
+            typeof annotation === "object" &&
+            annotation !== null &&
+            "label" in annotation &&
+            typeof annotation.label === "string" &&
+            annotation.label.trim()
+          ) {
+            result.categories.add(annotation.label.trim());
+          }
+        }
+        return result;
+      },
+      { annotationCount: 0, categories: new Set<string>() },
+    );
     return {
       ready: check.problem === null && check.invalidItems.length === 0,
       approvedCount: check.approvedItems.length,
+      annotationCount: summary.annotationCount,
+      categoryCount: summary.categories.size,
       problem: check.problem,
       invalidItemCount: check.invalidItems.length,
       invalidItems: await Promise.all(
@@ -200,10 +224,19 @@ export type CreateDatasetExportInput = {
   applicationId: string;
   datasetId: string;
   userId: string;
+  format?: DatasetExportFormat;
+};
+
+type InvalidDatasetExportResult = {
+  ok: false;
+  reason: "invalidAnnotations";
+  invalidItemCount: number;
+  invalidItems: DatasetExportInvalidItem[];
 };
 
 export type CreateDatasetExportResult =
   | { ok: true; value: DatasetExport }
+  | InvalidDatasetExportResult
   | {
       ok: false;
       reason:
@@ -211,6 +244,7 @@ export type CreateDatasetExportResult =
         | "archived"
         | "notFound"
         | "notClassification"
+        | "notDetection"
         | "noApprovedItems"
         | "missingLabel"
         | "unsafeLabel"
@@ -218,10 +252,55 @@ export type CreateDatasetExportResult =
         | "failed";
     };
 
+function createCocoDocument(items: ExportItem[]) {
+  const prepared = items.map((item) => {
+    const parsed = parseDatasetAnnotationsRequest({ annotations: item.reviewedAnnotations });
+    if (!parsed.success) throw new Error("Approved detection item has invalid annotations");
+    return { item, annotations: parsed.data.annotations };
+  });
+  const labels = [
+    ...new Set(prepared.flatMap(({ annotations }) => annotations.map(({ label }) => label))),
+  ].sort();
+  const categoryIds = new Map(labels.map((label, index) => [label, index + 1]));
+  let annotationId = 0;
+  return {
+    info: { description: "Ayni detection dataset" },
+    licenses: [],
+    images: prepared.map(({ item }, index) => ({
+      id: index + 1,
+      width: item.imageWidth,
+      height: item.imageHeight,
+      file_name: `images/${item.id}.jpg`,
+    })),
+    annotations: prepared.flatMap(({ item, annotations }, index) =>
+      annotations.map(({ label, box }) => {
+        const x = box.xMin * item.imageWidth;
+        const y = box.yMin * item.imageHeight;
+        const width = (box.xMax - box.xMin) * item.imageWidth;
+        const height = (box.yMax - box.yMin) * item.imageHeight;
+        const categoryId = categoryIds.get(label);
+        if (categoryId === undefined) throw new Error("Reviewed label has no COCO category");
+        return {
+          id: ++annotationId,
+          image_id: index + 1,
+          category_id: categoryId,
+          bbox: [x, y, width, height],
+          area: width * height,
+          iscrowd: 0,
+          segmentation: [],
+        };
+      }),
+    ),
+    categories: labels.map((name, index) => ({ id: index + 1, name, supercategory: "object" })),
+  };
+}
+
 export async function createDatasetExport(
   database: ApplicationDatabase,
   input: CreateDatasetExportInput,
 ): Promise<CreateDatasetExportResult> {
+  const format = input.format ?? "classification_images_csv";
+  const taskType = format === "detection_coco" ? "detection" : "classification";
   let storageKey: string | null = null;
   let artifactStored = false;
 
@@ -240,16 +319,32 @@ export async function createDatasetExport(
           .limit(1)) as { taskType: string }[];
         const foundDataset = datasets[0];
         if (!foundDataset) return { kind: "error", reason: "notFound" } as const;
-        if (foundDataset.taskType !== "classification") {
-          return { kind: "error", reason: "notClassification" } as const;
+        if (foundDataset.taskType !== taskType) {
+          return {
+            kind: "error",
+            reason: taskType === "classification" ? "notClassification" : "notDetection",
+          } as const;
         }
 
         // The same rules as dataset validation (US-084), so they cannot disagree.
         const check = checkDatasetForExport(
-          "classification",
+          taskType,
           await selectApprovedItems(tx, input.applicationId, input.datasetId),
         );
         if (check.problem) return { kind: "error", reason: "noApprovedItems" } as const;
+        if (taskType === "detection" && check.invalidItems.length > 0) {
+          return {
+            kind: "invalidAnnotations",
+            invalidItemCount: check.invalidItems.length,
+            invalidItems: check.invalidItems
+              .slice(0, DATASET_VALIDATION_ITEMS_MAX)
+              .map(({ item, cause }) => ({
+                itemId: item.id,
+                evidenceId: item.evidenceId,
+                cause,
+              })),
+          } as const;
+        }
         const causes = new Set(check.invalidItems.map(({ cause }) => cause.code));
         if (causes.has("reviewedLabelRequired")) {
           return { kind: "error", reason: "missingLabel" } as const;
@@ -259,7 +354,7 @@ export async function createDatasetExport(
         let imageBytes = 0;
         for (const item of items) {
           imageBytes += item.imageByteSize;
-          if (imageBytes > MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES) {
+          if (imageBytes > MAX_DATASET_EXPORT_IMAGE_BYTES) {
             return { kind: "error", reason: "tooLarge" } as const;
           }
         }
@@ -268,6 +363,14 @@ export async function createDatasetExport(
     );
 
     if (!snapshot.ok) return { ok: false, reason: snapshot.reason };
+    if (snapshot.value.kind === "invalidAnnotations") {
+      return {
+        ok: false,
+        reason: "invalidAnnotations",
+        invalidItemCount: snapshot.value.invalidItemCount,
+        invalidItems: snapshot.value.invalidItems,
+      };
+    }
     if (snapshot.value.kind === "error") return { ok: false, reason: snapshot.value.reason };
     const exportItems = snapshot.value.items;
 
@@ -279,12 +382,20 @@ export async function createDatasetExport(
       }
       const filename = `images/${item.id}.jpg`;
       files[filename] = await r2EvidenceStorage.read(item.storageKey);
-      const reviewedLabel = item.reviewedLabel?.trim();
-      if (!reviewedLabel) throw new Error("Approved dataset item has no reviewed label");
-      const label = reviewedLabel.replaceAll('"', '""');
-      csvRows.push(`"${filename}","${label}"`);
+      if (format === "classification_images_csv") {
+        const reviewedLabel = item.reviewedLabel?.trim();
+        if (!reviewedLabel) throw new Error("Approved dataset item has no reviewed label");
+        const label = reviewedLabel.replaceAll('"', '""');
+        csvRows.push(`"${filename}","${label}"`);
+      }
     }
-    files["labels.csv"] = new TextEncoder().encode(`${csvRows.join("\r\n")}\r\n`);
+    if (format === "classification_images_csv") {
+      files["labels.csv"] = new TextEncoder().encode(`${csvRows.join("\r\n")}\r\n`);
+    } else {
+      files["annotations/instances.json"] = new TextEncoder().encode(
+        JSON.stringify(createCocoDocument(exportItems)),
+      );
+    }
     // ponytail: caps image input at 128 MiB; use streaming ZIP upload when larger exports are needed.
     const artifact = zipSync(files, { level: 0 });
     const exportId = randomUUID();
@@ -311,8 +422,11 @@ export async function createDatasetExport(
           .for("update")) as { taskType: string }[];
         const foundDataset = datasets[0];
         if (!foundDataset) return { kind: "error", reason: "notFound" } as const;
-        if (foundDataset.taskType !== "classification") {
-          return { kind: "error", reason: "notClassification" } as const;
+        if (foundDataset.taskType !== taskType) {
+          return {
+            kind: "error",
+            reason: taskType === "classification" ? "notClassification" : "notDetection",
+          } as const;
         }
 
         const latest = (await tx
@@ -333,7 +447,7 @@ export async function createDatasetExport(
             applicationId: input.applicationId,
             datasetId: input.datasetId,
             version: (latest[0]?.version ?? 0) + 1,
-            format: "classification_images_csv",
+            format,
             status: "ready",
             itemCount: exportItems.length,
             storageKey: artifactKey,
