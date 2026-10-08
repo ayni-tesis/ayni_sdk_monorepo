@@ -4,6 +4,7 @@ import {
   DatasetCreateRequestSchema,
   type DatasetDetailResponse,
   type DatasetExportListResponse,
+  type DatasetItem,
   type DatasetItemFilters,
   DatasetLabelRequestSchema,
   type DatasetListResponse,
@@ -52,6 +53,11 @@ type Dependencies = {
       offset: number,
       filters: DatasetItemFilters,
     ) => Promise<DatasetDetailResponse | null>;
+    getItem: (
+      applicationId: string,
+      datasetId: string,
+      itemId: string,
+    ) => Promise<DatasetItem | null>;
     list: (applicationId: string) => Promise<DatasetListResponse>;
     listExports?: (
       applicationId: string,
@@ -259,6 +265,33 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
       return c.json(response);
     } catch {
       return c.json({ message: "No pudimos cargar el dataset.", code: "datasetLoadFailed" }, 500);
+    }
+  });
+
+  app.get("/applications/:applicationId/datasets/:datasetId/evidence/:itemId", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+
+    try {
+      const item = await datasets.getItem(
+        application.id,
+        c.req.param("datasetId"),
+        c.req.param("itemId"),
+      );
+      if (!item) return c.json({ message: "No encontramos este dataset." }, 404);
+      return c.json(item);
+    } catch {
+      return c.json(
+        { message: "No pudimos cargar la evidencia del dataset.", code: "datasetItemLoadFailed" },
+        500,
+      );
     }
   });
 

@@ -189,7 +189,12 @@ export function DatasetDetailView({
           current
             ? {
                 ...current,
-                items: [...current.items, ...data.items],
+                items: [
+                  ...current.items,
+                  ...data.items.filter(
+                    (item) => !current.items.some((loaded) => loaded.id === item.id),
+                  ),
+                ],
                 nextItemOffset: data.nextItemOffset,
               }
             : current,
@@ -369,8 +374,8 @@ export function DatasetDetailView({
 
   /**
    * Takes the reviewer to an item that requires review in `Evidencias`. An
-   * item not loaded yet is approved, so the approved evidence is loaded page
-   * by page until it appears; that filter stays applied, as the bar shows.
+   * item not loaded yet is approved, so it is fetched directly; that filter
+   * stays applied, as the bar shows.
    */
   async function reviewInvalidItem(itemId: string) {
     closingForReviewRef.current = true;
@@ -392,24 +397,28 @@ export function DatasetDetailView({
     setFilterError("");
     setItemsError("");
     try {
-      let { data: page } = await httpClient.get<DatasetDetailResponse>(url, {
+      const { data: page } = await httpClient.get<DatasetDetailResponse>(url, {
         params: filters,
         signal: controller.signal,
       });
-      const items = [...page.items];
-      while (!items.some((item) => item.id === itemId) && page.nextItemOffset !== null) {
-        ({ data: page } = await httpClient.get<DatasetDetailResponse>(url, {
-          params: { ...filters, offset: page.nextItemOffset },
-          signal: controller.signal,
-        }));
-        items.push(...page.items);
+      let items = page.items;
+      if (!items.some((item) => item.id === itemId)) {
+        try {
+          const { data: item } = await httpClient.get<DatasetDetailResponse["items"][number]>(
+            `${url}/evidence/${encodeURIComponent(itemId)}`,
+            { signal: controller.signal },
+          );
+          items = [...items, item];
+        } catch (itemError) {
+          // The item may have been retired after validation; the approved page is still useful.
+          if (!axios.isAxiosError(itemError) || itemError.response?.status !== 404) throw itemError;
+        }
       }
       if (controller.signal.aborted) return;
       appliedFiltersRef.current = filters;
       setAppliedFilters(filters);
       setFilterBarKey((key) => key + 1);
       setDetail({ ...page, items });
-      // An item retired since the validation is gone: there is nothing to bring into view.
       if (items.some((item) => item.id === itemId)) setRevealItemId(itemId);
     } catch (loadError) {
       if (!controller.signal.aborted) setFilterError(errorMessage(loadError, LOAD_ERROR));

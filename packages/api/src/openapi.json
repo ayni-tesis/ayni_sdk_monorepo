@@ -3510,6 +3510,393 @@
         }
       }
     },
+    "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}": {
+      "get": {
+        "tags": ["Datasets"],
+        "operationId": "obtener-evidencia-dataset",
+        "summary": "Consultar una evidencia del dataset",
+        "description": "Cualquier miembro del workspace puede consultar una evidencia vinculada al dataset.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "item-123"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "evidenceId": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "modelVersion": {
+                      "type": "string"
+                    },
+                    "taskType": {
+                      "type": "string",
+                      "enum": ["classification", "detection"]
+                    },
+                    "originalResult": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "capturedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "addedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "imageUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "imageWidth": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "imageHeight": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "reviewStatus": {
+                      "type": "string",
+                      "enum": ["pending", "approved", "rejected"]
+                    },
+                    "reviewerName": {
+                      "type": ["string", "null"]
+                    },
+                    "reviewedAt": {
+                      "type": ["string", "null"],
+                      "format": "date-time"
+                    },
+                    "reviewReason": {
+                      "type": ["string", "null"]
+                    },
+                    "reviewedLabel": {
+                      "type": ["string", "null"],
+                      "description": "Etiqueta de clasificación revisada por una persona; null mientras nadie la asigna. Nunca reemplaza originalResult."
+                    },
+                    "reviewedAnnotations": {
+                      "type": ["array", "null"],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "box": {
+                            "type": "object",
+                            "properties": {
+                              "xMin": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Borde izquierdo, relativo al ancho de la imagen (0 a 1)."
+                              },
+                              "yMin": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Borde superior, relativo al alto de la imagen (0 a 1)."
+                              },
+                              "xMax": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Borde derecho, relativo al ancho de la imagen (0 a 1)."
+                              },
+                              "yMax": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Borde inferior, relativo al alto de la imagen (0 a 1)."
+                              }
+                            },
+                            "required": ["xMin", "yMin", "xMax", "yMax"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": ["label", "box"],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100,
+                      "description": "Cajas de detección revisadas por una persona, con coordenadas relativas a imageWidth e imageHeight (0 a 1); null mientras nadie las guarda y [] si la imagen no muestra objetos. Nunca reemplazan originalResult."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "evidenceId",
+                    "modelId",
+                    "modelVersion",
+                    "taskType",
+                    "originalResult",
+                    "capturedAt",
+                    "addedAt",
+                    "imageUrl",
+                    "imageWidth",
+                    "imageHeight",
+                    "reviewStatus",
+                    "reviewerName",
+                    "reviewedAt",
+                    "reviewReason",
+                    "reviewedLabel",
+                    "reviewedAnnotations"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos cargar la evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Datasets"],
+        "operationId": "retirar-evidencia-dataset",
+        "summary": "Retirar evidencia de un dataset",
+        "description": "Retira el ítem del dataset para excluirlo de futuras exportaciones; la evidencia original se conserva.",
+        "security": [
+          {
+            "datasetUserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "app-123"
+            },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "dataset-123"
+            },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "item-123"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Evidencia retirada del dataset."
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para retirar evidencia.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este ítem del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No puedes modificar datasets de una aplicación archivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos retirar la evidencia del dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{applicationId}/datasets/{datasetId}/validation": {
       "get": {
         "tags": ["Datasets"],
@@ -4596,153 +4983,6 @@
           },
           "500": {
             "description": "No pudimos agregar la evidencia al dataset.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/applications/{applicationId}/datasets/{datasetId}/evidence/{itemId}": {
-      "delete": {
-        "tags": ["Datasets"],
-        "operationId": "retirar-evidencia-dataset",
-        "summary": "Retirar evidencia de un dataset",
-        "description": "Retira el ítem del dataset para excluirlo de futuras exportaciones; la evidencia original se conserva.",
-        "security": [
-          {
-            "datasetUserSession": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "example": "app-123"
-            },
-            "required": true,
-            "name": "applicationId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "example": "dataset-123"
-            },
-            "required": true,
-            "name": "datasetId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "example": "item-123"
-            },
-            "required": true,
-            "name": "itemId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Evidencia retirada del dataset."
-          },
-          "401": {
-            "description": "La sesión no está autenticada.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "No tienes permiso para retirar evidencia.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No encontramos este ítem del dataset.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "No puedes modificar datasets de una aplicación archivada.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": ["message"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "No pudimos retirar la evidencia del dataset.",
             "content": {
               "application/json": {
                 "schema": {

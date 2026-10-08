@@ -1367,10 +1367,12 @@ describe("DatasetDetailView", () => {
       pages: Record<string, { items: unknown[]; nextItemOffset: number | null }> = {
         "": { items: [approvedItem], nextItemOffset: null },
       },
+      directItems: Record<string, unknown> = {},
     ) {
       getMock.mockImplementation(
         async (url: string, options?: { params?: { status?: string; offset?: number } }) => {
           if (url === validationUrl) return { data: await validation() };
+          if (url in directItems) return { data: directItems[url] };
           const key = `${options?.params?.status ?? ""}${options?.params?.offset ?? ""}`;
           const page = pages[key] ?? { items: [], nextItemOffset: null };
           return { data: { dataset, filterOptions, ...page } };
@@ -1488,12 +1490,17 @@ describe("DatasetDetailView", () => {
       ).toBeInTheDocument();
     });
 
-    it("loads approved evidence pages until it reaches the item to review", async () => {
-      serve(async () => invalidValidation, {
-        "": { items: [approvedItem], nextItemOffset: null },
-        approved: { items: [approvedItem], nextItemOffset: 1 },
-        approved1: { items: [unlabeledItem], nextItemOffset: null },
-      });
+    it("fetches an approved evidence item directly when it is not on the first page", async () => {
+      const itemUrl = "/applications/app-1/datasets/dataset-1/evidence/item-2";
+      serve(
+        async () => invalidValidation,
+        {
+          "": { items: [approvedItem], nextItemOffset: null },
+          approved: { items: [approvedItem], nextItemOffset: 1 },
+          approved1: { items: [unlabeledItem], nextItemOffset: null },
+        },
+        { [itemUrl]: unlabeledItem },
+      );
       const user = await validate();
 
       await user.click(await screen.findByRole("link", { name: "Revisar evidencia" }));
@@ -1502,12 +1509,21 @@ describe("DatasetDetailView", () => {
         expect(document.activeElement).toBe(document.getElementById("dataset-item-item-2")),
       );
       expect(getMock).toHaveBeenCalledWith(
+        itemUrl,
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(getMock).not.toHaveBeenCalledWith(
         "/applications/app-1/datasets/dataset-1",
         expect.objectContaining({ params: { status: "approved", offset: 1 } }),
       );
       expect(
         within(screen.getByRole("form", { name: "Filtrar evidencias" })).getByLabelText("Estado"),
       ).toHaveValue("approved");
+
+      await user.click(screen.getByRole("button", { name: "Cargar más evidencias del dataset" }));
+      expect(screen.getAllByText("evidence-2")).toHaveLength(1);
     });
   });
 

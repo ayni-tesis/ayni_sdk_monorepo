@@ -137,6 +137,26 @@ const datasetFields = {
 
 const DATASET_EVIDENCE_PAGE_SIZE = 50;
 
+const datasetItemFields = {
+  id: datasetItem.id,
+  evidenceId: datasetItem.evidenceId,
+  modelId: sdkEvidence.modelId,
+  modelVersion: sdkEvidence.modelVersion,
+  taskType: sdkEvidence.taskType,
+  originalResult: datasetItem.originalResult,
+  capturedAt: sdkEvidence.capturedAt,
+  addedAt: datasetItem.addedAt,
+  storageKey: sdkEvidence.storageKey,
+  imageWidth: sdkEvidence.imageWidth,
+  imageHeight: sdkEvidence.imageHeight,
+  reviewStatus: datasetItem.reviewStatus,
+  reviewerName: user.name,
+  reviewedAt: datasetItem.reviewedAt,
+  reviewReason: datasetItem.reviewReason,
+  reviewedLabel: datasetItem.reviewedLabel,
+  reviewedAnnotations: datasetItem.reviewedAnnotations,
+};
+
 function toDatasetListItem(row: DatasetRow): DatasetListItem {
   return {
     ...row,
@@ -282,25 +302,7 @@ export async function getDataset(
       eq(datasetItem.datasetId, datasetId),
     );
     const items = (await tx
-      .select({
-        id: datasetItem.id,
-        evidenceId: datasetItem.evidenceId,
-        modelId: sdkEvidence.modelId,
-        modelVersion: sdkEvidence.modelVersion,
-        taskType: sdkEvidence.taskType,
-        originalResult: datasetItem.originalResult,
-        capturedAt: sdkEvidence.capturedAt,
-        addedAt: datasetItem.addedAt,
-        storageKey: sdkEvidence.storageKey,
-        imageWidth: sdkEvidence.imageWidth,
-        imageHeight: sdkEvidence.imageHeight,
-        reviewStatus: datasetItem.reviewStatus,
-        reviewerName: user.name,
-        reviewedAt: datasetItem.reviewedAt,
-        reviewReason: datasetItem.reviewReason,
-        reviewedLabel: datasetItem.reviewedLabel,
-        reviewedAnnotations: datasetItem.reviewedAnnotations,
-      })
+      .select(datasetItemFields)
       .from(datasetItem)
       .innerJoin(sdkEvidence, itemEvidenceJoin)
       .leftJoin(user, eq(user.id, datasetItem.reviewedBy))
@@ -316,6 +318,37 @@ export async function getDataset(
       nextItemOffset: hasMore ? offset + page.length : null,
       filterOptions: await getDatasetFilterOptions(tx, datasetScope),
     };
+  });
+}
+
+export async function getDatasetItem(
+  database: ApplicationDatabase,
+  applicationId: string,
+  datasetId: string,
+  itemId: string,
+): Promise<DatasetItem | null> {
+  return database.transaction(async (transaction) => {
+    const tx = transaction as DatasetReadExecutor;
+    const rows = (await tx
+      .select(datasetItemFields)
+      .from(datasetItem)
+      .innerJoin(
+        sdkEvidence,
+        and(
+          eq(sdkEvidence.applicationId, datasetItem.applicationId),
+          eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+        ),
+      )
+      .leftJoin(user, eq(user.id, datasetItem.reviewedBy))
+      .where(
+        and(
+          eq(datasetItem.applicationId, applicationId),
+          eq(datasetItem.datasetId, datasetId),
+          eq(datasetItem.id, itemId),
+        ),
+      )
+      .limit(1)) as DatasetItemRow[];
+    return rows[0] ? toDatasetItem(rows[0]) : null;
   });
 }
 

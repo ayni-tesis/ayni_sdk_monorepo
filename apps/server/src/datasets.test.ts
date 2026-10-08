@@ -124,6 +124,11 @@ function makeApp({
     _offset: number,
     _filters: DatasetItemFilters,
   ): Promise<DatasetDetailResponse | null> => datasetDetail,
+  getItem = async (
+    _applicationId: string,
+    _datasetId: string,
+    _itemId: string,
+  ): Promise<DatasetItem | null> => datasetItem,
   listAvailableEvidence = async (
     _applicationId: string,
     _datasetId: string,
@@ -173,6 +178,11 @@ function makeApp({
     offset: number,
     filters: DatasetItemFilters,
   ) => Promise<DatasetDetailResponse | null>;
+  getItem?: (
+    applicationId: string,
+    datasetId: string,
+    itemId: string,
+  ) => Promise<DatasetItem | null>;
   listAvailableEvidence?: (
     applicationId: string,
     datasetId: string,
@@ -193,6 +203,7 @@ function makeApp({
 } = {}) {
   const createMock = vi.fn(create);
   const getMock = vi.fn(get);
+  const getItemMock = vi.fn(getItem);
   const listAvailableEvidenceMock = vi.fn(listAvailableEvidence);
   const addEvidenceMock = vi.fn(addEvidence);
   const removeEvidenceMock = vi.fn(removeEvidence);
@@ -211,6 +222,7 @@ function makeApp({
       addEvidence: addEvidenceMock,
       create: createMock,
       get: getMock,
+      getItem: getItemMock,
       list: listMock,
       listAvailableEvidence: listAvailableEvidenceMock,
       removeEvidence: removeEvidenceMock,
@@ -225,6 +237,7 @@ function makeApp({
     addEvidenceMock,
     createMock,
     getMock,
+    getItemMock,
     listAvailableEvidenceMock,
     listMock,
     removeEvidenceMock,
@@ -353,6 +366,28 @@ describe("application datasets", () => {
       minConfidence: 0.5,
       maxConfidence: 0.9,
     });
+  });
+
+  it("returns only a linked dataset item to a member of its application", async () => {
+    const { app, getItemMock } = makeApp({ membershipRole: "member" });
+    const response = await app.request("/applications/app-1/datasets/dataset-1/evidence/item-1");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(datasetItem);
+    expect(getItemMock).toHaveBeenCalledWith("app-1", "dataset-1", "item-1");
+
+    const foreign = makeApp({ application: null });
+    expect(
+      (await foreign.app.request("/applications/app-1/datasets/dataset-1/evidence/item-1")).status,
+    ).toBe(404);
+    expect(foreign.getItemMock).not.toHaveBeenCalled();
+
+    const missing = makeApp({ getItem: async () => null });
+    const notFound = await missing.app.request(
+      "/applications/app-1/datasets/dataset-1/evidence/foreign-item",
+    );
+    expect(notFound.status).toBe(404);
+    expect(await notFound.json()).toMatchObject({ message: "No encontramos este dataset." });
   });
 
   it("rejects an unknown or invalid filter without reading the dataset", async () => {
