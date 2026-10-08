@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { DatasetExport } from "@ayni/api/datasets";
+import {
+  parseDatasetAnnotationsRequest,
+  type DatasetExport,
+  type DatasetValidationResponse,
+} from "@ayni/api/datasets";
 import { EVIDENCE_IMAGE_MEDIA_TYPE } from "@ayni/api/sdk-evidence";
 import { dataset, datasetExport, datasetItem, sdkEvidence } from "@ayni/db/schema/index";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -7,7 +11,7 @@ import { zipSync } from "fflate";
 import { type ApplicationDatabase, executeApplicationAction } from "./application-actions";
 import { r2EvidenceStorage } from "./evidence-storage";
 import { logger } from "./lib/logger";
-import { deleteFile, uploadFile } from "./lib/storage";
+import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
 const MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
@@ -51,6 +55,16 @@ type ExportItem = {
   imageMediaType: string;
   imageByteSize: number;
   storageKey: string;
+};
+
+type DatasetValidationRow = {
+  id: string;
+  reviewedLabel: string | null;
+  reviewedAnnotations: unknown;
+  storageKey: string;
+  imageWidth: number;
+  imageHeight: number;
+  imageByteSize: number;
 };
 
 const datasetExportFields = {
@@ -106,6 +120,121 @@ export type CreateDatasetExportInput = {
   datasetId: string;
   userId: string;
 };
+
+export type ValidateDatasetForExportResult =
+  | { ok: true; value: DatasetValidationResponse }
+  | { ok: false; reason: "forbidden" | "archived" | "notFound" };
+
+function reviewedLabelError(label: string | null): "missingLabel" | "unsafeLabel" | null {
+  if (!label?.trim()) return "missingLabel";
+  return /^[\s]*[=+@-]/u.test(label) ? "unsafeLabel" : null;
+}
+
+export async function validateDatasetForExport(
+  database: ApplicationDatabase,
+  input: CreateDatasetExportInput,
+): Promise<ValidateDatasetForExportResult> {
+  const result = await executeApplicationAction(
+    database,
+    { applicationId: input.applicationId, userId: input.userId },
+    async (transaction) => {
+      const tx = transaction as unknown as DatasetExportReadExecutor;
+      const datasets = (await tx
+        .select({ taskType: dataset.taskType })
+        .from(dataset)
+        .where(and(eq(dataset.applicationId, input.applicationId), eq(dataset.id, input.datasetId)))
+        .limit(1)) as { taskType: string }[];
+      const foundDataset = datasets[0];
+      if (!foundDataset) return { kind: "notFound" } as const;
+
+      const items = (await tx
+        .select({
+          id: datasetItem.id,
+          reviewedLabel: datasetItem.reviewedLabel,
+          reviewedAnnotations: datasetItem.reviewedAnnotations,
+          storageKey: sdkEvidence.storageKey,
+          imageWidth: sdkEvidence.imageWidth,
+          imageHeight: sdkEvidence.imageHeight,
+          imageByteSize: sdkEvidence.imageByteSize,
+        })
+        .from(datasetItem)
+        .innerJoin(
+          sdkEvidence,
+          and(
+            eq(sdkEvidence.applicationId, datasetItem.applicationId),
+            eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+          ),
+        )
+        .where(
+          and(
+            eq(datasetItem.applicationId, input.applicationId),
+            eq(datasetItem.datasetId, input.datasetId),
+            eq(datasetItem.reviewStatus, "approved"),
+            eq(sdkEvidence.status, "received"),
+          ),
+        )
+        .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as DatasetValidationRow[];
+
+      if (items.length === 0) {
+        return {
+          kind: "validated" as const,
+          datasetIssue: "El dataset no tiene evidencias aprobadas para exportar.",
+          items: [],
+        };
+      }
+
+      const invalidItems = items.flatMap((item) => {
+        let message: string | null = null;
+        if (foundDataset.taskType === "classification") {
+          const labelError = reviewedLabelError(item.reviewedLabel);
+          if (labelError === "missingLabel") {
+            message = "La evidencia aprobada no tiene una etiqueta revisada.";
+          } else if (labelError === "unsafeLabel") {
+            message =
+              "Una etiqueta revisada puede interpretarse como fórmula. Corrígela antes de exportar.";
+          }
+        } else if (item.reviewedAnnotations === null) {
+          message = "Guarda las anotaciones revisadas antes de exportar.";
+        } else {
+          const annotations = parseDatasetAnnotationsRequest({
+            annotations: item.reviewedAnnotations,
+          });
+          if (!annotations.success) message = annotations.error.message;
+        }
+
+        return message ? [{ ...item, message }] : [];
+      });
+      const imageBytes = items.reduce((total, item) => total + item.imageByteSize, 0);
+      return {
+        kind: "validated" as const,
+        datasetIssue:
+          foundDataset.taskType === "classification" &&
+          imageBytes > MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES
+            ? "El tamaño total de las imágenes supera el límite de exportación de 128 MiB."
+            : null,
+        items: invalidItems,
+      };
+    },
+  );
+
+  if (!result.ok) return { ok: false, reason: result.reason };
+  if (result.value.kind === "notFound") return { ok: false, reason: "notFound" };
+  const items = await Promise.all(
+    result.value.items.map(async ({ id: itemId, storageKey, ...item }) => ({
+      ...item,
+      itemId,
+      imageUrl: await getDownloadUrl(storageKey),
+    })),
+  );
+  return {
+    ok: true,
+    value: {
+      valid: result.value.datasetIssue === null && items.length === 0,
+      datasetIssue: result.value.datasetIssue,
+      items,
+    },
+  };
+}
 
 export type CreateDatasetExportResult =
   | { ok: true; value: DatasetExport }
@@ -175,10 +304,14 @@ export async function createDatasetExport(
           )
           .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as ExportItem[];
         if (items.length === 0) return { kind: "error", reason: "noApprovedItems" } as const;
-        if (items.some(({ reviewedLabel }) => !reviewedLabel?.trim())) {
+        if (
+          items.some(({ reviewedLabel }) => reviewedLabelError(reviewedLabel) === "missingLabel")
+        ) {
           return { kind: "error", reason: "missingLabel" } as const;
         }
-        if (items.some(({ reviewedLabel }) => /^[\s]*[=+@-]/u.test(reviewedLabel ?? ""))) {
+        if (
+          items.some(({ reviewedLabel }) => reviewedLabelError(reviewedLabel) === "unsafeLabel")
+        ) {
           return { kind: "error", reason: "unsafeLabel" } as const;
         }
         let imageBytes = 0;

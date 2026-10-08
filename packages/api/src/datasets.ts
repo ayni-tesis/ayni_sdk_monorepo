@@ -170,6 +170,22 @@ export const DatasetExportListResponseSchema = z
   .object({ exports: z.array(DatasetExportSchema) })
   .strict();
 export const DatasetExportResponseSchema = z.object({ export: DatasetExportSchema }).strict();
+export const DatasetValidationIssueSchema = z
+  .object({
+    itemId: z.string(),
+    imageUrl: z.string().url(),
+    imageWidth: z.number().int().positive(),
+    imageHeight: z.number().int().positive(),
+    message: z.string(),
+  })
+  .strict();
+export const DatasetValidationResponseSchema = z
+  .object({
+    valid: z.boolean(),
+    datasetIssue: z.string().nullable(),
+    items: z.array(DatasetValidationIssueSchema),
+  })
+  .strict();
 export const DatasetAnnotationsRequestSchema = z
   .object({ annotations: DatasetAnnotationsSchema })
   .strict();
@@ -202,6 +218,8 @@ export type DatasetLabelResponse = z.infer<typeof DatasetLabelResponseSchema>;
 export type DatasetExport = z.infer<typeof DatasetExportSchema>;
 export type DatasetExportListResponse = z.infer<typeof DatasetExportListResponseSchema>;
 export type DatasetExportResponse = z.infer<typeof DatasetExportResponseSchema>;
+export type DatasetValidationIssue = z.infer<typeof DatasetValidationIssueSchema>;
+export type DatasetValidationResponse = z.infer<typeof DatasetValidationResponseSchema>;
 export type DatasetBox = z.infer<typeof DatasetBoxSchema>;
 export type DatasetAnnotation = z.infer<typeof DatasetAnnotationSchema>;
 export type DatasetAnnotationsRequest = z.infer<typeof DatasetAnnotationsRequestSchema>;
@@ -290,6 +308,34 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "401": errorResponse("La sesión no está autenticada."),
       "404": errorResponse("No encontramos este dataset."),
       "500": errorResponse("No pudimos cargar las exportaciones del dataset."),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/applications/{applicationId}/datasets/{datasetId}/validation",
+    tags: ["Datasets"],
+    operationId: "validar-dataset-para-exportar",
+    summary: "Validar un dataset antes de exportarlo",
+    description:
+      "Solo administradores y propietarios de una aplicación activa pueden validar las evidencias aprobadas del dataset. La operación no modifica sus datos.",
+    security: [{ [userSession.name]: [] }],
+    request: {
+      params: z.object({
+        applicationId: z.string().openapi({ example: "app-123" }),
+        datasetId: z.string().openapi({ example: "dataset-123" }),
+      }),
+    },
+    responses: {
+      "200": {
+        description: "Resultado de la validación, con los ítems que requieren revisión.",
+        content: { "application/json": { schema: DatasetValidationResponseSchema } },
+      },
+      "401": errorResponse("La sesión no está autenticada."),
+      "403": errorResponse("No tienes permiso para validar este dataset."),
+      "404": errorResponse("No encontramos este dataset."),
+      "409": errorResponse("No puedes modificar datasets de una aplicación archivada."),
+      "500": errorResponse("No pudimos validar el dataset."),
     },
   });
 

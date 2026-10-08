@@ -3750,6 +3750,127 @@
         }
       }
     },
+    "/applications/{applicationId}/datasets/{datasetId}/validation": {
+      "get": {
+        "tags": ["Datasets"],
+        "operationId": "validar-dataset-para-exportar",
+        "summary": "Validar un dataset antes de exportarlo",
+        "description": "Solo administradores y propietarios de una aplicación activa pueden validar las evidencias aprobadas del dataset. La operación no modifica sus datos.",
+        "security": [{ "datasetUserSession": [] }],
+        "parameters": [
+          {
+            "schema": { "type": "string", "example": "app-123" },
+            "required": true,
+            "name": "applicationId",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "string", "example": "dataset-123" },
+            "required": true,
+            "name": "datasetId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado de la validación, con los ítems que requieren revisión.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": { "type": "boolean" },
+                    "datasetIssue": { "type": ["string", "null"] },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "itemId": { "type": "string" },
+                          "imageUrl": { "type": "string", "format": "uri" },
+                          "imageWidth": { "type": "integer", "exclusiveMinimum": 0 },
+                          "imageHeight": { "type": "integer", "exclusiveMinimum": 0 },
+                          "message": { "type": "string" }
+                        },
+                        "required": ["itemId", "imageUrl", "imageWidth", "imageHeight", "message"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["valid", "datasetIssue", "items"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión no está autenticada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" }, "code": { "type": "string" } },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No tienes permiso para validar este dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" }, "code": { "type": "string" } },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontramos este dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" }, "code": { "type": "string" } },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No puedes modificar datasets de una aplicación archivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" }, "code": { "type": "string" } },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "No pudimos validar el dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" }, "code": { "type": "string" } },
+                  "required": ["message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/applications/{applicationId}/datasets/{datasetId}/available-evidence": {
       "get": {
         "tags": ["Datasets"],

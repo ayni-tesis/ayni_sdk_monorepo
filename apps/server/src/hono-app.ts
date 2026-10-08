@@ -31,7 +31,11 @@ import { type Application, createApp, toApplication } from "./applications";
 import { redirectAfterEmailVerificationFailure, verificationSucceeded } from "./auth-verification";
 import { createCollectionPolicyApp } from "./collection-policy";
 import { getCollectionPolicy, updateCollectionPolicy } from "./collection-policy-store";
-import { createDatasetExport, listDatasetExports } from "./dataset-export-store";
+import {
+  createDatasetExport,
+  listDatasetExports,
+  validateDatasetForExport,
+} from "./dataset-export-store";
 import {
   addDatasetEvidence,
   createDataset,
@@ -267,6 +271,9 @@ const validationDatasets = createValidationDatasetStore({
 const datasets = {
   createExport(input: Parameters<typeof createDatasetExport>[1]) {
     return createDatasetExport(db, input);
+  },
+  validateForExport(input: Parameters<typeof validateDatasetForExport>[1]) {
+    return validateDatasetForExport(db, input);
   },
   addEvidence(input: Parameters<typeof addDatasetEvidence>[1]) {
     return addDatasetEvidence(db, input);

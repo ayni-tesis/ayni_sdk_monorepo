@@ -12,6 +12,7 @@ import {
   type DatasetExportResponse,
   type DatasetLabelResponse,
   type DatasetReviewResponse,
+  type DatasetValidationResponse,
 } from "@ayni/api/datasets";
 import { IconRefresh } from "@tabler/icons-react";
 import axios from "axios";
@@ -81,6 +82,11 @@ export function DatasetDetailView({
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<DatasetValidationResponse | null>(null);
+  const [validationError, setValidationError] = useState("");
+  const [activeTab, setActiveTab] = useState("evidences");
+  const [focusEvidenceId, setFocusEvidenceId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const itemsAbortRef = useRef<AbortController | null>(null);
   const availableAbortRef = useRef<AbortController | null>(null);
@@ -231,6 +237,7 @@ export function DatasetDetailView({
         `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence`,
         { evidenceIds: selectedIds },
       );
+      setValidationResult(null);
       setAddOpen(false);
       setSelectedIds([]);
       await loadDetail(false);
@@ -268,12 +275,71 @@ export function DatasetDetailView({
     }
   }
 
+  async function validateDataset() {
+    if (!canManage || application.status !== "active" || validating) return;
+    setValidating(true);
+    setValidationResult(null);
+    setValidationError("");
+    setNotice("");
+    try {
+      const { data } = await httpClient.get<DatasetValidationResponse>(`${exportsUrl}/validation`);
+      setValidationResult(data);
+      if (data.valid) setNotice("El dataset está listo para exportarse.");
+    } catch (validationError) {
+      setValidationError(errorMessage(validationError, "No pudimos validar el dataset."));
+    } finally {
+      setValidating(false);
+    }
+  }
+
+  async function revealEvidence(itemId: string) {
+    setActiveTab("evidences");
+    setItemsError("");
+    let current = detail;
+    if (!current) return;
+    itemsAbortRef.current?.abort();
+    const controller = new AbortController();
+    itemsAbortRef.current = controller;
+    setItemsLoading(true);
+    try {
+      while (
+        !controller.signal.aborted &&
+        !current.items.some((item) => item.id === itemId) &&
+        current.nextItemOffset !== null
+      ) {
+        const { data } = await httpClient.get<DatasetDetailResponse>(
+          `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}`,
+          { params: { offset: current.nextItemOffset }, signal: controller.signal },
+        );
+        current = {
+          ...current,
+          items: [...current.items, ...data.items],
+          nextItemOffset: data.nextItemOffset,
+        };
+        setDetail(current);
+      }
+      if (controller.signal.aborted) return;
+      if (current.items.some((item) => item.id === itemId)) {
+        setFocusEvidenceId(itemId);
+      } else {
+        setItemsError("No encontramos esta evidencia del dataset.");
+      }
+    } catch (loadError) {
+      if (!controller.signal.aborted) {
+        setItemsError(errorMessage(loadError, "No pudimos cargar las evidencias del dataset."));
+      }
+    } finally {
+      if (!controller.signal.aborted) setItemsLoading(false);
+    }
+  }
+
   async function removeEvidence(itemId: string) {
     if (!canManage || application.status !== "active") return;
     setNotice("");
     await httpClient.delete(
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}`,
     );
+    setValidationResult(null);
     retiredEvidenceIdsRef.current.add(itemId);
     setDetail((current) => {
       if (!current) return current;
@@ -303,6 +369,7 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/review`,
       { status, ...(reason ? { reason } : {}) },
     );
+    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) => {
       if (!current) return current;
@@ -337,6 +404,7 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/label`,
       { label },
     );
+    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) =>
       current
@@ -356,6 +424,7 @@ export function DatasetDetailView({
       `/applications/${encodeURIComponent(application.id)}/datasets/${encodeURIComponent(datasetId)}/evidence/${encodeURIComponent(itemId)}/annotations`,
       { annotations },
     );
+    setValidationResult(null);
     if (retiredEvidenceIdsRef.current.has(itemId)) return;
     setDetail((current) =>
       current
@@ -375,12 +444,24 @@ export function DatasetDetailView({
   useEffect(() => {
     void loadDetail();
     void loadExports();
+    setValidationResult(null);
+    setValidationError("");
+    setFocusEvidenceId(null);
     return () => {
       abortRef.current?.abort();
       itemsAbortRef.current?.abort();
       exportsAbortRef.current?.abort();
     };
   }, [loadDetail, loadExports]);
+
+  useEffect(() => {
+    if (activeTab !== "evidences" || !focusEvidenceId) return;
+    const item = document.getElementById(`dataset-item-${focusEvidenceId}`);
+    if (!item) return;
+    item.scrollIntoView({ behavior: "smooth", block: "center" });
+    item.focus({ preventScroll: true });
+    setFocusEvidenceId(null);
+  }, [activeTab, detail?.items, focusEvidenceId]);
 
   if (loading) {
     return (
@@ -464,7 +545,7 @@ export function DatasetDetailView({
         </dl>
       </header>
 
-      <Tabs defaultValue="evidences">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
             <TabsTrigger value="evidences">Evidencias</TabsTrigger>
@@ -611,6 +692,62 @@ export function DatasetDetailView({
         </TabsContent>
         <TabsContent value="exports">
           <div className="space-y-4">
+            {canManage && application.status === "active" && (
+              <Button
+                type="button"
+                disabled={validating}
+                onClick={() => void validateDataset()}
+              >
+                {validating ? "Validando dataset…" : "Validar dataset"}
+              </Button>
+            )}
+            {validationError && (
+              <p role="alert" className="text-destructive text-sm">
+                {validationError}
+              </p>
+            )}
+            {validationResult && !validationResult.valid && (
+              <section className="space-y-3 rounded-md border p-4" role="alert">
+                <h3 className="font-semibold" id="dataset-validation-errors-title">
+                  Ítems que requieren revisión
+                </h3>
+                {validationResult.datasetIssue && (
+                  <p className="text-sm">{validationResult.datasetIssue}</p>
+                )}
+                {validationResult.items.length > 0 && (
+                  <ul className="space-y-3">
+                    {validationResult.items.map((issue) => (
+                      <li
+                        key={issue.itemId}
+                        className="flex flex-wrap items-start gap-3 rounded-md border p-3"
+                      >
+                        <Image
+                          src={issue.imageUrl}
+                          alt="Evidencia que requiere revisión"
+                          width={issue.imageWidth}
+                          height={issue.imageHeight}
+                          unoptimized
+                          className="max-h-32 w-auto max-w-48 rounded object-contain"
+                        />
+                        <div className="space-y-2 text-sm">
+                          <p>{issue.message}</p>
+                          <a
+                            href={`#dataset-item-${issue.itemId}`}
+                            className="font-medium text-primary underline underline-offset-4"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void revealEvidence(issue.itemId);
+                            }}
+                          >
+                            Revisar evidencia
+                          </a>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
             {canManage &&
               application.status === "active" &&
               dataset.taskType === "classification" && (
@@ -775,7 +912,7 @@ function EvidenceItem({
   }
 
   return (
-    <li className="rounded-lg border p-4">
+    <li id={`dataset-item-${item.id}`} tabIndex={-1} className="rounded-lg border p-4">
       <div className="flex flex-wrap justify-between gap-2">
         <code className="text-sm">{item.evidenceId}</code>
         <time className="text-muted-foreground text-sm" dateTime={item.capturedAt}>

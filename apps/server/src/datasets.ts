@@ -13,7 +13,11 @@ import {
 } from "@ayni/api/datasets";
 import { Hono } from "hono";
 import { getApplicationForMember } from "./applications";
-import type { CreateDatasetExportInput, CreateDatasetExportResult } from "./dataset-export-store";
+import type {
+  CreateDatasetExportInput,
+  CreateDatasetExportResult,
+  ValidateDatasetForExportResult,
+} from "./dataset-export-store";
 import type {
   AddDatasetEvidenceInput,
   AddDatasetEvidenceResult,
@@ -42,6 +46,9 @@ type Dependencies = {
   datasets: {
     addEvidence: (input: AddDatasetEvidenceInput) => Promise<AddDatasetEvidenceResult>;
     createExport?: (input: CreateDatasetExportInput) => Promise<CreateDatasetExportResult>;
+    validateForExport?: (
+      input: CreateDatasetExportInput,
+    ) => Promise<ValidateDatasetForExportResult>;
     create: (input: CreateDatasetInput) => Promise<DatasetStoreResult>;
     get: (
       applicationId: string,
@@ -100,6 +107,57 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
           message: "No pudimos cargar las exportaciones del dataset.",
           code: "datasetExportListFailed",
         },
+        500,
+      );
+    }
+  });
+
+  app.get("/applications/:applicationId/datasets/:datasetId/validation", async (c) => {
+    const session = await getSession(c.req.raw.headers);
+    if (!session) return c.json({ message: "Authentication required" }, 401);
+
+    const application = await getApplicationForMember(
+      applications,
+      c.req.param("applicationId"),
+      session.user.id,
+    );
+    if (!application) return c.json({ message: "No encontramos este dataset." }, 404);
+    if (application.role !== "admin" && application.role !== "owner") {
+      return c.json(
+        { message: "No tienes permiso para validar este dataset.", code: "forbidden" },
+        403,
+      );
+    }
+    if (application.status !== "active") {
+      return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+    }
+
+    try {
+      if (!datasets.validateForExport) {
+        return c.json(
+          { message: "No pudimos validar el dataset.", code: "datasetValidationFailed" },
+          500,
+        );
+      }
+      const result = await datasets.validateForExport({
+        applicationId: application.id,
+        datasetId: c.req.param("datasetId"),
+        userId: session.user.id,
+      });
+      if (result.ok) return c.json(result.value);
+      if (result.reason === "forbidden") {
+        return c.json(
+          { message: "No tienes permiso para validar este dataset.", code: "forbidden" },
+          403,
+        );
+      }
+      if (result.reason === "archived") {
+        return c.json({ message: APPLICATION_ARCHIVED_MESSAGE, code: "applicationArchived" }, 409);
+      }
+      return c.json({ message: "No encontramos este dataset.", code: "notFound" }, 404);
+    } catch {
+      return c.json(
+        { message: "No pudimos validar el dataset.", code: "datasetValidationFailed" },
         500,
       );
     }
