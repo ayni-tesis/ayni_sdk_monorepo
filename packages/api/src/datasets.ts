@@ -183,6 +183,7 @@ export const DatasetValidationResponseSchema = z
   .object({
     valid: z.boolean(),
     datasetIssue: z.string().nullable(),
+    totalIssueCount: z.number().int().nonnegative(),
     items: z.array(DatasetValidationIssueSchema),
   })
   .strict();

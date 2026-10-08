@@ -15,12 +15,15 @@ import { deleteFile, getDownloadUrl, uploadFile } from "./lib/storage";
 import { toIsoString } from "./model-store";
 
 const MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES = 128 * 1024 * 1024;
+const DATASET_VALIDATION_BATCH_SIZE = 50;
+const DATASET_VALIDATION_MAX_ISSUES = 50;
 
 type DatasetExportQuery = Promise<Record<string, unknown>[]> & {
   innerJoin: (table: unknown, condition: unknown) => DatasetExportQuery;
   where: (condition: unknown) => DatasetExportQuery;
   orderBy: (...columns: unknown[]) => DatasetExportQuery;
   limit: (count: number) => DatasetExportQuery;
+  offset: (count: number) => DatasetExportQuery;
   for: (lock: "update") => Promise<Record<string, unknown>[]>;
 };
 
@@ -147,64 +150,82 @@ export async function validateDatasetForExport(
       const foundDataset = datasets[0];
       if (!foundDataset) return { kind: "notFound" } as const;
 
-      const items = (await tx
-        .select({
-          id: datasetItem.id,
-          reviewedLabel: datasetItem.reviewedLabel,
-          reviewedAnnotations: datasetItem.reviewedAnnotations,
-          storageKey: sdkEvidence.storageKey,
-          imageWidth: sdkEvidence.imageWidth,
-          imageHeight: sdkEvidence.imageHeight,
-          imageByteSize: sdkEvidence.imageByteSize,
-        })
-        .from(datasetItem)
-        .innerJoin(
-          sdkEvidence,
-          and(
-            eq(sdkEvidence.applicationId, datasetItem.applicationId),
-            eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
-          ),
-        )
-        .where(
-          and(
-            eq(datasetItem.applicationId, input.applicationId),
-            eq(datasetItem.datasetId, input.datasetId),
-            eq(datasetItem.reviewStatus, "approved"),
-            eq(sdkEvidence.status, "received"),
-          ),
-        )
-        .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))) as DatasetValidationRow[];
+      let approvedItemCount = 0;
+      let imageBytes = 0;
+      let totalIssueCount = 0;
+      let offset = 0;
+      const invalidItems: (DatasetValidationRow & { message: string })[] = [];
+      while (true) {
+        const items = (await tx
+          .select({
+            id: datasetItem.id,
+            reviewedLabel: datasetItem.reviewedLabel,
+            reviewedAnnotations: datasetItem.reviewedAnnotations,
+            storageKey: sdkEvidence.storageKey,
+            imageWidth: sdkEvidence.imageWidth,
+            imageHeight: sdkEvidence.imageHeight,
+            imageByteSize: sdkEvidence.imageByteSize,
+          })
+          .from(datasetItem)
+          .innerJoin(
+            sdkEvidence,
+            and(
+              eq(sdkEvidence.applicationId, datasetItem.applicationId),
+              eq(sdkEvidence.evidenceId, datasetItem.evidenceId),
+            ),
+          )
+          .where(
+            and(
+              eq(datasetItem.applicationId, input.applicationId),
+              eq(datasetItem.datasetId, input.datasetId),
+              eq(datasetItem.reviewStatus, "approved"),
+              eq(sdkEvidence.status, "received"),
+            ),
+          )
+          .orderBy(asc(datasetItem.addedAt), asc(datasetItem.id))
+          .limit(DATASET_VALIDATION_BATCH_SIZE)
+          .offset(offset)) as DatasetValidationRow[];
+        if (items.length === 0) break;
 
-      if (items.length === 0) {
+        offset += items.length;
+        approvedItemCount += items.length;
+        imageBytes += items.reduce((total, item) => total + item.imageByteSize, 0);
+        for (const item of items) {
+          let message: string | null = null;
+          if (foundDataset.taskType === "classification") {
+            const labelError = reviewedLabelError(item.reviewedLabel);
+            if (labelError === "missingLabel") {
+              message = "La evidencia aprobada no tiene una etiqueta revisada.";
+            } else if (labelError === "unsafeLabel") {
+              message =
+                "Una etiqueta revisada puede interpretarse como fórmula. Corrígela antes de exportar.";
+            }
+          } else if (item.reviewedAnnotations === null) {
+            message = "Guarda las anotaciones revisadas antes de exportar.";
+          } else {
+            const annotations = parseDatasetAnnotationsRequest({
+              annotations: item.reviewedAnnotations,
+            });
+            if (!annotations.success) message = annotations.error.message;
+          }
+
+          if (message) {
+            totalIssueCount += 1;
+            if (invalidItems.length < DATASET_VALIDATION_MAX_ISSUES) {
+              invalidItems.push({ ...item, message });
+            }
+          }
+        }
+      }
+
+      if (approvedItemCount === 0) {
         return {
           kind: "validated" as const,
           datasetIssue: "El dataset no tiene evidencias aprobadas para exportar.",
+          totalIssueCount,
           items: [],
         };
       }
-
-      const invalidItems = items.flatMap((item) => {
-        let message: string | null = null;
-        if (foundDataset.taskType === "classification") {
-          const labelError = reviewedLabelError(item.reviewedLabel);
-          if (labelError === "missingLabel") {
-            message = "La evidencia aprobada no tiene una etiqueta revisada.";
-          } else if (labelError === "unsafeLabel") {
-            message =
-              "Una etiqueta revisada puede interpretarse como fórmula. Corrígela antes de exportar.";
-          }
-        } else if (item.reviewedAnnotations === null) {
-          message = "Guarda las anotaciones revisadas antes de exportar.";
-        } else {
-          const annotations = parseDatasetAnnotationsRequest({
-            annotations: item.reviewedAnnotations,
-          });
-          if (!annotations.success) message = annotations.error.message;
-        }
-
-        return message ? [{ ...item, message }] : [];
-      });
-      const imageBytes = items.reduce((total, item) => total + item.imageByteSize, 0);
       return {
         kind: "validated" as const,
         datasetIssue:
@@ -212,6 +233,7 @@ export async function validateDatasetForExport(
           imageBytes > MAX_CLASSIFICATION_EXPORT_IMAGE_BYTES
             ? "El tamaño total de las imágenes supera el límite de exportación de 128 MiB."
             : null,
+        totalIssueCount,
         items: invalidItems,
       };
     },

@@ -3781,6 +3781,7 @@
                   "properties": {
                     "valid": { "type": "boolean" },
                     "datasetIssue": { "type": ["string", "null"] },
+                    "totalIssueCount": { "type": "integer", "minimum": 0 },
                     "items": {
                       "type": "array",
                       "items": {
@@ -3797,7 +3798,7 @@
                       }
                     }
                   },
-                  "required": ["valid", "datasetIssue", "items"],
+                  "required": ["valid", "datasetIssue", "totalIssueCount", "items"],
                   "additionalProperties": false
                 }
               }

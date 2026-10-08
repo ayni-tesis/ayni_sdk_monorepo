@@ -714,6 +714,12 @@ export function DatasetDetailView({
                 {validationResult.datasetIssue && (
                   <p className="text-sm">{validationResult.datasetIssue}</p>
                 )}
+                {validationResult.totalIssueCount > 50 && (
+                  <p className="text-sm">
+                    Se muestran los primeros 50 de {validationResult.totalIssueCount} ítems. Corrige
+                    esos ítems y vuelve a validar para ver los siguientes.
+                  </p>
+                )}
                 {validationResult.items.length > 0 && (
                   <ul className="space-y-3">
                     {validationResult.items.map((issue) => (
