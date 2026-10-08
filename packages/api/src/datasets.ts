@@ -390,6 +390,7 @@ function itemCause(taskType: DatasetTaskType, item: DatasetExportCandidate) {
     return null;
   }
   if (item.reviewedAnnotations === null) return cause("reviewedAnnotationsRequired");
+  // The same rules as saving them (US-082); the message names the broken rule.
   const parsed = parseDatasetAnnotationsRequest({ annotations: item.reviewedAnnotations });
   return parsed.success
     ? null

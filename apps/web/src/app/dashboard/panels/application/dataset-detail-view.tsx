@@ -344,6 +344,9 @@ export function DatasetDetailView({
     validationAbortRef.current?.abort();
     const controller = new AbortController();
     validationAbortRef.current = controller;
+    // A dialog replaced before it finished closing never gives focus back, so start clean.
+    closingForReviewRef.current = false;
+    setClosingForReview(false);
     setValidating(true);
     setValidation(null);
     setValidationError("");
