@@ -133,8 +133,9 @@ Map<String, String> _parseArguments(List<String> arguments) {
   final values = <String, String>{};
   for (var index = 0; index < arguments.length; index += 1) {
     final argument = arguments[index];
-    if (!argument.startsWith('--'))
+    if (!argument.startsWith('--')) {
       throw const FormatException('Usa opciones --nombre valor.');
+    }
     final name = argument.substring(2);
     if (!valueOptions.contains(name) ||
         values.containsKey(name) ||
