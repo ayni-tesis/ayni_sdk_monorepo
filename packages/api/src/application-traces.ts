@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { sdkTraceArtifactMetadataSchema } from "./sdk-trace-artifact";
 import { safeTraceVersionSchema, sdkTraceSchema } from "./sdk-trace";
+import { sdkTraceArtifactMetadataSchema } from "./sdk-trace-artifact";
 
 export const APPLICATION_TRACE_PAGE_SIZE = 50;
 export const APPLICATION_TRACE_MAX_PAGE_SIZE = 100;

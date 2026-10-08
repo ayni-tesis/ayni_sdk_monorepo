@@ -123,7 +123,9 @@ class TracePacketProtoValidator {
       }
       if (this.bytesConsumed >= this.byteLength) throw new InvalidArtifactContentError();
 
-      const byte = bytes[index++]!;
+      const byte = bytes[index];
+      if (byte === undefined) throw new InvalidArtifactContentError();
+      index += 1;
       this.bytesConsumed += 1;
       this.varintBytes += 1;
       if (this.varintBytes > 10 || (this.varintBytes === 10 && (byte & 0xfe) !== 0)) {
@@ -211,18 +213,22 @@ class PerfettoTraceProtoSniffer {
     while (index < bytes.length) {
       if (this.state === "body") {
         const skipped = Math.min(this.bodyRemaining, bytes.length - index);
-        this.packetValidator!.feed(bytes.subarray(index, index + skipped));
+        const packetValidator = this.packetValidator;
+        if (!packetValidator) throw new InvalidArtifactContentError();
+        packetValidator.feed(bytes.subarray(index, index + skipped));
         this.bodyRemaining -= skipped;
         index += skipped;
         if (this.bodyRemaining === 0) {
-          if (!this.packetValidator!.isComplete) throw new InvalidArtifactContentError();
+          if (!packetValidator.isComplete) throw new InvalidArtifactContentError();
           this.packetValidator = undefined;
           this.state = "tag";
         }
         continue;
       }
 
-      const byte = bytes[index++]!;
+      const byte = bytes[index];
+      if (byte === undefined) throw new InvalidArtifactContentError();
+      index += 1;
       if (this.state === "tag") {
         if (byte !== 0x0a) throw new InvalidArtifactContentError();
         this.state = "length";
@@ -417,15 +423,23 @@ export function createSdkTraceArtifactStore(
           ? { ok: false, reason: "uploadInProgress" }
           : { ok: false, reason: "artifactNotFound" };
       }
+      const stagingStorageKey = claimed.stagingStorageKey;
+      if (!stagingStorageKey) {
+        await database
+          .update(sdkTraceArtifact)
+          .set({ status: "pending" })
+          .where(and(eq(sdkTraceArtifact.id, row.id), eq(sdkTraceArtifact.status, "verifying")));
+        return { ok: false, reason: "artifactNotFound" };
+      }
 
       const expected = { byteLength: row.byteLength, sha256: row.sha256 };
       try {
         let sourceETag: string;
         try {
-          sourceETag = await verifyStagedArtifact(storage, claimed.stagingStorageKey!, expected);
+          sourceETag = await verifyStagedArtifact(storage, stagingStorageKey, expected);
         } catch (error) {
           if (!(error instanceof InvalidArtifactContentError)) throw error;
-          await storage.removeArtifact(claimed.stagingStorageKey!);
+          await storage.removeArtifact(stagingStorageKey);
           await database
             .update(sdkTraceArtifact)
             .set({ status: "pending" })
@@ -434,7 +448,7 @@ export function createSdkTraceArtifactStore(
         }
 
         if (!(await isTelemetryEnabled())) {
-          await storage.removeArtifact(claimed.stagingStorageKey!);
+          await storage.removeArtifact(stagingStorageKey);
           await database
             .update(sdkTraceArtifact)
             .set({ status: "pending" })
@@ -444,7 +458,7 @@ export function createSdkTraceArtifactStore(
 
         const finalKey = immutableKey(input.applicationId, input.traceId, input.artifactId);
         try {
-          await storage.copyFile(claimed.stagingStorageKey!, finalKey, sourceETag);
+          await storage.copyFile(stagingStorageKey, finalKey, sourceETag);
         } catch (error) {
           if (typeof error === "object" && error !== null) {
             const candidate = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } };
@@ -481,7 +495,7 @@ export function createSdkTraceArtifactStore(
         // Recheck the policy immediately before committing the immutable reference.
         if (!(await isTelemetryEnabled())) {
           await storage.removeArtifact(finalKey);
-          await storage.removeArtifact(claimed.stagingStorageKey!);
+          await storage.removeArtifact(stagingStorageKey);
           await database
             .update(sdkTraceArtifact)
             .set({ status: "pending" })
@@ -521,13 +535,13 @@ export function createSdkTraceArtifactStore(
           const existing = latest && toMetadata(latest);
           if (existing) return { ok: true, artifact: existing };
           await storage.removeArtifact(finalKey);
-          await storage.removeArtifact(claimed.stagingStorageKey!);
+          await storage.removeArtifact(stagingStorageKey);
           if (latest)
             await database.delete(sdkTraceArtifact).where(eq(sdkTraceArtifact.id, row.id));
           return { ok: false, reason: "traceNotFound" };
         }
         try {
-          await storage.removeArtifact(claimed.stagingStorageKey!);
+          await storage.removeArtifact(stagingStorageKey);
         } catch {
           // The expiring staging key remains in the row for the retention job to remove.
         }
@@ -563,7 +577,7 @@ export function createSdkTraceArtifactStore(
           ),
         )
         .limit(1);
-      if (!row || !row.sdk_trace_artifact.storageKey) return;
+      if (!row?.sdk_trace_artifact.storageKey) return;
       const artifact = toMetadata(row.sdk_trace_artifact);
       if (!artifact) return;
       const object = await storage.getArtifact(row.sdk_trace_artifact.storageKey);

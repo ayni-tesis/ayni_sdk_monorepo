@@ -5,9 +5,9 @@ import {
 } from "@ayni/api/sdk-trace-artifact";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { isUuid } from "./lib/uuid";
 import { INVALID_CREDENTIAL_MESSAGE, type VerifySdkCredentialResult } from "./sdk-credential-store";
 import type { CompleteSdkTraceArtifactResult } from "./sdk-trace-artifact-store";
-import { isUuid } from "./lib/uuid";
 import type { TelemetryPolicy } from "./telemetry-policy-store";
 
 type Dependencies = {

@@ -9,7 +9,13 @@ const logicalNameSchema = z
   .trim()
   .min(1)
   .max(160)
-  .refine((value) => !/[\u0000-\u001f\u007f]/.test(value));
+  .refine(
+    (value) =>
+      !Array.from(value).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 0x1f || codePoint === 0x7f;
+      }),
+  );
 const producerTextSchema = z.string().trim().min(1).max(128);
 
 export const sdkTraceArtifactUploadRequestSchema = z.strictObject({

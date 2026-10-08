@@ -106,6 +106,9 @@ import { createSdkModelVersionsApp } from "./sdk-model-versions";
 import { createSdkSyncApp } from "./sdk-sync";
 import { getSdkSyncManifest } from "./sdk-sync-manifest-store";
 import { createSdkTelemetryPolicyApp } from "./sdk-telemetry-policy";
+import { r2SdkTraceArtifactStorage } from "./sdk-trace-artifact-storage";
+import { createSdkTraceArtifactStore } from "./sdk-trace-artifact-store";
+import { createSdkTraceArtifactsApp } from "./sdk-trace-artifacts";
 import {
   getApplicationTrace,
   listApplicationTraceRecords,
@@ -114,9 +117,6 @@ import {
   storeSdkTrace,
 } from "./sdk-trace-store";
 import { createSdkTracesApp } from "./sdk-traces";
-import { createSdkTraceArtifactsApp } from "./sdk-trace-artifacts";
-import { createSdkTraceArtifactStore } from "./sdk-trace-artifact-store";
-import { r2SdkTraceArtifactStorage } from "./sdk-trace-artifact-storage";
 import { createSdkValidationDatasetsApp } from "./sdk-validation-datasets";
 import { createSdkWorkflowVersionsApp } from "./sdk-workflow-versions";
 import { createTelemetryPolicyApp } from "./telemetry-policy";

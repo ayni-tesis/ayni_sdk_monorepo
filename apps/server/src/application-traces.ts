@@ -6,8 +6,8 @@ import {
   applicationTraceMetricsQuerySchema,
   applicationTracePageQuerySchema,
 } from "@ayni/api/application-traces";
-import { type Context, Hono } from "hono";
 import type { SdkTraceArtifactMetadata } from "@ayni/api/sdk-trace-artifact";
+import { type Context, Hono } from "hono";
 import { type Application, getApplicationForMember } from "./applications";
 import { isUuid } from "./lib/uuid";
 import {
@@ -54,11 +54,30 @@ const EXPORT_PAGE_SIZE = 10;
 
 function artifactDisposition(logicalName: string) {
   const safeName =
-    logicalName
-      .normalize("NFC")
-      .replace(/[\\/\u0000-\u001f\u007f"<>:*?|\u202a-\u202e\u2066-\u2069]/g, "_")
+    Array.from(logicalName.normalize("NFC"), (character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      const unsafe =
+        character === "\\" ||
+        character === "/" ||
+        character === '"' ||
+        character === "<" ||
+        character === ">" ||
+        character === ":" ||
+        character === "*" ||
+        character === "?" ||
+        character === "|" ||
+        codePoint <= 0x1f ||
+        codePoint === 0x7f ||
+        (codePoint >= 0x202a && codePoint <= 0x202e) ||
+        (codePoint >= 0x2066 && codePoint <= 0x2069);
+      return unsafe ? "_" : character;
+    })
+      .join("")
       .trim() || "perfetto-trace.bin";
-  const asciiName = safeName.replace(/[^\x20-\x7e]/g, "_");
+  const asciiName = Array.from(safeName, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint >= 0x20 && codePoint <= 0x7e ? character : "_";
+  }).join("");
   let encodedName: string;
   try {
     encodedName = encodeURIComponent(safeName).replace(
