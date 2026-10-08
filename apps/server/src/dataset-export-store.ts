@@ -295,6 +295,14 @@ function createCocoDocument(items: ExportItem[]) {
   };
 }
 
+function getDatasetTaskTypeMismatchReason(
+  actualTaskType: string,
+  expectedTaskType: "classification" | "detection",
+) {
+  if (actualTaskType === expectedTaskType) return null;
+  return expectedTaskType === "classification" ? "notClassification" : "notDetection";
+}
+
 export async function createDatasetExport(
   database: ApplicationDatabase,
   input: CreateDatasetExportInput,
@@ -319,11 +327,9 @@ export async function createDatasetExport(
           .limit(1)) as { taskType: string }[];
         const foundDataset = datasets[0];
         if (!foundDataset) return { kind: "error", reason: "notFound" } as const;
-        if (foundDataset.taskType !== taskType) {
-          return {
-            kind: "error",
-            reason: taskType === "classification" ? "notClassification" : "notDetection",
-          } as const;
+        const taskTypeMismatch = getDatasetTaskTypeMismatchReason(foundDataset.taskType, taskType);
+        if (taskTypeMismatch) {
+          return { kind: "error", reason: taskTypeMismatch } as const;
         }
 
         // The same rules as dataset validation (US-084), so they cannot disagree.
@@ -422,11 +428,9 @@ export async function createDatasetExport(
           .for("update")) as { taskType: string }[];
         const foundDataset = datasets[0];
         if (!foundDataset) return { kind: "error", reason: "notFound" } as const;
-        if (foundDataset.taskType !== taskType) {
-          return {
-            kind: "error",
-            reason: taskType === "classification" ? "notClassification" : "notDetection",
-          } as const;
+        const taskTypeMismatch = getDatasetTaskTypeMismatchReason(foundDataset.taskType, taskType);
+        if (taskTypeMismatch) {
+          return { kind: "error", reason: taskTypeMismatch } as const;
         }
 
         const latest = (await tx
