@@ -7,6 +7,7 @@ import {
   applicationTracePageQuerySchema,
 } from "@ayni/api/application-traces";
 import { type Context, Hono } from "hono";
+import type { SdkTraceArtifactMetadata } from "@ayni/api/sdk-trace-artifact";
 import { type Application, getApplicationForMember } from "./applications";
 import {
   type ApplicationTracePage,
@@ -28,6 +29,18 @@ type Dependencies = {
       query: ApplicationTracePageQuery & { applicationId: string },
     ) => Promise<ApplicationTracePage>;
     get: (applicationId: string, traceId: string) => Promise<ApplicationTraceRecord | undefined>;
+    getArtifact?: (
+      applicationId: string,
+      traceId: string,
+      artifactId: string,
+    ) => Promise<
+      | {
+          artifact: SdkTraceArtifactMetadata;
+          body: ReadableStream<Uint8Array>;
+          contentLength?: number;
+        }
+      | undefined
+    >;
     listRecords: (
       query: ApplicationTracePageQuery & { applicationId: string },
     ) => Promise<ApplicationTraceRecordPage>;
@@ -37,6 +50,26 @@ type Dependencies = {
 const BAD_QUERY = "La consulta de trazas no es válida.";
 const NOT_FOUND = "No encontramos esta aplicación o traza.";
 const EXPORT_PAGE_SIZE = 10;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function artifactDisposition(logicalName: string) {
+  const safeName =
+    logicalName
+      .normalize("NFC")
+      .replace(/[\\/\u0000-\u001f\u007f"<>:*?|\u202a-\u202e\u2066-\u2069]/g, "_")
+      .trim() || "perfetto-trace.bin";
+  const asciiName = safeName.replace(/[^\x20-\x7e]/g, "_");
+  let encodedName: string;
+  try {
+    encodedName = encodeURIComponent(safeName).replace(
+      /[!'()*]/g,
+      (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+  } catch {
+    encodedName = encodeURIComponent(asciiName);
+  }
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`;
+}
 
 export function createApplicationTracesApp({ getSession, applications, traces }: Dependencies) {
   const app = new Hono();
@@ -96,13 +129,31 @@ export function createApplicationTracesApp({ getSession, applications, traces }:
     );
   });
 
+  app.get("/applications/:applicationId/traces/:traceId/artifacts/:artifactId", async (c) => {
+    const access = await authorize(c);
+    if ("response" in access) return access.response;
+    const traceId = c.req.param("traceId");
+    const artifactId = c.req.param("artifactId");
+    if (!UUID_PATTERN.test(traceId) || !UUID_PATTERN.test(artifactId))
+      return c.json({ message: BAD_QUERY }, 400);
+    const found = await traces.getArtifact?.(access.application.id, traceId, artifactId);
+    if (!found) return c.json({ message: NOT_FOUND }, 404);
+    return new Response(found.body, {
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": artifactDisposition(found.artifact.logicalName),
+        "Content-Length": String(found.contentLength ?? found.artifact.byteLength),
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+      },
+    });
+  });
+
   app.get("/applications/:applicationId/traces/:traceId", async (c) => {
     const access = await authorize(c);
     if ("response" in access) return access.response;
     const traceId = c.req.param("traceId");
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(traceId)
-    ) {
+    if (!UUID_PATTERN.test(traceId)) {
       return c.json({ message: BAD_QUERY }, 400);
     }
     const record = await traces.get(access.application.id, traceId);

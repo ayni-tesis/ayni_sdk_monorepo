@@ -253,6 +253,13 @@
       "when": 1791440395136,
       "tag": "0035_detection_yolo_export",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791450823539,
+      "tag": "0036_sdk_trace_artifact",
+      "breakpoints": true
     }
   ]
 }
