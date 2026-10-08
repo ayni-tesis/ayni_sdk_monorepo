@@ -232,6 +232,15 @@ export function createDatasetsApp({ getSession, applications, datasets }: Depend
         409,
       );
     }
+    if (result.reason === "noYoloClasses") {
+      return c.json(
+        {
+          message: "Agrega al menos una anotación revisada con una clase para exportar en YOLO.",
+          code: "datasetExportNoYoloClasses",
+        },
+        409,
+      );
+    }
     if (result.reason === "invalidAnnotations") {
       return c.json(
         {

@@ -38,5 +38,6 @@ Scenario: Exportar una caja inválida
 - La definición de clases corresponde a las etiquetas revisadas de las anotaciones exportadas, ordenadas alfabéticamente.
 - Cada imagen tiene su archivo `labels/<partición>/<itemId>.txt`; una imagen sin cajas tiene un archivo vacío.
 - Una anotación inválida rechaza la exportación antes de subir el ZIP.
+- Se requiere al menos una clase revisada; Ultralytics no admite datasets de detección con cero clases.
 
 El ZIP incluye las imágenes en `images/train|val`, las etiquetas en `labels/train|val` y `data.yaml` en la raíz. Para admitir ambas particiones sin duplicar datos, un dataset con menos de dos imágenes aprobadas no se puede exportar en YOLO.

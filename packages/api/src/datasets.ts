@@ -621,7 +621,7 @@ export function registerDatasetRoutes(registry: OpenAPIRegistry) {
       "404": errorResponse("No encontramos este dataset."),
       "409": {
         description:
-          "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa; una exportación YOLO requiere al menos dos imágenes aprobadas.",
+          "El dataset no se puede exportar. Si las anotaciones de detección son inválidas, la respuesta identifica cada ítem y su causa; YOLO requiere al menos dos imágenes aprobadas y una clase en sus anotaciones revisadas.",
         content: {
           "application/json": {
             schema: DatasetExportErrorResponseSchema,

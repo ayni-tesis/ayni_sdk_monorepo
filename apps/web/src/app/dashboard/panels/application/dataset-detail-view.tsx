@@ -928,7 +928,8 @@ export function DatasetDetailView({
                       </DialogDescription>
                     </DialogHeader>
                     {dataset.taskType === "detection" && (
-                      <div role="group" aria-label="Formato de exportación" className="flex gap-2">
+                      <fieldset className="flex gap-2">
+                        <legend className="sr-only">Formato de exportación</legend>
                         <Button
                           type="button"
                           variant={exportFormat === "detection_coco" ? "default" : "outline"}
@@ -947,7 +948,7 @@ export function DatasetDetailView({
                         >
                           Detección (YOLO)
                         </Button>
-                      </div>
+                      </fieldset>
                     )}
                     {dataset.taskType === "classification" && (
                       <p className="text-muted-foreground text-sm">
