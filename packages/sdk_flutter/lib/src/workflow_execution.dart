@@ -34,8 +34,8 @@ enum WorkflowErrorCategory {
   /// The input is empty or is not an image the SDK can decode.
   invalidInput,
 
-  /// A model node declares an image input the SDK does not support (size,
-  /// channels, or normalization); [WorkflowError.nodeId] names the node.
+  /// A model node declares an image input the SDK does not support (size, pixel
+  /// count, channels, or normalization); [WorkflowError.nodeId] names the node.
   unsupportedInputContract,
 
   /// The installed workflow definition is not valid or cannot be executed,
@@ -253,6 +253,9 @@ class DetectionResult extends WorkflowValue {
   /// empty.
   final List<Detection> detections;
 }
+
+/// Keeps the largest four-channel float32 input tensor to 16 MiB.
+const _maxModelInputPixels = 1048576;
 
 /// The most pixels (`height * width`) a segmentation mask may have. It is the
 /// same limit the server applies when a model is registered.
@@ -840,6 +843,7 @@ class WorkflowExecutor {
         contract['height'] is! int ||
         contract['height'] < 1 ||
         contract['height'] > 8192 ||
+        contract['width'] * contract['height'] > _maxModelInputPixels ||
         ![1, 3, 4].contains(contract['channels']) ||
         ![
           'none',

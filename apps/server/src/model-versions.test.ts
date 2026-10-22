@@ -497,6 +497,28 @@ describe("GET /applications/:applicationId/models/:modelId/versions", () => {
 });
 
 describe("PATCH /applications/:applicationId/models/:modelId/versions/:modelVersionId/contract", () => {
+  it("rejects an input above the pixel limit before checking the model", async () => {
+    const { app, setContractMock } = makeApp();
+    const response = await app.request(`${MODEL_URL}/mv-1/contract`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        input: {
+          type: "image",
+          width: 1025,
+          height: 1024,
+          channels: 3,
+          normalization: "none",
+        },
+        output: { type: "classification", labels: ["leaf"] },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "incompatibleContract" });
+    expect(setContractMock).not.toHaveBeenCalled();
+  });
+
   it("accepts legacy detection contracts without explicit tensor roles", async () => {
     const { app } = makeApp();
     const contract = {

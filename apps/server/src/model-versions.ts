@@ -9,6 +9,7 @@ import type {
   ListModelVersionsResult,
   ModelVersionContract,
 } from "./model-version-store";
+import { isModelInputSizeCompatible } from "./tflite-contract-validator";
 
 export const MAX_MODEL_VERSION_BYTES = 128 * 1024 * 1024;
 
@@ -43,7 +44,8 @@ const contractSchema = z
         channels: z.union([z.literal(1), z.literal(3), z.literal(4)]),
         normalization: z.enum(["none", "zero_to_one", "minus_one_to_one"]),
       })
-      .strict(),
+      .strict()
+      .refine(({ width, height }) => isModelInputSizeCompatible(width, height)),
     output: z.discriminatedUnion("type", [
       z
         .object({

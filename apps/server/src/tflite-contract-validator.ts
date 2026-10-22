@@ -44,6 +44,13 @@ export function isDetectionTensorRolesCompatible(
 /** Largest segmentation mask (height × width) the SDK decodes on a phone (US-158). */
 export const MAX_SEGMENTATION_PIXELS = 1_048_576;
 
+/** Caps the largest four-channel float32 model input tensor at 16 MiB. */
+export const MAX_MODEL_INPUT_PIXELS = 1_048_576;
+
+export function isModelInputSizeCompatible(width: number, height: number): boolean {
+  return width > 0 && height > 0 && width * height <= MAX_MODEL_INPUT_PIXELS;
+}
+
 /** Largest segmentation tensor (height × width × labels): 16,777,216 float32 values, about 64 MB. */
 export const MAX_SEGMENTATION_VALUES = 16_777_216;
 
@@ -178,6 +185,7 @@ export function isTfliteContractCompatible(
   bytes: Uint8Array,
   contract: ModelVersionContract,
 ): boolean {
+  if (!isModelInputSizeCompatible(contract.input.width, contract.input.height)) return false;
   try {
     const { inputs, outputs } = new FlatbufferReader(bytes).readMainSubgraph();
     if (inputs.length !== 1 || outputs.length === 0) return false;

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   isDetectionTensorRolesCompatible,
+  isModelInputSizeCompatible,
   isSegmentationOutputCompatible,
   isTfliteContractCompatible,
+  MAX_MODEL_INPUT_PIXELS,
   MAX_SEGMENTATION_PIXELS,
   MAX_SEGMENTATION_VALUES,
 } from "./tflite-contract-validator";
@@ -13,6 +15,14 @@ import {
 // a fixed 4×4 model and one whose height and width are dynamic (shape_signature -1).
 const fixture = (name: string) =>
   new Uint8Array(readFileSync(new URL(`./test-fixtures/${name}`, import.meta.url)));
+
+describe("isModelInputSizeCompatible", () => {
+  it("caps the input tensor at 1,048,576 pixels", () => {
+    expect(MAX_MODEL_INPUT_PIXELS).toBe(1024 * 1024);
+    expect(isModelInputSizeCompatible(1024, 1024)).toBe(true);
+    expect(isModelInputSizeCompatible(1025, 1024)).toBe(false);
+  });
+});
 
 describe("isTfliteContractCompatible with a segmentation contract (US-158)", () => {
   const contract = (labels: string[]) => ({
