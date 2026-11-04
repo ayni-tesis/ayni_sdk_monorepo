@@ -890,6 +890,122 @@ void main() {
       expect(input, equals(original));
     });
 
+    test('reuses the validated image during model preprocessing', () async {
+      final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+      var inferenceStarted = false;
+      final executor = WorkflowExecutor(
+        storageDirectory,
+        inferenceRunner:
+            ({
+              required modelPath,
+              required inputBytes,
+              required acceptedInputShapes,
+            }) async {
+              inferenceStarted = true;
+              return (
+                error: null,
+                outputs: [
+                  (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                ],
+              );
+            },
+      );
+      final validated = await executor.validateInputAndContracts(
+        definition,
+        pngBytes(),
+      );
+      final result = await executor.execute(
+        executionId: 'execution',
+        workflowId: 'workflow-1',
+        workflowVersion: '1.0.0',
+        definition: definition,
+        imageBytes: Uint8List(0),
+        validatedInput: validated,
+      );
+      expect(inferenceStarted, isTrue);
+      expect(result.outputs, isNotEmpty);
+    });
+
+    test(
+      'reused decoded input produces the same tensor as direct decoding',
+      () async {
+        final definition = jsonDecode(_definition()) as Map<String, dynamic>;
+        final image = img.Image(width: 33, height: 19, numChannels: 4)
+          ..setPixelRgba(0, 0, 12, 45, 78, 255)
+          ..setPixelRgba(1, 1, 220, 180, 140, 128);
+        final images = [
+          Uint8List.fromList(img.encodePng(image)),
+          Uint8List.fromList(img.encodeJpg(image)),
+          Uint8List.fromList(
+            img.encodePng(
+              img.quantize(
+                image,
+                method: img.QuantizeMethod.octree,
+                numberOfColors: 16,
+              ),
+            ),
+          ),
+        ];
+        final tensors = <Uint8List>[];
+        final executor = WorkflowExecutor(
+          storageDirectory,
+          inferenceRunner:
+              ({
+                required modelPath,
+                required inputBytes,
+                required acceptedInputShapes,
+              }) async {
+                tensors.add(Uint8List.fromList(inputBytes));
+                return (
+                  error: null,
+                  outputs: [
+                    (shape: [1, 2], values: Float32List.fromList([0.1, 0.9])),
+                  ],
+                );
+              },
+        );
+        final model = (definition['nodes'] as List).cast<Map>().firstWhere(
+          (node) => node['type'] == 'model.tflite',
+        );
+        final contract = (model['inputs'] as Map)['image'] as Map;
+        contract['width'] = 2;
+        contract['height'] = 2;
+        for (final bytes in images) {
+          for (final channels in [1, 3, 4]) {
+            for (final normalization in [
+              'none',
+              'zero_to_one',
+              'minus_one_to_one',
+            ]) {
+              contract['channels'] = channels;
+              contract['normalization'] = normalization;
+              final validated = await executor.validateInputAndContracts(
+                definition,
+                bytes,
+              );
+              tensors.clear();
+              for (final input in [null, validated]) {
+                await executor.execute(
+                  executionId: 'execution',
+                  workflowId: 'workflow-1',
+                  workflowVersion: '1.0.0',
+                  definition: definition,
+                  imageBytes: bytes,
+                  validatedInput: input,
+                );
+              }
+              expect(tensors, hasLength(2));
+              expect(
+                tensors[1],
+                equals(tensors[0]),
+                reason: '$channels $normalization',
+              );
+            }
+          }
+        }
+      },
+    );
+
     test('reports a missing model artifact with its version', () async {
       await installWorkflow();
       final client = sdk();

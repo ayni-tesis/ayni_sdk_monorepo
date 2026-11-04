@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'performance_profile.dart';
 import 'workflow_tflite_stub.dart'
     if (dart.library.ui) 'workflow_tflite_flutter.dart'
     as tflite;
@@ -418,6 +419,13 @@ class WorkflowCapture {
 List<Map> _outputSourceDefinitions(Map node) =>
     node['sources'] is List ? (node['sources'] as List).cast<Map>() : [node];
 
+/// A decoded input retained for the duration of one workflow execution.
+class ValidatedWorkflowInput {
+  ValidatedWorkflowInput._(this._image);
+
+  final img.Image _image;
+}
+
 /// Runs a validated workflow definition on the device.
 class WorkflowExecutor {
   /// Creates an executor that loads models from [storageDirectory].
@@ -461,20 +469,21 @@ class WorkflowExecutor {
   ///
   /// Throws a [WorkflowError] with [WorkflowErrorCategory.invalidInput] or
   /// [WorkflowErrorCategory.unsupportedInputContract] otherwise.
-  Future<void> validateInputAndContracts(
+  Future<ValidatedWorkflowInput> validateInputAndContracts(
     Map<String, dynamic> definition,
     Uint8List bytes,
   ) async {
-    final isDecodable = bytes.isEmpty
-        ? false
-        : await Isolate.run(() => img.decodeImage(bytes) != null);
-    if (!isDecodable) {
+    final decoded = bytes.isEmpty
+        ? null
+        : await Isolate.run(() => img.decodeImage(bytes));
+    if (decoded == null) {
       throw const WorkflowError(WorkflowErrorCategory.invalidInput);
     }
     for (final node in (definition['nodes'] as List).cast<Map>()) {
       if (node['type'] != 'model.tflite') continue;
       _parseInputContract(node, node['id'] as String);
     }
+    return ValidatedWorkflowInput._(decoded);
   }
 
   /// Runs [definition] on [imageBytes] and returns the value of each output
@@ -493,6 +502,7 @@ class WorkflowExecutor {
     required String workflowVersion,
     required Map<String, dynamic> definition,
     required Uint8List imageBytes,
+    ValidatedWorkflowInput? validatedInput,
     bool Function()? isCancelled,
     void Function(TraceNodeExecution node)? onNodeFinished,
     void Function(WorkflowCapture capture)? onCapture,
@@ -624,7 +634,7 @@ class WorkflowExecutor {
                   WorkflowErrorCategory.invalidWorkflow,
                   nodeId: id,
                 );
-              values[id] = await _infer(node, imageBytes, id);
+              values[id] = await _infer(node, imageBytes, id, validatedInput);
             case 'condition':
               final source = values[node['sourceNodeId']];
               // A classification compares the label's score; a segmentation
@@ -867,18 +877,24 @@ class WorkflowExecutor {
     Map node,
     Uint8List imageBytes,
     String nodeId,
+    ValidatedWorkflowInput? validatedInput,
   ) async {
     final contract = _parseInputContract(node, nodeId);
     final width = contract.width,
         height = contract.height,
         channels = contract.channels;
-    final input = await Isolate.run(
-      () => _prepareImageTensor(
-        imageBytes,
-        width,
-        height,
-        channels,
-        contract.normalization,
+    final input = await profileStage(
+      'image.preprocess',
+      () => Isolate.run(
+        () => _prepareImageTensor(
+          validatedInput?._image ??
+              img.decodeImage(imageBytes) ??
+              (throw const FormatException('Invalid image.')),
+          width,
+          height,
+          channels,
+          contract.normalization,
+        ),
       ),
     );
     final versionId = node['modelVersionId'] as String;
@@ -1266,14 +1282,12 @@ _decodeSegmentationInIsolate(
 }
 
 Float32List _prepareImageTensor(
-  Uint8List imageBytes,
+  img.Image decoded,
   int width,
   int height,
   int channels,
   String normalization,
 ) {
-  final decoded = img.decodeImage(imageBytes);
-  if (decoded == null) throw const FormatException('Invalid image.');
   final uint8Image =
       decoded.format == img.Format.uint8 && decoded.palette == null
       ? decoded

@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 
 import 'model_artifact_integrity_verifier.dart';
 import 'sdk_internal.dart';
+import 'sha256_file.dart';
 
 /// The state of a model installation by [ModelArtifactInstaller.install].
 enum ModelArtifactInstallStatus {
@@ -227,8 +228,7 @@ class ModelArtifactInstaller {
         return false;
       }
       final storedHash = decoded['sha256'] as String;
-      final actualHash = (await crypto.sha256.bind(artifact.openRead()).first)
-          .toString();
+      final actualHash = await sha256File(artifact);
       return storedHash == actualHash;
     } on FormatException {
       return false;

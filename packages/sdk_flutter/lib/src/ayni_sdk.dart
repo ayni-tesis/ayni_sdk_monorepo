@@ -17,6 +17,7 @@ import 'evidence_store.dart';
 import 'evidence_uploader.dart';
 import 'installation_id_store.dart';
 import 'network_type.dart';
+import 'performance_profile.dart';
 import 'sdk_consent.dart';
 import 'telemetry_policy_store.dart';
 import 'trace_outbox_store.dart';
@@ -25,6 +26,7 @@ import 'uuid_v4.dart';
 import 'workflow_definition_validator.dart';
 import 'workflow_version_downloader.dart';
 import 'workflow_execution.dart';
+import 'workflow_preflight.dart';
 import 'trace_payload.dart';
 import 'workflow_trace.dart';
 import 'supported_platform_stub.dart'
@@ -1379,7 +1381,10 @@ class AyniSdk {
       final inventoryFile = File(
         '${storageDirectory.path}${Platform.pathSeparator}sync-inventory.json',
       );
-      final inventory = await _readInventory(inventoryFile);
+      final inventory = await profileStage(
+        'inventory',
+        () => _readInventory(inventoryFile),
+      );
       inventoryForTrace = inventory;
       final workflow = inventory.workflows[workflowId];
       if (workflow == null) {
@@ -1393,51 +1398,75 @@ class AyniSdk {
       if (!await definitionFile.exists()) {
         throw const WorkflowError(WorkflowErrorCategory.workflowNotAvailable);
       }
-      final decoded = jsonDecode(await definitionFile.readAsString());
-      if (_workflowDefinitionValidator.validate(
-            definition: decoded,
-            declaredModelVersionIds: workflow.modelVersionIds.toSet(),
+      final decoded = await profileStage(
+        'definition.read',
+        () async => jsonDecode(await definitionFile.readAsString()),
+      );
+      if (profileStageSync(
+            'definition.validate',
+            () => _workflowDefinitionValidator.validate(
+              definition: decoded,
+              declaredModelVersionIds: workflow.modelVersionIds.toSet(),
+            ),
           ) !=
           WorkflowValidationStatus.valid) {
         throw const WorkflowError(WorkflowErrorCategory.invalidWorkflow);
       }
       final executor = _createWorkflowExecutorForRun();
-      await executor.validateInputAndContracts(
-        decoded as Map<String, dynamic>,
-        input,
-      );
-      _throwIfCancelled(execution);
       final requiredModelVersionIds = WorkflowExecutor.requiredModelVersionIds(
-        decoded,
+        decoded as Map<String, dynamic>,
       );
       final installer = ModelArtifactInstaller(
         storageDirectory: storageDirectory,
       );
-      for (final modelVersionId in workflow.modelVersionIds) {
-        _throwIfCancelled(execution);
-        if (requiredModelVersionIds.contains(modelVersionId) &&
-            !await installer.isVersionAvailable(
-              modelId: modelVersionId,
-              modelVersionId: modelVersionId,
-            )) {
-          throw WorkflowError(
-            WorkflowErrorCategory.modelNotAvailable,
-            modelVersionId: modelVersionId,
-          );
-        }
-      }
+      late final ValidatedWorkflowInput validatedInput;
+      await profileStage(
+        'workflow.preflight',
+        () => prepareWorkflow(
+          validate: () async {
+            validatedInput = await profileStage(
+              'input.validate',
+              () => executor.validateInputAndContracts(decoded, input),
+            );
+            _throwIfCancelled(execution);
+          },
+          verify: () async {
+            for (final modelVersionId in workflow.modelVersionIds) {
+              _throwIfCancelled(execution);
+              if (requiredModelVersionIds.contains(modelVersionId) &&
+                  !await profileStage(
+                    'model.integrity',
+                    () => installer.isVersionAvailable(
+                      modelId: modelVersionId,
+                      modelVersionId: modelVersionId,
+                    ),
+                  )) {
+                throw WorkflowError(
+                  WorkflowErrorCategory.modelNotAvailable,
+                  modelVersionId: modelVersionId,
+                );
+              }
+            }
+          },
+        ),
+      );
+      _throwIfCancelled(execution);
       onProgress?.call('Usando recursos guardados en este dispositivo.');
       final captures = <WorkflowCapture>[];
-      final result = await executor.execute(
-        executionId: executionId,
-        workflowId: workflowId,
-        workflowVersion: workflow.version,
-        definition: decoded,
-        imageBytes: input,
-        isCancelled: () => execution.cancelled,
-        onNodeFinished: captureTrace ? traceNodes.add : null,
-        // Without consent the SDK does not even note a capture (US-066).
-        onCapture: evidenceConsent ? captures.add : null,
+      final result = await profileStage(
+        'workflow.execute',
+        () => executor.execute(
+          executionId: executionId,
+          workflowId: workflowId,
+          workflowVersion: workflow.version,
+          definition: decoded,
+          imageBytes: input,
+          validatedInput: validatedInput,
+          isCancelled: () => execution.cancelled,
+          onNodeFinished: captureTrace ? traceNodes.add : null,
+          // Without consent the SDK does not even note a capture (US-066).
+          onCapture: evidenceConsent ? captures.add : null,
+        ),
       );
       _throwIfCancelled(execution);
       stopwatch.stop();
@@ -1451,7 +1480,10 @@ class AyniSdk {
         nodes: traceNodes,
         outputs: result.outputs,
       );
-      final persisted = await _persistTrace(trace, traceGeneration);
+      final persisted = await profileStage(
+        'trace.persist',
+        () => _persistTrace(trace, traceGeneration),
+      );
       if (captures.isNotEmpty && evidenceGeneration == _evidenceGeneration) {
         _queueEvidence(
           captures,

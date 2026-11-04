@@ -13,7 +13,7 @@ Agrega `ayni_sdk` a las dependencias de tu proyecto Flutter en `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  ayni_sdk: ^0.4.0
+  ayni_sdk: ^0.4.1
 ```
 
 Resuelve las dependencias desde la carpeta de tu aplicación:
@@ -29,7 +29,7 @@ el SDK, sincroniza un workflow publicado y ejecuta la imagen seleccionada. Sus
 instrucciones están en el
 [README del ejemplo](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/example/app/README.md)
 y usa una dependencia local `path: ../..` para verificar este checkout antes
-de publicar. Una aplicación consumidora debe resolver `^0.4.0` desde pub.dev.
+de publicar. Una aplicación consumidora debe resolver `^0.4.1` desde pub.dev.
 
 Consulta las notas de cada versión en el
 [changelog del repositorio](https://github.com/ayni-tesis/ayni_sdk_monorepo/blob/main/packages/sdk_flutter/CHANGELOG.md).
@@ -424,7 +424,7 @@ if (failed > 0) {
 
 ## Plataformas compatibles
 
-Plataformas compatibles con ayni_sdk 0.4.0: Android e iOS.
+Plataformas compatibles con ayni_sdk 0.4.1: Android e iOS.
 
 - Android 8.0 (API 26) o posterior.
 - iOS 11.0 o posterior.
