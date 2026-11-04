@@ -1,6 +1,6 @@
 ## 0.4.1 - 2026-11-04
 
-### Rendimiento
+### Novedades
 
 - La validación de entrada y la verificación de integridad de los modelos se
   ejecutan en paralelo antes de la inferencia. Ambas deben terminar antes de
