@@ -162,12 +162,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Java 17
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.44.8
           cache: true
+
+      - name: Select Android JDK
+        if: matrix.platform == 'android'
+        run: flutter config --jdk-dir="$JAVA_HOME"
 
       - name: Create SDK consumer app
         run: |
