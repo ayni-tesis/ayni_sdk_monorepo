@@ -156,7 +156,7 @@ jobs:
           - platform: android
             os: ubuntu-latest
           - platform: ios
-            os: macos-15
+            os: macos-15-intel
 
     steps:
       - name: Checkout repository
