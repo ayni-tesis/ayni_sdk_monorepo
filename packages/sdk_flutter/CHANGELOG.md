@@ -1,3 +1,17 @@
+## 0.4.1 - 2026-11-04
+
+### Rendimiento
+
+- La validación de entrada y la verificación de integridad de los modelos se
+  ejecutan en paralelo antes de la inferencia. Ambas deben terminar antes de
+  abrir un intérprete; ante una imagen inválida se completan las lecturas de
+  verificación antes de devolver el error.
+- La ejecución reutiliza la imagen decodificada al preparar los tensores de
+  los modelos del workflow.
+- En Android, la verificación del archivo instalado usa SHA-256 nativo en una
+  cola de fondo, con el cálculo Dart como respaldo. En otras plataformas se
+  mantiene el cálculo Dart.
+
 ## 0.4.0 - 2026-10-07
 
 ### Novedades

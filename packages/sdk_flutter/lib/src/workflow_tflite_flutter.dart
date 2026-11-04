@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import 'performance_profile.dart';
+
 /// One output tensor of a model: its [shape] and its values, flattened.
 typedef WorkflowTensorOutput = ({List<int> shape, Float32List values});
 
@@ -23,8 +25,11 @@ Future<WorkflowInferenceResult> runModel({
   required List<List<int>> acceptedInputShapes,
 }) async {
   try {
-    return await Isolate.run(
-      () => _runModelInIsolate(modelPath, inputBytes, acceptedInputShapes),
+    return await profileStage(
+      'model.isolate',
+      () => Isolate.run(
+        () => _runModelInIsolate(modelPath, inputBytes, acceptedInputShapes),
+      ),
     );
   } on FileSystemException {
     return (
@@ -49,8 +54,12 @@ WorkflowInferenceResult _runModelInIsolate(
   }
   Interpreter? interpreter;
   try {
-    interpreter = Interpreter.fromFile(File(modelPath));
-    final inputs = interpreter.getInputTensors();
+    final loadedInterpreter = profileStageSync(
+      'model.load',
+      () => Interpreter.fromFile(File(modelPath)),
+    );
+    interpreter = loadedInterpreter;
+    final inputs = loadedInterpreter.getInputTensors();
     if (inputs.length != 1 ||
         inputs.single.type != TensorType.float32 ||
         !acceptedInputShapes.any(
@@ -62,7 +71,7 @@ WorkflowInferenceResult _runModelInIsolate(
       );
     }
 
-    final tensors = interpreter.getOutputTensors();
+    final tensors = loadedInterpreter.getOutputTensors();
     if (tensors.any((tensor) => tensor.type != TensorType.float32)) {
       return (
         error: 'modelOutputInvalid',
@@ -80,7 +89,10 @@ WorkflowInferenceResult _runModelInIsolate(
         bytes.lengthInBytes ~/ Float32List.bytesPerElement,
       );
     }
-    interpreter.runForMultipleInputs([inputBytes], rawOutputs);
+    profileStageSync(
+      'model.inference',
+      () => loadedInterpreter.runForMultipleInputs([inputBytes], rawOutputs),
+    );
     return (
       error: null,
       outputs: [
