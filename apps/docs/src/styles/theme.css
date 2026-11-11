@@ -46,3 +46,42 @@
 starlight-theme-select select {
   width: calc(7em + var(--sl-inline-padding) * 2);
 }
+
+/* Print styles: prevent table clipping and split rows across pages */
+@media print {
+  .sl-markdown-content table:not(:where(.not-content *)) {
+    display: table !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+    overflow: visible !important;
+    border-collapse: collapse !important;
+  }
+
+  .sl-markdown-content th,
+  .sl-markdown-content td {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    font-size: 0.76rem !important;
+    line-height: 1.35 !important;
+    padding: 6px 8px !important;
+    vertical-align: top !important;
+  }
+
+  .sl-markdown-content tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .sl-markdown-content thead {
+    display: table-header-group !important;
+  }
+
+  .sl-markdown-content td code,
+  .sl-markdown-content th code {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    font-size: 0.72rem !important;
+  }
+}
