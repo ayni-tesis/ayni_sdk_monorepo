@@ -84,6 +84,8 @@ La primera distribución del selector es [Ayni Validation App 1.0.0](https://git
 
 La compilación con SEG-01 listo es Ayni Validation App 1.1.0, versión Android `1.1.0+2`, con `ayni_sdk` 0.4.0. El APK se firma con Android Debug para pruebas internas, no para Google Play. SHA-256: `ED5AA597D30E289770AD5DE51F3CAFD7CECAFBC5635523F492F80853B419B2E9` (76 097 619 bytes). Release: [Ayni Validation App 1.1.0](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.1.0).
 
+La compilación de la campaña de rendimiento con `ayni_sdk` 0.4.1 es Ayni Validation App 1.2.3, versión Android `1.2.3+6`. El APK se firma con Android Debug para pruebas internas, no para Google Play. SHA-256: `4442788A277E426130A853A17392AE823DDF55F263284210D7574CE27D01FE47` (76 213 423 bytes). Release: [Ayni Validation App 1.2.3](https://github.com/ayni-tesis/ayni_sdk_monorepo/releases/tag/ayni-validation-app-v1.2.3).
+
 ## Medir PERF-01 en el dispositivo físico
 
 Primero instala y abre el APK selector. Configura la SDK Key y deja que descargue y verifique los recursos del perfil que se mida. `PERF-01` usa el perfil listo `SEG-01`; la Macrobenchmark conserva los datos privados entre arranques, pero el dispositivo debe estar conectado y en las mismas condiciones de red durante las mediciones.
